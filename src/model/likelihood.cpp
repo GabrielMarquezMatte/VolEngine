@@ -133,7 +133,8 @@ garch::PowerGarchParameters<T> power_garch_parameters(std::span<const T> theta, 
             block(theta, layout.eta2_begin(), layout.eta2),
             power_of(theta, layout),
             moments.first(s.alpha.size()),
-            abs_smoothing_of(layout)};
+            abs_smoothing_of(layout),
+            layout.free_power};
 }
 
 // False when a kappa is not finite (std with shape <= power), which can come back as NaN as well as +inf.
@@ -164,16 +165,15 @@ T mean_square(std::span<const T> residuals)
 
 // (mean |e|^power)^(2 / power): the variance whose sigma^power is the sample mean of |e|^power.
 template <class T>
-T mean_power_variance(std::span<const T> residuals, const T& power)
+T mean_power_variance(std::span<const T> residuals, const T& power, bool free_power)
 {
     using std::abs;
-    using std::pow;
     T sum{0.0};
     for (const T& e : residuals)
     {
-        sum = sum + pow(abs(e), power);
+        sum = sum + garch::raise(abs(e), power, free_power);
     }
-    return pow(sum / static_cast<double>(residuals.size()), 2.0 / power);
+    return garch::raise(sum / static_cast<double>(residuals.size()), 2.0 / power, free_power);
 }
 
 // rugarch holds sigma2_t for t < max(m, n, p, q), the ARMA orders included, at the sample mean of the squared
@@ -190,7 +190,7 @@ garch::Presample<T> presample(std::span<const double> r, std::span<const T> resi
     std::size_t held = static_cast<std::size_t>(std::max({layout.ar, layout.ma, layout.arch, layout.garch}));
     if (layout.is_power_family())
     {
-        return {mean_power_variance(residuals, power_of(theta, layout)), held};
+        return {mean_power_variance(residuals, power_of(theta, layout), layout.free_power), held};
     }
     return {mean_square(residuals), held};
 }
