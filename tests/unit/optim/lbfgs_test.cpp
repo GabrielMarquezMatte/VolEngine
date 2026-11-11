@@ -80,6 +80,39 @@ TEST(Lbfgs, ReportsMaxIter)
     EXPECT_EQ(result.iterations, 3);
 }
 
+TEST(Lbfgs, ConvergesThroughFtolWhenDecreaseIsBelowTolerance)
+{
+    auto tiny_quadratic = [](std::span<const double> x, std::span<double> g)
+    {
+        g[0] = 3.0 * x[0];
+        return 1.5 * x[0] * x[0];
+    };
+    std::vector<double> x{1e-8};
+    LbfgsOptions options;
+    options.gtol = 0.0;
+    LbfgsResult result = ve::optim::lbfgs_minimize(tiny_quadratic, x, options);
+    EXPECT_EQ(result.stop, Stop::Converged);
+    EXPECT_EQ(result.iterations, 1);
+    EXPECT_NE(x[0], 0.0);
+}
+
+TEST(Lbfgs, FallbackStepBelowFtolIsNotReportedAsConverged)
+{
+    auto shallow_kink = [](std::span<const double> x, std::span<double> g)
+    {
+        double offset = x[0] - 0.3;
+        g[0] = offset < 0.0 ? -1e-14 : 1e-14;
+        return 1e-14 * std::abs(offset);
+    };
+    std::vector<double> x{3.0};
+    LbfgsOptions options;
+    options.gtol = 0.0;
+    options.max_iter = 4;
+    LbfgsResult result = ve::optim::lbfgs_minimize(shallow_kink, x, options);
+    EXPECT_EQ(result.stop, Stop::MaxIter);
+    EXPECT_EQ(result.iterations, 4);
+}
+
 TEST(Lbfgs, ReportsNonFiniteAtStart)
 {
     std::vector<double> x{0.5, 0.5};
