@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 import volengine as ve
 
 REFERENCE = Path(__file__).resolve().parents[2] / "tests" / "reference"
-DATA_FILES = ("sgarch11_norm.csv", "grid.csv")
+DATA_FILES = ("sgarch11_norm.csv", "grid.csv", "grid_2b.csv")
 CRITERIA = ("aic", "bic", "hqic", "sic")
 # Tighter than the default gradient tolerance; docs/guide/validation.md says why.
 FIT_TOL = 1e-7
@@ -75,8 +75,20 @@ def fit_options(oracle: Oracle) -> ve.FitOptions:
 
 def case_spec(case: dict[str, Any]) -> ve.Spec:
     return ve.Spec(
-        p=case["p"], q=case["q"], arma=tuple(case["arma"]), dist=case["dist"], include_mean=case["include_mean"]
+        case["model"],
+        p=case["p"],
+        q=case["q"],
+        arma=tuple(case["arma"]),
+        dist=case["dist"],
+        include_mean=case["include_mean"],
+        submodel=case.get("submodel"),
     )
+
+
+def derived_mask(case: dict[str, Any], names: tuple[str, ...]) -> NDArray[np.bool_]:
+    """The iGARCH beta_q is derived, not estimated: its standard error is NaN in VolEngine and NA in rugarch."""
+    derived = f"beta{case['q']}"
+    return np.array([case["model"] == "igarch" and name == derived for name in names])
 
 
 def assert_params(
@@ -89,10 +101,20 @@ def assert_params(
     assert (error <= allowed).all(), f"estimates {estimate} vs {reference}, error {error}, allowed {allowed}"
 
 
-def assert_rel(values: NDArray[np.float64], expected: dict[str, float], rel: float) -> None:
-    reference = np.array(list(expected.values()))
-    error = np.abs(values / reference - 1.0)
+def assert_rel(values: NDArray[np.float64], expected: dict[str, float | None], rel: float) -> None:
+    """A null expected value (not comparable, or the derived iGARCH beta_q) is skipped."""
+    reference = np.array(list(expected.values()), dtype=float)
+    compared = ~np.isnan(reference)
+    error = np.abs(values[compared] / reference[compared] - 1.0)
     assert (error <= rel).all(), f"values {values} vs {reference}, relative error {error}"
+
+
+def assert_se(fit: ve.Fit, case: dict[str, Any], result: dict[str, Any], robust_key: str) -> None:
+    derived = derived_mask(case, fit.names)
+    for kind, key in (("hessian", "se"), ("robust", robust_key)):
+        std_error = fit.coef(kind).std_error
+        assert (np.isnan(std_error) == derived).all(), f"{kind} SE {std_error}, derived {derived}"
+        assert_rel(std_error, result[key], 5e-2)
 
 
 def assert_criteria(fit: ve.Fit, result: dict[str, Any], per_obs: bool) -> None:
@@ -113,8 +135,12 @@ def test_fixture_covers_its_cases(oracle):
     assert [result["case"] for result in load_fixture(oracle)["results"]] == expected
 
 
+# Its apARCH cases moved to another series: docs/guide/validation.md, "Case selection".
+UNUSED_SERIES = {"aparch11_ged"}
+
+
 def test_cases_name_known_series():
-    assert {case["series"] for case in load_cases()} == set(load_series())
+    assert {case["series"] for case in load_cases()} == set(load_series()) - UNUSED_SERIES
 
 
 @pytest.mark.parametrize(("oracle", "case"), ORACLE_CASES, ids=ORACLE_CASE_IDS)
@@ -126,17 +152,43 @@ def test_matches_oracle(ctx, oracle, case):
     assert fit.loglik >= result["loglik"] - 1e-6 * abs(result["loglik"])
     assert fit.loglik == pytest.approx(result["loglik"], rel=1e-4)
     assert_params(fit.coef().estimate, result["params"], rel=1e-3, abs_small=1e-5)
-    assert_rel(fit.coef("hessian").std_error, result["se"], 5e-2)
-    assert_rel(fit.coef("robust").std_error, result[oracle.robust_key], 5e-2)
+    assert_se(fit, case, result, oracle.robust_key)
     assert fit.sigma.shape == (len(result["sigma"]),)
     assert np.max(np.abs(fit.sigma / np.array(result["sigma"]) - 1.0)) <= 1e-3
     assert_criteria(fit, result, oracle.per_obs)
 
 
+def block(params: dict[str, float], name: str) -> list[float]:
+    return [value for key, value in params.items() if key.rstrip("0123456789") == name]
+
+
+def interior_weights(case: dict[str, Any], params: dict[str, float], persistence: float) -> list[float]:
+    """The non-negative entries that sum to the persistence P; a power-family weight is alpha kappa = P - beta."""
+    alpha, beta, gamma = block(params, "alpha"), block(params, "beta"), block(params, "gamma")
+    assert (len(alpha), len(beta)) == (case["p"], case["q"])
+    if case["model"] == "egarch":
+        return beta
+    if case["model"] == "gjrgarch":
+        return [a / 2 for a in alpha] + beta + [(a + g) / 2 for a, g in zip(alpha, gamma, strict=True)]
+    if case["model"] in ("aparch", "fgarch"):
+        assert case["p"] == 1
+        return [persistence - sum(beta), *beta]
+    return alpha + beta
+
+
 @pytest.mark.parametrize(("oracle", "case"), ORACLE_CASES, ids=ORACLE_CASE_IDS)
 def test_fixture_estimates_are_interior(oracle, case):
-    params = oracle_result(oracle.name, case["id"])["params"]
-    weights = [value for name, value in params.items() if name.startswith(("alpha", "beta"))]
-    assert len(weights) == case["p"] + case["q"]
+    result = oracle_result(oracle.name, case["id"])
+    params, persistence = result["params"], result["persistence"]
+    weights = interior_weights(case, params, persistence)
     assert min(weights) > 1e-4
-    assert sum(weights) < 0.999
+    if case["model"] not in ("igarch", "aparch", "fgarch"):
+        # rugarch integrates P(z < 0) for the gjrGARCH gamma numerically.
+        assert sum(weights) == pytest.approx(persistence, abs=1e-9)
+    if case["model"] != "igarch":
+        assert persistence < 0.999
+    if case["model"] in ("aparch", "fgarch"):
+        assert all(abs(value) < 0.999 for value in block(params, "eta1") + block(params, "gamma"))
+    if case["model"] == "csgarch":
+        assert params["eta11"] - persistence > 1e-4
+        assert params["eta21"] > 1e-4

@@ -1,7 +1,8 @@
 """Simulate the reference series shared by every oracle script and test.
 
 `data/sgarch11_norm.csv` holds the plan-1 sGARCH(1,1)-normal series (seed 20261110, three lengths);
-`data/grid.csv` holds one T = 3000 series per process below, drawn in order from one stream (seed 20261111).
+`data/grid.csv` holds one T = 3000 series per process below, drawn in order from one stream (seed 20261111);
+`data/grid_2b.csv` holds one T = 3000 series per GARCH variant, drawn in order from one stream (seed 20261112).
 """
 
 import csv
@@ -18,8 +19,14 @@ PLAN_ONE_SEED = 20261110
 PLAN_ONE_LENGTHS = (5000, 3000, 1500)
 GRID_SEED = 20261111
 GRID_LENGTH = 3000
+VARIANT_SEED = 20261112
+VARIANT_BURN_IN = 1000
+VARIANT_MU = 0.05
 
 Shocks = Callable[[np.random.Generator, int], NDArray[np.float64]]
+# (sigma2, q): the conditional variance and the csGARCH permanent component (unused by the other models).
+State = tuple[float, float]
+Step = Callable[[State, float], State]
 
 
 class Process(NamedTuple):
@@ -67,6 +74,86 @@ GRID = (
 )
 
 
+def student_abs_moment(nu: float) -> float:
+    """E|z| of the unit-variance Student-t."""
+    log_ratio = math.lgamma(0.5 * (nu - 1.0)) - math.lgamma(0.5 * nu)
+    return math.sqrt(nu - 2.0) * math.exp(log_ratio) / math.sqrt(math.pi)
+
+
+def egarch_step(omega: float, alpha: float, gamma: float, beta: float, mean_abs: float) -> Step:
+    """log sigma2' = omega + alpha z + gamma (|z| - E|z|) + beta log sigma2."""
+
+    def step(state: State, z: float) -> State:
+        news = alpha * z + gamma * (abs(z) - mean_abs)
+        return math.exp(omega + news + beta * math.log(state[0])), 0.0
+
+    return step
+
+
+def gjrgarch_step(omega: float, alpha: float, gamma: float, beta: float) -> Step:
+    """sigma2' = omega + (alpha + gamma 1[e < 0]) e^2 + beta sigma2; gamma = 0 is the sGARCH (and iGARCH) step."""
+
+    def step(state: State, z: float) -> State:
+        leverage = gamma if z < 0.0 else 0.0
+        return omega + (alpha + leverage) * state[0] * z * z + beta * state[0], 0.0
+
+    return step
+
+
+def aparch_step(omega: float, alpha: float, gamma: float, beta: float, delta: float) -> Step:
+    """sigma^delta' = omega + alpha (|e| - gamma e)^delta + beta sigma^delta, with e = sigma z."""
+
+    def step(state: State, z: float) -> State:
+        residual = math.sqrt(state[0]) * z
+        news = (abs(residual) - gamma * residual) ** delta
+        return (omega + alpha * news + beta * state[0] ** (0.5 * delta)) ** (2.0 / delta), 0.0
+
+    return step
+
+
+def csgarch_step(omega: float, alpha: float, beta: float, rho: float, phi: float) -> Step:
+    """q' = omega + rho q + phi (e^2 - sigma2); sigma2' = q' + alpha (e^2 - q) + beta (sigma2 - q)."""
+
+    def step(state: State, z: float) -> State:
+        variance, permanent = state
+        square = variance * z * z
+        next_permanent = omega + rho * permanent + phi * (square - variance)
+        return next_permanent + alpha * (square - permanent) + beta * (variance - permanent), next_permanent
+
+    return step
+
+
+def allgarch_step(omega: float, alpha: float, beta: float, eta: tuple[float, float], power: float) -> Step:
+    """sigma^power' = omega + alpha sigma^power (|z - eta2| - eta1 (z - eta2))^power + beta sigma^power."""
+    eta1, eta2 = eta
+
+    def step(state: State, z: float) -> State:
+        sigma_power = state[0] ** (0.5 * power)
+        shifted = z - eta2
+        news = (abs(shifted) - eta1 * shifted) ** power
+        return (omega + (alpha * news + beta) * sigma_power) ** (2.0 / power), 0.0
+
+    return step
+
+
+class Variant(NamedTuple):
+    """A GARCH variant of order (1, 1) with mean 0.05."""
+
+    name: str
+    step: Step
+    shocks: Shocks
+
+
+VARIANTS = (
+    Variant("egarch11_std", egarch_step(-0.01, -0.08, 0.15, 0.97, student_abs_moment(6.0)), student_shocks(6.0)),
+    Variant("gjrgarch11_norm", gjrgarch_step(0.01, 0.03, 0.09, 0.9), normal_shocks),
+    Variant("aparch11_ged", aparch_step(0.02, 0.08, 0.4, 0.9, 1.3), ged_shocks(1.5)),
+    Variant("igarch11_norm", gjrgarch_step(0.01, 0.1, 0.0, 0.9), normal_shocks),
+    Variant("csgarch11_std", csgarch_step(0.01, 0.06, 0.85, 0.99, 0.04), student_shocks(7.0)),
+    Variant("fgarch_allgarch11_norm", allgarch_step(0.02, 0.08, 0.88, (0.3, 0.2), 1.5), normal_shocks),
+)
+
+
 def lagged(values: list[float], lag: int, presample: float) -> float:
     if lag > len(values):
         return presample
@@ -108,6 +195,16 @@ def simulate_plan_one(process: Process, shocks: NDArray[np.float64]) -> NDArray[
     return returns
 
 
+def simulate_variant(variant: Variant, shocks: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Start at sigma2 = q = 1 and drop the first VARIANT_BURN_IN observations."""
+    state: State = (1.0, 1.0)
+    returns = np.empty(shocks.size)
+    for t, z in enumerate(shocks):
+        returns[t] = VARIANT_MU + math.sqrt(state[0]) * z
+        state = variant.step(state, float(z))
+    return returns[VARIANT_BURN_IN:]
+
+
 def cell(values: NDArray[np.float64], row: int) -> str:
     if row >= values.size:
         return ""
@@ -131,6 +228,10 @@ def main() -> None:
     rng = np.random.default_rng(GRID_SEED)
     grid = {process.name: simulate(process, process.shocks(rng, GRID_LENGTH)) for process in GRID}
     write_csv(DATA / "grid.csv", grid)
+    rng = np.random.default_rng(VARIANT_SEED)
+    length = VARIANT_BURN_IN + GRID_LENGTH
+    variants = {variant.name: simulate_variant(variant, variant.shocks(rng, length)) for variant in VARIANTS}
+    write_csv(DATA / "grid_2b.csv", variants)
 
 
 if __name__ == "__main__":
