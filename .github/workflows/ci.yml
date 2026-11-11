@@ -84,6 +84,13 @@ jobs:
       - name: Test (C++ and style)
         run: ctest --preset ${{ matrix.preset }}
 
+      # Benchmarks are built to keep them compiling, never run: shared runners give no stable timings.
+      - name: Build benchmarks (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cmake -S . -B build/bench -DCMAKE_BUILD_TYPE=Release -DVE_BUILD_BENCHMARKS=ON -DVE_BUILD_TESTS=OFF
+          cmake --build build/bench --target volengine_benchmarks
+
       - name: Python tests (3.14)
         shell: bash
         env:

@@ -31,6 +31,19 @@ and is what CI uses on Linux and macOS. GCC 15 or newer is the supported GCC.
 The MinGW build links `libstdc++`, `libgcc` and `winpthread` statically, so a Windows Python can load
 `libvolengine.dll` without the MSYS2 `bin` directory on `PATH`. Keep it that way when touching the link options.
 
+## Benchmarks
+
+The Google Benchmark suite in `tests/benchmarks/` is off by default (`VE_BUILD_BENCHMARKS`) and has its own preset:
+
+```
+cmake --preset gcc-bench
+cmake --build --preset gcc-bench
+build/gcc-bench/volengine_benchmarks --benchmark_repetitions=5 --benchmark_report_aggregates_only=true
+```
+
+CI builds it on Linux and never runs it. Results and the machine they come from are in
+[docs/performance/benchmarks.md](docs/performance/benchmarks.md). Compare numbers only from the same machine.
+
 ## Python tests
 
 Create the test environment from the Windows Python, not from the MSYS2 Python that comes first on `PATH`

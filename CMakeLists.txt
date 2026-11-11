@@ -18,6 +18,7 @@ else()
     set(VE_IS_TOP_LEVEL OFF)
 endif()
 option(VE_BUILD_TESTS "Build the VolEngine tests" ${VE_IS_TOP_LEVEL})
+option(VE_BUILD_BENCHMARKS "Build the VolEngine benchmarks" OFF)
 
 if(MSVC)
     set(VE_WARNING_FLAGS /W4 /WX)
@@ -115,4 +116,24 @@ if(VE_BUILD_TESTS)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_test(NAME style
         COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/tests/style/check_style.py ${CMAKE_SOURCE_DIR})
+endif()
+
+if(VE_BUILD_BENCHMARKS)
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_WERROR OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(benchmark
+        URL https://github.com/google/benchmark/archive/refs/tags/v1.9.1.tar.gz
+        URL_HASH SHA256=32131c08ee31eeff2c8968d7e874f3cb648034377dfc32a4c377fa8796d84981
+        SYSTEM)
+    FetchContent_MakeAvailable(benchmark)
+
+    add_executable(volengine_benchmarks tests/benchmarks/fit_benchmarks.cpp)
+    target_include_directories(volengine_benchmarks PRIVATE tests/unit tests/benchmarks)
+    target_link_libraries(volengine_benchmarks PRIVATE volengine_core volengine benchmark::benchmark)
+    target_compile_options(volengine_benchmarks PRIVATE ${VE_WARNING_FLAGS} ${VE_FLOAT_FLAGS})
+    if(MINGW)
+        target_link_options(volengine_benchmarks PRIVATE -static-libgcc -static-libstdc++)
+    endif()
 endif()
