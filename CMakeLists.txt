@@ -25,10 +25,27 @@ else()
     set(VE_WARNING_FLAGS -Wall -Wextra -Wpedantic -Werror)
 endif()
 
-add_library(volengine SHARED src/capi/version_api.cpp)
+include(FetchContent)
+FetchContent_Declare(bs_thread_pool
+    GIT_REPOSITORY https://github.com/bshoshany/thread-pool
+    GIT_TAG v5.0.0
+    SOURCE_SUBDIR header-only-no-cmake)
+FetchContent_MakeAvailable(bs_thread_pool)
+
+add_library(volengine_core STATIC src/core/context.cpp)
+set_target_properties(volengine_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(volengine_core PUBLIC src include)
+target_include_directories(volengine_core SYSTEM PUBLIC ${bs_thread_pool_SOURCE_DIR}/include)
+target_compile_options(volengine_core PRIVATE ${VE_WARNING_FLAGS})
+
+add_library(volengine SHARED
+    src/capi/version_api.cpp
+    src/capi/context_api.cpp
+    src/capi/error.cpp)
 target_include_directories(volengine PUBLIC include)
 target_compile_definitions(volengine PRIVATE VE_BUILDING)
 target_compile_options(volengine PRIVATE ${VE_WARNING_FLAGS})
+target_link_libraries(volengine PRIVATE volengine_core)
 if(MINGW)
     target_link_options(volengine PRIVATE
         -static-libgcc -static-libstdc++
@@ -37,7 +54,6 @@ endif()
 
 if(VE_BUILD_TESTS)
     enable_testing()
-    include(FetchContent)
     set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
     FetchContent_Declare(googletest
@@ -48,8 +64,10 @@ if(VE_BUILD_TESTS)
     target_link_libraries(volengine_c_header_check PRIVATE volengine)
     target_compile_options(volengine_c_header_check PRIVATE ${VE_WARNING_FLAGS})
 
-    add_executable(volengine_tests tests/unit/capi/abi_test.cpp)
-    target_link_libraries(volengine_tests PRIVATE volengine GTest::gtest_main)
+    add_executable(volengine_tests
+        tests/unit/capi/abi_test.cpp
+        tests/unit/capi/context_test.cpp)
+    target_link_libraries(volengine_tests PRIVATE volengine_core volengine GTest::gtest_main)
     target_compile_options(volengine_tests PRIVATE ${VE_WARNING_FLAGS})
     include(GoogleTest)
     gtest_discover_tests(volengine_tests)
