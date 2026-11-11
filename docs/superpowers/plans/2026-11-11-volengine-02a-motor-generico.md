@@ -381,8 +381,8 @@ TEST(FitGeneric, DeterministicAcrossBuckets) { /* fit_one duas vezes → bit-id�
 
 **Files:**
 - Modify: `include/volengine/volengine.h`, `src/capi/spec_api.cpp`, `src/capi/fit_api.cpp`, `src/capi/handles.hpp`
-- Modify: `python/src/volengine/_spec.py`, `python/src/volengine/_native.py`
-- Test: `tests/unit/capi/spec_test.cpp`, `tests/unit/capi/batch_test.cpp` (estendidos), `python/tests/test_fit.py` (estendido)
+- Modify: `python/src/volengine/_spec.py`, `python/src/volengine/_native.py`, `python/src/volengine/api.py`, `python/pyproject.toml` (`mypy` no extra `test`)
+- Test: `tests/unit/capi/spec_test.cpp`, `tests/unit/capi/batch_test.cpp` (estendidos), `python/tests/test_fit.py` (estendido), `python/tests/typing_cases.py` + `python/tests/test_typing.py` (novos)
 
 **Interfaces:**
 - Consumes: `ve::Spec` (Task 2), `fit_one` (Task 5).
@@ -397,6 +397,17 @@ TEST(FitGeneric, DeterministicAcrossBuckets) { /* fit_one duas vezes → bit-id�
   VE_API ve_status ve_spec_set_arma(ve_spec* s, int32_t m, int32_t n);
   ```
 - Python: `Spec(model="sgarch", *, p=1, q=1, arma=(0, 0), dist="norm", include_mean=True)`, com `DISTRIBUTIONS = {"norm": 0, "std": 1, "ged": 2}`. Uma `arma` que não seja um par de inteiros gera `ValueError`, e os limites são validados pelo C (`VolEngineError`).
+- `Context.fit` ganha `@typing.overload`s para a inferência de tipo do retorno. O corpo e o comportamento em runtime não mudam:
+  ```python
+  Series1D = Sequence[float] | np.ndarray[tuple[int], np.dtype[np.float64]]
+  @overload
+  def fit(self, spec: Spec, data: Series1D, *, options=..., starts=..., lengths=...) -> Fit: ...
+  @overload
+  def fit(self, spec: Spec, data: ArrayLike, *, ...) -> Fit | NDArray[np.object_]: ...   # dimensão desconhecida estaticamente
+  @overload
+  def fit(self, spec: Sequence[Spec], data: ArrayLike, *, ...) -> NDArray[np.object_]: ...
+  ```
+  O padrão vale para toda API Python futura com retorno dependente do argumento (`fit_dcc` no plano 4).
 - `ve_fit_param_name` devolve os nomes gerados, válidos até `ve_fit_free`.
 - Pendências do plano 1, só texto no header:
   - "as funções `ve_context_*` podem ser chamadas concorrentemente, exceto `ve_context_free`";
@@ -421,6 +432,18 @@ def test_arma_std_spec_fits(ctx, series):
 @pytest.mark.parametrize("arma", [(1,), (1, 2, 3), (1.5, 0), "11"])
 def test_bad_arma_raises_value_error(arma): ...
 def test_order_above_max_raises(): ...   # Spec(p=7) → VolEngineError
+```
+```python
+# python/tests/typing_cases.py — só checado estaticamente, nunca executado
+def cases(ctx: ve.Context, spec: ve.Spec, one: list[float], two: NDArray[np.float64]) -> None:
+    assert_type(ctx.fit(spec, one), ve.Fit)
+    assert_type(ctx.fit([spec, spec], one), NDArray[np.object_])
+    assert_type(ctx.fit([spec], two), NDArray[np.object_])
+    assert_type(ctx.fit(spec, two), ve.Fit | NDArray[np.object_])
+# python/tests/test_typing.py
+def test_fit_overloads_infer_return_types():
+    stdout, stderr, status = mypy.api.run(["--strict", str(TYPING_CASES)])
+    assert status == 0, stdout + stderr
 ```
 
 - [ ] **Step 2: Rodar e ver falhar** — `ctest --preset gcc-debug -R "CapiSpec|CapiFit"` e pytest → FAIL.
