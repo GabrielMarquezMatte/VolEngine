@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import KW_ONLY, dataclass
 
-from ._native import Handle, check, create_handle, lib
+from ._native import Handle, check, create_handle, int32, lib
 
 MODELS = {"sgarch": 0}
 DISTRIBUTIONS = {"norm": 0}
@@ -19,7 +19,12 @@ def code_of(table: dict[str, int], kind: str, name: str) -> int:
 
 @dataclass(frozen=True)
 class Spec:
-    """Model specification. Unknown names raise ValueError, native rejections VolEngineError."""
+    """Model specification. Unknown names raise ValueError, native rejections VolEngineError.
+
+    `p` is the ARCH order (number of alpha terms, lagged squared residuals) and `q` the GARCH order
+    (number of beta terms, lagged variances), as in arch's `p` and `q` and in rugarch's
+    `garchOrder = c(p, q)`. Only p = q = 1 is supported in this version.
+    """
 
     model: str = "sgarch"
     _: KW_ONLY
@@ -35,7 +40,7 @@ class Spec:
         model = code_of(MODELS, "model", self.model)
         dist = code_of(DISTRIBUTIONS, "dist", self.dist)
         handle = create_handle(lib.ve_spec_create, lib.ve_spec_free, model)
-        check(lib.ve_spec_set_order(handle.pointer, self.p, self.q))
+        check(lib.ve_spec_set_order(handle.pointer, int32(self.p, "p"), int32(self.q, "q")))
         check(lib.ve_spec_set_dist(handle.pointer, dist))
         check(lib.ve_spec_set_include_mean(handle.pointer, int(self.include_mean)))
         return handle
@@ -56,7 +61,7 @@ class FitOptions:
     def native_handle(self) -> Handle:
         var_init = code_of(VAR_INITS, "var_init", self.var_init)
         handle = create_handle(lib.ve_fit_options_create, lib.ve_fit_options_free)
-        check(lib.ve_fit_options_set_max_iter(handle.pointer, self.max_iter))
+        check(lib.ve_fit_options_set_max_iter(handle.pointer, int32(self.max_iter, "max_iter")))
         check(lib.ve_fit_options_set_tolerance(handle.pointer, self.tol))
         check(lib.ve_fit_options_set_var_init(handle.pointer, var_init))
         return handle

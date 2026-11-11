@@ -11,7 +11,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from ._fit import CoefTable, Fit, aic, bic, hqic, loglik, sic
-from ._native import Handle, VolEngineError, check, create_handle, lib
+from ._native import Handle, VolEngineError, check, create_handle, int32, lib
 from ._spec import FitOptions, Spec
 
 __all__ = [
@@ -95,9 +95,14 @@ def shaped(fits: list[Fit], shape: tuple[int, ...]) -> NDArray[np.object_]:
 
 
 class Context:
-    """Execution context owning the native thread pool; fits do not depend on it afterwards."""
+    """Execution context owning the native thread pool; fits do not depend on it afterwards.
+
+    `threads` is between 1 and 1024 (VE_MAX_THREADS); 0, the default, means the hardware
+    concurrency, capped at 1024.
+    """
 
     def __init__(self, threads: int = 0) -> None:
+        threads = int32(threads, "threads")
         self._handle = create_handle(lib.ve_context_create, lib.ve_context_free)
         check(lib.ve_context_set_threads(self._handle.pointer, threads))
 

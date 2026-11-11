@@ -18,6 +18,11 @@ IC_PER_OBS = 0
 IC_TOTAL = 1
 
 
+def status_name(code: int) -> str:
+    """The name of a VE_FIT_* code; a code newer than this package is "unknown(<code>)"."""
+    return STATUS_NAMES.get(code, f"unknown({code})")
+
+
 class CoefTable(NamedTuple):
     names: tuple[str, ...]
     estimate: NDArray[np.float64]
@@ -29,10 +34,10 @@ class CoefTable(NamedTuple):
 class Fit:
     """One fitted model. Owns its native handle; the arrays it returns keep it alive.
 
-    `status` is "converged", "max_iter", "failed" or "insufficient_data". A "failed" fit may carry
-    the values of the best finite point the optimizer reached, or NaN (with empty series) when it
-    reached none. An "insufficient_data" fit is always NaN with empty series. Check `status` before
-    using the values.
+    `status` is "converged", "max_iter", "failed" or "insufficient_data" ("unknown(<code>)" for a status
+    added by a newer native library). A "failed" fit may carry the values of the best finite point the
+    optimizer reached, or NaN (with empty series) when it reached none. An "insufficient_data" fit is
+    always NaN with empty series. Check `status` before using the values.
     """
 
     status: str
@@ -42,7 +47,7 @@ class Fit:
     def __init__(self, handle: Handle) -> None:
         self._handle = handle
         pointer = handle.pointer
-        self.status = STATUS_NAMES[read_scalar(ctypes.c_int32, lib.ve_fit_status, pointer)]
+        self.status = status_name(read_scalar(ctypes.c_int32, lib.ve_fit_status, pointer))
         self.nobs = read_scalar(ctypes.c_size_t, lib.ve_fit_nobs, pointer)
         count = read_scalar(ctypes.c_size_t, lib.ve_fit_param_count, pointer)
         self.names = tuple(self._param_name(index) for index in range(count))

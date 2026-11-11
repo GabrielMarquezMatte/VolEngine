@@ -19,7 +19,8 @@ library whose ABI version differs).
   (a start and a length per series) and in any stride order. Results are bit-identical for any thread count,
   and a series that does not converge or is too short yields its own fit status without failing the batch.
 - C API (`include/volengine/volengine.h`): opaque handles, setters instead of public structs, `ve_status` on
-  every fallible call, thread-local `ve_last_error()`, no exception crossing the boundary.
+  every fallible call, thread-local `ve_last_error()`, no exception crossing the boundary. A context accepts
+  concurrent calls and at most `VE_MAX_THREADS` (1024) threads.
 - Python package `volengine` over ctypes: `Context.fit`, `Spec`, `FitOptions`, `Fit`, `CoefTable`, and the
   `loglik`, `aic`, `bic`, `hqic` and `sic` functions; arrays are passed to the library without copying.
 - Validation against `rugarch` and `arch` with committed fixtures ([docs/guide/validation.md](docs/guide/validation.md)).

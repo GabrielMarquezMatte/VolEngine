@@ -62,7 +62,7 @@ Each rule answers a concrete break that happened in the author's earlier librari
 
 | What went wrong before | Rule here |
 |---|---|
-| A hidden "current" cursor in a handle prevented parallel use | A `ve_fit` is immutable and may be read from several threads. `ve_context` accepts concurrent calls. A spec is copied when a fit runs, so changing it later changes no existing result. |
+| A hidden "current" cursor in a handle prevented parallel use | A `ve_fit` is immutable and may be read from several threads. `ve_context` accepts concurrent calls; `ve_context_set_threads` waits for the batches running on it. A spec is copied when a fit runs, so changing it later changes no existing result. |
 | Loose positional parameters and `_ex` twins of functions | No public struct. Configuration goes through setters on opaque handles. New configuration is a new function, never a new parameter or an `_ex`. |
 | A concept renamed when it was generalized | Names follow the concept (`fit`, not `fit_sgarch`). A model is an enum value, so a new model is a new value, not a new API. |
 | A convention assumed silently | Every convention where oracles differ is an explicit option with a documented default (`var_init`, information criteria scale). |

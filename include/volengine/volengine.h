@@ -33,9 +33,18 @@ typedef int32_t ve_status;
 
 typedef struct ve_context ve_context;
 
+/* Message of the last failed call on the calling thread ("" after a success). The pointer stays valid
+   until the next VolEngine call on that thread. */
 VE_API const char* ve_last_error(void);
 
+#define VE_MAX_THREADS 1024
+
+/* The ve_context functions may be called concurrently from several threads on the same context,
+   including ve_fit_batch. */
 VE_API ve_status ve_context_create(ve_context** out);
+/* threads in 1 .. VE_MAX_THREADS sets the pool size; 0 means std::thread::hardware_concurrency(),
+   capped at VE_MAX_THREADS; anything else is VE_INVALID_ARGUMENT. Waits for the ve_fit_batch calls
+   running on ctx to finish before it replaces the pool. */
 VE_API ve_status ve_context_set_threads(ve_context* ctx, int32_t threads);
 VE_API ve_status ve_context_threads(const ve_context* ctx, int32_t* out);
 VE_API void ve_context_free(ve_context* ctx);
@@ -51,7 +60,9 @@ typedef struct ve_panel ve_panel;
 
 /* On any failure of a *_create function, *out is set to NULL (when out is not NULL). */
 VE_API ve_status ve_spec_create(int32_t model, ve_spec** out);
-/* p, q < 1 is VE_INVALID_ARGUMENT; only (1, 1) is supported in this version (else VE_UNSUPPORTED). */
+/* p is the ARCH order (number of alpha terms, lagged squared residuals) and q the GARCH order (number
+   of beta terms, lagged variances), as in arch's p and q and in rugarch's garchOrder = c(p, q).
+   p, q < 1 is VE_INVALID_ARGUMENT; only (1, 1) is supported in this version (else VE_UNSUPPORTED). */
 VE_API ve_status ve_spec_set_order(ve_spec* s, int32_t p, int32_t q);
 VE_API ve_status ve_spec_set_dist(ve_spec* s, int32_t dist);
 VE_API ve_status ve_spec_set_include_mean(ve_spec* s, int32_t include_mean); /* 0 or 1 */
@@ -90,22 +101,24 @@ typedef struct ve_batch ve_batch;
 typedef struct ve_fit ve_fit;
 
 /* Description of a batch. Copies specs, options and jobs; the panel stays borrowed and must stay
-   alive (with its data) until ve_fit_batch returns. */
+   alive (with its data) during every ve_fit_batch call on a batch that references it. */
 VE_API ve_status ve_batch_create(ve_batch** out);
 /* n_specs must be >= 1 and no entry may be NULL (VE_INVALID_HANDLE). */
 VE_API ve_status ve_batch_set_specs(ve_batch* b, const ve_spec* const* specs, size_t n_specs);
-VE_API ve_status ve_batch_set_panel(ve_batch* b, const ve_panel* panel);
+VE_API ve_status ve_batch_set_panel(ve_batch* b, const ve_panel* panel); /* NULL panel: VE_INVALID_HANDLE */
 /* Job i fits specs[job_spec[i]] on series job_series[i]; n_jobs must be >= 1. The indices are
    checked by ve_fit_batch, so specs and panel may be set in any order. */
 VE_API ve_status ve_batch_set_jobs(ve_batch* b, const size_t* job_spec, const size_t* job_series, size_t n_jobs);
-VE_API ve_status ve_batch_set_options(ve_batch* b, const ve_fit_options* options); /* not called = defaults */
+/* Not called = defaults; a NULL options is VE_INVALID_HANDLE. */
+VE_API ve_status ve_batch_set_options(ve_batch* b, const ve_fit_options* options);
 VE_API ve_status ve_batch_job_count(const ve_batch* b, size_t* out);
 VE_API void ve_batch_free(ve_batch* b);
 
 /* fits_out has ve_batch_job_count elements. On success it receives one new handle per job; on any
    error every element is set to NULL and no handle is created. Missing specs, panel or jobs, a job
    index out of range, or a NaN or infinite value in a used series is VE_INVALID_ARGUMENT. A fit that
-   does not converge is not an error: see ve_fit_status. */
+   does not converge is not an error: see ve_fit_status. The fits own their data: they stay valid after
+   the batch, panel, specs and ctx are freed. */
 VE_API ve_status ve_fit_batch(ve_context* ctx, const ve_batch* batch, ve_fit** fits_out);
 
 /* VE_FIT_FAILED means "did not converge to a usable optimum": the values of such a fit are those of
@@ -115,7 +128,7 @@ VE_API ve_status ve_fit_batch(ve_context* ctx, const ve_batch* batch, ve_fit** f
 VE_API ve_status ve_fit_status(const ve_fit* f, int32_t* out);
 VE_API ve_status ve_fit_nobs(const ve_fit* f, size_t* out);
 VE_API ve_status ve_fit_param_count(const ve_fit* f, size_t* out);
-/* *out is a static NUL-terminated string; i >= param_count is VE_INVALID_ARGUMENT. */
+/* *out is a NUL-terminated string valid until f is freed; i >= param_count is VE_INVALID_ARGUMENT. */
 VE_API ve_status ve_fit_param_name(const ve_fit* f, size_t i, const char** out);
 /* Each fills `out` with param_count elements. The values are NaN when the fit has no finite point
    (see ve_fit_status). The t value is estimate / standard error and the p value is
@@ -124,8 +137,8 @@ VE_API ve_status ve_fit_estimates(const ve_fit* f, double* out);
 VE_API ve_status ve_fit_std_errors(const ve_fit* f, int32_t se_kind, double* out);
 VE_API ve_status ve_fit_t_values(const ve_fit* f, int32_t se_kind, double* out);
 VE_API ve_status ve_fit_p_values(const ve_fit* f, int32_t se_kind, double* out);
-/* NaN with VE_OK when the fit has no finite log-likelihood (see ve_fit_status); the criteria below
-   behave the same. */
+/* NaN with VE_OK when the fit has no finite point (see ve_fit_status); the criteria below behave the
+   same. */
 VE_API ve_status ve_loglik(const ve_fit* f, double* out);
 VE_API ve_status ve_aic(const ve_fit* f, int32_t scale, double* out);
 VE_API ve_status ve_bic(const ve_fit* f, int32_t scale, double* out);

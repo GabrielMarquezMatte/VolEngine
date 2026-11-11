@@ -78,6 +78,31 @@ FitResult run_job(const Batch& batch, const FitJob& job)
     return fit_one(series, batch.specs[job.spec], batch.config);
 }
 
+// Every job writes only its own slot of `results`.
+void run_blocks(BS::light_thread_pool& pool, int threads, const Batch& batch, std::vector<FitResult>& results)
+{
+    const std::size_t max_blocks = kBlocksPerThread * static_cast<std::size_t>(threads);
+    const std::size_t blocks = std::min(results.size(), max_blocks);
+    auto run_block = [&](std::size_t first, std::size_t last)
+    {
+        for (std::size_t job = first; job < last; ++job)
+        {
+            results[job] = run_job(batch, batch.jobs[job]);
+        }
+    };
+    try
+    {
+        auto futures = pool.submit_blocks(std::size_t{0}, results.size(), run_block, blocks);
+        futures.wait();
+        futures.get();
+    }
+    catch (...)
+    {
+        pool.wait();
+        throw;
+    }
+}
+
 }
 
 std::optional<std::string> check_batch(const Batch& batch)
@@ -104,26 +129,8 @@ std::optional<std::string> check_batch(const Batch& batch)
 std::vector<FitResult> run_batch(Context& context, const Batch& batch)
 {
     std::vector<FitResult> results(batch.jobs.size());
-    const std::size_t max_blocks = kBlocksPerThread * static_cast<std::size_t>(context.threads());
-    const std::size_t blocks = std::min(results.size(), max_blocks);
-    auto run_block = [&](std::size_t first, std::size_t last)
-    {
-        for (std::size_t job = first; job < last; ++job)
-        {
-            results[job] = run_job(batch, batch.jobs[job]);
-        }
-    };
-    try
-    {
-        auto futures = context.pool().submit_blocks(std::size_t{0}, results.size(), run_block, blocks);
-        futures.wait();
-        futures.get();
-    }
-    catch (...)
-    {
-        context.pool().wait();
-        throw;
-    }
+    context.with_pool([&](BS::light_thread_pool& pool, int threads)
+                      { run_blocks(pool, threads, batch, results); });
     return results;
 }
 
