@@ -1,5 +1,7 @@
 #pragma once
 
+#include "garch/presample.hpp"
+
 #include <algorithm>
 #include <cstddef>
 #include <span>
@@ -14,25 +16,6 @@ struct SGarchParameters
     std::span<const T> alpha;
     std::span<const T> beta;
 };
-
-// sigma2_t = value for t < held; from t = held on the recursion runs, and a lag before t = 0 reads value for
-// both the squared residual and the variance.
-template <class T>
-struct Presample
-{
-    T value;
-    std::size_t held;
-};
-
-template <class T>
-const T& lagged(std::span<const T> values, std::size_t t, std::size_t lag, const T& presample)
-{
-    if (lag > t)
-    {
-        return presample;
-    }
-    return values[t - lag];
-}
 
 template <class T>
 T next_variance(std::span<const T> squared_residuals, const SGarchParameters<T>& p,

@@ -16,6 +16,7 @@ namespace
 {
 
 using ve::Dist;
+using ve::Model;
 using ve::VarInit;
 using ve::model::Layout;
 using ve::model::loglik;
@@ -243,6 +244,47 @@ TEST(Likelihood, InvalidDomainGivesNonFinite)
     EXPECT_FALSE(std::isfinite(loglik<Dual<8>>(r, zero_nu_dual, ged, VarInit::Backcast, {}).value));
 }
 
+TEST(Likelihood, IGarchIgnoresStoredLastBeta)
+{
+    Layout igarch{.model = Model::IGarch, .include_mean = true, .ar = 0, .ma = 0, .arch = 1, .garch = 2,
+                  .dist = Dist::Norm};
+    Layout sgarch = igarch;
+    sgarch.model = Model::SGarch;
+    std::vector<double> r = ve::testing::simulate_garch_series(5, 500);
+    std::vector<double> igarch_theta{0.05, 0.02, 0.08, 0.5, 0.123};
+    std::vector<double> sgarch_theta{0.05, 0.02, 0.08, 0.5, 1.0 - 0.08 - 0.5};
+    std::vector<double> igarch_sigma2(r.size());
+    std::vector<double> sgarch_sigma2(r.size());
+    double igarch_ll = loglik<double>(r, igarch_theta, igarch, VarInit::Sample, {.sigma2 = igarch_sigma2});
+    double sgarch_ll = loglik<double>(r, sgarch_theta, sgarch, VarInit::Sample, {.sigma2 = sgarch_sigma2});
+    EXPECT_NEAR(igarch_ll, sgarch_ll, 1e-14 * std::abs(sgarch_ll));
+    for (std::size_t t = 0; t < r.size(); ++t)
+    {
+        ASSERT_NEAR(igarch_sigma2[t], sgarch_sigma2[t], 1e-14 * sgarch_sigma2[t]) << "t = " << t;
+    }
+    std::vector<Dual<8>> seeds = seeded<8>(igarch_theta);
+    Dual<8> ll = loglik<Dual<8>>(r, seeds, igarch, VarInit::Sample, {});
+    EXPECT_EQ(ll.grad[igarch.derived()], 0.0);
+}
+
+// At sd 0.07 the outlier is z ~ 1e4, so gamma |z| pushes log sigma2 past the largest finite exp.
+TEST(Likelihood, EGarchOutlierGivesNonFinite)
+{
+    Layout layout = ve::model::layout_of({.model = Model::EGarch});
+    std::vector<double> r = ve::testing::simulate_garch_series(42, 500);
+    std::ranges::transform(r, r.begin(), [](double value) { return 0.1 * value; });
+    std::vector<double> theta{0.005, -0.5, 0.05, 0.9, 0.2};
+    for (VarInit var_init : {VarInit::Sample, VarInit::Backcast})
+    {
+        EXPECT_TRUE(std::isfinite(loglik_at(r, theta, layout, var_init)));
+    }
+    r[100] = 1e3;
+    for (VarInit var_init : {VarInit::Sample, VarInit::Backcast})
+    {
+        EXPECT_FALSE(std::isfinite(loglik_at(r, theta, layout, var_init)));
+    }
+}
+
 struct Orders
 {
     int arch;
@@ -255,17 +297,40 @@ struct ArmaOrders
     int ma;
 };
 
-using GridCase = std::tuple<Orders, ArmaOrders, Dist, VarInit, bool>;
+using GridCase = std::tuple<Model, Orders, ArmaOrders, Dist, VarInit, bool>;
 
 Layout grid_layout(const GridCase& c)
 {
-    auto [orders, arma, dist, var_init, include_mean] = c;
-    return Layout{.include_mean = include_mean,
-                  .ar = arma.ar,
-                  .ma = arma.ma,
-                  .arch = orders.arch,
-                  .garch = orders.garch,
-                  .dist = dist};
+    auto [model, orders, arma, dist, var_init, include_mean] = c;
+    return ve::model::layout_of({.model = model,
+                                 .p = orders.arch,
+                                 .q = orders.garch,
+                                 .ar = arma.ar,
+                                 .ma = arma.ma,
+                                 .dist = dist,
+                                 .include_mean = include_mean});
+}
+
+struct VarianceTheta
+{
+    double omega;
+    double alpha;
+    double beta;
+    double gamma;
+};
+
+// Interior points per model, each with its persistence below 1 (iGARCH derives its last beta).
+VarianceTheta variance_theta(Model model)
+{
+    switch (model)
+    {
+        case Model::EGarch:
+            return {-0.1, -0.05, 0.85, 0.1};
+        case Model::GjrGarch:
+            return {0.02, 0.05, 0.85, 0.06};
+        default:
+            return {0.02, 0.08, 0.85, 0.0};
+    }
 }
 
 std::vector<double> interior_theta(const Layout& layout)
@@ -283,14 +348,19 @@ std::vector<double> interior_theta(const Layout& layout)
     {
         theta[layout.ma_begin() + j] = -0.15 / static_cast<double>(j + 1);
     }
-    theta[layout.omega()] = 0.02;
+    VarianceTheta variance = variance_theta(layout.model);
+    theta[layout.omega()] = variance.omega;
     for (std::size_t i = 0; i < static_cast<std::size_t>(layout.arch); ++i)
     {
-        theta[layout.alpha_begin() + i] = 0.08 / layout.arch;
+        theta[layout.alpha_begin() + i] = variance.alpha / layout.arch;
     }
     for (std::size_t j = 0; j < static_cast<std::size_t>(layout.garch); ++j)
     {
-        theta[layout.beta_begin() + j] = 0.85 / layout.garch;
+        theta[layout.beta_begin() + j] = variance.beta / layout.garch;
+    }
+    for (std::size_t i = 0; i < static_cast<std::size_t>(layout.gamma); ++i)
+    {
+        theta[layout.gamma_begin() + i] = variance.gamma / layout.gamma;
     }
     if (layout.has_shape())
     {
@@ -301,10 +371,12 @@ std::vector<double> interior_theta(const Layout& layout)
 
 std::string grid_name(const ::testing::TestParamInfo<GridCase>& info)
 {
-    auto [orders, arma, dist, var_init, include_mean] = info.param;
+    auto [model, orders, arma, dist, var_init, include_mean] = info.param;
+    std::string models[] = {"SGarch", "EGarch", "GjrGarch", "ApArch", "IGarch"};
     std::string dists[] = {"Norm", "Std", "Ged"};
-    std::string name = "P" + std::to_string(orders.arch) + "Q" + std::to_string(orders.garch) + "Arma" +
-                       std::to_string(arma.ar) + std::to_string(arma.ma) + dists[static_cast<int>(dist)];
+    std::string name = models[static_cast<int>(model)] + "P" + std::to_string(orders.arch) + "Q" +
+                       std::to_string(orders.garch) + "Arma" + std::to_string(arma.ar) + std::to_string(arma.ma) +
+                       dists[static_cast<int>(dist)];
     name += var_init == VarInit::Sample ? "Sample" : "Backcast";
     name += include_mean ? "Mean" : "NoMean";
     return name;
@@ -369,13 +441,23 @@ TEST_P(LikelihoodGrid, DoubleAndDualAgreeOnValue)
 }
 
 INSTANTIATE_TEST_SUITE_P(Likelihood, LikelihoodGrid,
-                         ::testing::Combine(::testing::Values(Orders{1, 1}, Orders{2, 1}, Orders{1, 2},
+                         ::testing::Combine(::testing::Values(Model::SGarch),
+                                            ::testing::Values(Orders{1, 1}, Orders{2, 1}, Orders{1, 2},
                                                               Orders{3, 3}),
                                             ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1},
                                                               ArmaOrders{2, 0}),
                                             ::testing::Values(Dist::Norm, Dist::Std, Dist::Ged),
                                             ::testing::Values(VarInit::Sample, VarInit::Backcast),
                                             ::testing::Bool()),
+                         grid_name);
+
+INSTANTIATE_TEST_SUITE_P(Variants, LikelihoodGrid,
+                         ::testing::Combine(::testing::Values(Model::EGarch, Model::GjrGarch, Model::IGarch),
+                                            ::testing::Values(Orders{1, 1}, Orders{2, 2}),
+                                            ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1}),
+                                            ::testing::Values(Dist::Norm, Dist::Std, Dist::Ged),
+                                            ::testing::Values(VarInit::Sample, VarInit::Backcast),
+                                            ::testing::Values(true)),
                          grid_name);
 
 }
