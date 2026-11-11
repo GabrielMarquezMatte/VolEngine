@@ -137,7 +137,8 @@ T sum_of_terms(std::span<const T> residuals, std::span<const T> sigma2, const di
     {
         if (!is_valid_variance(sigma2[t]))
         {
-            return T{kInvalid};
+            total = T{kInvalid};
+            return total;
         }
         T z = residuals[t] / sqrt(sigma2[t]);
         T term = dist::log_density(density, z) - 0.5 * log(sigma2[t]);
