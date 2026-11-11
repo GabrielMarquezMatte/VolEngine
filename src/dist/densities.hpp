@@ -124,21 +124,41 @@ LogDensity<T> make_log_density(Dist dist, const T& shape)
     return {Dist::Norm, T{-0.5 * log_two_pi}, T{1.0}, T{1.0}};
 }
 
+// log f(z) of one density, from z^2 (norm, std) or |z| (ged). A loop over observations picks one of them before it
+// starts: a branch on dist inside the loop keeps log_density from being inlined, which costs more than the terms.
+template <class T>
+T normal_log_density_at(const LogDensity<T>& density, const T& z_squared)
+{
+    return density.log_constant - 0.5 * z_squared;
+}
+
+template <class T>
+T student_log_density_at(const LogDensity<T>& density, const T& z_squared)
+{
+    using std::log1p;
+    return density.log_constant - density.power * log1p(z_squared / density.scale);
+}
+
+template <class T>
+T ged_log_density_at(const LogDensity<T>& density, const T& abs_z)
+{
+    using std::pow;
+    return density.log_constant - 0.5 * pow(abs_z / density.scale, density.power);
+}
+
 template <class T>
 T log_density(const LogDensity<T>& density, const T& z)
 {
     using std::abs;
-    using std::log1p;
-    using std::pow;
     if (density.dist == Dist::Std)
     {
-        return density.log_constant - density.power * log1p(z * z / density.scale);
+        return student_log_density_at(density, z * z);
     }
     if (density.dist == Dist::Ged)
     {
-        return density.log_constant - 0.5 * pow(abs(z / density.scale), density.power);
+        return ged_log_density_at(density, abs(z));
     }
-    return density.log_constant - 0.5 * (z * z);
+    return normal_log_density_at(density, z * z);
 }
 
 }

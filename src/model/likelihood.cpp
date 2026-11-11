@@ -305,12 +305,12 @@ bool is_valid_variance(const T& sigma2)
     return std::isfinite(value) && value > 0.0;
 }
 
-template <class T>
-T sum_of_terms(std::span<const T> residuals, std::span<const T> sigma2, const dist::LogDensity<T>& density,
+// log_density_of(e, sigma2) is log f(e / sqrt(sigma2)).
+template <class T, class LogDensityOf>
+T sum_of_terms(std::span<const T> residuals, std::span<const T> sigma2, LogDensityOf log_density_of,
                std::span<T> terms)
 {
     using std::log;
-    using std::sqrt;
     T total{0.0};
     for (std::size_t t = 0; t < residuals.size(); ++t)
     {
@@ -319,8 +319,7 @@ T sum_of_terms(std::span<const T> residuals, std::span<const T> sigma2, const di
             total = T{kInvalid};
             return total;
         }
-        T z = residuals[t] / sqrt(sigma2[t]);
-        T term = dist::log_density(density, z) - 0.5 * log(sigma2[t]);
+        T term = log_density_of(residuals[t], sigma2[t]) - 0.5 * log(sigma2[t]);
         if (!terms.empty())
         {
             terms[t] = term;
@@ -328,6 +327,34 @@ T sum_of_terms(std::span<const T> residuals, std::span<const T> sigma2, const di
         total = total + term;
     }
     return total;
+}
+
+// norm and std read z^2 = e^2 / sigma2, which needs neither sqrt nor a second division.
+template <class T>
+T sum_of_terms(std::span<const T> residuals, std::span<const T> sigma2, const dist::LogDensity<T>& density,
+               std::span<T> terms)
+{
+    using std::abs;
+    using std::sqrt;
+    switch (density.dist)
+    {
+        case Dist::Norm:
+            return sum_of_terms<T>(residuals, sigma2,
+                                   [&density](const T& e, const T& variance)
+                                   { return dist::normal_log_density_at(density, e * e / variance); },
+                                   terms);
+        case Dist::Std:
+            return sum_of_terms<T>(residuals, sigma2,
+                                   [&density](const T& e, const T& variance)
+                                   { return dist::student_log_density_at(density, e * e / variance); },
+                                   terms);
+        case Dist::Ged:
+            return sum_of_terms<T>(residuals, sigma2,
+                                   [&density](const T& e, const T& variance)
+                                   { return dist::ged_log_density_at(density, abs(e) / sqrt(variance)); },
+                                   terms);
+    }
+    return T{kInvalid};
 }
 
 }
