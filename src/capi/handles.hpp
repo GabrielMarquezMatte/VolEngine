@@ -3,6 +3,8 @@
 #include "core/context.hpp"
 #include "core/panel.hpp"
 #include "core/spec.hpp"
+#include "fit/batch.hpp"
+#include "fit/fit_result.hpp"
 #include <volengine/volengine.h>
 
 struct ve_context
@@ -23,4 +25,14 @@ struct ve_fit_options
 struct ve_panel
 {
     ve::PanelView view;
+};
+
+struct ve_batch
+{
+    ve::Batch batch;
+};
+
+struct ve_fit
+{
+    ve::FitResult result;
 };
