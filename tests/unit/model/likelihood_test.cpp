@@ -285,6 +285,78 @@ TEST(Likelihood, EGarchOutlierGivesNonFinite)
     }
 }
 
+struct ModelPoint
+{
+    Layout layout;
+    std::vector<double> theta;
+};
+
+void expect_same_variance(std::span<const double> r, const ModelPoint& model, const ModelPoint& reference,
+                          VarInit var_init)
+{
+    std::vector<double> sigma2(r.size());
+    std::vector<double> reference_sigma2(r.size());
+    double ll = loglik<double>(r, model.theta, model.layout, var_init, {.sigma2 = sigma2});
+    double reference_ll =
+        loglik<double>(r, reference.theta, reference.layout, var_init, {.sigma2 = reference_sigma2});
+    ASSERT_TRUE(std::isfinite(reference_ll));
+    EXPECT_NEAR(ll, reference_ll, 1e-12 * std::abs(reference_ll));
+    for (std::size_t t = 0; t < r.size(); ++t)
+    {
+        ASSERT_NEAR(sigma2[t], reference_sigma2[t], 1e-12 * reference_sigma2[t]) << "t = " << t;
+    }
+}
+
+// theta = (mu, omega, alpha, beta, extra..., shape when the distribution has one).
+ModelPoint model_point(Model model, Dist dist, std::vector<double> extra)
+{
+    std::vector<double> theta{0.04, 0.02, 0.08, 0.85};
+    theta.insert(theta.end(), extra.begin(), extra.end());
+    if (dist != Dist::Norm)
+    {
+        theta.push_back(dist == Dist::Std ? 6.0 : 1.5);
+    }
+    return {ve::model::layout_of({.model = model, .dist = dist}), theta};
+}
+
+TEST(Likelihood, SubmodelsMatchTheirModels)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(42, 500);
+    double eta1 = 0.3;
+    for (Dist dist : {Dist::Norm, Dist::Std, Dist::Ged})
+    {
+        for (VarInit var_init : {VarInit::Sample, VarInit::Backcast})
+        {
+            SCOPED_TRACE(::testing::Message() << "dist " << static_cast<int>(dist) << ", var_init "
+                                            << static_cast<int>(var_init));
+            expect_same_variance(r, model_point(Model::FGarchGarch, dist, {}),
+                                 model_point(Model::SGarch, dist, {}), var_init);
+            expect_same_variance(r, model_point(Model::FGarchApArch, dist, {eta1, 1.5}),
+                                 model_point(Model::ApArch, dist, {eta1, 1.5}), var_init);
+            ModelPoint gjr = model_point(Model::GjrGarch, dist, {4.0 * 0.08 * eta1});
+            gjr.theta[2] = 0.08 * (1.0 - eta1) * (1.0 - eta1);
+            expect_same_variance(r, model_point(Model::FGarchGjrGarch, dist, {eta1}), gjr, var_init);
+        }
+    }
+}
+
+// E|z|^power is infinite for std with shape <= power, and so is every kappa.
+TEST(Likelihood, PowerStdNeedsShapeAbovePower)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(42, 500);
+    for (VarInit var_init : {VarInit::Sample, VarInit::Backcast})
+    {
+        ModelPoint aparch = model_point(Model::ApArch, Dist::Std, {0.1, 2.5});
+        aparch.theta.back() = 2.4;
+        EXPECT_FALSE(std::isfinite(loglik_at(r, aparch.theta, aparch.layout, var_init)));
+        aparch.theta.back() = 3.0;
+        EXPECT_TRUE(std::isfinite(loglik_at(r, aparch.theta, aparch.layout, var_init)));
+        ModelPoint allgarch = model_point(Model::FGarchAllGarch, Dist::Std, {0.1, 0.2, 2.6});
+        allgarch.theta.back() = 2.5;
+        EXPECT_FALSE(std::isfinite(loglik_at(r, allgarch.theta, allgarch.layout, var_init)));
+    }
+}
+
 struct Orders
 {
     int arch;
@@ -317,20 +389,33 @@ struct VarianceTheta
     double alpha;
     double beta;
     double gamma;
+    double eta1;
+    double eta2;
+    double power;
 };
 
-// Interior points per model, each with its persistence below 1 (iGARCH derives its last beta).
+// Interior points per model, each with its persistence below 1 (iGARCH derives its last beta). A model reads
+// only the entries of its own blocks; csGARCH keeps rho in eta1 and phi in eta2.
 VarianceTheta variance_theta(Model model)
 {
     switch (model)
     {
         case Model::EGarch:
-            return {-0.1, -0.05, 0.85, 0.1};
+            return {-0.1, -0.05, 0.85, 0.1, 0.0, 0.0, 0.0};
         case Model::GjrGarch:
-            return {0.02, 0.05, 0.85, 0.06};
+            return {0.02, 0.05, 0.85, 0.06, 0.0, 0.0, 0.0};
+        case Model::ApArch:
+            return {0.02, 0.08, 0.85, 0.2, 0.0, 0.0, 1.5};
+        case Model::CsGarch:
+            return {0.01, 0.05, 0.85, 0.0, 0.95, 0.03, 0.0};
         default:
-            return {0.02, 0.08, 0.85, 0.0};
+            return {0.02, 0.08, 0.85, 0.0, 0.3, 0.2, 1.5};
     }
+}
+
+void fill_block(std::span<double> theta, std::size_t begin, int count, double value)
+{
+    std::fill_n(theta.begin() + static_cast<std::ptrdiff_t>(begin), count, value);
 }
 
 std::vector<double> interior_theta(const Layout& layout)
@@ -362,6 +447,12 @@ std::vector<double> interior_theta(const Layout& layout)
     {
         theta[layout.gamma_begin() + i] = variance.gamma / layout.gamma;
     }
+    fill_block(theta, layout.eta1_begin(), layout.eta1, variance.eta1);
+    fill_block(theta, layout.eta2_begin(), layout.eta2, variance.eta2);
+    if (layout.free_power)
+    {
+        theta[layout.power()] = variance.power;
+    }
     if (layout.has_shape())
     {
         theta[layout.shape()] = layout.dist == Dist::Std ? 6.0 : 1.5;
@@ -372,7 +463,9 @@ std::vector<double> interior_theta(const Layout& layout)
 std::string grid_name(const ::testing::TestParamInfo<GridCase>& info)
 {
     auto [model, orders, arma, dist, var_init, include_mean] = info.param;
-    std::string models[] = {"SGarch", "EGarch", "GjrGarch", "ApArch", "IGarch"};
+    std::string models[] = {"SGarch", "EGarch", "GjrGarch", "ApArch", "IGarch", "CsGarch", "FGarchGarch",
+                            "FGarchTGarch", "FGarchAvGarch", "FGarchNGarch", "FGarchNaGarch", "FGarchApArch",
+                            "FGarchGjrGarch", "FGarchAllGarch"};
     std::string dists[] = {"Norm", "Std", "Ged"};
     std::string name = models[static_cast<int>(model)] + "P" + std::to_string(orders.arch) + "Q" +
                        std::to_string(orders.garch) + "Arma" + std::to_string(arma.ar) + std::to_string(arma.ma) +
@@ -452,7 +545,12 @@ INSTANTIATE_TEST_SUITE_P(Likelihood, LikelihoodGrid,
                          grid_name);
 
 INSTANTIATE_TEST_SUITE_P(Variants, LikelihoodGrid,
-                         ::testing::Combine(::testing::Values(Model::EGarch, Model::GjrGarch, Model::IGarch),
+                         ::testing::Combine(::testing::Values(Model::EGarch, Model::GjrGarch, Model::ApArch,
+                                                              Model::IGarch, Model::CsGarch, Model::FGarchGarch,
+                                                              Model::FGarchTGarch, Model::FGarchAvGarch,
+                                                              Model::FGarchNGarch, Model::FGarchNaGarch,
+                                                              Model::FGarchApArch, Model::FGarchGjrGarch,
+                                                              Model::FGarchAllGarch),
                                             ::testing::Values(Orders{1, 1}, Orders{2, 2}),
                                             ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1}),
                                             ::testing::Values(Dist::Norm, Dist::Std, Dist::Ged),
