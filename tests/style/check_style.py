@@ -10,7 +10,7 @@ import re
 import sys
 from pathlib import Path
 
-SCANNED_DIRECTORIES = ("src", "include", "cpp", "tests", "python/src", "python/tests")
+SCANNED_DIRECTORIES = ("src", "include", "cpp", "tests", "python/src", "python/tests", "python/benchmarks")
 IGNORED_DIRECTORIES = ("build", "python/.venv", "tests/reference/fixtures", "tests/reference/data")
 CPP_SUFFIXES = {".c", ".h", ".cc", ".hh", ".cpp", ".hpp", ".cxx"}
 MODULE_SUFFIXES = CPP_SUFFIXES | {".py"}

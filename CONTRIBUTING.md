@@ -44,6 +44,15 @@ build/gcc-bench/volengine_benchmarks --benchmark_repetitions=5 --benchmark_repor
 CI builds it on Linux and never runs it. Results and the machine they come from are in
 [docs/performance/benchmarks.md](docs/performance/benchmarks.md). Compare numbers only from the same machine.
 
+The Python benchmark against `arch` runs the same fits on both libraries (`volengine` with `threads=1` and the
+`arch` convention), checks that the log-likelihoods agree and writes a report with the machine and versions:
+
+```
+VOLENGINE_LIB=$PWD/build/gcc-release/libvolengine.dll python/.venv/Scripts/python python/benchmarks/bench_vs_arch.py --out docs/performance/python-vs-arch.md
+```
+
+It needs `arch` in the venv. The result is in [docs/performance/python-vs-arch.md](docs/performance/python-vs-arch.md).
+
 ## Python tests
 
 Create the test environment from the Windows Python, not from the MSYS2 Python that comes first on `PATH`
@@ -74,7 +83,7 @@ after regenerating.
 ## Style checks
 
 - `python tests/style/check_style.py` runs on its own and as the `style` ctest. It fails on `else`, on folders
-  with more than 8 modules and, for Python, on functions above 60 lines, more than 5 parameters or nesting above 3.
+  with more than 8 modules and, for Python (including `python/benchmarks/`), on functions above 60 lines, more than 5 parameters or nesting above 3.
 - C++ function size, parameter count and nesting are checked by clang-tidy with the repository `.clang-tidy`.
   CI runs it over `src/`; locally, after configuring with `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`:
 

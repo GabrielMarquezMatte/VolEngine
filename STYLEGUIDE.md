@@ -21,7 +21,7 @@ python tests/style/check_style.py [ROOT]
 ```
 
 It prints one `path:line: rule: message` line per violation and exits 1 if there is any. It scans
-`src/`, `include/`, `cpp/`, `tests/`, `python/src/` and `python/tests/`, and skips `build/`,
+`src/`, `include/`, `cpp/`, `tests/`, `python/src/`, `python/tests/` and `python/benchmarks/`, and skips `build/`,
 `python/.venv/`, `tests/reference/fixtures/` and `tests/reference/data/`.
 
 | Rule             | C / C++                | Python                              |
