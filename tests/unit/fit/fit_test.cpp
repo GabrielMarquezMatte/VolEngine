@@ -649,7 +649,7 @@ INSTANTIATE_TEST_SUITE_P(Processes, FitModels, ::testing::Range<std::size_t>(0, 
                          [](const ::testing::TestParamInfo<std::size_t>& info)
                          { return std::string(variant_process(info.param).name); });
 
-// No tolerance for mu and omega.
+// About two standard errors at T = 5000 for the apARCH gamma; no tolerance for mu and omega.
 std::optional<double> recovery_tolerance(const FitResult& result, std::size_t index)
 {
     ve::model::Layout layout = ve::model::layout_of(result.spec);
@@ -662,6 +662,10 @@ std::optional<double> recovery_tolerance(const FitResult& result, std::size_t in
     if (cs && name == "eta11")
     {
         return 0.02;
+    }
+    if (layout.model == ve::Model::ApArch && name == "gamma1")
+    {
+        return 0.15;
     }
     if (name == "delta")
     {
