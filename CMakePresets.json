@@ -23,6 +23,11 @@
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     },
     {
+      "name": "native-release",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
       "name": "msvc-release",
       "generator": "Visual Studio 18 2026",
       "architecture": "x64",
@@ -32,11 +37,13 @@
   "buildPresets": [
     { "name": "gcc-debug", "configurePreset": "gcc-debug" },
     { "name": "gcc-release", "configurePreset": "gcc-release" },
+    { "name": "native-release", "configurePreset": "native-release" },
     { "name": "msvc-release", "configurePreset": "msvc-release", "configuration": "Release" }
   ],
   "testPresets": [
     { "name": "gcc-debug", "configurePreset": "gcc-debug", "output": { "outputOnFailure": true } },
     { "name": "gcc-release", "configurePreset": "gcc-release", "output": { "outputOnFailure": true } },
+    { "name": "native-release", "configurePreset": "native-release", "output": { "outputOnFailure": true } },
     {
       "name": "msvc-release",
       "configurePreset": "msvc-release",
