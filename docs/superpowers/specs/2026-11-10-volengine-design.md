@@ -1,7 +1,7 @@
 # VolEngine — documento de design
 
 Data: 2026-11-10
-Status: aguardando aprovação do autor
+Status: aprovado pelo autor (2026-11-10)
 
 ## 1. Intenção
 
