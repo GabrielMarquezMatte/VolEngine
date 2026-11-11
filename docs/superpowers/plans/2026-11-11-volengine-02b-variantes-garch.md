@@ -631,4 +631,34 @@ Fazer na máquina do `docs/performance/benchmarks.md` (AMD Ryzen 7 5700X), depoi
 1. **Rodar** — `build/gcc-bench/volengine_benchmarks --benchmark_out=build/gcc-bench/bench.json --benchmark_out_format=json --benchmark_repetitions=5 --benchmark_report_aggregates_only=true`, e atualizar `benchmarks.md` com máquina, data e commit.
 2. **Profile** — AMD uProf (CPU Profile) sobre `BM_TccGridAllModels` e `BM_FitOne/fgarch_allgarch11_norm`: as cinco funções mais quentes e a fração de tempo de cada uma.
 3. **Assembly** — `objdump -d -C -M intel --no-show-raw-insn` no objeto de `src/model/likelihood.cpp` do `gcc-bench`, nas instâncias `double` e `Dual<8>` das recursões novas. Registrar: chamadas a `pow`/`exp`/`log` no laço temporal, alocações no laço, cópias de `Dual`, o ISA usado (o preset não passa `-march`, espera-se SSE2), e o que `-fopt-info-vec-missed` diz não vetorizar, com o motivo.
-4. **Otimizar pelos dados.** A candidata conhecida é a potência fixa (λ ∈ {1, 2}) chamando `pow` por observação. Se o profile mostrar o custo, especializar (multiplicação para 2, nada para 1, escolha fora do laço) e medir antes e depois. Se não mostrar, registrar que não compensa.
+4. **Otimizar pelos dados.** A candidata conhecida é a potência fixa (λ ∈ {1, 2}) chamando `pow` por observação. Se o profile mostrar o custo, especializar (multiplicação para 2, nada para 1, escolha fora do laço) e medir antes e depois. Se não mostrar, registrar que não compensa. Já feito no notebook (`6e52a3c`, ver abaixo); falta medir antes e depois aqui.
+
+### Auditoria no notebook (2026-11-11)
+
+Feita no i7-1365U, que tem núcleos híbridos e sofre throttling. Os números abaixo são indicativos e nenhum entra em `benchmarks.md`. Método: processo fixado num P-core (CPU 2), binários A e B alternados em rodadas curtas, mediana da razão pareada B/A por rodada. Num teste A/A o ruído ficou em ±7%.
+
+Decomposição do loglik `Dual<8>` do s11_norm (T = 5000), medida num driver descartável: `sum_of_terms` levava ~50% do tempo, por causa da chamada fora de linha de `log_density` com o desvio por distribuição a cada observação. A recursão levava ~25%, e o vetor de e² (alocação mais passada) ~15%.
+
+| Commit | Mudança | Efeito indicativo (loglik `Dual`) |
+|---|---|---|
+| `1b7fd77` | distribuição escolhida uma vez por série; norm e std leem z² = e²/σ² | s11_norm, s21_std −13% |
+| `566baa1` | e² calculado dentro da recursão sGARCH/iGARCH, sem vetor | mais −12%; arma22_s33_std −30% |
+| `053b854` | `pow(Dual, Dual)` com um `std::pow` só (`x^(e-1) = x^e / x`); laço sem desvio com as inclinações finitas | ged −14%, apARCH −20%, ALLGARCH −17% |
+| `6e52a3c` | potência fixa 1 ou 2 sem `pow` | TGARCH −44% (`double` −67%) |
+
+`BM_FitOne`, comparado com `01a0325`: TGARCH −48%, s11_norm −38%, iGARCH −30%, s21_std −28%, ALLGARCH −23%, apARCH e ged −20%. eGARCH, gjrGARCH e csGARCH ficaram dentro do ruído.
+
+Medidas e descartadas:
+- divisão do `Dual` por recíproco: nenhum efeito;
+- `multiply_add` fundido: a recursão escrita à mão saiu com o mesmo tempo;
+- `-march=x86-64-v3`: só −5 a −10%, perto do ruído.
+
+A fazer aqui, nesta máquina:
+5. **Confirmar** os efeitos acima com `01a0325` contra a HEAD, nos mesmos benchmarks.
+6. **ISA.** Medir `-march=x86-64-v3` contra o build genérico. Se compensar, decidir como entregar: preset só para benchmark, ou `target_clones` nas instâncias de `loglik` para os wheels.
+7. **Candidatas restantes**, só se o profile mostrar o custo:
+   - csGARCH ainda aloca o vetor de e² e o de q;
+   - ALLGARCH calcula σ e σ² com dois `pow` por lag (dá para tirar σ² de σ·σ);
+   - quadratura de κ com η₂ livre (320 avaliações por lag a cada chamada);
+   - Hessiana numérica dos erros-padrão (2k gradientes, cada um com alocações);
+   - `BM_FitOne/arma22_s33_std` (~450 ms): ver se o custo vem do número de iterações e não de cada avaliação.
