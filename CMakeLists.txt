@@ -33,6 +33,7 @@ FetchContent_Declare(bs_thread_pool
 FetchContent_MakeAvailable(bs_thread_pool)
 
 add_library(volengine_core STATIC
+    src/ad/special.cpp
     src/core/context.cpp
     src/fit/batch.cpp
     src/fit/cholesky.cpp
@@ -77,6 +78,8 @@ if(VE_BUILD_TESTS)
     target_compile_options(volengine_c_header_check PRIVATE ${VE_WARNING_FLAGS})
 
     add_executable(volengine_tests
+        tests/unit/ad/dual_test.cpp
+        tests/unit/ad/special_test.cpp
         tests/unit/capi/abi_test.cpp
         tests/unit/capi/batch_test.cpp
         tests/unit/capi/context_test.cpp
