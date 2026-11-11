@@ -108,7 +108,7 @@ The Python `Context.fit` builds the handles below and then makes one call; any C
    the narrowest that holds the k parameters. At the estimate one pass seeded in the natural parameters gives the
    variance path, residuals and per-observation scores; `standard_errors` differentiates the natural gradient by
    central differences, with steps relative to each parameter's scale, and leaves out α and β entries on the
-   boundary (below 1e-8), whose standard errors are NaN.
+   boundary (below 1e-8) and a std shape with 1/ν below 1e-8, whose standard errors are NaN.
 5. **Status per fit.** A fit that does not converge, is too short or is degenerate carries its own status
    (`max_iter`, `failed`, `insufficient_data`); it does not fail the batch or the other fits.
 6. **Publishing.** Results are moved into freshly allocated `ve_fit` handles, all created before any is written to

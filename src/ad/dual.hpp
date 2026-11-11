@@ -89,11 +89,18 @@ Dual<N> operator*(const Dual<N>& a, const Dual<N>& b)
     return chain(a, b, a.value * b.value, b.value, a.value);
 }
 
+// The derivative is taken as (a' - q b') / b with q = a / b: the factor q / b of a' / b - (q / b) b' underflows or
+// overflows on its own once |b| passes ~1e154 (1 / x at x = 1e200 had a zero derivative).
 template <std::size_t N>
 Dual<N> operator/(const Dual<N>& a, const Dual<N>& b)
 {
     double quotient = a.value / b.value;
-    return chain(a, b, quotient, 1.0 / b.value, -quotient / b.value);
+    Dual<N> result{quotient, {}};
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        result.grad[i] = (a.grad[i] - quotient * b.grad[i]) / b.value;
+    }
+    return result;
 }
 
 template <std::size_t N>
@@ -142,7 +149,12 @@ template <std::size_t N>
 Dual<N> operator/(double a, const Dual<N>& b)
 {
     double quotient = a / b.value;
-    return chain(b, quotient, -quotient / b.value);
+    Dual<N> result{quotient, {}};
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        result.grad[i] = -(quotient * b.grad[i]) / b.value;
+    }
+    return result;
 }
 
 template <std::size_t N>
@@ -173,6 +185,12 @@ template <std::size_t N>
 Dual<N> log(const Dual<N>& x)
 {
     return chain(x, std::log(x.value), 1.0 / x.value);
+}
+
+template <std::size_t N>
+Dual<N> log1p(const Dual<N>& x)
+{
+    return chain(x, std::log1p(x.value), 1.0 / (1.0 + x.value));
 }
 
 template <std::size_t N>

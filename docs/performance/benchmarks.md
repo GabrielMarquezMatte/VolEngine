@@ -92,9 +92,11 @@ On this machine the 1080-fit grid takes 12.7 s with all 16 hardware threads, whi
 - `BM_Loglik` and `BM_FitOne` use, for each spec, a model with that structure: persistence 0.98 split evenly over the
   ARCH and GARCH lags, ARMA terms of moderate size, and the spec's distribution (std with nu = 8, ged with nu = 1.5).
 - `BM_Batch` uses sGARCH(1,1) with normal innovations. The TCC grid uses sGARCH(1,1) with Student-t (nu = 8)
-  innovations, like returns, for every spec of the grid. With normal innovations, about half of the `std` fits of the
-  grid end `FAILED` (nu runs to infinity), so the benchmark would stop at its check that every fit ends `CONVERGED` or
-  `MAX_ITER`; that behaviour is a property of the data, not of the benchmark, and is not timed here.
+  innovations, like returns, for every spec of the grid. When these numbers were measured, about half of the `std`
+  fits of the grid ended `FAILED` with normal innovations (nu runs to infinity), which would have stopped the benchmark
+  at its check that every fit ends `CONVERGED` or `MAX_ITER`. That was a precision defect in the Student-t density at
+  large nu, since fixed (see [Validation](../guide/validation.md#volengine-student-t-near-the-normal-limit)); the grid
+  keeps Student-t innovations so that the numbers stay comparable.
 - `s21` means sGARCH(2, 1): ARCH order 2, GARCH order 1.
 - The two evaluations of `BM_Loglik` are separate benchmarks (`/double` and `/dual`) so each has its own time.
 - Google Benchmark appends `/real_time` and `/iterations:1` to the names of the benchmarks that use wall-clock time;

@@ -1,3 +1,4 @@
+#include "ad/dual.hpp"
 #include "dist/densities.hpp"
 
 #include <cmath>
@@ -114,6 +115,30 @@ TEST(Densities, NormalMatchesClosedForm)
     ve::dist::LogDensity<double> norm = ve::dist::make_log_density(Dist::Norm, 0.0);
     double expected = -0.5 * std::log(2.0 * std::numbers::pi) - 0.5 * 1.7 * 1.7;
     EXPECT_NEAR(ve::dist::log_density(norm, 1.7), expected, 1e-15);
+}
+
+// As nu -> infinity, log f_std(z) - log f_norm(z) = (z^4 - 6 z^2 + 3) / (4 nu) + O(nu^-2), the fourth Hermite
+// polynomial over 4 nu. The fit reaches nu far past 1e6 on normal data, where this difference is far below the size of
+// lgamma(nu / 2), and its derivative in x = log(nu - 2) is about -(z^4 - 6 z^2 + 3) / (4 nu).
+TEST(Densities, StudentApproachesNormalForLargeShape)
+{
+    using Number = ve::ad::Dual<1>;
+    ve::dist::LogDensity<double> norm = ve::dist::make_log_density(Dist::Norm, 0.0);
+    for (double nu : {1e6, 1e9, 1e12, 1e15, 1e200, 1e300})
+    {
+        Number shape = ve::ad::variable<1>(nu, 0);
+        shape.grad[0] = nu - 2.0;
+        ve::dist::LogDensity<Number> student = ve::dist::make_log_density(Dist::Std, shape);
+        for (double z : {0.0, 0.5, 2.0, 4.0})
+        {
+            double hermite = (z * z * z * z - 6.0 * z * z + 3.0) / 4.0;
+            Number log_f = ve::dist::log_density(student, Number{z});
+            double tolerance = 1e-4 * std::abs(hermite) / nu + 1e-14;
+            EXPECT_NEAR(log_f.value - ve::dist::log_density(norm, z), hermite / nu, tolerance)
+                << "nu = " << nu << ", z = " << z;
+            EXPECT_NEAR(log_f.grad[0], -hermite / nu, tolerance) << "nu = " << nu << ", z = " << z;
+        }
+    }
 }
 
 TEST(Densities, ShapeDomain)

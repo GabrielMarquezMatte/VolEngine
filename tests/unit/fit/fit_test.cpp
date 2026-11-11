@@ -448,18 +448,47 @@ TEST(FitGeneric, ExplosiveArmaEndsFinite)
     }
 }
 
-TEST(FitGeneric, NearNormalDataWithStd)
+// Normal innovations put the Student-t optimum at nu -> infinity: the fit must stop at a large finite nu.
+void expect_near_normal_std_fit(const SimulatedModel& model, const Spec& spec, std::uint64_t seed)
 {
-    std::vector<double> r = ve::testing::simulate_arma_garch(SimulatedModel{}, 24, kObservations);
-    FitResult result = ve::fit_one(r, generic_spec(1, 1, ve::Dist::Std), ve::FitConfig{});
-    ASSERT_TRUE(result.status == FitStatus::Converged || result.status == FitStatus::MaxIter);
-    EXPECT_GT(estimate_of(result, "shape"), 20.0);
-    EXPECT_TRUE(std::isfinite(estimate_of(result, "shape")));
-    for (const char* name : {"mu", "omega", "alpha1", "beta1"})
+    std::vector<double> r = ve::testing::simulate_arma_garch(model, seed, kObservations);
+    FitResult result = ve::fit_one(r, spec, ve::FitConfig{});
+    ASSERT_TRUE(result.status == FitStatus::Converged || result.status == FitStatus::MaxIter) << "seed " << seed;
+    EXPECT_GT(estimate_of(result, "shape"), 20.0) << "seed " << seed;
+    EXPECT_TRUE(std::isfinite(estimate_of(result, "shape"))) << "seed " << seed;
+    std::vector<std::string> names{"mu", "omega", "alpha1"};
+    for (int j = 1; j <= spec.q; ++j)
+    {
+        names.push_back("beta" + std::to_string(j));
+    }
+    for (const std::string& name : names)
     {
         double se = result.se_hessian[index_of(result, name)];
-        EXPECT_TRUE(std::isfinite(se)) << name;
-        EXPECT_GT(se, 0.0) << name;
+        EXPECT_TRUE(std::isfinite(se)) << name << ", seed " << seed;
+        EXPECT_GT(se, 0.0) << name << ", seed " << seed;
+    }
+}
+
+TEST(FitGeneric, NearNormalDataWithStd)
+{
+    for (std::uint64_t seed = 1; seed <= 24; ++seed)
+    {
+        expect_near_normal_std_fit(SimulatedModel{}, generic_spec(1, 1, ve::Dist::Std), seed);
+    }
+}
+
+TEST(FitGeneric, NearNormalDataWithArmaSGarch13Std)
+{
+    SimulatedModel model;
+    model.ar = {0.3};
+    model.ma = {0.2};
+    model.beta = {0.3, 0.3, 0.3};
+    Spec spec = generic_spec(1, 3, ve::Dist::Std);
+    spec.ar = 1;
+    spec.ma = 1;
+    for (std::uint64_t seed = 1; seed <= 20; ++seed)
+    {
+        expect_near_normal_std_fit(model, spec, seed);
     }
 }
 
