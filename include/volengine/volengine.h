@@ -77,6 +77,63 @@ VE_API ve_status ve_panel_set_strides(ve_panel* p, ptrdiff_t stride_t, ptrdiff_t
 VE_API ve_status ve_panel_set_ranges(ve_panel* p, const size_t* starts, const size_t* lengths);
 VE_API void ve_panel_free(ve_panel* p);
 
+#define VE_FIT_CONVERGED 0
+#define VE_FIT_MAX_ITER 1
+#define VE_FIT_FAILED 2
+#define VE_FIT_INSUFFICIENT_DATA 3
+#define VE_SE_HESSIAN 0
+#define VE_SE_ROBUST 1
+#define VE_IC_PER_OBS 0
+#define VE_IC_TOTAL 1
+
+typedef struct ve_batch ve_batch;
+typedef struct ve_fit ve_fit;
+
+/* Description of a batch. Copies specs, options and jobs; the panel stays borrowed and must stay
+   alive (with its data) until ve_fit_batch returns. */
+VE_API ve_status ve_batch_create(ve_batch** out);
+/* n_specs must be >= 1 and no entry may be NULL (VE_INVALID_HANDLE). */
+VE_API ve_status ve_batch_set_specs(ve_batch* b, const ve_spec* const* specs, size_t n_specs);
+VE_API ve_status ve_batch_set_panel(ve_batch* b, const ve_panel* panel);
+/* Job i fits specs[job_spec[i]] on series job_series[i]; n_jobs must be >= 1. The indices are
+   checked by ve_fit_batch, so specs and panel may be set in any order. */
+VE_API ve_status ve_batch_set_jobs(ve_batch* b, const size_t* job_spec, const size_t* job_series, size_t n_jobs);
+VE_API ve_status ve_batch_set_options(ve_batch* b, const ve_fit_options* options); /* not called = defaults */
+VE_API ve_status ve_batch_job_count(const ve_batch* b, size_t* out);
+VE_API void ve_batch_free(ve_batch* b);
+
+/* fits_out has ve_batch_job_count elements. On success it receives one new handle per job; on any
+   error every element is set to NULL and no handle is created. Missing specs, panel or jobs, a job
+   index out of range, or a NaN or infinite value in a used series is VE_INVALID_ARGUMENT. A fit that
+   does not converge is not an error: see ve_fit_status. */
+VE_API ve_status ve_fit_batch(ve_context* ctx, const ve_batch* batch, ve_fit** fits_out);
+
+VE_API ve_status ve_fit_status(const ve_fit* f, int32_t* out);
+VE_API ve_status ve_fit_nobs(const ve_fit* f, size_t* out);
+VE_API ve_status ve_fit_param_count(const ve_fit* f, size_t* out);
+/* *out is a static NUL-terminated string; i >= param_count is VE_INVALID_ARGUMENT. */
+VE_API ve_status ve_fit_param_name(const ve_fit* f, size_t i, const char** out);
+/* Each fills `out` with param_count elements. Without a finite estimate (VE_FIT_FAILED or
+   VE_FIT_INSUFFICIENT_DATA) the values are NaN. The t value is estimate / standard error and the
+   p value is 2 (1 - Phi(|t|)); both are NaN when the standard error is NaN. */
+VE_API ve_status ve_fit_estimates(const ve_fit* f, double* out);
+VE_API ve_status ve_fit_std_errors(const ve_fit* f, int32_t se_kind, double* out);
+VE_API ve_status ve_fit_t_values(const ve_fit* f, int32_t se_kind, double* out);
+VE_API ve_status ve_fit_p_values(const ve_fit* f, int32_t se_kind, double* out);
+/* NaN with VE_OK when the fit has no finite log-likelihood. */
+VE_API ve_status ve_loglik(const ve_fit* f, double* out);
+VE_API ve_status ve_aic(const ve_fit* f, int32_t scale, double* out);
+VE_API ve_status ve_bic(const ve_fit* f, int32_t scale, double* out);
+VE_API ve_status ve_hqic(const ve_fit* f, int32_t scale, double* out);
+VE_API ve_status ve_sic(const ve_fit* f, int32_t scale, double* out);
+/* Views stay valid until the handle is freed and are read-only. *len is nobs, or 0 when the fit has
+   no series (then *data is NULL). sigma is the conditional standard deviation. */
+VE_API ve_status ve_fit_sigma(const ve_fit* f, const double** data, size_t* len);
+VE_API ve_status ve_fit_residuals(const ve_fit* f, const double** data, size_t* len);
+VE_API ve_status ve_fit_std_residuals(const ve_fit* f, const double** data, size_t* len);
+VE_API ve_status ve_fit_fitted(const ve_fit* f, const double** data, size_t* len);
+VE_API void ve_fit_free(ve_fit* f);
+
 #ifdef __cplusplus
 }
 #endif

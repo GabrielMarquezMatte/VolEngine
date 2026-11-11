@@ -34,6 +34,7 @@ FetchContent_MakeAvailable(bs_thread_pool)
 
 add_library(volengine_core STATIC
     src/core/context.cpp
+    src/fit/batch.cpp
     src/fit/cholesky.cpp
     src/fit/criteria.cpp
     src/fit/fit.cpp
@@ -47,7 +48,9 @@ target_compile_options(volengine_core PRIVATE ${VE_WARNING_FLAGS})
 
 add_library(volengine SHARED
     src/capi/version_api.cpp
+    src/capi/batch_api.cpp
     src/capi/context_api.cpp
+    src/capi/fit_api.cpp
     src/capi/spec_api.cpp
     src/capi/panel_api.cpp
     src/capi/error.cpp)
@@ -75,7 +78,9 @@ if(VE_BUILD_TESTS)
 
     add_executable(volengine_tests
         tests/unit/capi/abi_test.cpp
+        tests/unit/capi/batch_test.cpp
         tests/unit/capi/context_test.cpp
+        tests/unit/capi/fit_accessors_test.cpp
         tests/unit/capi/panel_test.cpp
         tests/unit/capi/spec_test.cpp
         tests/unit/fit/criteria_test.cpp
@@ -83,6 +88,7 @@ if(VE_BUILD_TESTS)
         tests/unit/garch/sgarch_test.cpp
         tests/unit/optim/lbfgs_test.cpp
         tests/unit/optim/transform_test.cpp)
+    target_include_directories(volengine_tests PRIVATE tests/unit)
     target_link_libraries(volengine_tests PRIVATE volengine_core volengine GTest::gtest_main)
     target_compile_options(volengine_tests PRIVATE ${VE_WARNING_FLAGS})
     include(GoogleTest)
