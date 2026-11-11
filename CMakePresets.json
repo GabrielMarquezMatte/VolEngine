@@ -23,6 +23,15 @@
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     },
     {
+      "name": "gcc-bench",
+      "inherits": "gcc-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VE_BUILD_BENCHMARKS": "ON",
+        "VE_BUILD_TESTS": "OFF"
+      }
+    },
+    {
       "name": "native-release",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
@@ -37,6 +46,7 @@
   "buildPresets": [
     { "name": "gcc-debug", "configurePreset": "gcc-debug" },
     { "name": "gcc-release", "configurePreset": "gcc-release" },
+    { "name": "gcc-bench", "configurePreset": "gcc-bench" },
     { "name": "native-release", "configurePreset": "native-release", "configuration": "Release" },
     { "name": "msvc-release", "configurePreset": "msvc-release", "configuration": "Release" }
   ],
