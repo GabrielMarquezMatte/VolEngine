@@ -9,6 +9,12 @@ library whose ABI version differs).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking (Python):** `loglik` and the information criteria are members of `Fit` (`fit.loglik`, `fit.aic()`,
+  `fit.bic()`, `fit.hqic()`, `fit.sic()`, each criterion with `per_obs=`). The module functions `ve.loglik`,
+  `ve.aic`, `ve.bic`, `ve.hqic` and `ve.sic` are removed, with no alias.
+
 ### Added
 - Generic model engine: ARMA(m,n)-sGARCH(p,q) with orders up to `VE_MAX_ORDER` (6), a template log-likelihood over
   the scalar type, and forward-mode automatic differentiation (`ad::Dual<N>`) for exact gradients. The fit driver
@@ -35,7 +41,8 @@ library whose ABI version differs).
   every fallible call, thread-local `ve_last_error()`, no exception crossing the boundary. A context accepts
   concurrent calls and at most `VE_MAX_THREADS` (1024) threads.
 - Python package `volengine` over ctypes: `Context.fit`, `Spec`, `FitOptions`, `Fit`, `CoefTable`, and the
-  `loglik`, `aic`, `bic`, `hqic` and `sic` functions; arrays are passed to the library without copying.
+  the `Fit.loglik` property and the `Fit.aic()`, `bic()`, `hqic()` and `sic()` methods; arrays are passed to the
+  library without copying.
 - Validation against `rugarch` and `arch` with committed fixtures ([docs/guide/validation.md](docs/guide/validation.md)).
 - Style checker (`tests/style/check_style.py`), clang-tidy configuration and the CI workflow.
 

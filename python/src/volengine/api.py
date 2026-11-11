@@ -10,7 +10,7 @@ from typing import Any, overload
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ._fit import CoefTable, Fit, aic, bic, hqic, loglik, sic
+from ._fit import CoefTable, Fit
 from ._native import Handle, VolEngineError, check, create_handle, int32, lib
 from ._spec import FitOptions, Spec
 
@@ -21,11 +21,6 @@ __all__ = [
     "FitOptions",
     "Spec",
     "VolEngineError",
-    "aic",
-    "bic",
-    "hqic",
-    "loglik",
-    "sic",
 ]
 
 Series1D = Sequence[float]

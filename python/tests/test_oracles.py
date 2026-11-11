@@ -12,7 +12,7 @@ import volengine as ve
 
 REFERENCE = Path(__file__).resolve().parents[2] / "tests" / "reference"
 DATA_FILES = ("sgarch11_norm.csv", "grid.csv")
-CRITERIA = {"aic": ve.aic, "bic": ve.bic, "hqic": ve.hqic, "sic": ve.sic}
+CRITERIA = ("aic", "bic", "hqic", "sic")
 # Tighter than the default gradient tolerance; docs/guide/validation.md says why.
 FIT_TOL = 1e-7
 
@@ -96,10 +96,10 @@ def assert_rel(values: NDArray[np.float64], expected: dict[str, float], rel: flo
 
 
 def assert_criteria(fit: ve.Fit, result: dict[str, Any], per_obs: bool) -> None:
-    for name, criterion in CRITERIA.items():
+    for name in CRITERIA:
         if result[name] is None:
             continue
-        assert criterion(fit, per_obs=per_obs) == pytest.approx(result[name], abs=1e-6), name
+        assert getattr(fit, name)(per_obs=per_obs) == pytest.approx(result[name], abs=1e-6), name
 
 
 ORACLE_CASES = [(ORACLES[name], case) for name in ORACLES for case in oracle_cases(name)]
@@ -123,8 +123,8 @@ def test_matches_oracle(ctx, oracle, case):
     fit = ctx.fit(case_spec(case), load_series()[case["series"]], options=fit_options(oracle))
     assert fit.status == "converged"
     assert fit.names == tuple(result["params"]) == tuple(result["se"]) == tuple(result[oracle.robust_key])
-    assert ve.loglik(fit) >= result["loglik"] - 1e-6 * abs(result["loglik"])
-    assert ve.loglik(fit) == pytest.approx(result["loglik"], rel=1e-4)
+    assert fit.loglik >= result["loglik"] - 1e-6 * abs(result["loglik"])
+    assert fit.loglik == pytest.approx(result["loglik"], rel=1e-4)
     assert_params(fit.coef().estimate, result["params"], rel=1e-3, abs_small=1e-5)
     assert_rel(fit.coef("hessian").std_error, result["se"], 5e-2)
     assert_rel(fit.coef("robust").std_error, result[oracle.robust_key], 5e-2)

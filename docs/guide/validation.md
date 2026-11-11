@@ -78,12 +78,12 @@ Three choices follow from that rule or from an identification problem, all obser
 |----------------|-----------|--------|
 | `ctx.fit(ve.Spec(p=p, q=q, arma=(m, n), dist=d), y, options=ve.FitOptions(var_init=..., tol=1e-7))` | `ugarchfit(ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(p, q)), mean.model = list(armaOrder = c(m, n), include.mean = TRUE), distribution.model = d), y, solver = "hybrid", numderiv.control = list(hess.d = 1e-3))` | `arch_model(y, mean="Constant", vol="GARCH", p=p, q=q, dist=..., rescale=False).fit(disp="off")`, `dist` `"normal"`, `"t"` or `"ged"` |
 | `var_init` | `"sample"` | `"backcast"` |
-| `ve.loglik(fit)` | `likelihood(fit)` | `.loglikelihood` |
+| `fit.loglik` | `likelihood(fit)` | `.loglikelihood` |
 | `fit.coef().estimate` | `coef(fit)` | `.params` (`alpha[i]` → `alphai`, `beta[j]` → `betaj`, `nu` → `shape`) |
 | `fit.coef("hessian").std_error` | `fit@fit$matcoef[, " Std. Error"]` | `.std_err` with `cov_type="classic"` |
 | `fit.coef("robust").std_error` | QML sandwich from `fit@fit$hessian` and `fit@fit$scores` (see below) | `.std_err` with `cov_type="robust"` |
 | `fit.sigma` | `sigma(fit)` | `.conditional_volatility` |
-| `ve.aic/bic/hqic/sic(fit, per_obs=...)` | `infocriteria(fit)`, `per_obs=True` | `.aic`, `.bic`, `per_obs=False` |
+| `fit.aic/bic/hqic/sic(per_obs=...)` | `infocriteria(fit)`, `per_obs=True` | `.aic`, `.bic`, `per_obs=False` |
 
 Two numerical settings differ from the defaults, one on each side; both are explained in
 [Numerical settings](#numerical-settings).

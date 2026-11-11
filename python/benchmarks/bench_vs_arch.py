@@ -84,7 +84,7 @@ def simulate() -> NDArray[np.float64]:
 def volengine_fit(case: Case, data: NDArray[np.float64], ctx: ve.Context) -> list[float]:
     spec = ve.Spec(p=case.p, q=case.q, dist=case.dist)
     fits = ctx.fit([spec], data, options=ve.FitOptions(var_init="backcast"))
-    return [ve.loglik(fit) for fit in fits[0]]
+    return [fit.loglik for fit in fits[0]]
 
 
 def arch_fit(case: Case, data: NDArray[np.float64]) -> list[float]:
