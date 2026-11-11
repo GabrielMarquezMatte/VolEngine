@@ -201,6 +201,130 @@ inline std::vector<double> simulate_arma_garch(const SimulatedModel& model, std:
     return r;
 }
 
+// A GARCH variant of order (1, 1) with mean 0.05, written apart from the library. alpha, beta, gamma and shape
+// are the model's own parameters; power is the apARCH delta or the fGARCH lambda; eta1 and eta2 belong to
+// fGARCH-ALLGARCH, rho and phi to csGARCH.
+struct VariantProcess
+{
+    const char* name;
+    ve::Model model;
+    double omega;
+    double alpha;
+    double beta;
+    double gamma = 0.0;
+    double eta1 = 0.0;
+    double eta2 = 0.0;
+    double power = 2.0;
+    double rho = 0.0;
+    double phi = 0.0;
+    ve::Dist dist = ve::Dist::Norm;
+    double shape = 0.0;
+};
+
+inline std::vector<VariantProcess> variant_processes()
+{
+    using ve::Dist;
+    using ve::Model;
+    return {
+        {.name = "egarch11_std", .model = Model::EGarch, .omega = -0.01, .alpha = -0.08, .beta = 0.97,
+         .gamma = 0.15, .dist = Dist::Std, .shape = 6.0},
+        {.name = "gjrgarch11_norm", .model = Model::GjrGarch, .omega = 0.01, .alpha = 0.03, .beta = 0.9,
+         .gamma = 0.09},
+        {.name = "aparch11_ged", .model = Model::ApArch, .omega = 0.02, .alpha = 0.08, .beta = 0.9, .gamma = 0.4,
+         .power = 1.3, .dist = Dist::Ged, .shape = 1.5},
+        {.name = "igarch11_norm", .model = Model::IGarch, .omega = 0.01, .alpha = 0.1, .beta = 0.9},
+        {.name = "csgarch11_std", .model = Model::CsGarch, .omega = 0.01, .alpha = 0.06, .beta = 0.85,
+         .rho = 0.99, .phi = 0.04, .dist = Dist::Std, .shape = 7.0},
+        {.name = "fgarch_allgarch11_norm", .model = Model::FGarchAllGarch, .omega = 0.02, .alpha = 0.08,
+         .beta = 0.88, .eta1 = 0.3, .eta2 = 0.2, .power = 1.5},
+    };
+}
+
+// E|z| of the standardized shock.
+inline double expected_abs_shock(ve::Dist dist, double shape)
+{
+    if (dist == ve::Dist::Std)
+    {
+        return std::sqrt(shape - 2.0) * std::exp(std::lgamma(0.5 * (shape - 1.0)) - std::lgamma(0.5 * shape)) /
+               std::sqrt(std::numbers::pi);
+    }
+    if (dist == ve::Dist::Ged)
+    {
+        const double lambda =
+            std::sqrt(std::pow(2.0, -2.0 / shape) * std::tgamma(1.0 / shape) / std::tgamma(3.0 / shape));
+        return lambda * std::pow(2.0, 1.0 / shape) * std::tgamma(2.0 / shape) / std::tgamma(1.0 / shape);
+    }
+    return std::sqrt(2.0 / std::numbers::pi);
+}
+
+// permanent is the csGARCH long-run component q.
+struct VariantState
+{
+    double sigma2 = 1.0;
+    double permanent = 1.0;
+};
+
+// The variance after the shock z drawn at the current state.
+inline VariantState next_variant_state(const VariantProcess& process, const VariantState& state, double z,
+                                       double mean_abs)
+{
+    const double residual = std::sqrt(state.sigma2) * z;
+    const double square = residual * residual;
+    const double sigma_power = std::pow(state.sigma2, 0.5 * process.power);
+    if (process.model == ve::Model::EGarch)
+    {
+        const double news = process.alpha * z + process.gamma * (std::abs(z) - mean_abs);
+        return {std::exp(process.omega + news + process.beta * std::log(state.sigma2)), 0.0};
+    }
+    if (process.model == ve::Model::GjrGarch)
+    {
+        const double leverage = residual < 0.0 ? process.gamma : 0.0;
+        return {process.omega + (process.alpha + leverage) * square + process.beta * state.sigma2, 0.0};
+    }
+    if (process.model == ve::Model::ApArch)
+    {
+        const double news = std::pow(std::abs(residual) - process.gamma * residual, process.power);
+        const double next = process.omega + process.alpha * news + process.beta * sigma_power;
+        return {std::pow(next, 2.0 / process.power), 0.0};
+    }
+    if (process.model == ve::Model::FGarchAllGarch)
+    {
+        const double shifted = z - process.eta2;
+        const double news = std::pow(std::abs(shifted) - process.eta1 * shifted, process.power);
+        const double next = process.omega + process.alpha * sigma_power * news + process.beta * sigma_power;
+        return {std::pow(next, 2.0 / process.power), 0.0};
+    }
+    if (process.model == ve::Model::CsGarch)
+    {
+        const double permanent = process.omega + process.rho * state.permanent + process.phi * (square - state.sigma2);
+        const double transitory =
+            process.alpha * (square - state.permanent) + process.beta * (state.sigma2 - state.permanent);
+        return {permanent + transitory, permanent};
+    }
+    return {process.omega + process.alpha * square + process.beta * state.sigma2, 0.0};
+}
+
+// Starts at sigma^2 = 1 (and q = 1) and drops the first 1000 observations.
+inline std::vector<double> simulate_variant(const VariantProcess& process, std::uint64_t seed, std::size_t count)
+{
+    constexpr std::size_t kBurnIn = 1000;
+    const double mu = 0.05;
+    const double mean_abs = expected_abs_shock(process.dist, process.shape);
+    PortableShocks shocks(seed);
+    VariantState state;
+    std::vector<double> r(count);
+    for (std::size_t t = 0; t < kBurnIn + count; ++t)
+    {
+        const double z = shocks.standardized(process.dist, process.shape);
+        if (t >= kBurnIn)
+        {
+            r[t - kBurnIn] = mu + std::sqrt(state.sigma2) * z;
+        }
+        state = next_variant_state(process, state, z, mean_abs);
+    }
+    return r;
+}
+
 // C-order count x n matrix whose column j is the series simulated with seed j + 1.
 inline std::vector<double> simulate_garch_matrix(std::size_t count, std::size_t n)
 {

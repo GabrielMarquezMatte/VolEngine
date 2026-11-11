@@ -17,7 +17,7 @@ namespace
 
 constexpr double kRelativeStep = 1e-5;
 constexpr double kWeightStepFloor = 1e-6;
-constexpr double kArmaStepFloor = 1e-3;
+constexpr double kRealStepFloor = 1e-3;
 constexpr int kMaxStepHalvings = 30;
 
 using Matrix = std::vector<double>;
@@ -61,24 +61,22 @@ bool difference_column(const Problem& problem, std::span<const double> theta, st
 }
 
 // Steps proportional to each parameter's own scale keep the Hessian equivariant to the units of r. Parameters
-// that may sit at ~0 (ARMA coefficients, alpha and beta) get an absolute floor.
+// that may sit at ~0 get an absolute floor.
 double initial_step(const Problem& problem, std::span<const double> theta, std::size_t index)
 {
-    const model::Layout& layout = problem.layout;
     double value = theta[index];
-    if (layout.include_mean && index == layout.mu())
+    switch (problem.layout.kind(index))
     {
-        return kRelativeStep * std::max(std::abs(value), problem.series_scale);
+        case model::ParameterKind::Location:
+            return kRelativeStep * std::max(std::abs(value), problem.series_scale);
+        case model::ParameterKind::Real:
+            return kRelativeStep * std::max(std::abs(value), kRealStepFloor);
+        case model::ParameterKind::Positive:
+            return kRelativeStep * value;
+        case model::ParameterKind::Weight:
+            return kRelativeStep * std::max(value, kWeightStepFloor);
     }
-    if (index < layout.omega())
-    {
-        return kRelativeStep * std::max(std::abs(value), kArmaStepFloor);
-    }
-    if (index == layout.omega() || (layout.has_shape() && index == layout.shape()))
-    {
-        return kRelativeStep * value;
-    }
-    return kRelativeStep * std::max(value, kWeightStepFloor);
+    return kRelativeStep * value;
 }
 
 bool shrinking_difference_column(const Problem& problem, std::span<const double> theta, std::size_t index,

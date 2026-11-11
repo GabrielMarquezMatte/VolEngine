@@ -78,6 +78,61 @@ TEST(StandardErrors, StdShapeNearTheNormalLimitGetsNaNOthersFinite)
     }
 }
 
+// Each standard error is sqrt(v_i) = 0.1 (i + 1): the log-likelihood is -sum (theta_i - center_i)^2 / (2 v_i), and
+// every observation's score is +-1 in each entry.
+void expect_exact_quadratic_errors(const ve::model::Layout& layout, std::span<const double> center,
+                                   std::size_t boundary)
+{
+    std::size_t k = center.size();
+    std::vector<double> center_copy(center.begin(), center.end());
+    ve::fit::GradientFn gradient = [center_copy](std::span<const double> theta, std::span<double> grad)
+    {
+        for (std::size_t i = 0; i < theta.size(); ++i)
+        {
+            double sd = 0.1 * static_cast<double>(i + 1);
+            grad[i] = -(theta[i] - center_copy[i]) / (sd * sd);
+        }
+        return true;
+    };
+    constexpr std::size_t kCount = 10;
+    std::vector<double> scores(kCount * k);
+    for (std::size_t t = 0; t < scores.size(); ++t)
+    {
+        scores[t] = (t / k) % 2 == 0 ? 1.0 : -1.0;
+    }
+    ve::fit::StandardErrors errors = ve::fit::standard_errors(gradient, center, scores, layout, 1.0);
+    for (std::size_t i = 0; i < k; ++i)
+    {
+        double sd = 0.1 * static_cast<double>(i + 1);
+        if (i == boundary)
+        {
+            EXPECT_TRUE(std::isnan(errors.hessian[i]));
+            EXPECT_TRUE(std::isnan(errors.robust[i]));
+            continue;
+        }
+        EXPECT_NEAR(errors.hessian[i], sd, 1e-9 * sd) << i;
+        EXPECT_NEAR(errors.robust[i], sd * sd * std::sqrt(static_cast<double>(kCount)), 1e-9 * sd) << i;
+    }
+}
+
+// A point forced onto these boundaries is far from the optimum of a real likelihood, whose remaining block is then
+// not negative definite (and with phi = 0 the csGARCH omega and rho are not separately identified).
+TEST(StandardErrors, ModelBoundaries)
+{
+    ve::Spec cs;
+    cs.model = ve::Model::CsGarch;
+    cs.dist = ve::Dist::Std;
+    ve::model::Layout cs_layout = ve::model::layout_of(cs);
+    std::vector<double> cs_theta{0.05, 0.01, 0.06, 0.85, 0.99, 0.0, 7.0};
+    expect_exact_quadratic_errors(cs_layout, cs_theta, cs_layout.eta2_begin());
+
+    ve::Spec all;
+    all.model = ve::Model::FGarchAllGarch;
+    ve::model::Layout all_layout = ve::model::layout_of(all);
+    std::vector<double> all_theta{0.05, 0.02, 0.08, 0.88, 1.0 - 1e-9, 0.2, 1.5};
+    expect_exact_quadratic_errors(all_layout, all_theta, all_layout.eta1_begin());
+}
+
 TEST(StandardErrors, InvalidEverywhereGivesNaN)
 {
     ve::model::Layout layout = ve::model::layout_of(ve::Spec{});
