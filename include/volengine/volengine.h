@@ -108,26 +108,32 @@ VE_API void ve_batch_free(ve_batch* b);
    does not converge is not an error: see ve_fit_status. */
 VE_API ve_status ve_fit_batch(ve_context* ctx, const ve_batch* batch, ve_fit** fits_out);
 
+/* VE_FIT_FAILED means "did not converge to a usable optimum": the values of such a fit are those of
+   the best finite point the optimizer reached, or NaN (empty series) when it reached none (invalid
+   start, constant series). VE_FIT_INSUFFICIENT_DATA always has NaN values and empty series. Check
+   the status before using the values below. */
 VE_API ve_status ve_fit_status(const ve_fit* f, int32_t* out);
 VE_API ve_status ve_fit_nobs(const ve_fit* f, size_t* out);
 VE_API ve_status ve_fit_param_count(const ve_fit* f, size_t* out);
 /* *out is a static NUL-terminated string; i >= param_count is VE_INVALID_ARGUMENT. */
 VE_API ve_status ve_fit_param_name(const ve_fit* f, size_t i, const char** out);
-/* Each fills `out` with param_count elements. Without a finite estimate (VE_FIT_FAILED or
-   VE_FIT_INSUFFICIENT_DATA) the values are NaN. The t value is estimate / standard error and the
-   p value is 2 (1 - Phi(|t|)); both are NaN when the standard error is NaN. */
+/* Each fills `out` with param_count elements. The values are NaN when the fit has no finite point
+   (see ve_fit_status). The t value is estimate / standard error and the p value is
+   2 (1 - Phi(|t|)); both are NaN when the standard error is NaN. */
 VE_API ve_status ve_fit_estimates(const ve_fit* f, double* out);
 VE_API ve_status ve_fit_std_errors(const ve_fit* f, int32_t se_kind, double* out);
 VE_API ve_status ve_fit_t_values(const ve_fit* f, int32_t se_kind, double* out);
 VE_API ve_status ve_fit_p_values(const ve_fit* f, int32_t se_kind, double* out);
-/* NaN with VE_OK when the fit has no finite log-likelihood. */
+/* NaN with VE_OK when the fit has no finite log-likelihood (see ve_fit_status); the criteria below
+   behave the same. */
 VE_API ve_status ve_loglik(const ve_fit* f, double* out);
 VE_API ve_status ve_aic(const ve_fit* f, int32_t scale, double* out);
 VE_API ve_status ve_bic(const ve_fit* f, int32_t scale, double* out);
 VE_API ve_status ve_hqic(const ve_fit* f, int32_t scale, double* out);
 VE_API ve_status ve_sic(const ve_fit* f, int32_t scale, double* out);
 /* Views stay valid until the handle is freed and are read-only. *len is nobs, or 0 when the fit has
-   no series (then *data is NULL). sigma is the conditional standard deviation. */
+   no series (no finite point, see ve_fit_status; then *data is NULL). sigma is the conditional
+   standard deviation. */
 VE_API ve_status ve_fit_sigma(const ve_fit* f, const double** data, size_t* len);
 VE_API ve_status ve_fit_residuals(const ve_fit* f, const double** data, size_t* len);
 VE_API ve_status ve_fit_std_residuals(const ve_fit* f, const double** data, size_t* len);

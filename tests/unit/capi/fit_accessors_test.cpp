@@ -239,7 +239,7 @@ TEST(CapiFit, ConcurrentReads)
     EXPECT_EQ(mismatches.load(), 0);
 }
 
-TEST(CapiFit, FailedFitAccessorsReturnNaN)
+TEST(CapiFit, FailedFitWithoutFinitePointReturnsNaN)
 {
     const std::vector<double> constant(kT, 0.25);
     FitSet fits = fit_series(constant, 1);
