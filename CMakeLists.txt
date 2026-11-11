@@ -49,7 +49,8 @@ add_library(volengine_core STATIC
     src/fit/standard_errors.cpp
     src/model/layout.cpp
     src/model/likelihood.cpp
-    src/optim/transform.cpp)
+    src/model/parameter_map.cpp
+    src/model/start_values.cpp)
 set_target_properties(volengine_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(volengine_core PUBLIC src include)
 target_include_directories(volengine_core SYSTEM PUBLIC ${bs_thread_pool_SOURCE_DIR}/include)
@@ -101,8 +102,9 @@ if(VE_BUILD_TESTS)
         tests/unit/mean/arma_test.cpp
         tests/unit/model/layout_test.cpp
         tests/unit/model/likelihood_test.cpp
-        tests/unit/optim/lbfgs_test.cpp
-        tests/unit/optim/transform_test.cpp)
+        tests/unit/model/parameter_map_test.cpp
+        tests/unit/model/start_values_test.cpp
+        tests/unit/optim/lbfgs_test.cpp)
     target_include_directories(volengine_tests PRIVATE tests/unit)
     target_link_libraries(volengine_tests PRIVATE volengine_core volengine GTest::gtest_main)
     target_compile_options(volengine_tests PRIVATE ${VE_WARNING_FLAGS} ${VE_FLOAT_FLAGS})

@@ -3,8 +3,9 @@
 #include "fit/standard_errors.hpp"
 #include "model/layout.hpp"
 #include "model/likelihood.hpp"
+#include "model/parameter_map.hpp"
+#include "model/start_values.hpp"
 #include "optim/lbfgs.hpp"
-#include "optim/transform.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -12,7 +13,6 @@
 #include <cstddef>
 #include <functional>
 #include <limits>
-#include <numeric>
 #include <vector>
 
 namespace ve
@@ -23,9 +23,8 @@ namespace
 
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 constexpr double kInfinity = std::numeric_limits<double>::infinity();
-constexpr double kInitialAlpha = 0.05;
-constexpr double kInitialBeta = 0.90;
-constexpr double kInitialPersistence = kInitialAlpha + kInitialBeta;
+constexpr std::size_t kMaxBridgeParams = 8;
+using BridgeDual = ad::Dual<kMaxBridgeParams>;
 
 constexpr std::string_view kNamesWithMean[] = {"mu", "omega", "alpha1", "beta1"};
 
@@ -34,7 +33,7 @@ constexpr std::string_view kNamesWithMean[] = {"mu", "omega", "alpha1", "beta1"}
 class NegativeMeanLoglik
 {
 public:
-    NegativeMeanLoglik(const fit::LikelihoodProblem& problem, const optim::Standardization& standardization)
+    NegativeMeanLoglik(const fit::LikelihoodProblem& problem, const model::Standardization& standardization)
         : problem_(problem), standardization_(standardization), theta_(problem.layout.count()),
           grad_theta_(theta_.size())
     {
@@ -42,23 +41,36 @@ public:
 
     double operator()(std::span<const double> u, std::span<double> grad)
     {
-        bool include_mean = problem_.layout.include_mean;
-        optim::sgarch_to_natural(u, theta_, include_mean, standardization_);
+        std::vector<BridgeDual> seeds;
+        for (std::size_t i = 0; i < u.size(); ++i)
+        {
+            seeds.push_back(ad::variable<kMaxBridgeParams>(u[i], i));
+        }
+        std::vector<BridgeDual> natural(u.size());
+        model::to_natural<BridgeDual>(seeds, natural, problem_.layout, standardization_);
+        std::ranges::transform(natural, theta_.begin(), [](const BridgeDual& x) { return x.value; });
         double loglik = fit::loglik_with_gradient(problem_, theta_, grad_theta_, {});
         if (!std::isfinite(loglik))
         {
             std::ranges::fill(grad, 0.0);
             return kInfinity;
         }
-        optim::sgarch_chain_gradient(u, grad_theta_, grad, include_mean, standardization_);
         double count = static_cast<double>(problem_.r.size());
-        std::ranges::transform(grad, grad.begin(), [count](double value) { return -value / count; });
+        for (std::size_t i = 0; i < grad.size(); ++i)
+        {
+            double chained = 0.0;
+            for (std::size_t j = 0; j < natural.size(); ++j)
+            {
+                chained += grad_theta_[j] * natural[j].grad[i];
+            }
+            grad[i] = -chained / count;
+        }
         return -loglik / count - std::log(standardization_.scale);
     }
 
 private:
     const fit::LikelihoodProblem& problem_;
-    optim::Standardization standardization_;
+    model::Standardization standardization_;
     std::vector<double> theta_;
     std::vector<double> grad_theta_;
 };
@@ -83,42 +95,13 @@ FitResult empty_result(const Spec& spec, const FitConfig& config, std::size_t no
     return result;
 }
 
-double sample_mean(std::span<const double> r)
-{
-    return std::accumulate(r.begin(), r.end(), 0.0) / static_cast<double>(r.size());
-}
-
-double sample_variance(std::span<const double> r)
-{
-    double mean = sample_mean(r);
-    double sum = 0.0;
-    for (double value : r)
-    {
-        sum += (value - mean) * (value - mean);
-    }
-    return sum / static_cast<double>(r.size());
-}
-
-std::vector<double> initial_theta(std::span<const double> r, const Spec& spec)
-{
-    std::vector<double> theta;
-    if (spec.include_mean)
-    {
-        theta.push_back(sample_mean(r));
-    }
-    theta.push_back(sample_variance(r) * (1.0 - kInitialPersistence));
-    theta.push_back(kInitialAlpha);
-    theta.push_back(kInitialBeta);
-    return theta;
-}
-
-bool has_valid_start(std::span<const double> r, std::span<const double> theta, const Spec& spec)
+bool has_valid_start(std::span<const double> r, std::span<const double> theta, const model::Layout& layout)
 {
     if (std::ranges::adjacent_find(r, std::not_equal_to<>{}) == r.end())
     {
         return false;
     }
-    double omega = theta[spec.include_mean ? 1 : 0];
+    double omega = theta[layout.omega()];
     return std::isfinite(omega) && omega > 0.0;
 }
 
@@ -190,14 +173,14 @@ FitResult fit_one(std::span<const double> r, const Spec& spec, const FitConfig& 
         return empty_result(spec, config, r.size(), FitStatus::InsufficientData);
     }
     FitResult failed = empty_result(spec, config, r.size(), FitStatus::Failed);
-    std::vector<double> theta = initial_theta(r, spec);
-    if (!has_valid_start(r, theta, spec))
+    std::vector<double> theta = model::start_values(r, problem.layout);
+    if (!has_valid_start(r, theta, problem.layout))
     {
         return failed;
     }
-    optim::Standardization standardization{sample_mean(r), std::sqrt(sample_variance(r))};
+    model::Standardization standardization = model::standardization_of(r);
     std::vector<double> u(k);
-    optim::sgarch_to_unconstrained(theta, u, spec.include_mean, standardization);
+    model::to_unconstrained(theta, u, problem.layout, standardization);
     optim::LbfgsOptions options;
     options.max_iter = config.max_iter;
     options.gtol = config.tol;
@@ -208,7 +191,7 @@ FitResult fit_one(std::span<const double> r, const Spec& spec, const FitConfig& 
         return failed;
     }
     FitResult result = empty_result(spec, config, r.size(), status_from(outcome.stop));
-    optim::sgarch_to_natural(u, result.estimate, spec.include_mean, standardization);
+    model::to_natural<double>(u, result.estimate, problem.layout, standardization);
     if (!fill_at_estimate(result, problem, standardization.scale))
     {
         return failed;

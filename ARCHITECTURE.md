@@ -52,8 +52,8 @@ like any other wrapper would be.
 | `src/dist/densities.hpp` | Log-densities of the standardized normal, Student-t and GED, templates over the scalar type |
 | `src/model/layout.hpp`, `layout.cpp` | `Layout`: parameter blocks, offsets, count and rugarch names of a `Spec` |
 | `src/model/likelihood.hpp`, `likelihood.cpp` | `loglik<T>`: the log-likelihood with its per-observation terms, residuals and variances, and the backcast; instantiated for `double` and `Dual<8>`, `Dual<16>`, `Dual<32>` |
+| `src/model/parameter_map.*`, `start_values.*` | Layout-driven map between the unconstrained and natural parameter spaces, a template over the scalar type; validity check and start values |
 | `src/optim/lbfgs.hpp` (+ `curvature_memory.hpp`, `line_search.hpp`, `vector_math.hpp`) | L-BFGS minimizer, a template over the objective |
-| `src/optim/transform.hpp`, `transform.cpp` | Constrained to unconstrained parameter mapping and its Jacobian |
 | `src/fit/fit.hpp`, `fit.cpp` | `fit_one`: one series, one spec |
 | `src/fit/standard_errors.*`, `cholesky.*` | Hessian and robust standard errors; Cholesky solves, no explicit inverse |
 | `src/fit/criteria.*` | Log-likelihood, AIC, BIC, HQIC, SIC |
@@ -102,7 +102,7 @@ The Python `Context.fit` builds the handles below and then makes one call; any C
    results are bit-identical for any number of threads on the same machine.
 4. **One fit.** `fit_one` (`src/fit/fit.cpp`) checks the series is long enough (parameters + 2) and not constant,
    and minimizes the negative mean log-likelihood of the series standardized by its sample mean and standard
-   deviation with L-BFGS in the unconstrained space (`src/optim/transform.cpp`), using the gradient of
+   deviation with L-BFGS in the unconstrained space (`src/model/parameter_map.cpp`), using the gradient of
    `model::loglik` through `ad::Dual<8>`; the fit therefore does not depend on the units of the data. At the
    estimate it recomputes the variance path and scores and derives Hessian and robust standard errors, with
    finite-difference steps relative to each parameter's scale.
