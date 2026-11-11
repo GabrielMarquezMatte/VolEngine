@@ -211,7 +211,7 @@ f    = ctx.fit(spec, series)            # 1 spec, série 1D            → Fit
 fits = ctx.fit(specs, returns)          # lista de specs, painel (T,N) → grade specs × séries
 
 f.status, f.coef(), f.robust_coef()
-ve.aic(f), ve.bic(f), ve.loglik(f), ve.ljung_box(f, lags=10)
+f.loglik, f.aic(), f.bic(), f.ljung_box(lags=10)
 f.sigma                                  # numpy view, zero-copy
 
 d  = ctx.fit_dcc(dcc_spec, univariate)   # 1 DccSpec    → DccFit
@@ -223,7 +223,9 @@ sims = ve.simulate(f, horizon=250, paths=10_000, seed=42)
 ```
 
 - Sobrecargas por spec única / lista existem no Python e no `volengine.hpp`, nunca na interface C.
-- Critérios e diagnósticos são funções (`ve.aic(f)`), espelhando a interface C.
+- Estatísticas, critérios e diagnósticos de um ajuste são membros do `Fit` (`f.loglik`, `f.aic()`), não funções do
+  módulo (decisão do usuário, 2026-11-11). Na interface C continuam funções sobre o handle (`ve_aic(fit, ...)`), pela
+  regra da seção 3; no Python, um método novo também não quebra nada.
 - Pacote no PyPI; wheels para as plataformas da seção 11.
 
 ## 8. Performance
