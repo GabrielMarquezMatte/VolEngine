@@ -25,11 +25,11 @@ namespace
 
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 constexpr double kInfinity = std::numeric_limits<double>::infinity();
-constexpr std::size_t kWidestDual = 32;
-// mu, ar, ma, omega, alpha, beta and shape: ad::variable writes grad[index] unchecked.
-static_assert(4 * kMaxOrder + 3 <= kWidestDual, "the widest layout must fit the widest Dual");
+constexpr std::size_t kWidestDual = 40;
+// ad::variable writes grad[index] unchecked.
+static_assert(kMaxParameterCount <= kWidestDual, "the widest layout must fit the widest Dual");
 
-// model::loglik and model::to_natural exist only for Dual<8>, Dual<16> and Dual<32>: body runs with the
+// model::loglik and model::to_natural exist only for Dual<8>, 16, 32 and 40: body runs with the
 // narrowest of them that holds k parameters.
 template <class F>
 decltype(auto) with_dual_width(std::size_t k, F&& body)
@@ -42,6 +42,10 @@ decltype(auto) with_dual_width(std::size_t k, F&& body)
     if (k <= 16)
     {
         return body.template operator()<16>();
+    }
+    if (k <= 32)
+    {
+        return body.template operator()<32>();
     }
     return body.template operator()<kWidestDual>();
 }

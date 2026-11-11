@@ -186,4 +186,6 @@ template ad::Dual<16> loglik<ad::Dual<16>>(std::span<const double>, std::span<co
                                            const Layout&, VarInit, const LoglikOutputs<ad::Dual<16>>&);
 template ad::Dual<32> loglik<ad::Dual<32>>(std::span<const double>, std::span<const ad::Dual<32>>,
                                            const Layout&, VarInit, const LoglikOutputs<ad::Dual<32>>&);
+template ad::Dual<40> loglik<ad::Dual<40>>(std::span<const double>, std::span<const ad::Dual<40>>,
+                                           const Layout&, VarInit, const LoglikOutputs<ad::Dual<40>>&);
 }

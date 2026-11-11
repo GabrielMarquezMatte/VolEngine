@@ -2,6 +2,7 @@
 
 #include "core/var_init.hpp"
 
+#include <cstddef>
 #include <cstdint>
 
 namespace ve
@@ -9,7 +10,20 @@ namespace ve
 
 enum class Model : int32_t
 {
-    SGarch = 0
+    SGarch = 0,
+    EGarch = 1,
+    GjrGarch = 2,
+    ApArch = 3,
+    IGarch = 4,
+    CsGarch = 5,
+    FGarchGarch = 6,
+    FGarchTGarch = 7,
+    FGarchAvGarch = 8,
+    FGarchNGarch = 9,
+    FGarchNaGarch = 10,
+    FGarchApArch = 11,
+    FGarchGjrGarch = 12,
+    FGarchAllGarch = 13
 };
 
 enum class Dist : int32_t
@@ -20,6 +34,8 @@ enum class Dist : int32_t
 };
 
 constexpr int kMaxOrder = 6;
+// mu, ar, ma, omega, alpha, beta, gamma, eta1, eta2, power and shape of the widest layout.
+constexpr std::size_t kMaxParameterCount = 6 * kMaxOrder + 4;
 
 struct Spec
 {

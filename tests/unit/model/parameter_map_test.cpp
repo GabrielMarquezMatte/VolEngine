@@ -36,7 +36,12 @@ using GridCase = std::tuple<Orders, ArmaOrders, Dist, bool>;
 Layout grid_layout(const GridCase& c)
 {
     auto [orders, arma, dist, include_mean] = c;
-    return Layout{include_mean, arma.ar, arma.ma, orders.arch, orders.garch, dist};
+    return Layout{.include_mean = include_mean,
+                  .ar = arma.ar,
+                  .ma = arma.ma,
+                  .arch = orders.arch,
+                  .garch = orders.garch,
+                  .dist = dist};
 }
 
 std::vector<double> interior_theta(const Layout& layout)
@@ -96,7 +101,7 @@ double logistic(double x)
 
 TEST(ParameterMap, OneOneMatchesPlanOneTransform)
 {
-    Layout layout{true, 0, 0, 1, 1, Dist::Norm};
+    Layout layout{.include_mean = true, .ar = 0, .ma = 0, .arch = 1, .garch = 1, .dist = Dist::Norm};
     std::vector<double> u{0.2, -1.0, 2.0, 0.5};
     std::vector<double> theta(4);
     to_natural<double>(u, theta, layout, Standardization{0.01, 1.3});
@@ -146,7 +151,7 @@ TEST(ParameterMap, AlwaysValid)
 
 TEST(ParameterMap, TinyWeightsInvertFinite)
 {
-    Layout layout{false, 0, 0, 2, 1, Dist::Norm};
+    Layout layout{.include_mean = false, .ar = 0, .ma = 0, .arch = 2, .garch = 1, .dist = Dist::Norm};
     std::vector<double> theta{0.01, 0.05, 1e-14, 0.0};
     std::vector<double> u(4);
     to_unconstrained(theta, u, layout, Standardization{});
@@ -158,7 +163,7 @@ TEST(ParameterMap, TinyWeightsInvertFinite)
 
 TEST(ParameterMap, IsValidRejectsEachViolation)
 {
-    Layout layout{false, 0, 0, 1, 1, Dist::Std};
+    Layout layout{.include_mean = false, .ar = 0, .ma = 0, .arch = 1, .garch = 1, .dist = Dist::Std};
     EXPECT_TRUE(is_valid(std::vector<double>{0.01, 0.05, 0.9, 6.0}, layout));
     EXPECT_FALSE(is_valid(std::vector<double>{0.0, 0.05, 0.9, 6.0}, layout));
     EXPECT_FALSE(is_valid(std::vector<double>{0.01, -0.05, 0.9, 6.0}, layout));
@@ -197,7 +202,7 @@ TEST(ParameterMap, DualJacobianMatchesFiniteDifferences)
 {
     using Dual32 = ve::ad::Dual<32>;
     const Standardization standardization{0.02, 1.7};
-    Layout layout{true, 1, 1, 2, 2, Dist::Std};
+    Layout layout{.include_mean = true, .ar = 1, .ma = 1, .arch = 2, .garch = 2, .dist = Dist::Std};
     std::vector<double> u{0.1, 0.2, -0.3, -0.4, 0.5, 0.6, -0.2, 0.3, 0.7};
     std::vector<Dual32> seeds;
     for (std::size_t i = 0; i < u.size(); ++i)
@@ -227,7 +232,7 @@ TEST(ParameterMap, DualJacobianMatchesFiniteDifferences)
 
 TEST(ParameterMap, ExtremeUnconstrainedValuesStayValid)
 {
-    Layout layout{false, 0, 0, 1, 1, Dist::Norm};
+    Layout layout{.include_mean = false, .ar = 0, .ma = 0, .arch = 1, .garch = 1, .dist = Dist::Norm};
     std::vector<double> theta(3);
     to_natural<double>(std::vector<double>{0.0, 800.0, -800.0}, theta, layout, Standardization{});
     EXPECT_EQ(theta[0], 1.0);
