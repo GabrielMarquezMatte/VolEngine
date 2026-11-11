@@ -169,6 +169,21 @@ TEST(Lbfgs, NonFiniteTrialShrinksStepInsteadOfStopping)
     EXPECT_TRUE(std::isfinite(result.f));
 }
 
+// f is x^2 rounded down to a multiple of 1e-6, so no step from x = 1e-4 decreases it, while the gradient 2x is
+// above gtol and within sqrt(gtol): the search has reached the resolution of f.
+TEST(Lbfgs, LineSearchFailureWithNearlySmallGradientConverges)
+{
+    auto quantized = [](std::span<const double> x, std::span<double> g)
+    {
+        g[0] = 2.0 * x[0];
+        return std::floor(x[0] * x[0] / 1e-6) * 1e-6;
+    };
+    std::vector<double> x{1e-4};
+    LbfgsResult result = ve::optim::lbfgs_minimize(quantized, x, {});
+    EXPECT_EQ(result.stop, Stop::Converged);
+    EXPECT_LE(std::abs(x[0]), 1e-4);
+}
+
 TEST(Lbfgs, ReportsLineSearchFailedWhenNoOtherPointIsFinite)
 {
     auto finite_only_at_start = [](std::span<const double> x, std::span<double> g)

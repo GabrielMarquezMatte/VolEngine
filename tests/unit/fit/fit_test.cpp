@@ -649,7 +649,8 @@ INSTANTIATE_TEST_SUITE_P(Processes, FitModels, ::testing::Range<std::size_t>(0, 
                          [](const ::testing::TestParamInfo<std::size_t>& info)
                          { return std::string(variant_process(info.param).name); });
 
-// About two standard errors at T = 5000 for the apARCH gamma; no tolerance for mu and omega.
+// About two standard errors at T = 5000 for the apARCH gamma and the csGARCH alpha, beta and phi, whose components
+// are weakly identified (at this seed SE 0.02, 0.16 and 0.016); no tolerance for mu and omega.
 std::optional<double> recovery_tolerance(const FitResult& result, std::size_t index)
 {
     ve::model::Layout layout = ve::model::layout_of(result.spec);
@@ -662,6 +663,14 @@ std::optional<double> recovery_tolerance(const FitResult& result, std::size_t in
     if (cs && name == "eta11")
     {
         return 0.02;
+    }
+    if (cs && (name == "alpha1" || name == "eta21"))
+    {
+        return 0.05;
+    }
+    if (cs && name == "beta1")
+    {
+        return 0.15;
     }
     if (layout.model == ve::Model::ApArch && name == "gamma1")
     {
@@ -751,16 +760,19 @@ std::optional<double> se_unit(const FitResult& reference, std::size_t index, dou
     return std::pow(scale, layout.fixed_power);
 }
 
-void expect_scaled_se(double expected, double actual, const std::string& name)
+void expect_scaled_se(double expected, double actual, double tolerance, const std::string& name)
 {
     if (std::isnan(expected))
     {
         EXPECT_TRUE(std::isnan(actual)) << name;
         return;
     }
-    EXPECT_NEAR(actual / expected, 1.0, 1e-3) << name;
+    EXPECT_NEAR(actual / expected, 1.0, tolerance) << name;
 }
 
+// With a free power the sample presample, (mean |e|^power)^(2 / power), moves with the power too, and the
+// fGARCH-ALLGARCH fit stops on the flat-decrease rule at a gradient near 1e-6 per observation: its robust SEs
+// then scale to 1.2e-3.
 void expect_se_scaled(const FitResult& reference, const FitResult& result, std::size_t index, double scale)
 {
     std::optional<double> unit = se_unit(reference, index, scale);
@@ -768,8 +780,10 @@ void expect_se_scaled(const FitResult& reference, const FitResult& result, std::
     {
         return;
     }
-    expect_scaled_se(reference.se_hessian[index] * *unit, result.se_hessian[index], result.names[index]);
-    expect_scaled_se(reference.se_robust[index] * *unit, result.se_robust[index], result.names[index]);
+    double tolerance = ve::model::layout_of(reference.spec).free_power ? 2e-3 : 1e-3;
+    const std::string& name = result.names[index];
+    expect_scaled_se(reference.se_hessian[index] * *unit, result.se_hessian[index], tolerance, name);
+    expect_scaled_se(reference.se_robust[index] * *unit, result.se_robust[index], tolerance, name);
 }
 
 void expect_model_scale_invariant(std::span<const double> series, const Spec& spec, ve::VarInit var_init)

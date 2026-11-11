@@ -11,7 +11,8 @@ namespace ve::garch
 {
 
 // An empty eta1 or eta2 means eta1 = 0 or eta2 = 0. moments[i] = E(|z - eta2_i| - eta1_i (z - eta2_i))^power, the
-// expected shock factor of lag i + 1 before t = 0.
+// expected shock factor of lag i + 1 before t = 0. With abs_smoothing = c > 0, |u| for u = z - eta2 is taken as
+// sqrt(u^2 + c), as rugarch's fGARCH does (c = 1e-6); with c = 0 it is exact.
 template <class T>
 struct PowerGarchParameters
 {
@@ -22,21 +23,36 @@ struct PowerGarchParameters
     std::span<const T> eta2;
     T power;
     std::span<const T> moments;
+    double abs_smoothing = 0.0;
 };
 
+// sigma |u| for u = z - eta2 and shift = sigma u: |shift| or, smoothed, sqrt(shift^2 + c sigma^2).
+template <class T>
+T scaled_abs(const T& shift, const T& sigma_power, const PowerGarchParameters<T>& p)
+{
+    using std::abs;
+    using std::pow;
+    using std::sqrt;
+    if (p.abs_smoothing == 0.0)
+    {
+        return abs(shift);
+    }
+    T variance = pow(sigma_power, 2.0 / p.power);
+    return sqrt(shift * shift + p.abs_smoothing * variance);
+}
+
 // sigma^power (|z - eta2| - eta1 (z - eta2))^power with z = e / sigma, taken as
-// (|e - eta2 sigma| - eta1 (e - eta2 sigma))^power so that sigma is needed only with eta2.
+// (|e - eta2 sigma| - eta1 (e - eta2 sigma))^power.
 template <class T>
 T power_shock(const T& residual, const T& sigma_power, const PowerGarchParameters<T>& p, std::size_t i)
 {
-    using std::abs;
     using std::pow;
     T shift = residual;
     if (!p.eta2.empty())
     {
         shift = residual - p.eta2[i] * pow(sigma_power, 1.0 / p.power);
     }
-    T asymmetry = abs(shift);
+    T asymmetry = scaled_abs(shift, sigma_power, p);
     if (!p.eta1.empty())
     {
         asymmetry = asymmetry - p.eta1[i] * shift;

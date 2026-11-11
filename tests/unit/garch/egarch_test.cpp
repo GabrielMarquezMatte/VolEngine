@@ -49,4 +49,23 @@ TEST(EGarch, BackcastPresample)
     EXPECT_NEAR(std::log(sigma2[1]), -0.1 + shock(z0, -0.05, 0.1) + 0.9 * log_sigma2_0, 1e-14);
 }
 
+// arch drops a lag of |z| - sqrt(2/pi) before t = 0: |z| reads sqrt(2/pi) there, whatever E|z| is.
+TEST(EGarch, BackcastPresampleReadsTheNormalAbsMoment)
+{
+    std::vector<double> residuals{0.1, -0.2, 0.3};
+    std::vector<double> alpha{-0.05, 0.02};
+    std::vector<double> beta{0.9};
+    std::vector<double> gamma{0.1, 0.04};
+    std::vector<double> sigma2(3);
+    double b = 0.05;
+    double abs_moment = 0.75;
+    ve::garch::egarch_variance<double>(residuals, {-0.1, alpha, beta, gamma, abs_moment}, {b, 0}, sigma2);
+    double gap = kNormalAbsMoment - abs_moment;
+    double log_sigma2_0 = -0.1 + (0.1 + 0.04) * gap + 0.9 * std::log(b);
+    double z0 = 0.1 / std::sqrt(std::exp(log_sigma2_0));
+    double log_sigma2_1 = -0.1 - 0.05 * z0 + 0.1 * (std::abs(z0) - abs_moment) + 0.04 * gap + 0.9 * log_sigma2_0;
+    EXPECT_NEAR(std::log(sigma2[0]), log_sigma2_0, 1e-14);
+    EXPECT_NEAR(std::log(sigma2[1]), log_sigma2_1, 1e-14);
+}
+
 }
