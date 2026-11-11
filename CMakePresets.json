@@ -37,13 +37,18 @@
   "buildPresets": [
     { "name": "gcc-debug", "configurePreset": "gcc-debug" },
     { "name": "gcc-release", "configurePreset": "gcc-release" },
-    { "name": "native-release", "configurePreset": "native-release" },
+    { "name": "native-release", "configurePreset": "native-release", "configuration": "Release" },
     { "name": "msvc-release", "configurePreset": "msvc-release", "configuration": "Release" }
   ],
   "testPresets": [
     { "name": "gcc-debug", "configurePreset": "gcc-debug", "output": { "outputOnFailure": true } },
     { "name": "gcc-release", "configurePreset": "gcc-release", "output": { "outputOnFailure": true } },
-    { "name": "native-release", "configurePreset": "native-release", "output": { "outputOnFailure": true } },
+    {
+      "name": "native-release",
+      "configurePreset": "native-release",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    },
     {
       "name": "msvc-release",
       "configurePreset": "msvc-release",
