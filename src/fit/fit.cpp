@@ -120,17 +120,40 @@ optim::LbfgsResult minimize(const fit::LikelihoodProblem& problem,
     return optim::lbfgs_minimize(objective, u, options);
 }
 
+// The gradient of loglik over the natural parameters. The buffers live as long as the object: the standard errors
+// call it 2k times, and allocating them on every call made each call cost clearly more than an optimizer
+// evaluation.
 template <std::size_t N>
-bool loglik_gradient_with(const fit::LikelihoodProblem& problem, std::span<const double> theta,
-                          std::span<double> grad)
+class LoglikGradient
 {
+public:
     using Number = ad::Dual<N>;
-    std::vector<Number> seeds(theta.size());
-    seed<N>(theta, seeds);
-    Number loglik = model::loglik<Number>(problem.r, seeds, problem.layout, problem.var_init, {});
-    std::copy_n(loglik.grad.begin(), theta.size(), grad.begin());
-    return std::isfinite(loglik.value) && all_finite(grad);
-}
+
+    explicit LoglikGradient(const fit::LikelihoodProblem& problem)
+        : problem_(problem), seeds_(problem.layout.count()), residuals_(problem.r.size()),
+          sigma2_(problem.r.size())
+    {
+    }
+
+    bool operator()(std::span<const double> theta, std::span<double> grad)
+    {
+        if (!model::is_valid(theta, problem_.layout))
+        {
+            return false;
+        }
+        seed<N>(theta, seeds_);
+        Number loglik = model::loglik<Number>(problem_.r, seeds_, problem_.layout, problem_.var_init,
+                                              {.residuals = residuals_, .sigma2 = sigma2_});
+        std::copy_n(loglik.grad.begin(), theta.size(), grad.begin());
+        return std::isfinite(loglik.value) && all_finite(grad);
+    }
+
+private:
+    const fit::LikelihoodProblem& problem_;
+    std::vector<Number> seeds_;
+    std::vector<Number> residuals_;
+    std::vector<Number> sigma2_;
+};
 
 template <std::size_t N>
 double loglik_with_scores_with(const fit::LikelihoodProblem& problem, std::span<const double> theta,
@@ -228,10 +251,15 @@ bool fill_at_estimate(FitResult& result, const fit::LikelihoodProblem& problem, 
     }
     result.loglik = loglik;
     fill_series(result, r, std::move(residuals), sigma2);
-    fit::GradientFn gradient = [&problem](std::span<const double> theta, std::span<double> grad)
-    { return fit::loglik_gradient(problem, theta, grad); };
-    fit::StandardErrors errors =
-        fit::standard_errors(gradient, result.estimate, scores, problem.layout, series_scale);
+    fit::StandardErrors errors = with_dual_width(
+        problem.layout.count(),
+        [&]<std::size_t N>()
+        {
+            LoglikGradient<N> loglik_gradient(problem);
+            fit::GradientFn gradient = [&loglik_gradient](std::span<const double> theta, std::span<double> grad)
+            { return loglik_gradient(theta, grad); };
+            return fit::standard_errors(gradient, result.estimate, scores, problem.layout, series_scale);
+        });
     result.se_hessian = std::move(errors.hessian);
     result.se_robust = std::move(errors.robust);
     return true;
@@ -287,12 +315,8 @@ namespace ve::fit
 bool loglik_gradient(const LikelihoodProblem& problem, std::span<const double> theta, std::span<double> grad)
 {
     assert(theta.size() == problem.layout.count() && grad.size() == theta.size());
-    if (!model::is_valid(theta, problem.layout))
-    {
-        return false;
-    }
     return with_dual_width(theta.size(),
-                           [&]<std::size_t N>() { return loglik_gradient_with<N>(problem, theta, grad); });
+                           [&]<std::size_t N>() { return LoglikGradient<N>(problem)(theta, grad); });
 }
 
 double loglik_with_scores(const LikelihoodProblem& problem, std::span<const double> theta,
