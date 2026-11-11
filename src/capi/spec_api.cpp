@@ -29,6 +29,10 @@ ve_status to_model(int32_t value, ve::Model& model)
     return VE_OK;
 }
 
+static_assert(VE_DIST_NORM == static_cast<int32_t>(ve::Dist::Norm));
+static_assert(VE_DIST_STD == static_cast<int32_t>(ve::Dist::Std));
+static_assert(VE_DIST_GED == static_cast<int32_t>(ve::Dist::Ged));
+
 ve_status to_dist(int32_t value, ve::Dist& dist)
 {
     if (value != VE_DIST_NORM && value != VE_DIST_STD && value != VE_DIST_GED)

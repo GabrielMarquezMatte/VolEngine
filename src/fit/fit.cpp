@@ -1,6 +1,7 @@
 #include "fit/fit.hpp"
 
 #include "ad/dual.hpp"
+#include "core/spec.hpp"
 #include "fit/standard_errors.hpp"
 #include "model/likelihood.hpp"
 #include "model/parameter_map.hpp"
@@ -25,6 +26,8 @@ namespace
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 constexpr double kInfinity = std::numeric_limits<double>::infinity();
 constexpr std::size_t kWidestDual = 32;
+// mu, ar, ma, omega, alpha, beta and shape: ad::variable writes grad[index] unchecked.
+static_assert(4 * kMaxOrder + 3 <= kWidestDual, "the widest layout must fit the widest Dual");
 
 // model::loglik and model::to_natural exist only for Dual<8>, Dual<16> and Dual<32>: body runs with the
 // narrowest of them that holds k parameters.
