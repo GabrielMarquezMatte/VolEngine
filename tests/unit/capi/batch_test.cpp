@@ -310,7 +310,12 @@ TEST(CapiFit, MixedBucketsInOneBatch)
         {
             const std::vector<double> series = column(matrix(), job % kSeries, 0, kShortT);
             const Snapshot expected = direct_shaped_fit(series, kShapes[job / kSeries]);
-            EXPECT_EQ(ve::testing::read_snapshot(fits[job]), expected)
+            const Snapshot actual = ve::testing::read_snapshot(fits[job]);
+            for (const double estimate : actual.estimate)
+            {
+                EXPECT_TRUE(std::isfinite(estimate)) << "threads " << threads << " job " << job;
+            }
+            EXPECT_EQ(actual, expected)
                 << "threads " << threads << " job " << job;
         }
     }

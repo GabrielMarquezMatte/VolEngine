@@ -16,6 +16,7 @@ library whose ABI version differs).
   `ve.aic`, `ve.bic`, `ve.hqic` and `ve.sic` are removed, with no alias.
 
 ### Added
+
 - GARCH variants next to sGARCH: eGARCH, gjrGARCH, apARCH, iGARCH, csGARCH and fGARCH with its eight submodels
   (garch, tgarch, avgarch, ngarch, nagarch, aparch, gjrgarch, allgarch), each with the three distributions and
   an ARMA mean. C API: `VE_MODEL_*` constants 0 to 13. Python: `Spec(model=, submodel=)`.

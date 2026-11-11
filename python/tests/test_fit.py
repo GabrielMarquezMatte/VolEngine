@@ -266,6 +266,11 @@ def test_unknown_model_raises():
         ve.Spec(model="figarch")
 
 
+def test_unknown_model_message_lists_fgarch():
+    with pytest.raises(ValueError, match="fgarch"):
+        ve.Spec(model="fgarh")
+
+
 def test_invalid_order_is_a_native_error():
     with pytest.raises(ve.VolEngineError) as error:
         ve.Spec(q=0)

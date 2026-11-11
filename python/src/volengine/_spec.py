@@ -23,7 +23,10 @@ VAR_INITS = {"sample": 0, "backcast": 1}
 
 def code_of(table: dict[str, int], kind: str, name: str) -> int:
     if name not in table:
-        raise ValueError(f"unknown {kind} {name!r}; expected one of {sorted(table)}")
+        listed = list(table)
+        if kind == "model":
+            listed.append("fgarch")
+        raise ValueError(f"unknown {kind} {name!r}; expected one of {sorted(listed)}")
     return table[name]
 
 

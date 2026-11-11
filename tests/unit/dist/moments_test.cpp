@@ -206,6 +206,11 @@ void expect_gradients_match(DistCase c, const std::array<double, 4>& x)
     }
 }
 
+TEST(Moments, StdShiftedMomentSplitsAtTheCusp)
+{
+    expect_relative(shifted_moment(Dist::Std, 4.5, 0.3, 0.5, 1.5), 1.26984189752, 1e-9);
+}
+
 TEST(Moments, DerivativesMatchFiniteDifferences)
 {
     for (DistCase c : {DistCase{Dist::Std, 6.0}, DistCase{Dist::Std, 40.0}, DistCase{Dist::Ged, 1.5},
