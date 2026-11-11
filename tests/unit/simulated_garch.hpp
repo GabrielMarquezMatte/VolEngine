@@ -31,8 +31,8 @@ inline std::vector<double> simulate_garch_series(std::uint64_t seed, std::size_t
     return r;
 }
 
-// std::normal_distribution differs across standard libraries; Box-Muller on the engine's raw output gives the same
-// series everywhere, up to the last bits of std::log and std::cos.
+// std::normal_distribution differs across standard libraries; Box-Muller on the engine's raw output gives the
+// same series everywhere, up to the last bits of std::log and std::cos.
 inline std::vector<double> simulate_portable_garch_series(std::uint64_t seed, std::size_t count)
 {
     std::mt19937_64 engine(seed);
@@ -54,8 +54,9 @@ inline std::vector<double> simulate_portable_garch_series(std::uint64_t seed, st
     return r;
 }
 
-// ARMA(m, n)-sGARCH(p, q) with standardized (mean 0, variance 1) innovations. Lags before the first observation take
-// the unconditional value: zero for the mean terms, omega / (1 - persistence) for the variance terms.
+// ARMA(m, n)-sGARCH(p, q) with standardized (mean 0, variance 1) innovations. Lags before the first
+// observation take the unconditional value: zero for the mean terms, omega / (1 - persistence) for the
+// variance terms.
 struct SimulatedModel
 {
     double mu = 0.05;
@@ -68,8 +69,9 @@ struct SimulatedModel
     double shape = 0.0;
 };
 
-// Draws from the engine's raw output only, so the series is the same with every standard library. Each draw is its own
-// statement: the evaluation order of operands is unspecified, and compilers consume the engine in different orders.
+// Draws from the engine's raw output only, so the series is the same with every standard library. Each draw
+// is its own statement: the evaluation order of operands is unspecified, and compilers consume the engine in
+// different orders.
 class PortableShocks
 {
 public:
@@ -179,7 +181,8 @@ inline double simulated_mean(const SimulatedModel& model, const std::vector<doub
     return mean;
 }
 
-inline std::vector<double> simulate_arma_garch(const SimulatedModel& model, std::uint64_t seed, std::size_t count)
+inline std::vector<double> simulate_arma_garch(const SimulatedModel& model, std::uint64_t seed,
+                                               std::size_t count)
 {
     PortableShocks shocks(seed);
     std::vector<double> r(count);

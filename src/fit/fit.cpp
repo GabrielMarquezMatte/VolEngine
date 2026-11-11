@@ -26,8 +26,8 @@ constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 constexpr double kInfinity = std::numeric_limits<double>::infinity();
 constexpr std::size_t kWidestDual = 32;
 
-// model::loglik and model::to_natural exist only for Dual<8>, Dual<16> and Dual<32>: body runs with the narrowest
-// of them that holds k parameters.
+// model::loglik and model::to_natural exist only for Dual<8>, Dual<16> and Dual<32>: body runs with the
+// narrowest of them that holds k parameters.
 template <class F>
 decltype(auto) with_dual_width(std::size_t k, F&& body)
 {
@@ -58,9 +58,9 @@ bool all_finite(std::span<const double> values)
 }
 
 // The mean negative log-likelihood of the standardized series r / scale, -loglik / n - log(scale), over the
-// unconstrained parameters: tolerances depend neither on the sample size nor on the units of r. Validity is judged by
-// the log-likelihood alone, which is not finite outside its domain: model::is_valid can reject points that
-// model::to_natural produces at extreme u.
+// unconstrained parameters: tolerances depend neither on the sample size nor on the units of r. Validity is
+// judged by the log-likelihood alone, which is not finite outside its domain: model::is_valid can reject
+// points that model::to_natural produces at extreme u.
 template <std::size_t N>
 class NegativeMeanLoglik
 {
@@ -102,8 +102,9 @@ private:
 };
 
 template <std::size_t N>
-optim::LbfgsResult minimize(const fit::LikelihoodProblem& problem, const model::Standardization& standardization,
-                            const FitConfig& config, std::span<double> u)
+optim::LbfgsResult minimize(const fit::LikelihoodProblem& problem,
+                            const model::Standardization& standardization, const FitConfig& config,
+                            std::span<double> u)
 {
     optim::LbfgsOptions options;
     options.max_iter = config.max_iter;
@@ -113,7 +114,8 @@ optim::LbfgsResult minimize(const fit::LikelihoodProblem& problem, const model::
 }
 
 template <std::size_t N>
-bool loglik_gradient_with(const fit::LikelihoodProblem& problem, std::span<const double> theta, std::span<double> grad)
+bool loglik_gradient_with(const fit::LikelihoodProblem& problem, std::span<const double> theta,
+                          std::span<double> grad)
 {
     using Number = ad::Dual<N>;
     std::vector<Number> seeds(theta.size());
@@ -278,12 +280,17 @@ bool loglik_gradient(const LikelihoodProblem& problem, std::span<const double> t
                            [&]<std::size_t N>() { return loglik_gradient_with<N>(problem, theta, grad); });
 }
 
-double loglik_with_scores(const LikelihoodProblem& problem, std::span<const double> theta, const LoglikSeries& out)
+double loglik_with_scores(const LikelihoodProblem& problem, std::span<const double> theta,
+                          const LoglikSeries& out)
 {
     std::size_t k = problem.layout.count();
     assert(theta.size() == k && out.scores.size() == problem.r.size() * k);
     assert(out.residuals.size() == problem.r.size() && out.sigma2.size() == problem.r.size());
-    return with_dual_width(k, [&]<std::size_t N>() { return loglik_with_scores_with<N>(problem, theta, out); });
+    return with_dual_width(k,
+                           [&]<std::size_t N>()
+                           {
+                               return loglik_with_scores_with<N>(problem, theta, out);
+                           });
 }
 
 }

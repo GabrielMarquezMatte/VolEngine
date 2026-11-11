@@ -115,7 +115,8 @@ VE_API ve_status ve_batch_set_specs(ve_batch* b, const ve_spec* const* specs, si
 VE_API ve_status ve_batch_set_panel(ve_batch* b, const ve_panel* panel); /* NULL panel: VE_INVALID_HANDLE */
 /* Job i fits specs[job_spec[i]] on series job_series[i]; n_jobs must be >= 1. The indices are
    checked by ve_fit_batch, so specs and panel may be set in any order. */
-VE_API ve_status ve_batch_set_jobs(ve_batch* b, const size_t* job_spec, const size_t* job_series, size_t n_jobs);
+VE_API ve_status ve_batch_set_jobs(ve_batch* b, const size_t* job_spec, const size_t* job_series,
+                                    size_t n_jobs);
 /* Not called = defaults; a NULL options is VE_INVALID_HANDLE. */
 VE_API ve_status ve_batch_set_options(ve_batch* b, const ve_fit_options* options);
 VE_API ve_status ve_batch_job_count(const ve_batch* b, size_t* out);

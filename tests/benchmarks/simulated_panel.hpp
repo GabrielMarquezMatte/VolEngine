@@ -23,9 +23,9 @@ inline double innovation_shape(ve::Dist dist)
     return 0.0;
 }
 
-// A data-generating process with the structure of spec: persistence 0.98 split evenly over the ARCH and GARCH lags, and
-// ARMA terms of moderate size. Built on the portable generators of the unit tests, so every standard library produces
-// the same series.
+// A data-generating process with the structure of spec: persistence 0.98 split evenly over the ARCH and GARCH
+// lags, and ARMA terms of moderate size. Built on the portable generators of the unit tests, so every
+// standard library produces the same series.
 inline ve::testing::SimulatedModel simulated_model_for(const ve::Spec& spec)
 {
     ve::testing::SimulatedModel model;
@@ -46,7 +46,8 @@ inline std::vector<double> simulate_series(const ve::Spec& spec, std::uint64_t s
 }
 
 // C-order count x n matrix whose column j is the series simulated from model with seed j + 1.
-inline std::vector<double> simulate_panel(const ve::testing::SimulatedModel& model, std::size_t count, std::size_t n)
+inline std::vector<double> simulate_panel(const ve::testing::SimulatedModel& model, std::size_t count,
+                                          std::size_t n)
 {
     std::vector<double> matrix(count * n);
     for (std::size_t j = 0; j < n; ++j)

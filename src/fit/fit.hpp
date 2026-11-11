@@ -23,8 +23,8 @@ struct LikelihoodProblem
     VarInit var_init;
 };
 
-// Writes the natural-space gradient of the log-likelihood at theta to grad (k entries). Returns false when theta is
-// not valid or the log-likelihood or its gradient is not finite.
+// Writes the natural-space gradient of the log-likelihood at theta to grad (k entries). Returns false when
+// theta is not valid or the log-likelihood or its gradient is not finite.
 bool loglik_gradient(const LikelihoodProblem& problem, std::span<const double> theta, std::span<double> grad);
 
 // residuals and sigma2 have the size of r; scores is the T x k row-major matrix of per-observation gradients.
@@ -37,6 +37,6 @@ struct LoglikSeries
 
 // The log-likelihood at the natural-space theta, filling every series of out in the same pass. The series are
 // unspecified when the result is not finite.
-double loglik_with_scores(const LikelihoodProblem& problem, std::span<const double> theta, const LoglikSeries& out);
-
+double loglik_with_scores(const LikelihoodProblem& problem, std::span<const double> theta,
+                          const LoglikSeries& out);
 }

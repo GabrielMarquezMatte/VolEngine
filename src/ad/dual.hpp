@@ -89,8 +89,8 @@ Dual<N> operator*(const Dual<N>& a, const Dual<N>& b)
     return chain(a, b, a.value * b.value, b.value, a.value);
 }
 
-// The derivative is taken as (a' - q b') / b with q = a / b: the factor q / b of a' / b - (q / b) b' underflows or
-// overflows on its own once |b| passes ~1e154 (1 / x at x = 1e200 had a zero derivative).
+// The derivative is taken as (a' - q b') / b with q = a / b: the factor q / b of a' / b - (q / b) b'
+// underflows or overflows on its own once |b| passes ~1e154 (1 / x at x = 1e200 had a zero derivative).
 template <std::size_t N>
 Dual<N> operator/(const Dual<N>& a, const Dual<N>& b)
 {
@@ -220,8 +220,8 @@ Dual<N> pow(const Dual<N>& x, double exponent)
     return chain(x, std::pow(x.value, exponent), exponent * std::pow(x.value, exponent - 1.0));
 }
 
-// A slot skips the term of an operand whose gradient is zero there, and x^e * log(x) takes its limit 0 at x = 0,
-// so a zero or negative base keeps finite derivatives wherever they exist.
+// A slot skips the term of an operand whose gradient is zero there, and x^e * log(x) takes its limit 0 at x =
+// 0, so a zero or negative base keeps finite derivatives wherever they exist.
 template <std::size_t N>
 Dual<N> pow(const Dual<N>& x, const Dual<N>& exponent)
 {

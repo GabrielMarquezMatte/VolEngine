@@ -236,7 +236,8 @@ double natural_power(const FitResult& result, std::size_t index)
     return 0.0;
 }
 
-ScaledFit fit_scaled(std::span<const double> series, double scale, const Spec& spec, const ve::FitConfig& config)
+ScaledFit fit_scaled(std::span<const double> series, double scale, const Spec& spec,
+                     const ve::FitConfig& config)
 {
     std::vector<double> r(series.begin(), series.end());
     std::ranges::transform(r, r.begin(), [scale](double value) { return value * scale; });
@@ -389,7 +390,8 @@ TEST(FitGeneric, NamesAreGenerated)
 {
     Spec spec = generic_spec(2, 1, ve::Dist::Std);
     spec.ar = 1;
-    FitResult result = ve::fit_one(ve::testing::simulate_portable_garch_series(5, 1000), spec, ve::FitConfig{});
+    FitResult result =
+        ve::fit_one(ve::testing::simulate_portable_garch_series(5, 1000), spec, ve::FitConfig{});
     std::vector<std::string> expected{"mu", "ar1", "omega", "alpha1", "alpha2", "beta1", "shape"};
     EXPECT_EQ(result.names, expected);
     EXPECT_EQ(result.estimate.size(), expected.size());
@@ -453,7 +455,8 @@ void expect_near_normal_std_fit(const SimulatedModel& model, const Spec& spec, s
 {
     std::vector<double> r = ve::testing::simulate_arma_garch(model, seed, kObservations);
     FitResult result = ve::fit_one(r, spec, ve::FitConfig{});
-    ASSERT_TRUE(result.status == FitStatus::Converged || result.status == FitStatus::MaxIter) << "seed " << seed;
+    ASSERT_TRUE(result.status == FitStatus::Converged || result.status == FitStatus::MaxIter)
+        << "seed " << seed;
     EXPECT_GT(estimate_of(result, "shape"), 20.0) << "seed " << seed;
     EXPECT_TRUE(std::isfinite(estimate_of(result, "shape"))) << "seed " << seed;
     std::vector<std::string> names{"mu", "omega", "alpha1"};

@@ -104,7 +104,8 @@ void to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout,
     }
 }
 
-template void to_natural<double>(std::span<const double>, std::span<double>, const Layout&, const Standardization&);
+template void to_natural<double>(std::span<const double>, std::span<double>, const Layout&,
+                                 const Standardization&);
 template void to_natural<ad::Dual<8>>(std::span<const ad::Dual<8>>, std::span<ad::Dual<8>>, const Layout&,
                                       const Standardization&);
 template void to_natural<ad::Dual<16>>(std::span<const ad::Dual<16>>, std::span<ad::Dual<16>>, const Layout&,

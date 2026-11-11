@@ -48,8 +48,8 @@ Moments trapezoid_moments(const ve::dist::LogDensity<double>& density)
     return moments;
 }
 
-// The Student-t tails beyond the quadrature bound decay only as a power of z and do not vanish at 60, so they are
-// added from the series of C a^m z^-2m (1 + a/z^2)^-m, with a = nu - 2 and m = (nu + 1) / 2.
+// The Student-t tails beyond the quadrature bound decay only as a power of z and do not vanish at 60, so they
+// are added from the series of C a^m z^-2m (1 + a/z^2)^-m, with a = nu - 2 and m = (nu + 1) / 2.
 Moments student_tails(const ve::dist::LogDensity<double>& density, double nu)
 {
     double a = nu - 2.0;
@@ -118,8 +118,8 @@ TEST(Densities, NormalMatchesClosedForm)
 }
 
 // As nu -> infinity, log f_std(z) - log f_norm(z) = (z^4 - 6 z^2 + 3) / (4 nu) + O(nu^-2), the fourth Hermite
-// polynomial over 4 nu. The fit reaches nu far past 1e6 on normal data, where this difference is far below the size of
-// lgamma(nu / 2), and its derivative in x = log(nu - 2) is about -(z^4 - 6 z^2 + 3) / (4 nu).
+// polynomial over 4 nu. The fit reaches nu far past 1e6 on normal data, where this difference is far below
+// the size of lgamma(nu / 2), and its derivative in x = log(nu - 2) is about -(z^4 - 6 z^2 + 3) / (4 nu).
 TEST(Densities, StudentApproachesNormalForLargeShape)
 {
     using Number = ve::ad::Dual<1>;

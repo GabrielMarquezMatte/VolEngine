@@ -139,7 +139,8 @@ struct SpecShape
     int32_t dist;
 };
 
-constexpr SpecShape kShapes[] = {{1, 1, 0, 0, VE_DIST_NORM}, {3, 3, 2, 2, VE_DIST_STD}, {2, 1, 1, 0, VE_DIST_GED}};
+constexpr SpecShape kShapes[] = {
+    {1, 1, 0, 0, VE_DIST_NORM}, {3, 3, 2, 2, VE_DIST_STD}, {2, 1, 1, 0, VE_DIST_GED}};
 
 SpecPtr make_shaped_spec(const SpecShape& shape)
 {
@@ -267,7 +268,8 @@ TEST(CapiFit, MixedBucketsInOneBatch)
         {
             const std::vector<double> series = column(matrix(), job % kSeries, 0, kT);
             const Snapshot expected = direct_shaped_fit(series, kShapes[job / kSeries]);
-            EXPECT_EQ(ve::testing::read_snapshot(fits[job]), expected) << "threads " << threads << " job " << job;
+            EXPECT_EQ(ve::testing::read_snapshot(fits[job]), expected)
+                << "threads " << threads << " job " << job;
         }
     }
 }
