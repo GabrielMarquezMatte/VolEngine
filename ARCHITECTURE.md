@@ -90,9 +90,11 @@ The Python `Context.fit` builds the handles below and then makes one call; any C
    writes only its own slot of the result vector, and a job's computation does not depend on the thread count, so
    results are bit-identical for any number of threads on the same machine.
 4. **One fit.** `fit_one` (`src/fit/fit.cpp`) checks the series is long enough (parameters + 2) and not constant,
-   and minimizes the negative mean log-likelihood with L-BFGS in the unconstrained space
-   (`src/optim/transform.cpp`), using the analytic gradient from `src/garch/sgarch.cpp`. At the estimate it
-   recomputes the variance path and scores and derives Hessian and robust standard errors.
+   and minimizes the negative mean log-likelihood of the series standardized by its sample mean and standard
+   deviation with L-BFGS in the unconstrained space (`src/optim/transform.cpp`), using the analytic gradient from
+   `src/garch/sgarch.cpp`; the fit therefore does not depend on the units of the data. At the estimate it
+   recomputes the variance path and scores and derives Hessian and robust standard errors, with finite-difference
+   steps relative to each parameter's scale.
 5. **Status per fit.** A fit that does not converge, is too short or is degenerate carries its own status
    (`max_iter`, `failed`, `insufficient_data`); it does not fail the batch or the other fits.
 6. **Publishing.** Results are moved into freshly allocated `ve_fit` handles, all created before any is written to

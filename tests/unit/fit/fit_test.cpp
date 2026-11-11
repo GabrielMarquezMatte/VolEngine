@@ -211,6 +211,79 @@ TEST(Fit, IterationLimitReportsMaxIter)
     EXPECT_EQ(result.sigma.size(), kObservations);
 }
 
+struct ScaledFit
+{
+    double scale;
+    FitResult result;
+};
+
+// mu scales like the data, omega like its square; alpha and beta do not scale.
+double natural_power(const FitResult& result, std::size_t index)
+{
+    std::string_view name = result.names[index];
+    if (name == "mu")
+    {
+        return 1.0;
+    }
+    if (name == "omega")
+    {
+        return 2.0;
+    }
+    return 0.0;
+}
+
+ScaledFit fit_scaled(double scale, const Spec& spec, const ve::FitConfig& config)
+{
+    std::vector<double> r = simulated();
+    std::ranges::transform(r, r.begin(), [scale](double value) { return value * scale; });
+    return {scale, ve::fit_one(r, spec, config)};
+}
+
+void expect_same_up_to_scale(const FitResult& reference, const ScaledFit& scaled)
+{
+    const FitResult& result = scaled.result;
+    ASSERT_EQ(result.status, FitStatus::Converged) << "scale " << scaled.scale;
+    double count = static_cast<double>(result.nobs);
+    EXPECT_NEAR(result.loglik + count * std::log(scaled.scale), reference.loglik, 1e-6 * count)
+        << "scale " << scaled.scale;
+    for (std::size_t i = 0; i < result.estimate.size(); ++i)
+    {
+        double unit = std::pow(scaled.scale, natural_power(result, i));
+        EXPECT_NEAR(result.estimate[i] / unit / reference.estimate[i], 1.0, 1e-5)
+            << result.names[i] << " at scale " << scaled.scale;
+        EXPECT_NEAR(result.se_hessian[i] / unit / reference.se_hessian[i], 1.0, 1e-3)
+            << result.names[i] << " at scale " << scaled.scale;
+        EXPECT_NEAR(result.se_robust[i] / unit / reference.se_robust[i], 1.0, 1e-3)
+            << result.names[i] << " at scale " << scaled.scale;
+    }
+}
+
+void expect_scale_invariant(const Spec& spec, ve::VarInit var_init)
+{
+    ve::FitConfig config;
+    config.var_init = var_init;
+    FitResult reference = fit_scaled(1.0, spec, config).result;
+    ASSERT_EQ(reference.status, FitStatus::Converged);
+    for (double scale : {1e-2, 1e-4})
+    {
+        expect_same_up_to_scale(reference, fit_scaled(scale, spec, config));
+    }
+}
+
+TEST(Fit, ScaleInvariantWithMean)
+{
+    expect_scale_invariant(Spec{}, ve::VarInit::Sample);
+    expect_scale_invariant(Spec{}, ve::VarInit::Backcast);
+}
+
+TEST(Fit, ScaleInvariantWithoutMean)
+{
+    Spec no_mean;
+    no_mean.include_mean = false;
+    expect_scale_invariant(no_mean, ve::VarInit::Sample);
+    expect_scale_invariant(no_mean, ve::VarInit::Backcast);
+}
+
 TEST(Fit, Deterministic)
 {
     FitResult first = fit_simulated(Spec{});

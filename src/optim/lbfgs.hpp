@@ -77,7 +77,7 @@ public:
                 return finish(Stop::LineSearchFailed, iterations);
             }
             ++iterations;
-            if (step == Step::Flat)
+            if (step == Step::Flat && gradient_nearly_small())
             {
                 return finish(Stop::Converged, iterations);
             }
@@ -106,6 +106,12 @@ private:
     bool gradient_small() const
     {
         return max_abs(current_.g) <= options_.gtol * scale();
+    }
+
+    // A decrease below ftol alone also happens on a shallow slope far from the optimum.
+    bool gradient_nearly_small() const
+    {
+        return max_abs(current_.g) <= std::sqrt(options_.gtol) * scale();
     }
 
     bool search_along_quasi_newton_direction()
