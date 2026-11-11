@@ -49,7 +49,26 @@ VE_API ve_status ve_context_set_threads(ve_context* ctx, int32_t threads);
 VE_API ve_status ve_context_threads(const ve_context* ctx, int32_t* out);
 VE_API void ve_context_free(ve_context* ctx);
 
+/* Parameter names and order for every model: mu, ar1..arm, ma1..man, omega, alpha1..alphap,
+   beta1..betaq, gamma1..gammap, eta11..eta1p, eta21..eta2p, delta or lambda, shape. A model only has
+   the blocks listed next to it; mu is absent without a mean and shape is present for std and ged.
+   Only the iGARCH beta_q is derived (1 - sum alpha - the other betas): it has a name and a value,
+   it is not estimated, its standard error is NaN, and the information criteria count the estimated
+   parameters only. Each fGARCH submodel is a model value. */
 #define VE_MODEL_SGARCH 0
+#define VE_MODEL_EGARCH 1 /* gamma1..gammap */
+#define VE_MODEL_GJRGARCH 2 /* gamma1..gammap */
+#define VE_MODEL_APARCH 3 /* gamma1..gammap, delta */
+#define VE_MODEL_IGARCH 4 /* alpha and beta only; beta_q is derived */
+#define VE_MODEL_CSGARCH 5 /* eta11 (rho), eta21 (phi) */
+#define VE_MODEL_FGARCH_GARCH 6 /* no extra block, lambda = 2 fixed */
+#define VE_MODEL_FGARCH_TGARCH 7 /* eta11..eta1p, lambda = 1 fixed */
+#define VE_MODEL_FGARCH_AVGARCH 8 /* eta11..eta1p, eta21..eta2p, lambda = 1 fixed */
+#define VE_MODEL_FGARCH_NGARCH 9 /* lambda free */
+#define VE_MODEL_FGARCH_NAGARCH 10 /* eta21..eta2p, lambda = 2 fixed */
+#define VE_MODEL_FGARCH_APARCH 11 /* eta11..eta1p, lambda free */
+#define VE_MODEL_FGARCH_GJRGARCH 12 /* eta11..eta1p, lambda = 2 fixed */
+#define VE_MODEL_FGARCH_ALLGARCH 13 /* eta11..eta1p, eta21..eta2p, lambda free */
 /* VE_DIST_STD and VE_DIST_GED are standardized to zero mean and unit variance (as in rugarch and
    arch); their shape parameter is named "shape", with domain nu > 2 (std) and nu > 0 (ged). */
 #define VE_DIST_NORM 0
