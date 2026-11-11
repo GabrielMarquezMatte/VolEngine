@@ -100,12 +100,15 @@ The Python `Context.fit` builds the handles below and then makes one call; any C
 3. **Scheduling.** `run_batch` splits the jobs into contiguous blocks on the context's thread pool. Each job
    writes only its own slot of the result vector, and a job's computation does not depend on the thread count, so
    results are bit-identical for any number of threads on the same machine.
-4. **One fit.** `fit_one` (`src/fit/fit.cpp`) checks the series is long enough (parameters + 2) and not constant,
-   and minimizes the negative mean log-likelihood of the series standardized by its sample mean and standard
-   deviation with L-BFGS in the unconstrained space (`src/model/parameter_map.cpp`), using the gradient of
-   `model::loglik` through `ad::Dual<8>`; the fit therefore does not depend on the units of the data. At the
-   estimate it recomputes the variance path and scores and derives Hessian and robust standard errors, with
-   finite-difference steps relative to each parameter's scale.
+4. **One fit.** `fit_one` (`src/fit/fit.cpp`) checks the series is long enough (more than parameters + 1 and
+   than the largest order) and not constant, and minimizes the negative mean log-likelihood of the series
+   standardized by its sample mean and standard deviation with L-BFGS in the unconstrained space
+   (`src/model/parameter_map.cpp`); the fit therefore does not depend on the units of the data. The gradient comes
+   from `model::loglik` evaluated on `ad::Dual<N>` seeded in the unconstrained parameters, with N = 8, 16 or 32,
+   the narrowest that holds the k parameters. At the estimate one pass seeded in the natural parameters gives the
+   variance path, residuals and per-observation scores; `standard_errors` differentiates the natural gradient by
+   central differences, with steps relative to each parameter's scale, and leaves out α and β entries on the
+   boundary (below 1e-8), whose standard errors are NaN.
 5. **Status per fit.** A fit that does not converge, is too short or is degenerate carries its own status
    (`max_iter`, `failed`, `insufficient_data`); it does not fail the batch or the other fits.
 6. **Publishing.** Results are moved into freshly allocated `ve_fit` handles, all created before any is written to
