@@ -48,6 +48,7 @@ FetchContent_MakeAvailable(bs_thread_pool)
 add_library(volengine_core STATIC
     src/ad/special.cpp
     src/core/context.cpp
+    src/dist/moments.cpp
     src/fit/batch.cpp
     src/fit/cholesky.cpp
     src/fit/criteria.cpp
@@ -102,6 +103,7 @@ if(VE_BUILD_TESTS)
         tests/unit/capi/panel_test.cpp
         tests/unit/capi/spec_test.cpp
         tests/unit/dist/densities_test.cpp
+        tests/unit/dist/moments_test.cpp
         tests/unit/fit/criteria_test.cpp
         tests/unit/fit/fit_test.cpp
         tests/unit/fit/standard_errors_test.cpp
