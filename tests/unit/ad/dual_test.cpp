@@ -70,4 +70,18 @@ TEST(Dual, ComparisonsUseValue)
     EXPECT_EQ(ve::ad::value_of(2.5), 2.5);
 }
 
+TEST(Dual, PowWithZeroBaseAndVariableExponentHasFiniteGradient)
+{
+    auto base = ve::ad::abs(ve::ad::variable<2>(0.0, 0));
+    auto exponent = ve::ad::variable<2>(0.7, 1);
+    auto p = ve::ad::pow(base, exponent);
+    EXPECT_EQ(p.value, 0.0);
+    EXPECT_EQ(p.grad[0], 0.0);
+    EXPECT_EQ(p.grad[1], 0.0);
+    auto q = ve::ad::pow(ve::ad::variable<2>(0.0, 0), ve::ad::variable<2>(2.5, 1));
+    EXPECT_EQ(q.value, 0.0);
+    EXPECT_EQ(q.grad[0], 0.0);
+    EXPECT_EQ(q.grad[1], 0.0);
+}
+
 }

@@ -260,8 +260,8 @@ configuration for a value that never changes.
 
 ## Layers
 
-Dependencies point one way: `core` ← `garch`, `optim` ← `fit` ← `capi`. Nothing in `src/` includes
-from `src/capi/` except `capi` itself.
+Dependencies point one way: `core` ← `ad` ← `mean`, `garch`, `dist` ← `model` ← `fit` ← `capi`, and
+`optim` ← `fit`. Nothing in `src/` includes from `src/capi/` except `capi` itself.
 
 ```cpp
 // NOT OK: src/fit/fit.cpp

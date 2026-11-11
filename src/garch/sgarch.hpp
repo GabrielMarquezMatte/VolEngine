@@ -1,32 +1,66 @@
 #pragma once
 
-#include "core/var_init.hpp"
-
+#include <algorithm>
 #include <cstddef>
 #include <span>
 
 namespace ve::garch
 {
 
-struct SGarchConfig
+template <class T>
+struct SGarchParameters
 {
-    bool include_mean = true;
-    VarInit var_init = VarInit::Sample;
+    T omega;
+    std::span<const T> alpha;
+    std::span<const T> beta;
 };
 
-// Each span is either empty (not computed) or exactly sized: sigma2 T, grad k, scores T x k row-major.
-struct SGarchOutputs
+// sigma2_t = value for t < held; from t = held on the recursion runs, and a lag before t = 0 reads value for both the
+// squared residual and the variance.
+template <class T>
+struct Presample
 {
-    std::span<double> sigma2{};
-    std::span<double> grad{};
-    std::span<double> scores{};
+    T value;
+    std::size_t held;
 };
 
-std::size_t sgarch_param_count(const SGarchConfig& config);
+template <class T>
+const T& lagged(std::span<const T> values, std::size_t t, std::size_t lag, const T& presample)
+{
+    if (lag > t)
+    {
+        return presample;
+    }
+    return values[t - lag];
+}
 
-// theta is in natural space, ordered as rugarch names it: mu (only with include_mean), omega, alpha1, beta1.
-// Returns a non-finite log-likelihood when some sigma2_t is not positive and finite.
-double sgarch_norm_loglik(std::span<const double> r, std::span<const double> theta, const SGarchConfig& config,
-                          const SGarchOutputs& out);
+template <class T>
+T next_variance(std::span<const T> squared_residuals, const SGarchParameters<T>& p, const Presample<T>& presample,
+                std::span<const T> sigma2, std::size_t t)
+{
+    T variance = p.omega;
+    for (std::size_t i = 1; i <= p.alpha.size(); ++i)
+    {
+        variance = variance + p.alpha[i - 1] * lagged(squared_residuals, t, i, presample.value);
+    }
+    for (std::size_t j = 1; j <= p.beta.size(); ++j)
+    {
+        variance = variance + p.beta[j - 1] * lagged(sigma2, t, j, presample.value);
+    }
+    return variance;
+}
+
+// sigma2_t = omega + sum_i alpha_i e^2_{t-i} + sum_j beta_j sigma2_{t-j}; sigma2 has the size of squared_residuals.
+template <class T>
+void sgarch_variance(std::span<const T> squared_residuals, const SGarchParameters<T>& p, const Presample<T>& presample,
+                     std::span<T> sigma2)
+{
+    std::size_t held = std::min(presample.held, sigma2.size());
+    std::fill(sigma2.begin(), sigma2.begin() + static_cast<std::ptrdiff_t>(held), presample.value);
+    for (std::size_t t = held; t < sigma2.size(); ++t)
+    {
+        sigma2[t] = next_variance<T>(squared_residuals, p, presample, sigma2, t);
+    }
+}
 
 }

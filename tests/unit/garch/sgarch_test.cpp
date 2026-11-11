@@ -1,223 +1,62 @@
 #include "garch/sgarch.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <cstddef>
+#include "ad/dual.hpp"
+
 #include <gtest/gtest.h>
-#include <numbers>
-#include <random>
-#include <span>
-#include <string>
 #include <vector>
 
 namespace
 {
 
-using ve::garch::SGarchConfig;
-using ve::VarInit;
-
-std::vector<double> simulate_garch_returns(std::size_t count)
+TEST(SGarch, HeldPresampleThenRecursionMatchesHand)
 {
-    std::mt19937_64 engine(42);
-    std::normal_distribution<double> shock(0.0, 1.0);
-    double mu = 0.05;
-    double omega = 0.1;
-    double alpha = 0.1;
-    double beta = 0.85;
-    double sigma2 = omega / (1.0 - alpha - beta);
-    std::vector<double> r(count);
-    for (double& value : r)
-    {
-        double residual = std::sqrt(sigma2) * shock(engine);
-        value = mu + residual;
-        sigma2 = omega + alpha * residual * residual + beta * sigma2;
-    }
-    return r;
+    std::vector<double> squared{0.01, 0.04, 0.09};
+    std::vector<double> alpha{0.1};
+    std::vector<double> beta{0.8};
+    std::vector<double> sigma2(3);
+    double mean_square = 0.14 / 3.0;
+    ve::garch::sgarch_variance<double>(squared, {0.1, alpha, beta}, {mean_square, 1}, sigma2);
+    EXPECT_NEAR(sigma2[0], mean_square, 1e-15);
+    EXPECT_NEAR(sigma2[1], 0.1 + 0.1 * 0.01 + 0.8 * mean_square, 1e-15);
+    EXPECT_NEAR(sigma2[2], 0.1 + 0.1 * 0.04 + 0.8 * sigma2[1], 1e-15);
 }
 
-std::vector<double> evaluation_theta(const SGarchConfig& config)
+TEST(SGarch, NegativeLagsReadThePresample)
 {
-    if (config.include_mean)
-    {
-        return {0.03, 0.08, 0.12, 0.8};
-    }
-    return {0.08, 0.12, 0.8};
+    std::vector<double> squared{0.01, 0.04, 0.09};
+    std::vector<double> alpha{0.1, 0.05};
+    std::vector<double> beta{0.7};
+    std::vector<double> sigma2(3);
+    double b = 0.2;
+    ve::garch::sgarch_variance<double>(squared, {0.1, alpha, beta}, {b, 0}, sigma2);
+    EXPECT_NEAR(sigma2[0], 0.1 + 0.1 * b + 0.05 * b + 0.7 * b, 1e-15);
+    EXPECT_NEAR(sigma2[1], 0.1 + 0.1 * 0.01 + 0.05 * b + 0.7 * sigma2[0], 1e-15);
+    EXPECT_NEAR(sigma2[2], 0.1 + 0.1 * 0.04 + 0.05 * 0.01 + 0.7 * sigma2[1], 1e-15);
 }
 
-double loglik_at(std::span<const double> r, std::span<const double> theta, const SGarchConfig& config)
+TEST(SGarch, HoldLongerThanTheSeriesFillsEveryVariance)
 {
-    return ve::garch::sgarch_norm_loglik(r, theta, config, {});
+    std::vector<double> squared{0.01, 0.04};
+    std::vector<double> alpha{0.1, 0.1, 0.1};
+    std::vector<double> beta{0.2, 0.2, 0.2};
+    std::vector<double> sigma2(2);
+    ve::garch::sgarch_variance<double>(squared, {0.1, alpha, beta}, {0.3, 3}, sigma2);
+    EXPECT_EQ(sigma2[0], 0.3);
+    EXPECT_EQ(sigma2[1], 0.3);
 }
 
-std::vector<double> central_difference_gradient(std::span<const double> r, const std::vector<double>& theta,
-                                                const SGarchConfig& config)
+TEST(SGarch, DualRecursionCarriesTheGradient)
 {
-    std::vector<double> gradient(theta.size());
-    for (std::size_t i = 0; i < theta.size(); ++i)
-    {
-        double step = 1e-6 * std::max(1.0, std::abs(theta[i]));
-        std::vector<double> up = theta;
-        std::vector<double> down = theta;
-        up[i] += step;
-        down[i] -= step;
-        gradient[i] = (loglik_at(r, up, config) - loglik_at(r, down, config)) / (2.0 * step);
-    }
-    return gradient;
+    using D = ve::ad::Dual<3>;
+    std::vector<D> squared{ve::ad::constant<3>(0.01), ve::ad::constant<3>(0.04)};
+    std::vector<D> alpha{ve::ad::variable<3>(0.1, 1)};
+    std::vector<D> beta{ve::ad::variable<3>(0.8, 2)};
+    std::vector<D> sigma2(2);
+    D b = ve::ad::constant<3>(0.2);
+    ve::garch::sgarch_variance<D>(squared, {ve::ad::variable<3>(0.1, 0), alpha, beta}, {b, 0}, sigma2);
+    EXPECT_NEAR(sigma2[1].grad[0], 1.0 + 0.8, 1e-15);
+    EXPECT_NEAR(sigma2[1].grad[1], 0.01 + 0.8 * 0.2, 1e-15);
+    EXPECT_NEAR(sigma2[1].grad[2], sigma2[0].value + 0.8 * 0.2, 1e-15);
 }
 
-std::string config_name(const ::testing::TestParamInfo<SGarchConfig>& info)
-{
-    std::string init = info.param.var_init == VarInit::Sample ? "Sample" : "Backcast";
-    std::string mean = info.param.include_mean ? "WithMean" : "NoMean";
-    return init + mean;
-}
-
-class SGarchDerivatives : public ::testing::TestWithParam<SGarchConfig>
-{
-};
-
-}
-
-TEST(SGarch, SampleInitRecursionMatchesHand)
-{
-    std::vector<double> r{0.1, -0.2, 0.3};
-    std::vector<double> s2(3);
-    std::vector<double> th{0.0, 0.1, 0.1, 0.8};
-    double ll = ve::garch::sgarch_norm_loglik(r, th, {}, {.sigma2 = s2});
-    EXPECT_NEAR(s2[0], 0.14 / 3, 1e-12);
-    EXPECT_NEAR(s2[1], 0.1 + 0.1 * 0.01 + 0.8 * (0.14 / 3), 1e-12);
-    EXPECT_NEAR(s2[2], 0.1 + 0.1 * 0.04 + 0.8 * s2[1], 1e-12);
-    double expect = 0;
-    for (int t = 0; t < 3; ++t)
-    {
-        expect += -0.5 * (std::log(2 * std::numbers::pi) + std::log(s2[t]) + r[t] * r[t] / s2[t]);
-    }
-    EXPECT_NEAR(ll, expect, 1e-12);
-}
-
-TEST(SGarch, BackcastInitMatchesArchFormula)
-{
-    std::vector<double> r(100);
-    for (std::size_t t = 0; t < r.size(); ++t)
-    {
-        r[t] = 0.5 * std::sin(0.7 * static_cast<double>(t)) + 0.1 * std::cos(1.3 * static_cast<double>(t));
-    }
-    std::vector<double> s2(100);
-    std::vector<double> th{0.05, 0.1, 0.1, 0.8};
-    ve::garch::sgarch_norm_loglik(r, th, {.var_init = VarInit::Backcast}, {.sigma2 = s2});
-    double mean = 0.0;
-    for (double value : r)
-    {
-        mean += value / 100.0;
-    }
-    double weighted_square_sum = 0.0;
-    double weight_sum = 0.0;
-    for (std::size_t i = 0; i < 75; ++i)
-    {
-        double weight = std::pow(0.94, static_cast<double>(i));
-        double residual = r[i] - mean;
-        weighted_square_sum += weight * residual * residual;
-        weight_sum += weight;
-    }
-    double b = weighted_square_sum / weight_sum;
-    EXPECT_NEAR(s2[0], 0.1 + 0.1 * b + 0.8 * b, 1e-12);
-    double first_residual = r[0] - 0.05;
-    EXPECT_NEAR(s2[1], 0.1 + 0.1 * first_residual * first_residual + 0.8 * s2[0], 1e-12);
-}
-
-TEST(SGarch, BackcastWindowIsWholeSampleWhenShorterThan75)
-{
-    std::vector<double> r{0.1, -0.2, 0.3};
-    std::vector<double> s2(3);
-    std::vector<double> th{0.1, 0.1, 0.8};
-    SGarchConfig config{.include_mean = false, .var_init = VarInit::Backcast};
-    ve::garch::sgarch_norm_loglik(r, th, config, {.sigma2 = s2});
-    double b = (0.01 + 0.94 * 0.04 + 0.94 * 0.94 * 0.09) / (1.0 + 0.94 + 0.94 * 0.94);
-    EXPECT_NEAR(s2[0], 0.1 + 0.1 * b + 0.8 * b, 1e-12);
-}
-
-TEST(SGarch, BackcastIsCenteredOnSampleMeanNotOnMu)
-{
-    std::vector<double> r{0.4, -0.2, 0.7};
-    std::vector<double> low_mu(3);
-    std::vector<double> high_mu(3);
-    std::vector<double> low_theta{-1.0, 0.1, 0.1, 0.8};
-    std::vector<double> high_theta{2.0, 0.1, 0.1, 0.8};
-    SGarchConfig config{.var_init = VarInit::Backcast};
-    ve::garch::sgarch_norm_loglik(r, low_theta, config, {.sigma2 = low_mu});
-    ve::garch::sgarch_norm_loglik(r, high_theta, config, {.sigma2 = high_mu});
-    double b = (0.01 + 0.94 * 0.25 + 0.94 * 0.94 * 0.16) / (1.0 + 0.94 + 0.94 * 0.94);
-    EXPECT_NEAR(low_mu[0], 0.1 + 0.1 * b + 0.8 * b, 1e-12);
-    EXPECT_EQ(low_mu[0], high_mu[0]);
-}
-
-TEST(SGarch, NoMeanHasThreeParams)
-{
-    EXPECT_EQ(ve::garch::sgarch_param_count({.include_mean = false}), 3u);
-    EXPECT_EQ(ve::garch::sgarch_param_count({}), 4u);
-}
-
-TEST(SGarch, NoMeanUsesRawReturnsAsResiduals)
-{
-    std::vector<double> r{0.1, -0.2, 0.3};
-    std::vector<double> with_mean(3);
-    std::vector<double> without_mean(3);
-    std::vector<double> zero_mean_theta{0.0, 0.1, 0.1, 0.8};
-    std::vector<double> no_mean_theta{0.1, 0.1, 0.8};
-    double ll_with = ve::garch::sgarch_norm_loglik(r, zero_mean_theta, {}, {.sigma2 = with_mean});
-    double ll_without =
-        ve::garch::sgarch_norm_loglik(r, no_mean_theta, {.include_mean = false}, {.sigma2 = without_mean});
-    EXPECT_EQ(ll_with, ll_without);
-    EXPECT_EQ(with_mean, without_mean);
-}
-
-TEST_P(SGarchDerivatives, GradientMatchesCentralDifferences)
-{
-    SGarchConfig config = GetParam();
-    std::vector<double> r = simulate_garch_returns(500);
-    std::vector<double> theta = evaluation_theta(config);
-    std::vector<double> grad(theta.size());
-    double ll = ve::garch::sgarch_norm_loglik(r, theta, config, {.grad = grad});
-    EXPECT_EQ(ll, loglik_at(r, theta, config));
-    std::vector<double> numeric = central_difference_gradient(r, theta, config);
-    for (std::size_t i = 0; i < theta.size(); ++i)
-    {
-        EXPECT_NEAR(grad[i], numeric[i], 1e-6 * std::max(1.0, std::abs(grad[i]))) << "parameter " << i;
-    }
-}
-
-TEST_P(SGarchDerivatives, ScoresSumToGradient)
-{
-    SGarchConfig config = GetParam();
-    std::vector<double> r = simulate_garch_returns(500);
-    std::vector<double> theta = evaluation_theta(config);
-    std::size_t k = theta.size();
-    std::vector<double> grad(k);
-    std::vector<double> scores(r.size() * k);
-    ve::garch::sgarch_norm_loglik(r, theta, config, {.grad = grad});
-    ve::garch::sgarch_norm_loglik(r, theta, config, {.scores = scores});
-    for (std::size_t i = 0; i < k; ++i)
-    {
-        double sum = 0.0;
-        for (std::size_t t = 0; t < r.size(); ++t)
-        {
-            sum += scores[t * k + i];
-        }
-        EXPECT_NEAR(sum, grad[i], 1e-9 * std::max(1.0, std::abs(grad[i]))) << "parameter " << i;
-    }
-}
-
-INSTANTIATE_TEST_SUITE_P(SGarch, SGarchDerivatives,
-                         ::testing::Values(SGarchConfig{.include_mean = true, .var_init = VarInit::Sample},
-                                           SGarchConfig{.include_mean = false, .var_init = VarInit::Sample},
-                                           SGarchConfig{.include_mean = true, .var_init = VarInit::Backcast},
-                                           SGarchConfig{.include_mean = false, .var_init = VarInit::Backcast}),
-                         config_name);
-
-TEST(SGarch, NonPositiveVarianceGivesNonFinite)
-{
-    std::vector<double> r{0.1, -0.2, 0.3};
-    std::vector<double> th{0.0, -1.0, 0.1, 0.8};
-    double ll = ve::garch::sgarch_norm_loglik(r, th, {}, {});
-    EXPECT_FALSE(std::isfinite(ll));
 }
