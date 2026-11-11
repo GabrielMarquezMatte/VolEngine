@@ -137,6 +137,23 @@ TEST(Moments, ShiftedReducesToKnownForms)
     }
 }
 
+// With nu - power near 0, a std tail under z = edge + t / (1 - t) is (1 - t)^(nu - power - 1), which Gauss-Legendre
+// integrates poorly.
+TEST(Moments, StdHeavyTailMomentMatchesClosedForm)
+{
+    for (std::array<double, 2> nu_power : {std::array{3.0, 2.5}, std::array{2.5, 2.2}, std::array{2.2, 1.9},
+                                           std::array{4.0, 2.5}, std::array{3.0, 1.5}})
+    {
+        auto [nu, power] = nu_power;
+        for (double eta1 : {0.0, 0.2})
+        {
+            double expected = asymmetric_moment(Dist::Std, nu, eta1, power);
+            EXPECT_NEAR(shifted_moment(Dist::Std, nu, eta1, 0.0, power), expected, 1e-8 * expected)
+                << "nu " << nu << ", power " << power << ", eta1 " << eta1;
+        }
+    }
+}
+
 template <class T>
 std::array<T, 3> all_moments(Dist dist, const std::array<T, 4>& x)
 {
@@ -155,28 +172,47 @@ double central_difference(DistCase c, std::array<double, 4> x, std::size_t i, st
     return (plus - minus) / (2.0 * step);
 }
 
-TEST(Moments, DerivativesMatchFiniteDifferences)
+// At eta2 = 0 the quadrature changes which split point follows eta2, so a central difference across it mixes two
+// rules. There d/d eta2 of the shifted moment is (power / 2) ((1 + eta1)^power - (1 - eta1)^power) E|z|^(power - 1).
+double expected_derivative(DistCase c, const std::array<double, 4>& x, std::size_t i, std::size_t moment)
+{
+    bool shift_at_zero = moment == 2 && i == 2 && x[2] == 0.0;
+    if (!shift_at_zero)
+    {
+        return central_difference(c, x, i, moment);
+    }
+    double asymmetry = std::pow(1.0 + x[1], x[3]) - std::pow(1.0 - x[1], x[3]);
+    return 0.5 * x[3] * asymmetry * abs_moment(c.dist, c.shape, x[3] - 1.0);
+}
+
+void expect_gradients_match(DistCase c, const std::array<double, 4>& x)
 {
     using Number = ve::ad::Dual<8>;
-    for (DistCase c : {DistCase{Dist::Std, 6.0}, DistCase{Dist::Std, 40.0}, DistCase{Dist::Ged, 1.5}})
+    std::array<Number, 4> seeded{};
+    for (std::size_t i = 0; i < x.size(); ++i)
     {
-        std::array<double, 4> x{c.shape, 0.3, 0.4, 1.5};
-        std::array<Number, 4> seeded{};
+        seeded[i] = ve::ad::variable<8>(x[i], i);
+    }
+    std::array<Number, 3> moments = all_moments(c.dist, seeded);
+    for (std::size_t moment = 0; moment < moments.size(); ++moment)
+    {
         for (std::size_t i = 0; i < x.size(); ++i)
         {
-            seeded[i] = ve::ad::variable<8>(x[i], i);
+            double gradient = moments[moment].grad[i];
+            double expected = expected_derivative(c, x, i, moment);
+            EXPECT_NEAR(gradient, expected, 1e-6 * std::max(1.0, std::abs(gradient)))
+                << "shape " << c.shape << ", eta2 " << x[2] << ", moment " << moment << ", variable " << i;
         }
-        std::array<Number, 3> moments = all_moments(c.dist, seeded);
-        for (std::size_t moment = 0; moment < moments.size(); ++moment)
-        {
-            for (std::size_t i = 0; i < x.size(); ++i)
-            {
-                double gradient = moments[moment].grad[i];
-                double difference = central_difference(c, x, i, moment);
-                EXPECT_NEAR(gradient, difference, 1e-6 * std::max(1.0, std::abs(gradient)))
-                    << "shape " << c.shape << ", moment " << moment << ", variable " << i;
-            }
-        }
+    }
+}
+
+TEST(Moments, DerivativesMatchFiniteDifferences)
+{
+    for (DistCase c : {DistCase{Dist::Std, 6.0}, DistCase{Dist::Std, 40.0}, DistCase{Dist::Ged, 1.5},
+                       DistCase{Dist::Ged, 0.8}, DistCase{Dist::Norm, 0.0}})
+    {
+        expect_gradients_match(c, {c.shape, 0.3, 0.4, 1.5});
+        expect_gradients_match(c, {c.shape, 0.3, 0.0, 0.8});
     }
 }
 
