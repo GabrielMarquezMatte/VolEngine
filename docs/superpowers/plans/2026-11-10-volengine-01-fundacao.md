@@ -117,7 +117,7 @@ README.md ARCHITECTURE.md STYLEGUIDE.md CHANGELOG.md LICENSE CITATION.cff
 - Parâmetros sGARCH(1,1)-norm na ordem e com os nomes do `rugarch`: `mu`, `omega`, `alpha1`, `beta1` (sem `mu` se `include_mean = 0`).
 - Resíduo: εₜ = rₜ − μ. Recursão: σ²ₜ = ω + α ε²ₜ₋₁ + β σ²ₜ₋₁.
 - `VE_VARINIT_SAMPLE` (padrão, `rugarch`): m̄ = média de ε² sobre a amostra toda (com o μ corrente); σ²₀ = m̄; a loglik soma t = 0..T−1. O executor confirma no `rugarch` (`R/rugarch-sgarch.R` e `src/filters.c`, só leitura) se o termo t = 0 entra na soma e se ε²₋₁ = m̄; o fixture da Task 9 decide.
-- `VE_VARINIT_BACKCAST` (`arch`): τ = min(75, T); wᵢ = 0.94ⁱ / Σ 0.94ʲ, i = 0..τ−1; b = Σ wᵢ ε²ᵢ; σ²₀ = ω + α b + β b.
+- `VE_VARINIT_BACKCAST` (`arch`): τ = min(75, T); wᵢ = 0.94ⁱ / Σ 0.94ʲ, i = 0..τ−1; b = Σ wᵢ ε̃²ᵢ com ε̃ᵢ = rᵢ − r̄ (média amostral; rᵢ sem média), fixo durante a otimização (∂b/∂μ = 0, como o `arch`); σ²₀ = ω + α b + β b. (Corrigido na Task 9, decisão R18.)
 - Densidade normal: ℓₜ = −½ (log 2π + log σ²ₜ + ε²ₜ / σ²ₜ).
 - Critérios por observação (padrão, `rugarch`, `VE_IC_PER_OBS`), n = observações, k = parâmetros estimados:
   AIC = (−2ℓ + 2k)/n; BIC = (−2ℓ + k log n)/n; HQIC = (−2ℓ + 2k log log n)/n; SIC = −2ℓ/n + log((n + 2k)/n).
@@ -630,7 +630,7 @@ def test_unknown_dist_raises():
 
 **Interfaces:**
 - Consumes: pacote Python (Task 8).
-- Formato do fixture (fixado): `{"oracle": str, "oracle_version": str, "series": [str], "results": [{"series": str, "loglik": float, "params": {name: float}, "se": {name: float}, "robust_se": {name: float}, "sigma": [float], "aic": float, "bic": float, "hqic": float | null, "sic": float | null}]}`. Os critérios ficam na escala do próprio oráculo.
+- Formato do fixture (fixado): `{"oracle": str, "oracle_version": str, "series": [str], "results": [{"series": str, "loglik": float, "params": {name: float}, "se": {name: float}, "robust_se": {name: float}, "qml_robust_se": {name: float} (só rugarch; ver abaixo), "sigma": [float], "aic": float, "bic": float, "hqic": float | null, "sic": float | null}]}`. Os critérios ficam na escala do próprio oráculo. O `robust_se` do rugarch é Newey-West (HAC); o fixture do rugarch traz também `qml_robust_se`, o sanduíche QML H⁻¹SᵀSH⁻¹ calculado no R com a Hessiana e os scores do próprio rugarch, e é contra ele que o SE robusto do VolEngine é comparado (decisão R17).
 - Dados: 3 séries sGARCH(1,1)-norm, μ=0.05, ω=0.01, α=0.08, β=0.9, T = 5000, 3000 e 1500, `np.random.default_rng(20261110)`, escritas em CSV com 17 dígitos significativos (série mais curta com células vazias no fim).
 - `rugarch`: `ugarchspec(variance.model=list(model="sGARCH", garchOrder=c(1,1)), mean.model=list(armaOrder=c(0,0), include.mean=TRUE), distribution.model="norm")`, `ugarchfit(solver="hybrid")`; `infocriteria()` dá AIC/BIC/SIC/HQIC por observação. Comparação com `var_init="sample"`.
 - `arch`: `arch_model(y, mean="Constant", vol="GARCH", p=1, q=1, dist="normal", rescale=False).fit(disp="off")`; SE Hessiana em `fit(cov_type="classic")`, robusta em `cov_type="robust"`; `aic`/`bic` totais. Comparação com `var_init="backcast"` e `per_obs=False`.
