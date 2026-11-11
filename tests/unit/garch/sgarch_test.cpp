@@ -105,12 +105,17 @@ TEST(SGarch, BackcastInitMatchesArchFormula)
     std::vector<double> s2(100);
     std::vector<double> th{0.05, 0.1, 0.1, 0.8};
     ve::garch::sgarch_norm_loglik(r, th, {.var_init = VarInit::Backcast}, {.sigma2 = s2});
+    double mean = 0.0;
+    for (double value : r)
+    {
+        mean += value / 100.0;
+    }
     double weighted_square_sum = 0.0;
     double weight_sum = 0.0;
     for (std::size_t i = 0; i < 75; ++i)
     {
         double weight = std::pow(0.94, static_cast<double>(i));
-        double residual = r[i] - 0.05;
+        double residual = r[i] - mean;
         weighted_square_sum += weight * residual * residual;
         weight_sum += weight;
     }
@@ -124,10 +129,26 @@ TEST(SGarch, BackcastWindowIsWholeSampleWhenShorterThan75)
 {
     std::vector<double> r{0.1, -0.2, 0.3};
     std::vector<double> s2(3);
-    std::vector<double> th{0.0, 0.1, 0.1, 0.8};
-    ve::garch::sgarch_norm_loglik(r, th, {.var_init = VarInit::Backcast}, {.sigma2 = s2});
+    std::vector<double> th{0.1, 0.1, 0.8};
+    SGarchConfig config{.include_mean = false, .var_init = VarInit::Backcast};
+    ve::garch::sgarch_norm_loglik(r, th, config, {.sigma2 = s2});
     double b = (0.01 + 0.94 * 0.04 + 0.94 * 0.94 * 0.09) / (1.0 + 0.94 + 0.94 * 0.94);
     EXPECT_NEAR(s2[0], 0.1 + 0.1 * b + 0.8 * b, 1e-12);
+}
+
+TEST(SGarch, BackcastIsCenteredOnSampleMeanNotOnMu)
+{
+    std::vector<double> r{0.4, -0.2, 0.7};
+    std::vector<double> low_mu(3);
+    std::vector<double> high_mu(3);
+    std::vector<double> low_theta{-1.0, 0.1, 0.1, 0.8};
+    std::vector<double> high_theta{2.0, 0.1, 0.1, 0.8};
+    SGarchConfig config{.var_init = VarInit::Backcast};
+    ve::garch::sgarch_norm_loglik(r, low_theta, config, {.sigma2 = low_mu});
+    ve::garch::sgarch_norm_loglik(r, high_theta, config, {.sigma2 = high_mu});
+    double b = (0.01 + 0.94 * 0.25 + 0.94 * 0.94 * 0.16) / (1.0 + 0.94 + 0.94 * 0.94);
+    EXPECT_NEAR(low_mu[0], 0.1 + 0.1 * b + 0.8 * b, 1e-12);
+    EXPECT_EQ(low_mu[0], high_mu[0]);
 }
 
 TEST(SGarch, NoMeanHasThreeParams)
