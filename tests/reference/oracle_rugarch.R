@@ -1,4 +1,4 @@
-# Fits every reference series with rugarch and writes the oracle fixture.
+# Fits every case of cases.json that lists rugarch and writes the oracle fixture.
 # Run from the repository root: Rscript tests/reference/oracle_rugarch.R
 
 suppressPackageStartupMessages({
@@ -6,14 +6,29 @@ suppressPackageStartupMessages({
     library(jsonlite)
 })
 
-data_path <- file.path("tests", "reference", "data", "sgarch11_norm.csv")
-fixture_path <- file.path("tests", "reference", "fixtures", "rugarch_sgarch11_norm.json")
+reference <- file.path("tests", "reference")
+cases_path <- file.path(reference, "cases.json")
+data_paths <- file.path(reference, "data", c("sgarch11_norm.csv", "grid.csv"))
+fixture_path <- file.path(reference, "fixtures", "rugarch.json")
 
-sgarch_spec <- function() {
+load_series <- function(paths) {
+    columns <- list()
+    for (path in paths) {
+        table <- read.csv(path, check.names = FALSE)
+        for (name in colnames(table)) {
+            values <- table[[name]]
+            columns[[name]] <- values[!is.na(values)]
+        }
+    }
+    columns
+}
+
+# rugarch's garchOrder is c(ARCH order, GARCH order): VolEngine's (p, q).
+case_spec <- function(case) {
     ugarchspec(
-        variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
-        mean.model = list(armaOrder = c(0, 0), include.mean = TRUE),
-        distribution.model = "norm"
+        variance.model = list(model = "sGARCH", garchOrder = c(case$p, case$q)),
+        mean.model = list(armaOrder = unlist(case$arma), include.mean = case$include_mean),
+        distribution.model = case$dist
     )
 }
 
@@ -25,15 +40,29 @@ qml_robust_se <- function(fit) {
     as.list(setNames(sqrt(diag(covariance)), names(coef(fit))))
 }
 
-fit_series <- function(name, values) {
-    fit <- ugarchfit(sgarch_spec(), values, solver = "hybrid")
-    if (convergence(fit) != 0) {
-        stop(sprintf("rugarch did not converge on series %s", name))
+check_interior <- function(id, params) {
+    weights <- params[grepl("^(alpha|beta)[0-9]+$", names(params))]
+    if (min(weights) <= 1e-4 || sum(weights) >= 0.999) {
+        stop(sprintf("rugarch estimate on case %s is on the boundary: %s", id,
+                     paste(names(weights), signif(weights, 4), sep = " = ", collapse = ", ")))
     }
+}
+
+# rugarch's default Hessian is Richardson-extrapolated from a first step of 10% of each parameter (hess.d = 0.1),
+# which is biased where the likelihood is ill-conditioned (two GARCH lags) or not smooth (ged with shape < 2).
+# A first step of 0.1% removes that bias.
+fit_case <- function(case, series) {
+    fit <- ugarchfit(case_spec(case), series[[case$series]], solver = "hybrid",
+                     numderiv.control = list(hess.d = 1e-3))
+    if (convergence(fit) != 0) {
+        stop(sprintf("rugarch did not converge on case %s", case$id))
+    }
+    check_interior(case$id, coef(fit))
     # infocriteria() rows: Akaike, Bayes, Shibata, Hannan-Quinn, all per observation.
     criteria <- infocriteria(fit)
     list(
-        series = name,
+        case = case$id,
+        series = case$series,
         loglik = likelihood(fit),
         params = as.list(coef(fit)),
         se = as.list(fit@fit$matcoef[, " Std. Error"]),
@@ -48,17 +77,13 @@ fit_series <- function(name, values) {
 }
 
 main <- function() {
-    table <- read.csv(data_path, check.names = FALSE)
-    series <- colnames(table)
-    results <- lapply(series, function(name) {
-        values <- table[[name]]
-        fit_series(name, values[!is.na(values)])
-    })
+    cases <- Filter(function(case) "rugarch" %in% unlist(case$oracles), read_json(cases_path))
+    series <- load_series(data_paths)
     fixture <- list(
         oracle = "rugarch",
         oracle_version = as.character(packageVersion("rugarch")),
-        series = series,
-        results = results
+        cases = vapply(cases, function(case) case$id, ""),
+        results = lapply(cases, fit_case, series = series)
     )
     dir.create(dirname(fixture_path), recursive = TRUE, showWarnings = FALSE)
     write_json(fixture, fixture_path, auto_unbox = TRUE, digits = I(17), pretty = TRUE)

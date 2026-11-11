@@ -7,28 +7,44 @@ that `python/tests/test_oracles.py` compares VolEngine against. Conventions and 
 
 | Path | Content |
 |------|---------|
-| `generate_data.py` | Simulates the sGARCH(1,1)-normal series (seed 20261110) |
-| `oracle_rugarch.R` | Fits every series with `rugarch` and writes its fixture |
-| `oracle_arch.py` | Fits every series with `arch` and writes its fixture |
-| `data/sgarch11_norm.csv` | One column per series (`t5000`, `t3000`, `t1500`), 17 significant digits; shorter series end in empty cells |
-| `fixtures/rugarch_sgarch11_norm.json` | `rugarch` results |
-| `fixtures/arch_sgarch11_norm.json` | `arch` results |
+| `generate_data.py` | Simulates every series: the plan-1 sGARCH(1,1)-normal series (seed 20261110) and the grid series (seed 20261111) |
+| `cases.json` | The validation cases: series, orders, distribution and the oracles each one is compared with |
+| `oracle_rugarch.R` | Fits every case that lists `rugarch` and writes its fixture |
+| `oracle_arch.py` | Fits every case that lists `arch` and writes its fixture |
+| `data/sgarch11_norm.csv` | Plan-1 series, one column per length (`t5000`, `t3000`, `t1500`), 17 significant digits; shorter series end in empty cells |
+| `data/grid.csv` | Grid series, T = 3000 each (`sgarch21_std`, `arma11_sgarch11_ged`, `sgarch12_norm`, `sgarch22_ged`), 17 significant digits |
+| `fixtures/rugarch.json` | `rugarch` results |
+| `fixtures/arch.json` | `arch` results |
 
 The files under `data/` and `fixtures/` are generated and committed. The tests read only these files: running
-them needs neither R nor `arch`.
+them needs neither R nor `arch`. Series names are unique across the data files.
+
+## Case format
+
+`cases.json` is a list of
+
+```
+{"id": str, "series": str, "p": int, "q": int, "arma": [m, n], "include_mean": bool,
+ "dist": "norm" | "std" | "ged", "oracles": ["rugarch", "arch"]}
+```
+
+`p` is the ARCH order (α terms) and `q` the GARCH order (β terms), as in VolEngine's `Spec` and `arch`, and as
+`rugarch`'s `garchOrder = c(p, q)`. The id is `<series>/<model>`.
 
 ## Fixture format
 
 ```
-{"oracle": str, "oracle_version": str, "series": [str],
- "results": [{"series": str, "loglik": float, "params": {name: float}, "se": {name: float},
+{"oracle": str, "oracle_version": str, "cases": [str],
+ "results": [{"case": str, "series": str, "loglik": float, "params": {name: float}, "se": {name: float},
               "robust_se": {name: float}, "sigma": [float], "aic": float, "bic": float,
               "hqic": float | null, "sic": float | null}]}
 ```
 
-Parameter names follow `rugarch` (`mu`, `omega`, `alpha1`, `beta1`). Criteria stay on the oracle's own scale:
-per observation for `rugarch`, totals for `arch` (which reports no HQIC or SIC, hence `null`). The `rugarch`
-results carry one extra key, `qml_robust_se`: `rugarch`'s `robust_se` is a Newey-West estimator, and
+`cases` lists the ids of the cases that name the oracle, in `cases.json` order, and `results` follows it.
+Parameter names follow `rugarch`, which VolEngine uses: `mu`, `ar1..`, `ma1..`, `omega`, `alpha1..`,
+`beta1..`, `shape`; `oracle_arch.py` renames `alpha[i]`, `beta[j]` and `nu`. Criteria stay on the oracle's own
+scale: per observation for `rugarch`, totals for `arch` (which reports no HQIC or SIC, hence `null`). The
+`rugarch` results carry one extra key, `qml_robust_se`: `rugarch`'s `robust_se` is a Newey-West estimator, and
 `qml_robust_se` is the QML sandwich (VolEngine's robust definition) rebuilt from `rugarch`'s own Hessian and
 per-observation scores.
 
@@ -48,5 +64,7 @@ Rscript tests/reference/oracle_rugarch.R
 python/.venv/Scripts/python tests/reference/oracle_arch.py
 ```
 
-The scripts stop with an error if an oracle reports non-convergence. After regenerating, record the oracle
-versions and the observed differences in `docs/guide/validation.md`.
+The scripts stop with an error if an oracle reports non-convergence or an estimate on the boundary (some αᵢ
+or βⱼ ≤ 1e-4, or Σα + Σβ ≥ 0.999). `oracle_rugarch.R` shrinks `rugarch`'s numerical Hessian step
+(`hess.d = 1e-3`); `docs/guide/validation.md` explains why. After regenerating, record the oracle versions and
+the observed differences there.
