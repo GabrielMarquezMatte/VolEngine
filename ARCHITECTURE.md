@@ -129,6 +129,28 @@ parameters are seeded as dual variables, `model::parameter_map` maps them to the
 computation, and the derivative of the objective comes out of one evaluation. A new model or distribution adds a
 template function and a `Layout` entry; the driver, the optimizer and the standard errors do not change.
 
+## Performance method
+
+The library exists to be fast, so the aim is the most optimized code the problem allows, with readability kept
+alongside it ([STYLEGUIDE.md](STYLEGUIDE.md#priorities)). An optimization is accepted on evidence, never on
+intuition. A change to a hot path (the likelihood and its recursions, the AD evaluation, the optimizer loop, the
+batch scheduling) goes through three steps:
+
+1. **Benchmark.** Run the Google Benchmark suite (preset `gcc-bench`) before and after, on the same machine, and
+   compare medians against the spread over repetitions. A new model, distribution or kernel comes with its own
+   `BM_Loglik` case. Results go in [docs/performance/benchmarks.md](docs/performance/benchmarks.md).
+2. **Profile.** Find where the time goes before changing anything: AMD uProf or Intel VTune on Windows (matching
+   the CPU), `perf record`/`perf report` on Linux. A change that targets a function the profile does not show is
+   not justified.
+3. **Read the assembly** of the hot function, from a `gcc-bench` object: `objdump -d -C -M intel --no-show-raw-insn`
+   (or `-S` on a build with `-g`), and `-fopt-info-vec-missed` to find loops that did not vectorize and why. Look
+   for calls that should have been inlined, allocations inside loops, copies of `Dual` values, and divisions or
+   transcendental calls that can be hoisted.
+
+What a step found (the numbers, the machine, the assembly excerpt that mattered) goes in `docs/performance/`, never
+in a comment ([STYLEGUIDE.md](STYLEGUIDE.md#findings-do-not-belong-in-code)). Copy elision on return is checked by
+the compiler (`-Wnrvo` on GCC 14+), not by review.
+
 ## Validation
 
 The sGARCH(p,q) grid with the three distributions is compared with `rugarch` (default conventions) and

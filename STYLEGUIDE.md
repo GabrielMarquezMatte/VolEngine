@@ -9,8 +9,13 @@ Code, identifiers, error messages and repository documentation (README, ARCHITEC
 ## Priorities
 
 1. **Correctness** — the code must be right. No shortcuts that sacrifice safety or accuracy.
-2. **Performance** — optimize where it matters, but never at the cost of readability.
-3. **Readability** — code is read far more than it is written.
+2. **Performance and readability, together** — code is read far more than it is written, and this library exists
+   to be fast. The two are not traded against each other by default:
+   - A change that is faster and reads as well (an elided copy, an allocation removed, a move instead of a copy) is
+     always taken, anywhere in the code.
+   - A change that is faster but reads worse is taken only on a measured hot path, with the measurement recorded in
+     `docs/` (see [Performance Notes](#performance-notes)).
+   - A change that reads better but is slower on a measured hot path is not taken.
 
 ## Automatic checks
 
@@ -36,6 +41,10 @@ It prints one `path:line: rule: message` line per violation and exits 1 if there
 In C++, function length, parameter count and nesting are enforced by `clang-tidy`
 (`readability-function-size`: `LineThreshold: 60`, `ParameterThreshold: 5`, `NestingThreshold: 3`,
 configured in `.clang-tidy`) in CI and locally when available. Formatting comes from `.clang-format`.
+
+Copy elision on return ([Return values](#return-values--rvo-and-nrvo)) is enforced by the compiler: GCC 14+ builds
+with `-Wnrvo` as an error, and GCC and Clang reject pessimizing and redundant moves (`-Wpessimizing-move`,
+`-Wredundant-move`, part of `-Wall`/`-Wextra`).
 
 ---
 
@@ -448,6 +457,55 @@ if (!checked_mul(count, stride, required) || required > capacity)
 
 ---
 
+## Return values — RVO and NRVO
+
+Return results by value and write the function so the compiler builds the result directly in the caller's storage:
+no copy and no move. This applies everywhere, not only on hot paths: it costs no readability.
+
+- **Return by value**, not through an output parameter. An output parameter (`std::span<double>`, `T&`) is for a
+  buffer the caller reuses across calls on a hot path, or for filling an object the caller itself returns by name.
+- **Every `return` in a function returns the same named local, or every `return` is a prvalue.** GCC elides the
+  named return (NRVO) only then: a single guard clause that returns some other object disables it for the whole
+  function, even a guard placed before the local is declared.
+- **Guards that return something else live in a caller.** Split the function: the outer one keeps its guard
+  clauses and returns prvalues (`return unavailable(k);`, `return from_factor(factor, middle, k);`); the inner one
+  builds the named result and returns only it.
+- **To return "nothing" from a named `std::optional`, reset it and return it** (`hessian.reset(); return
+  hessian;`), never `return std::nullopt;` beside `return hessian;`.
+- **The local has the exact return type.** A `Matrix` returned from a function that returns `std::optional<Matrix>`
+  is moved into the optional, not elided: declare `std::optional<Matrix> hessian(std::in_place, m * m);` instead.
+- **Never `return std::move(local);`**: it forbids the elision it was meant to help. The same for
+  `return std::move(parameter);`, which is already an implicit move.
+- **Do not build a fallback result up front** (`FitResult failed = ...;` returned by early exits): it allocates on
+  the paths that never use it and blocks NRVO on the one that returns the real result.
+
+```cpp
+// NOT OK: the guard returns another object, so `errors` is moved, not elided
+StandardErrors from_hessian(const Matrix& hessian, const Matrix& middle, std::size_t k)
+{
+    Matrix factor = negated(hessian);
+    if (!cholesky_factor(factor, k))
+    {
+        return unavailable(k);
+    }
+    StandardErrors errors = ...;
+    return errors;
+}
+
+// OK: the guard stays in the outer function; the inner one returns only its named local
+StandardErrors from_hessian(const Matrix& hessian, const Matrix& middle, std::size_t k)
+{
+    Matrix factor = negated(hessian);
+    if (!cholesky_factor(factor, k))
+    {
+        return unavailable(k);
+    }
+    return from_factor(factor, middle, k);
+}
+```
+
+---
+
 ## Ownership and RAII
 
 Resources are owned by objects, released by destructors, on every exit path including exceptions.
@@ -506,6 +564,9 @@ TEST(Fit, ConstantSeriesReportsFitFailed)
 
 ## Performance Notes
 
+The goal is the fastest code the problem allows, proved by evidence and not by intuition. How a hot-path change is
+measured (benchmark, profile, assembly) is in [ARCHITECTURE.md](ARCHITECTURE.md#performance-method).
+
 These rules apply only when a function is on a measured hot path (the likelihood recursion, scores,
 the batch loop):
 
@@ -545,5 +606,9 @@ Outside the hot path (setup, argument validation, result assembly), ordinary all
 - [ ] No function above 60 lines, with more than 5 parameters, or nested deeper than 3 blocks.
 - [ ] No folder with more than 8 modules; no `utils`/`helpers`/`misc`/`common`.
 - [ ] No comment that describes what the code does, cites a plan or task, or records a measurement.
+- [ ] Results are returned by value with NRVO or RVO: the GCC build (`-Wnrvo`) has no warning, and no
+      `return std::move(local)`.
+- [ ] A hot-path change comes with before/after benchmark numbers, and its assembly was read; findings are in
+      `docs/performance/`.
 - [ ] Every new C function validates its arguments, returns `ve_status` and lets no exception escape.
 - [ ] Tests assert exact values and pass.

@@ -119,11 +119,7 @@ std::optional<std::string> check_batch(const Batch& batch)
     {
         return "batch has no jobs; call ve_batch_set_jobs";
     }
-    if (std::optional<std::string> message = check_job_indices(batch))
-    {
-        return message;
-    }
-    return check_used_series(batch);
+    return check_job_indices(batch).or_else([&batch] { return check_used_series(batch); });
 }
 
 std::vector<FitResult> run_batch(Context& context, const Batch& batch)

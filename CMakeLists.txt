@@ -25,6 +25,11 @@ if(MSVC)
 else()
     set(VE_WARNING_FLAGS -Wall -Wextra -Wpedantic -Werror)
 endif()
+# Every return of a named local must be elided (STYLEGUIDE "Return values"). Only GCC 14+ can report a missed
+# elision; GCC and Clang already reject pessimizing and redundant moves through -Wall and -Wextra.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 14)
+    list(APPEND VE_WARNING_FLAGS $<$<COMPILE_LANGUAGE:CXX>:-Wnrvo>)
+endif()
 
 # loglik<double> and loglik<Dual<N>> must round identically, and only the double path could be fused into
 # multiply-adds.

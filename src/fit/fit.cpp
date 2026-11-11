@@ -233,37 +233,45 @@ bool fill_at_estimate(FitResult& result, const fit::LikelihoodProblem& problem, 
     return true;
 }
 
-}
-
-FitResult fit_one(std::span<const double> r, const Spec& spec, const FitConfig& config)
+// Fills `result`, which arrives as empty_result, and returns its status. On every status other than a
+// finished optimization the estimate stays NaN.
+FitStatus estimate(std::span<const double> r, FitResult& result)
 {
-    fit::LikelihoodProblem problem{r, model::layout_of(spec), config.var_init};
+    fit::LikelihoodProblem problem{r, model::layout_of(result.spec), result.config.var_init};
     std::size_t k = problem.layout.count();
-    if (has_insufficient_data(r, spec, k))
+    if (has_insufficient_data(r, result.spec, k))
     {
-        return empty_result(spec, config, r.size(), FitStatus::InsufficientData);
+        return FitStatus::InsufficientData;
     }
-    FitResult failed = empty_result(spec, config, r.size(), FitStatus::Failed);
     std::vector<double> theta = model::start_values(r, problem.layout);
     if (!has_valid_start(r, theta, problem.layout))
     {
-        return failed;
+        return FitStatus::Failed;
     }
     model::Standardization standardization = model::standardization_of(r);
     std::vector<double> u(k);
     model::to_unconstrained(theta, u, problem.layout, standardization);
-    optim::LbfgsResult outcome =
-        with_dual_width(k, [&]<std::size_t N>() { return minimize<N>(problem, standardization, config, u); });
+    optim::LbfgsResult outcome = with_dual_width(
+        k, [&]<std::size_t N>() { return minimize<N>(problem, standardization, result.config, u); });
     if (outcome.stop == optim::Stop::NonFinite)
     {
-        return failed;
+        return FitStatus::Failed;
     }
-    FitResult result = empty_result(spec, config, r.size(), status_from(outcome.stop));
     model::to_natural<double>(u, result.estimate, problem.layout, standardization);
     if (!fill_at_estimate(result, problem, standardization.scale))
     {
-        return failed;
+        std::ranges::fill(result.estimate, kNaN);
+        return FitStatus::Failed;
     }
+    return status_from(outcome.stop);
+}
+
+}
+
+FitResult fit_one(std::span<const double> r, const Spec& spec, const FitConfig& config)
+{
+    FitResult result = empty_result(spec, config, r.size(), FitStatus::Failed);
+    result.status = estimate(r, result);
     return result;
 }
 

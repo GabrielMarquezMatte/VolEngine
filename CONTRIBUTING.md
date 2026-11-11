@@ -7,7 +7,7 @@ shape of the codebase and [STYLEGUIDE.md](STYLEGUIDE.md) for the code style.
 
 - The C API in `include/volengine/volengine.h` is the only stable contract. Everything under `src/` can change
   freely. The stability rules are in [ARCHITECTURE.md](ARCHITECTURE.md#stability-rules-of-the-c-api).
-- Warnings are errors (`-Wall -Wextra -Wpedantic -Werror`, `/W4 /WX` on MSVC).
+- Warnings are errors (`-Wall -Wextra -Wpedantic -Werror`, plus `-Wnrvo` on GCC 14+; `/W4 /WX` on MSVC).
 - Commit messages carry no `Co-Authored-By` trailer.
 - Do not copy or translate `rugarch` code (GPL-3). Reading it to understand a convention is fine.
 

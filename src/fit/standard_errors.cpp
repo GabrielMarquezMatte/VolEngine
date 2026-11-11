@@ -140,20 +140,21 @@ std::optional<Matrix> numerical_hessian(const Problem& problem, std::span<const 
                                         const Indices& interior)
 {
     std::size_t m = interior.size();
-    Matrix hessian(m * m);
+    std::optional<Matrix> hessian(std::in_place, m * m);
     std::vector<double> column(theta.size());
     for (std::size_t a = 0; a < m; ++a)
     {
         if (!shrinking_difference_column(problem, theta, interior[a], column))
         {
-            return std::nullopt;
+            hessian.reset();
+            return hessian;
         }
         for (std::size_t b = 0; b < m; ++b)
         {
-            hessian[b * m + a] = column[interior[b]];
+            (*hessian)[b * m + a] = column[interior[b]];
         }
     }
-    symmetrize(hessian, m);
+    symmetrize(*hessian, m);
     return hessian;
 }
 
@@ -209,14 +210,9 @@ StandardErrors unavailable(std::size_t k)
     return {std::vector<double>(k, nan), std::vector<double>(k, nan)};
 }
 
-StandardErrors from_hessian(const Matrix& hessian, const Matrix& middle, std::size_t k)
+// `factor` is the Cholesky factor of the negated Hessian.
+StandardErrors from_factor(const Matrix& factor, const Matrix& middle, std::size_t k)
 {
-    Matrix factor(k * k);
-    std::ranges::transform(hessian, factor.begin(), [](double value) { return -value; });
-    if (!cholesky_factor(factor, k))
-    {
-        return unavailable(k);
-    }
     Matrix identity(k * k, 0.0);
     for (std::size_t i = 0; i < k; ++i)
     {
@@ -230,6 +226,17 @@ StandardErrors from_hessian(const Matrix& hessian, const Matrix& middle, std::si
         errors.robust[i] = std::sqrt(solved_diagonal_entry(factor, inverse_times_middle, k, i));
     }
     return errors;
+}
+
+StandardErrors from_hessian(const Matrix& hessian, const Matrix& middle, std::size_t k)
+{
+    Matrix factor(k * k);
+    std::ranges::transform(hessian, factor.begin(), [](double value) { return -value; });
+    if (!cholesky_factor(factor, k))
+    {
+        return unavailable(k);
+    }
+    return from_factor(factor, middle, k);
 }
 
 }
