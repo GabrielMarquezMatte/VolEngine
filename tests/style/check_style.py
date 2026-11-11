@@ -28,6 +28,7 @@ NON_CODE = re.compile(
     re.DOTALL | re.VERBOSE,
 )
 ELSE_TOKEN = re.compile(r"\belse\b")
+ELSE_KEYWORD_LINE = re.compile(r"else\s*:|elif\b")
 
 
 def ast_nodes(*names):
@@ -72,7 +73,7 @@ def else_line(lines, node):
     first = node.orelse[0]
     for number in range(first.lineno, 0, -1):
         stripped = lines[number - 1].lstrip()
-        if stripped.startswith(("else", "elif")):
+        if ELSE_KEYWORD_LINE.match(stripped):
             return number
     return first.lineno
 
@@ -83,6 +84,35 @@ def check_python_else(path, tree, lines):
         if isinstance(node, ELSE_BEARING_NODES) and node.orelse:
             message = "`else`/`elif` is forbidden; use a guard clause, early return or a table"
             violations.append(Violation(path, else_line(lines, node), "else", message))
+    return violations
+
+
+def is_simple_operand(node):
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        return isinstance(node.operand, ast.Constant)
+    return isinstance(node, (ast.Name, ast.Constant, ast.Attribute))
+
+
+def ternary_problem(node):
+    if node.end_lineno != node.lineno:
+        return "spans more than one line"
+    nested = [child for child in ast.walk(node) if isinstance(child, ast.IfExp) and child is not node]
+    if nested:
+        return "is nested"
+    if not (is_simple_operand(node.body) and is_simple_operand(node.orelse)):
+        return "has a branch that is not a name, literal or attribute"
+    return None
+
+
+def check_python_ternaries(path, tree):
+    violations = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.IfExp):
+            continue
+        problem = ternary_problem(node)
+        if problem:
+            message = f"ternary {problem}; use `if` with an early return"
+            violations.append(Violation(path, node.lineno, "ternary", message))
     return violations
 
 
@@ -114,7 +144,9 @@ def deepest_block(node, depth):
     for child in ast.iter_child_nodes(node):
         if isinstance(child, FUNCTION_NODES + (ast.ClassDef, ast.Lambda)):
             continue
-        child_depth = depth + 1 if isinstance(child, BLOCK_NODES) else depth
+        child_depth = depth
+        if isinstance(child, BLOCK_NODES):
+            child_depth += 1
         candidate = deepest_block(child, child_depth)
         if candidate[0] > deepest[0]:
             deepest = candidate
@@ -144,7 +176,7 @@ def check_python(path, text):
     except SyntaxError as error:
         return [Violation(path, error.lineno or 1, "syntax", error.msg)]
     lines = text.splitlines()
-    violations = check_python_else(path, tree, lines)
+    violations = check_python_else(path, tree, lines) + check_python_ternaries(path, tree)
     for node in ast.walk(tree):
         if isinstance(node, FUNCTION_NODES):
             violations.extend(check_function(path, node, lines))
@@ -185,7 +217,9 @@ def check_folder_modules(files):
 
 
 def main(root=None):
-    root = Path(root) if root is not None else Path(__file__).resolve().parents[2]
+    if root is None:
+        root = Path(__file__).resolve().parents[2]
+    root = Path(root)
     files = list(scanned_files(root))
     violations = check_folder_modules(files)
     for path, relative in files:
@@ -196,4 +230,4 @@ def main(root=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else None))
+    sys.exit(main(*sys.argv[1:2]))

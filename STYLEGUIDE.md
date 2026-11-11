@@ -26,7 +26,8 @@ It prints one `path:line: rule: message` line per violation and exits 1 if there
 
 | Rule             | C / C++                | Python                              |
 |------------------|------------------------|-------------------------------------|
-| `else`           | token outside strings and comments | `else`/`elif`/`for…else`/`try…else` by AST; simple ternary allowed |
+| `else`           | token outside strings and comments | `else`/`elif`/`for…else`/`try…else` by AST |
+| `ternary`        | review only            | by AST: a ternary whose branches are not a name, literal, attribute or negated literal, that is nested, or that spans more than one line |
 | `folder-modules` | more than 8 modules    | more than 8 `.py` files (not counting `__init__.py`) |
 | `function-length`| clang-tidy             | more than 60 lines, by AST          |
 | `function-params`| clang-tidy             | more than 5 parameters, by AST      |
@@ -130,6 +131,10 @@ if (series.empty())
 
 Use a ternary only with one condition and operands that are names, literals or members. Never nested,
 never with a function call in a branch, never broken across lines.
+
+`check_style.py` enforces this for Python (rule `ternary`: each branch must be a name, a literal, an
+attribute or a negated literal such as `-1.0`; no nested ternary; one source line). In C++ ternaries are
+checked by review only.
 
 ```cpp
 // OK: two literals
