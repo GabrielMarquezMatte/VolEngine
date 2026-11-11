@@ -1,8 +1,11 @@
 #include "fit/standard_errors.hpp"
 
+#include "ad/dual.hpp"
 #include "fit/cholesky.hpp"
+#include "model/likelihood.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -18,35 +21,37 @@ constexpr double kRelativeStep = 1e-5;
 constexpr double kPersistenceStepFloor = 1e-6;
 constexpr int kMaxStepHalvings = 30;
 
+constexpr std::size_t kMaxParameters = 8;
+
 using Matrix = std::vector<double>;
+using Gradient = ad::Dual<kMaxParameters>;
 
 struct Problem
 {
-    std::span<const double> r;
-    const garch::SGarchConfig& config;
+    const LikelihoodProblem& likelihood;
     double series_scale;
 };
 
-std::size_t mean_offset(const garch::SGarchConfig& config)
+bool in_valid_region(std::span<const double> theta, const model::Layout& layout)
 {
-    return config.include_mean ? 1 : 0;
-}
-
-bool in_valid_region(std::span<const double> theta, const garch::SGarchConfig& config)
-{
-    std::size_t offset = mean_offset(config);
-    double omega = theta[offset];
-    double alpha = theta[offset + 1];
-    double beta = theta[offset + 2];
+    double omega = theta[layout.omega()];
+    double alpha = theta[layout.alpha_begin()];
+    double beta = theta[layout.beta_begin()];
     return omega > 0.0 && alpha >= 0.0 && beta >= 0.0 && alpha + beta < 1.0;
 }
 
 bool gradient_at(const Problem& problem, std::span<const double> theta, std::span<double> grad)
 {
-    garch::SGarchOutputs out;
-    out.grad = grad;
-    double loglik = garch::sgarch_norm_loglik(problem.r, theta, problem.config, out);
+    double loglik = loglik_with_gradient(problem.likelihood, theta, grad, {});
     return std::isfinite(loglik) && std::ranges::all_of(grad, [](double v) { return std::isfinite(v); });
+}
+
+void store_scores(std::span<const Gradient> terms, std::size_t k, std::span<double> scores)
+{
+    for (std::size_t t = 0; t < terms.size(); ++t)
+    {
+        std::copy_n(terms[t].grad.begin(), k, scores.begin() + static_cast<std::ptrdiff_t>(t * k));
+    }
 }
 
 bool difference_column(const Problem& problem, std::span<const double> theta, std::size_t index, double step,
@@ -57,7 +62,8 @@ bool difference_column(const Problem& problem, std::span<const double> theta, st
     std::vector<double> down(theta.begin(), theta.end());
     up[index] += step;
     down[index] -= step;
-    if (!in_valid_region(up, problem.config) || !in_valid_region(down, problem.config))
+    const model::Layout& layout = problem.likelihood.layout;
+    if (!in_valid_region(up, layout) || !in_valid_region(down, layout))
     {
         return false;
     }
@@ -78,12 +84,12 @@ bool difference_column(const Problem& problem, std::span<const double> theta, st
 // beta may sit at ~0, so only their steps have an absolute floor.
 double initial_step(const Problem& problem, std::span<const double> theta, std::size_t index)
 {
-    std::size_t offset = mean_offset(problem.config);
-    if (index < offset)
+    std::size_t omega = problem.likelihood.layout.omega();
+    if (index < omega)
     {
         return kRelativeStep * std::max(std::abs(theta[index]), problem.series_scale);
     }
-    if (index == offset)
+    if (index == omega)
     {
         return kRelativeStep * theta[index];
     }
@@ -209,12 +215,32 @@ StandardErrors from_hessian(const Matrix& hessian, std::span<const double> score
 
 }
 
-StandardErrors sgarch_standard_errors(std::span<const double> r, std::span<const double> theta,
-                                      const garch::SGarchConfig& config, std::span<const double> scores,
-                                      double series_scale)
+double loglik_with_gradient(const LikelihoodProblem& problem, std::span<const double> theta, std::span<double> grad,
+                            std::span<double> scores)
 {
     std::size_t k = theta.size();
-    Problem problem{r, config, series_scale};
+    assert(k <= kMaxParameters && grad.size() == k);
+    std::vector<Gradient> seeds(k);
+    for (std::size_t i = 0; i < k; ++i)
+    {
+        seeds[i] = ad::variable<kMaxParameters>(theta[i], i);
+    }
+    std::vector<Gradient> terms;
+    if (!scores.empty())
+    {
+        terms.resize(problem.r.size());
+    }
+    Gradient loglik = model::loglik<Gradient>(problem.r, seeds, problem.layout, problem.var_init, {.terms = terms});
+    std::copy_n(loglik.grad.begin(), k, grad.begin());
+    store_scores(terms, k, scores);
+    return loglik.value;
+}
+
+StandardErrors sgarch_standard_errors(const LikelihoodProblem& likelihood, std::span<const double> theta,
+                                      std::span<const double> scores, double series_scale)
+{
+    std::size_t k = theta.size();
+    Problem problem{likelihood, series_scale};
     std::optional<Matrix> hessian = numerical_hessian(problem, theta);
     if (!hessian)
     {

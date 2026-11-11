@@ -25,6 +25,13 @@ else()
     set(VE_WARNING_FLAGS -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+# loglik<double> and loglik<Dual<N>> must round identically, and only the double path could be fused into
+# multiply-adds.
+set(VE_FLOAT_FLAGS)
+if(NOT MSVC)
+    set(VE_FLOAT_FLAGS -ffp-contract=off)
+endif()
+
 include(FetchContent)
 FetchContent_Declare(bs_thread_pool
     GIT_REPOSITORY https://github.com/bshoshany/thread-pool
@@ -40,13 +47,13 @@ add_library(volengine_core STATIC
     src/fit/criteria.cpp
     src/fit/fit.cpp
     src/fit/standard_errors.cpp
-    src/garch/sgarch.cpp
     src/model/layout.cpp
+    src/model/likelihood.cpp
     src/optim/transform.cpp)
 set_target_properties(volengine_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(volengine_core PUBLIC src include)
 target_include_directories(volengine_core SYSTEM PUBLIC ${bs_thread_pool_SOURCE_DIR}/include)
-target_compile_options(volengine_core PRIVATE ${VE_WARNING_FLAGS})
+target_compile_options(volengine_core PRIVATE ${VE_WARNING_FLAGS} ${VE_FLOAT_FLAGS})
 
 add_library(volengine SHARED
     src/capi/version_api.cpp
@@ -87,15 +94,18 @@ if(VE_BUILD_TESTS)
         tests/unit/capi/fit_accessors_test.cpp
         tests/unit/capi/panel_test.cpp
         tests/unit/capi/spec_test.cpp
+        tests/unit/dist/densities_test.cpp
         tests/unit/fit/criteria_test.cpp
         tests/unit/fit/fit_test.cpp
         tests/unit/garch/sgarch_test.cpp
+        tests/unit/mean/arma_test.cpp
         tests/unit/model/layout_test.cpp
+        tests/unit/model/likelihood_test.cpp
         tests/unit/optim/lbfgs_test.cpp
         tests/unit/optim/transform_test.cpp)
     target_include_directories(volengine_tests PRIVATE tests/unit)
     target_link_libraries(volengine_tests PRIVATE volengine_core volengine GTest::gtest_main)
-    target_compile_options(volengine_tests PRIVATE ${VE_WARNING_FLAGS})
+    target_compile_options(volengine_tests PRIVATE ${VE_WARNING_FLAGS} ${VE_FLOAT_FLAGS})
     include(GoogleTest)
     gtest_discover_tests(volengine_tests)
 

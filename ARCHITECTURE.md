@@ -5,8 +5,9 @@ the code carries its own meaning through naming and flow. What it deliberately d
 behind a decision (measurements, rejected approaches); that lives in `docs/`, and
 [STYLEGUIDE.md](STYLEGUIDE.md#comments) says why.
 
-This document describes what exists today: sGARCH(1,1) with normal innovations, fitted in batches, behind a C
-API and a Python package.
+This document describes what exists today: an ARMA(m,n)-sGARCH(p,q) log-likelihood with normal, Student-t and
+GED innovations, a template over the scalar type so that automatic differentiation gives its gradient; and, on
+top of it, sGARCH(1,1) with normal innovations fitted in batches behind a C API and a Python package.
 
 ## Layers
 
@@ -18,15 +19,20 @@ API and a Python package.
         src/capi   handles, error boundary
                  |
         src/fit    driver, batch, standard errors, criteria
-          |    \
-   src/garch   src/optim
-          \    /
+          |         \
+     src/model     src/optim       layout, likelihood | L-BFGS
+          |
+   src/mean  src/garch  src/dist   ARMA residuals, variance recursion, densities
+          \     |     /
+            src/ad                 dual numbers, digamma
+              |
         src/core   context, spec, panel
 ```
 
-Dependencies point one way: `core` <- `garch`, `optim` <- `fit` <- `capi`. Nothing in `src/` includes from
-`src/capi/` except `capi` itself. Everything below the C API is internal and may change in any release; only the
-header is a contract, and the Python package is a consumer of it like any other wrapper would be.
+Dependencies point one way: `core` <- `ad` <- `mean`, `garch`, `dist` <- `model` <- `fit` <- `capi`, and
+`optim` <- `fit`. Nothing in `src/` includes from `src/capi/` except `capi` itself. Everything below the C API is
+internal and may change in any release; only the header is a contract, and the Python package is a consumer of it
+like any other wrapper would be.
 
 ## Where each responsibility lives
 
@@ -40,7 +46,12 @@ header is a contract, and the Python package is a consumer of it like any other 
 | `src/core/spec.hpp` | `ve::Spec` (model, order, distribution, mean) and `ve::FitConfig` (iterations, tolerance, variance initialization): copyable values |
 | `src/core/panel.hpp` | `ve::PanelView`: a borrowed pointer, T, N, element strides and optional per-series start and length |
 | `src/core/var_init.hpp` | The variance initialization enum (`Sample`, `Backcast`) |
-| `src/garch/sgarch.hpp`, `sgarch.cpp` | sGARCH(1,1)-normal variance recursion, log-likelihood, gradient and per-observation scores |
+| `src/ad/dual.hpp`, `special.hpp`, `special.cpp` | `ve::ad::Dual<N>`: forward-mode dual numbers and their elementary functions; `digamma` |
+| `src/mean/arma.hpp` | ARMA(m,n) residuals, a template over the scalar type |
+| `src/garch/sgarch.hpp` | sGARCH(p,q) variance recursion and its presample, a template over the scalar type |
+| `src/dist/densities.hpp` | Log-densities of the standardized normal, Student-t and GED, templates over the scalar type |
+| `src/model/layout.hpp`, `layout.cpp` | `Layout`: parameter blocks, offsets, count and rugarch names of a `Spec` |
+| `src/model/likelihood.hpp`, `likelihood.cpp` | `loglik<T>`: the log-likelihood with its per-observation terms, residuals and variances, and the backcast; instantiated for `double` and `Dual<8>`, `Dual<16>`, `Dual<32>` |
 | `src/optim/lbfgs.hpp` (+ `curvature_memory.hpp`, `line_search.hpp`, `vector_math.hpp`) | L-BFGS minimizer, a template over the objective |
 | `src/optim/transform.hpp`, `transform.cpp` | Constrained to unconstrained parameter mapping and its Jacobian |
 | `src/fit/fit.hpp`, `fit.cpp` | `fit_one`: one series, one spec |
@@ -50,7 +61,7 @@ header is a contract, and the Python package is a consumer of it like any other 
 | `src/fit/fit_result.hpp` | `ve::FitResult`: status, estimates, standard errors, series, all by value |
 | `python/src/volengine/_native.py` | Library discovery (`VOLENGINE_LIB`), ABI check, prototypes, handle ownership |
 | `python/src/volengine/_spec.py`, `_fit.py`, `api.py` | `Spec` and `FitOptions`, `Fit` and the criteria, `Context.fit` |
-| `tests/unit/{capi,garch,optim,fit}` | GoogleTest suites mirroring `src/`; `c_header_check.c` compiles the header as C11 |
+| `tests/unit/{ad,capi,dist,fit,garch,mean,model,optim}` | GoogleTest suites mirroring `src/`; `c_header_check.c` compiles the header as C11 |
 | `tests/style/check_style.py` | Style rules that can be checked without a compiler; runs as the `style` ctest |
 | `python/tests` | Python tests, including `test_oracles.py` |
 | `tests/reference` | Data generator, oracle scripts and the committed fixtures; see [its README](tests/reference/README.md) |
@@ -91,10 +102,10 @@ The Python `Context.fit` builds the handles below and then makes one call; any C
    results are bit-identical for any number of threads on the same machine.
 4. **One fit.** `fit_one` (`src/fit/fit.cpp`) checks the series is long enough (parameters + 2) and not constant,
    and minimizes the negative mean log-likelihood of the series standardized by its sample mean and standard
-   deviation with L-BFGS in the unconstrained space (`src/optim/transform.cpp`), using the analytic gradient from
-   `src/garch/sgarch.cpp`; the fit therefore does not depend on the units of the data. At the estimate it
-   recomputes the variance path and scores and derives Hessian and robust standard errors, with finite-difference
-   steps relative to each parameter's scale.
+   deviation with L-BFGS in the unconstrained space (`src/optim/transform.cpp`), using the gradient of
+   `model::loglik` through `ad::Dual<8>`; the fit therefore does not depend on the units of the data. At the
+   estimate it recomputes the variance path and scores and derives Hessian and robust standard errors, with
+   finite-difference steps relative to each parameter's scale.
 5. **Status per fit.** A fit that does not converge, is too short or is degenerate carries its own status
    (`max_iter`, `failed`, `insufficient_data`); it does not fail the batch or the other fits.
 6. **Publishing.** Results are moved into freshly allocated `ve_fit` handles, all created before any is written to

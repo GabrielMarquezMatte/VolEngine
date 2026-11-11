@@ -1,7 +1,8 @@
 #include "fit/fit.hpp"
 
 #include "fit/standard_errors.hpp"
-#include "garch/sgarch.hpp"
+#include "model/layout.hpp"
+#include "model/likelihood.hpp"
 #include "optim/lbfgs.hpp"
 #include "optim/transform.hpp"
 
@@ -33,33 +34,30 @@ constexpr std::string_view kNamesWithMean[] = {"mu", "omega", "alpha1", "beta1"}
 class NegativeMeanLoglik
 {
 public:
-    NegativeMeanLoglik(std::span<const double> r, const garch::SGarchConfig& config,
-                       const optim::Standardization& standardization)
-        : r_(r), config_(config), standardization_(standardization),
-          theta_(garch::sgarch_param_count(config)), grad_theta_(theta_.size())
+    NegativeMeanLoglik(const fit::LikelihoodProblem& problem, const optim::Standardization& standardization)
+        : problem_(problem), standardization_(standardization), theta_(problem.layout.count()),
+          grad_theta_(theta_.size())
     {
     }
 
     double operator()(std::span<const double> u, std::span<double> grad)
     {
-        optim::sgarch_to_natural(u, theta_, config_.include_mean, standardization_);
-        garch::SGarchOutputs out;
-        out.grad = grad_theta_;
-        double loglik = garch::sgarch_norm_loglik(r_, theta_, config_, out);
+        bool include_mean = problem_.layout.include_mean;
+        optim::sgarch_to_natural(u, theta_, include_mean, standardization_);
+        double loglik = fit::loglik_with_gradient(problem_, theta_, grad_theta_, {});
         if (!std::isfinite(loglik))
         {
             std::ranges::fill(grad, 0.0);
             return kInfinity;
         }
-        optim::sgarch_chain_gradient(u, grad_theta_, grad, config_.include_mean, standardization_);
-        double count = static_cast<double>(r_.size());
+        optim::sgarch_chain_gradient(u, grad_theta_, grad, include_mean, standardization_);
+        double count = static_cast<double>(problem_.r.size());
         std::ranges::transform(grad, grad.begin(), [count](double value) { return -value / count; });
         return -loglik / count - std::log(standardization_.scale);
     }
 
 private:
-    std::span<const double> r_;
-    const garch::SGarchConfig& config_;
+    const fit::LikelihoodProblem& problem_;
     optim::Standardization standardization_;
     std::vector<double> theta_;
     std::vector<double> grad_theta_;
@@ -159,23 +157,22 @@ void fill_series(FitResult& result, std::span<const double> r, std::span<const d
     }
 }
 
-bool fill_at_estimate(FitResult& result, std::span<const double> r, const garch::SGarchConfig& model,
-                      double series_scale)
+bool fill_at_estimate(FitResult& result, const fit::LikelihoodProblem& problem, double series_scale)
 {
+    std::span<const double> r = problem.r;
     std::size_t k = result.estimate.size();
     std::vector<double> sigma2(r.size());
+    std::vector<double> grad(k);
     std::vector<double> scores(r.size() * k);
-    garch::SGarchOutputs out;
-    out.sigma2 = sigma2;
-    out.scores = scores;
-    double loglik = garch::sgarch_norm_loglik(r, result.estimate, model, out);
+    double loglik = model::loglik<double>(r, result.estimate, problem.layout, problem.var_init, {.sigma2 = sigma2});
     if (!std::isfinite(loglik))
     {
         return false;
     }
+    fit::loglik_with_gradient(problem, result.estimate, grad, scores);
     result.loglik = loglik;
     fill_series(result, r, sigma2);
-    fit::StandardErrors errors = fit::sgarch_standard_errors(r, result.estimate, model, scores, series_scale);
+    fit::StandardErrors errors = fit::sgarch_standard_errors(problem, result.estimate, scores, series_scale);
     result.se_hessian = std::move(errors.hessian);
     result.se_robust = std::move(errors.robust);
     return true;
@@ -186,8 +183,8 @@ bool fill_at_estimate(FitResult& result, std::span<const double> r, const garch:
 FitResult fit_one(std::span<const double> r, const Spec& spec, const FitConfig& config)
 {
     assert(spec.model == Model::SGarch && spec.p == 1 && spec.q == 1 && spec.dist == Dist::Norm);
-    garch::SGarchConfig model{spec.include_mean, config.var_init};
-    std::size_t k = garch::sgarch_param_count(model);
+    fit::LikelihoodProblem problem{r, model::layout_of(spec), config.var_init};
+    std::size_t k = problem.layout.count();
     if (r.size() < k + 2)
     {
         return empty_result(spec, config, r.size(), FitStatus::InsufficientData);
@@ -204,7 +201,7 @@ FitResult fit_one(std::span<const double> r, const Spec& spec, const FitConfig& 
     optim::LbfgsOptions options;
     options.max_iter = config.max_iter;
     options.gtol = config.tol;
-    NegativeMeanLoglik objective(r, model, standardization);
+    NegativeMeanLoglik objective(problem, standardization);
     optim::LbfgsResult outcome = optim::lbfgs_minimize(objective, u, options);
     if (outcome.stop == optim::Stop::NonFinite)
     {
@@ -212,7 +209,7 @@ FitResult fit_one(std::span<const double> r, const Spec& spec, const FitConfig& 
     }
     FitResult result = empty_result(spec, config, r.size(), status_from(outcome.stop));
     optim::sgarch_to_natural(u, result.estimate, spec.include_mean, standardization);
-    if (!fill_at_estimate(result, r, model, standardization.scale))
+    if (!fill_at_estimate(result, problem, standardization.scale))
     {
         return failed;
     }
