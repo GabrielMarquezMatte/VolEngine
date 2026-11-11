@@ -338,3 +338,38 @@ def test_fit_handles_are_freed_once_the_fits_are_dropped(monkeypatch, ctx, serie
     del fits
     gc.collect()
     assert len(freed) == 3
+
+
+def test_stride_not_multiple_of_element_size_matches_contiguous_copy(ctx, series):
+    packed = np.zeros(3000, dtype=np.dtype([("flag", "u1"), ("x", "<f8")]))
+    packed["x"] = series[:, 0]
+    column = packed["x"]
+    assert column.strides[0] % 8 != 0
+    a = ctx.fit(ve.Spec(), column)
+    b = ctx.fit(ve.Spec(), series[:, 0].copy())
+    assert a.status == "converged"
+    assert np.array_equal(a.coef().estimate, b.coef().estimate)
+    assert np.array_equal(a.sigma, b.sigma)
+
+
+@pytest.mark.parametrize("keyword", ["starts", "lengths"])
+@pytest.mark.parametrize(
+    "bad",
+    [[0.5, 0, 0], [-1, 0, 0], [0, np.nan, 0], [0, np.inf, 0], [True, False, True], ["a", "b", "c"]],
+)
+def test_malformed_ranges_raise_value_error_before_native_calls(monkeypatch, ctx, series, keyword, bad):
+    created = count_calls(monkeypatch, "ve_panel_create")
+    good = [0, 0, 0]
+    keywords = {"starts": good, "lengths": [10, 10, 10]}
+    keywords[keyword] = bad
+    with pytest.raises(ValueError, match="non-negative integers"):
+        ctx.fit(ve.Spec(), series, **keywords)
+    assert created == []
+
+
+@pytest.mark.parametrize("dtype", [np.int32, np.int64, np.uint64, np.float64])
+def test_integral_ranges_of_any_numeric_dtype_are_accepted(ctx, series, dtype):
+    starts = np.array(RAGGED_STARTS, dtype=dtype)
+    lengths = np.array(RAGGED_LENGTHS, dtype=dtype)
+    fits = ctx.fit(ve.Spec(), series, starts=starts, lengths=lengths)
+    assert [f.nobs for f in fits] == RAGGED_LENGTHS

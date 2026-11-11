@@ -110,18 +110,31 @@ def load_library(environ: Mapping[str, str], directory: Path) -> ctypes.CDLL:
         library = ctypes.CDLL(str(path))
     except OSError as error:
         raise ImportError(f"cannot load the VolEngine native library {path}: {error}") from error
+    check_abi(library, path)
     declare_prototypes(library)
-    abi = library.ve_abi_version()
-    if abi != VE_ABI_VERSION:
-        raise ImportError(f"{path} has ABI version {abi}, this package needs {VE_ABI_VERSION}")
     return library
 
 
+def check_abi(library: ctypes.CDLL, path: Path) -> None:
+    try:
+        declare_function(library, "ve_abi_version")
+    except AttributeError as error:
+        raise ImportError(f"{path} does not export ve_abi_version, it is not a VolEngine library") from error
+    abi = library.ve_abi_version()
+    if abi != VE_ABI_VERSION:
+        raise ImportError(f"{path} has ABI version {abi}, this package needs {VE_ABI_VERSION}")
+
+
+def declare_function(library: ctypes.CDLL, name: str) -> None:
+    restype, argtypes = PROTOTYPES[name]
+    function = getattr(library, name)
+    function.restype = restype
+    function.argtypes = argtypes
+
+
 def declare_prototypes(library: ctypes.CDLL) -> None:
-    for name, (restype, argtypes) in PROTOTYPES.items():
-        function = getattr(library, name)
-        function.restype = restype
-        function.argtypes = argtypes
+    for name in PROTOTYPES:
+        declare_function(library, name)
 
 
 lib = load_library(os.environ, LIBRARY_DIRECTORY)

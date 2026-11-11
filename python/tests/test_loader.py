@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -37,3 +38,9 @@ def test_not_a_library_file_is_an_import_error(tmp_path: Path) -> None:
     bogus.write_bytes(b"not a library")
     with pytest.raises(ImportError, match="cannot load"):
         _native.load_library({"VOLENGINE_LIB": str(bogus)}, tmp_path)
+
+
+def test_abi_mismatch_is_an_import_error_naming_both_versions(monkeypatch):
+    monkeypatch.setattr(_native, "VE_ABI_VERSION", _native.VE_ABI_VERSION + 1)
+    with pytest.raises(ImportError, match="ABI version 0, this package needs 1"):
+        _native.load_library(os.environ, _native.LIBRARY_DIRECTORY)
