@@ -1,9 +1,13 @@
 #include "model/parameter_map.hpp"
 
+#include "dist/densities.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <gtest/gtest.h>
+#include <limits>
+#include <numbers>
 #include <random>
 #include <span>
 #include <string>
@@ -249,6 +253,8 @@ namespace
 
 using ve::Model;
 using ve::model::on_boundary;
+using ve::model::power_of;
+using ve::model::shape_of;
 using ve::model::shock_moment;
 using Indices = std::vector<std::size_t>;
 
@@ -361,23 +367,57 @@ TEST(ParameterMap, RoundTripAllModels)
     }
 }
 
-bool is_power_family(Model model)
+// log E(|z| - eta1 z)^power of a ged, from its closed form.
+double ged_log_moment(const Layout& layout, std::span<const double> theta, std::size_t i)
 {
-    return model == Model::ApArch || model >= Model::FGarchGarch;
+    double nu = shape_of(theta, layout);
+    double power = power_of(theta, layout);
+    double eta1 = 0.0;
+    if (layout.asymmetry_count() > 0)
+    {
+        eta1 = theta[layout.asymmetry_begin() + i];
+    }
+    double log_abs_moment = power * ve::dist::ged_log_scale(nu) + (power / nu) * std::numbers::ln2 +
+                            std::lgamma((power + 1.0) / nu) - std::lgamma(1.0 / nu);
+    return log_abs_moment + std::log(0.5 * (std::pow(1.0 - eta1, power) + std::pow(1.0 + eta1, power)));
 }
 
-// A kappa outside (0, inf): std with shape <= power, or a moment past the double range at an extreme power or
-// ged shape. Such a point is outside the domain whatever the map does.
+// kappa itself is past the double range: +inf at an extreme power, or, at a ged shape near 0 with power != 2
+// (log kappa ~ -0.2 / nu), below the smallest normal double, where alpha = w / kappa overflows.
+bool moment_past_double_range(const Layout& layout, std::span<const double> theta, std::size_t i)
+{
+    double kappa = shock_moment<double>(theta, layout, i);
+    if (std::isinf(kappa))
+    {
+        return true;
+    }
+    double log_smallest = std::log(std::numeric_limits<double>::min());
+    return layout.dist == Dist::Ged && ged_log_moment(layout, theta, i) < log_smallest;
+}
+
+// The eta2 models take kappa by quadrature, which returns NaN or 0 where the closed form is still finite: a std
+// shape near the power, a ged shape near 0, an extreme power.
+bool quadrature_out_of_range(const Layout& layout, std::span<const double> theta, std::size_t i)
+{
+    double kappa = shock_moment<double>(theta, layout, i);
+    return layout.eta2 > 0 && !(std::isfinite(kappa) && kappa > 0.0);
+}
+
+// Outside the domain whatever the map does: std with shape <= power, where kappa is infinite, or a kappa that is
+// not a positive double.
 bool moment_out_of_range(const Layout& layout, std::span<const double> theta)
 {
-    if (!is_power_family(layout.model))
+    if (!layout.is_power_family())
     {
         return false;
     }
+    if (layout.dist == Dist::Std && shape_of(theta, layout) <= power_of(theta, layout))
+    {
+        return true;
+    }
     for (std::size_t i = 0; i < static_cast<std::size_t>(layout.arch); ++i)
     {
-        double kappa = shock_moment<double>(theta, layout, i);
-        if (!(std::isfinite(kappa) && kappa > 0.0))
+        if (moment_past_double_range(layout, theta, i) || quadrature_out_of_range(layout, theta, i))
         {
             return true;
         }

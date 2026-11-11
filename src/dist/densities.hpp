@@ -86,7 +86,16 @@ LogDensity<T> student_log_density(const T& nu)
     return {Dist::Std, log_constant, scale, power};
 }
 
-// lambda = sqrt(2^(-2/nu) Gamma(1/nu) / Gamma(3/nu)), taken through its logarithm.
+// log lambda, with lambda = sqrt(2^(-2/nu) Gamma(1/nu) / Gamma(3/nu)). lambda itself underflows to 0 for nu below
+// ~0.003, its logarithm stays finite.
+template <class T>
+T ged_log_scale(const T& nu)
+{
+    using std::lgamma;
+    T inverse = 1.0 / nu;
+    return 0.5 * (-2.0 * inverse * std::numbers::ln2 + lgamma(inverse) - lgamma(3.0 * inverse));
+}
+
 template <class T>
 LogDensity<T> ged_log_density(const T& nu)
 {
@@ -94,7 +103,7 @@ LogDensity<T> ged_log_density(const T& nu)
     using std::lgamma;
     using std::log;
     T inverse = 1.0 / nu;
-    T log_lambda = 0.5 * (-2.0 * inverse * std::numbers::ln2 + lgamma(inverse) - lgamma(3.0 * inverse));
+    T log_lambda = ged_log_scale(nu);
     T log_constant = log(nu) - log_lambda - (1.0 + inverse) * std::numbers::ln2 - lgamma(inverse);
     return {Dist::Ged, log_constant, exp(log_lambda), nu};
 }

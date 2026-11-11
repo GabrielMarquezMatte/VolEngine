@@ -47,34 +47,6 @@ std::size_t count_of(int order)
     return static_cast<std::size_t>(order);
 }
 
-bool is_power_family(Model model)
-{
-    return model == Model::ApArch || model >= Model::FGarchGarch;
-}
-
-// eta1, or the apARCH gamma; csGARCH keeps rho in eta1.
-std::size_t asymmetry_begin(const Layout& layout)
-{
-    if (layout.model == Model::ApArch)
-    {
-        return layout.gamma_begin();
-    }
-    return layout.eta1_begin();
-}
-
-std::size_t asymmetry_count(const Layout& layout)
-{
-    if (layout.model == Model::ApArch)
-    {
-        return count_of(layout.gamma);
-    }
-    if (layout.model == Model::CsGarch)
-    {
-        return 0;
-    }
-    return count_of(layout.eta1);
-}
-
 struct WeightBlock
 {
     std::size_t begin;
@@ -105,26 +77,6 @@ T sum_of(std::span<const T> values)
         sum = sum + value;
     }
     return sum;
-}
-
-template <class T>
-T power_of(std::span<const T> theta, const Layout& layout)
-{
-    if (!layout.free_power)
-    {
-        return T{layout.fixed_power};
-    }
-    return theta[layout.power()];
-}
-
-template <class T>
-T shape_of(std::span<const T> theta, const Layout& layout)
-{
-    if (!layout.has_shape())
-    {
-        return T{0.0};
-    }
-    return theta[layout.shape()];
 }
 
 // weights[i] = scale softmax(logits, 0)[i]; logits has weights.size() - 1 entries.
@@ -207,12 +159,12 @@ void shock_parameters_to_natural(std::span<const T> u, std::span<T> theta, const
     {
         theta[layout.shape()] = shape_to_natural(u[layout.shape()], layout.dist);
     }
-    std::size_t asymmetry = asymmetry_begin(layout);
-    for (std::size_t i = asymmetry; i < asymmetry + asymmetry_count(layout); ++i)
+    std::size_t asymmetry = layout.asymmetry_begin();
+    for (std::size_t i = asymmetry; i < asymmetry + layout.asymmetry_count(); ++i)
     {
         theta[i] = 2.0 * logistic(u[i]) - 1.0;
     }
-    if (is_power_family(layout.model))
+    if (layout.is_power_family())
     {
         std::copy_n(u.begin() + static_cast<std::ptrdiff_t>(layout.eta2_begin()), layout.eta2,
                     theta.begin() + static_cast<std::ptrdiff_t>(layout.eta2_begin()));
@@ -254,7 +206,7 @@ void weights_to_natural(std::span<const T> u, std::span<T> theta, const Layout& 
         theta[layout.alpha_begin() + i] = 2.0 * half_alpha;
         theta[layout.gamma_begin() + i] = 2.0 * (half_sum - half_alpha);
     }
-    for (std::size_t i = 0; i < count_of(layout.arch) && is_power_family(layout.model); ++i)
+    for (std::size_t i = 0; i < count_of(layout.arch) && layout.is_power_family(); ++i)
     {
         T moment = shock_moment<T>(theta, layout, i);
         theta[layout.alpha_begin() + i] = theta[layout.alpha_begin() + i] / moment;
@@ -282,7 +234,7 @@ T omega_to_natural(std::span<const T> u, std::span<const T> theta, const Layout&
         T beta_sum = sum_of(theta.subspan(layout.beta_begin(), count_of(layout.garch)));
         return x + (1.0 - beta_sum) * std::log(scale * scale);
     }
-    if (is_power_family(layout.model))
+    if (layout.is_power_family())
     {
         return exp(power_of(theta, layout) * std::log(scale)) * exp(x);
     }
@@ -302,7 +254,7 @@ Weights natural_weights(std::span<const double> theta, const Layout& layout)
         weights[i] = 0.5 * alpha;
         weights[block.count - p + i] = 0.5 * (alpha + theta[layout.gamma_begin() + i]);
     }
-    for (std::size_t i = 0; i < p && is_power_family(layout.model); ++i)
+    for (std::size_t i = 0; i < p && layout.is_power_family(); ++i)
     {
         weights[i] = theta[layout.alpha_begin() + i] * shock_moment<double>(theta, layout, i);
     }
@@ -321,12 +273,12 @@ void shock_parameters_to_unconstrained(std::span<const double> theta, std::span<
     {
         u[layout.shape()] = shape_to_unconstrained(theta[layout.shape()], layout.dist);
     }
-    std::size_t asymmetry = asymmetry_begin(layout);
-    for (std::size_t i = asymmetry; i < asymmetry + asymmetry_count(layout); ++i)
+    std::size_t asymmetry = layout.asymmetry_begin();
+    for (std::size_t i = asymmetry; i < asymmetry + layout.asymmetry_count(); ++i)
     {
         u[i] = log_ratio(1.0 + theta[i], 1.0 - theta[i]);
     }
-    if (is_power_family(layout.model))
+    if (layout.is_power_family())
     {
         std::copy_n(theta.begin() + static_cast<std::ptrdiff_t>(layout.eta2_begin()), layout.eta2,
                     u.begin() + static_cast<std::ptrdiff_t>(layout.eta2_begin()));
@@ -380,7 +332,7 @@ double omega_to_unconstrained(std::span<const double> theta, const Layout& layou
         double beta_sum = sum_of(theta.subspan(layout.beta_begin(), count_of(layout.garch)));
         return omega - (1.0 - beta_sum) * std::log(scale * scale);
     }
-    if (is_power_family(layout.model))
+    if (layout.is_power_family())
     {
         return std::log(omega) - power_of(theta, layout) * std::log(scale);
     }
@@ -393,7 +345,7 @@ bool shock_parameters_valid(std::span<const double> theta, const Layout& layout)
     {
         return false;
     }
-    std::span<const double> asymmetry = theta.subspan(asymmetry_begin(layout), asymmetry_count(layout));
+    std::span<const double> asymmetry = theta.subspan(layout.asymmetry_begin(), layout.asymmetry_count());
     bool asymmetry_valid = std::ranges::all_of(asymmetry, [](double value) { return std::abs(value) < 1.0; });
     return asymmetry_valid && (!layout.free_power || theta[layout.power()] > 0.0);
 }
@@ -438,11 +390,11 @@ bool in_block(std::size_t index, std::size_t begin, std::size_t count)
 template <class T>
 T shock_moment(std::span<const T> theta, const Layout& layout, std::size_t i)
 {
-    assert(is_power_family(layout.model) && i < count_of(layout.arch));
+    assert(layout.is_power_family() && i < count_of(layout.arch));
     T eta1{0.0};
-    if (asymmetry_count(layout) > 0)
+    if (layout.asymmetry_count() > 0)
     {
-        eta1 = theta[asymmetry_begin(layout) + i];
+        eta1 = theta[layout.asymmetry_begin() + i];
     }
     T shape = shape_of(theta, layout);
     T power = power_of(theta, layout);
@@ -553,7 +505,7 @@ bool on_boundary(const Layout& layout, std::span<const double> theta, std::size_
     {
         return theta[layout.alpha_begin() + (index - layout.gamma_begin())] + value < kBoundary;
     }
-    if (in_block(index, asymmetry_begin(layout), asymmetry_count(layout)))
+    if (in_block(index, layout.asymmetry_begin(), layout.asymmetry_count()))
     {
         return std::abs(value) > 1.0 - kBoundary;
     }

@@ -87,16 +87,6 @@ garch::SGarchParameters<T> sgarch_parameters(std::span<const T> theta, const Lay
 }
 
 template <class T>
-T shape_of(std::span<const T> theta, const Layout& layout)
-{
-    if (!layout.has_shape())
-    {
-        return T{0.0};
-    }
-    return theta[layout.shape()];
-}
-
-template <class T>
 garch::EGarchParameters<T> egarch_parameters(std::span<const T> theta, const Layout& layout)
 {
     garch::SGarchParameters<T> s = sgarch_parameters(theta, layout);
@@ -118,27 +108,6 @@ garch::CsGarchParameters<T> csgarch_parameters(std::span<const T> theta, const L
     return {s.omega, s.alpha, s.beta, theta[layout.eta1_begin()], theta[layout.eta2_begin()]};
 }
 
-// The apARCH asymmetry gamma plays the part of eta1.
-template <class T>
-std::span<const T> asymmetry_block(std::span<const T> theta, const Layout& layout)
-{
-    if (layout.model == Model::ApArch)
-    {
-        return block(theta, layout.gamma_begin(), layout.gamma);
-    }
-    return block(theta, layout.eta1_begin(), layout.eta1);
-}
-
-template <class T>
-T power_of(std::span<const T> theta, const Layout& layout)
-{
-    if (!layout.free_power)
-    {
-        return T{layout.fixed_power};
-    }
-    return theta[layout.power()];
-}
-
 // moments must outlive the result, whose moments span views it; shock_moments fills it.
 template <class T>
 garch::PowerGarchParameters<T> power_garch_parameters(std::span<const T> theta, const Layout& layout,
@@ -148,7 +117,7 @@ garch::PowerGarchParameters<T> power_garch_parameters(std::span<const T> theta, 
     return {s.omega,
             s.alpha,
             s.beta,
-            asymmetry_block(theta, layout),
+            theta.subspan(layout.asymmetry_begin(), layout.asymmetry_count()),
             block(theta, layout.eta2_begin(), layout.eta2),
             power_of(theta, layout),
             moments.first(s.alpha.size())};
