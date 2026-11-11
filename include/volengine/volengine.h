@@ -39,8 +39,8 @@ VE_API const char* ve_last_error(void);
 
 #define VE_MAX_THREADS 1024
 
-/* The ve_context functions may be called concurrently from several threads on the same context,
-   including ve_fit_batch. */
+/* The ve_context_* functions may be called concurrently from several threads on the same context,
+   except ve_context_free; ve_fit_batch may also run concurrently. */
 VE_API ve_status ve_context_create(ve_context** out);
 /* threads in 1 .. VE_MAX_THREADS sets the pool size; 0 means std::thread::hardware_concurrency(),
    capped at VE_MAX_THREADS; anything else is VE_INVALID_ARGUMENT. Waits for the ve_fit_batch calls
@@ -51,6 +51,9 @@ VE_API void ve_context_free(ve_context* ctx);
 
 #define VE_MODEL_SGARCH 0
 #define VE_DIST_NORM 0
+#define VE_DIST_STD 1
+#define VE_DIST_GED 2
+#define VE_MAX_ORDER 6
 #define VE_VARINIT_SAMPLE 0
 #define VE_VARINIT_BACKCAST 1
 
@@ -61,9 +64,13 @@ typedef struct ve_panel ve_panel;
 /* On any failure of a *_create function, *out is set to NULL (when out is not NULL). */
 VE_API ve_status ve_spec_create(int32_t model, ve_spec** out);
 /* p is the ARCH order (number of alpha terms, lagged squared residuals) and q the GARCH order (number
-   of beta terms, lagged variances), as in arch's p and q and in rugarch's garchOrder = c(p, q).
-   p, q < 1 is VE_INVALID_ARGUMENT; only (1, 1) is supported in this version (else VE_UNSUPPORTED). */
+   of beta terms, lagged variances), as in arch's p and q and in rugarch's
+   garchOrder = c(alpha order, beta order); rugarch calls those orders q and p, the other way round.
+   p, q outside 1 .. VE_MAX_ORDER is VE_INVALID_ARGUMENT and leaves the spec unchanged. */
 VE_API ve_status ve_spec_set_order(ve_spec* s, int32_t p, int32_t q);
+/* ARMA(m, n) conditional mean; m, n in 0 .. VE_MAX_ORDER, else VE_INVALID_ARGUMENT and the spec is
+   unchanged. The default is ARMA(0, 0). */
+VE_API ve_status ve_spec_set_arma(ve_spec* s, int32_t m, int32_t n);
 VE_API ve_status ve_spec_set_dist(ve_spec* s, int32_t dist);
 VE_API ve_status ve_spec_set_include_mean(ve_spec* s, int32_t include_mean); /* 0 or 1 */
 VE_API void ve_spec_free(ve_spec* s);

@@ -42,6 +42,7 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_context_free": (None, [_HANDLE]),
     "ve_spec_create": (_STATUS, [_I32, _OUT_HANDLE]),
     "ve_spec_set_order": (_STATUS, [_HANDLE, _I32, _I32]),
+    "ve_spec_set_arma": (_STATUS, [_HANDLE, _I32, _I32]),
     "ve_spec_set_dist": (_STATUS, [_HANDLE, _I32]),
     "ve_spec_set_include_mean": (_STATUS, [_HANDLE, _I32]),
     "ve_spec_free": (None, [_HANDLE]),
