@@ -9,8 +9,9 @@ CheckOptions:
     value: 60
   - key: readability-function-size.ParameterThreshold
     value: 5
+  # clang-tidy counts the function body as level 1; 4 allows the 3 nested blocks STYLEGUIDE permits.
   - key: readability-function-size.NestingThreshold
-    value: 3
+    value: 4
   - key: readability-function-size.StatementThreshold
     value: '-1'
   - key: readability-function-size.BranchThreshold

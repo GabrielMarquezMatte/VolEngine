@@ -39,8 +39,9 @@ It prints one `path:line: rule: message` line per violation and exits 1 if there
 | `nesting`        | clang-tidy             | more than 3 nested blocks, by AST   |
 
 In C++, function length, parameter count and nesting are enforced by `clang-tidy`
-(`readability-function-size`: `LineThreshold: 60`, `ParameterThreshold: 5`, `NestingThreshold: 3`,
-configured in `.clang-tidy`) in CI and locally when available. Formatting comes from `.clang-format`.
+(`readability-function-size`: `LineThreshold: 60`, `ParameterThreshold: 5`, `NestingThreshold: 4`,
+configured in `.clang-tidy`) in CI and locally when available. clang-tidy counts the function body as level 1, so
+its threshold of 4 is the limit of 3 below. Formatting comes from `.clang-format`.
 
 Copy elision on return ([Return values](#return-values--rvo-and-nrvo)) is enforced by the compiler: GCC 14+ builds
 with `-Wnrvo` as an error, and GCC and Clang reject pessimizing and redundant moves (`-Wpessimizing-move`,
