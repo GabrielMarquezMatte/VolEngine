@@ -4,6 +4,8 @@ project(VolEngine VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+# No C++20 modules: without this, Ninja adds @modmap flags to compile_commands.json that clang-tidy cannot read.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
