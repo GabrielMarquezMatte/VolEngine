@@ -253,12 +253,6 @@ def test_unknown_model_raises():
         ve.Spec(model="egarch")
 
 
-def test_unsupported_order_is_a_native_error():
-    with pytest.raises(ve.VolEngineError) as error:
-        ve.Spec(p=2)
-    assert error.value.status == 3
-
-
 def test_invalid_order_is_a_native_error():
     with pytest.raises(ve.VolEngineError) as error:
         ve.Spec(q=0)
@@ -407,3 +401,26 @@ def test_integral_ranges_of_any_numeric_dtype_are_accepted(ctx, series, dtype):
     lengths = np.array(RAGGED_LENGTHS, dtype=dtype)
     fits = ctx.fit(ve.Spec(), series, starts=starts, lengths=lengths)
     assert [f.nobs for f in fits] == RAGGED_LENGTHS
+
+
+def test_arma_std_spec_fits(ctx, series):
+    f = ctx.fit(ve.Spec(p=2, arma=(1, 1), dist="std"), series[:, 0])
+    assert f.names == ("mu", "ar1", "ma1", "omega", "alpha1", "alpha2", "beta1", "shape")
+
+
+def test_ged_spec_fits(ctx, series):
+    f = ctx.fit(ve.Spec(dist="ged"), series[:, 0])
+    assert f.names == ("mu", "omega", "alpha1", "beta1", "shape")
+
+
+@pytest.mark.parametrize("arma", [(1,), (1, 2, 3), (1.5, 0), "11"])
+def test_bad_arma_raises_value_error(arma):
+    with pytest.raises(ValueError, match="arma"):
+        ve.Spec(arma=arma)
+
+
+def test_order_above_max_raises():
+    with pytest.raises(ve.VolEngineError, match="VE_MAX_ORDER"):
+        ve.Spec(p=7)
+    with pytest.raises(ve.VolEngineError, match="VE_MAX_ORDER"):
+        ve.Spec(arma=(0, 7))

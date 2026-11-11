@@ -45,17 +45,54 @@ TEST(CapiSpec, CreateNullOutIsInvalid)
     EXPECT_TRUE(error_mentions("out"));
 }
 
-TEST(CapiSpec, OrderOtherThanOneOneIsUnsupported)
+TEST(CapiSpec, OrdersUpToMax)
 {
     ve_spec* spec = nullptr;
     ASSERT_EQ(ve_spec_create(VE_MODEL_SGARCH, &spec), VE_OK);
-    EXPECT_EQ(ve_spec_set_order(spec, 2, 1), VE_UNSUPPORTED);
-    EXPECT_TRUE(error_mentions("(1, 1)"));
-    EXPECT_EQ(ve_spec_set_order(spec, 1, 3), VE_UNSUPPORTED);
+    EXPECT_EQ(ve_spec_set_order(spec, VE_MAX_ORDER, VE_MAX_ORDER), VE_OK);
+    EXPECT_EQ(spec->spec.p, VE_MAX_ORDER);
+    EXPECT_EQ(spec->spec.q, VE_MAX_ORDER);
+    EXPECT_EQ(ve_spec_set_order(spec, 2, 1), VE_OK);
+    EXPECT_EQ(ve_spec_set_order(spec, VE_MAX_ORDER + 1, 1), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(error_mentions("VE_MAX_ORDER"));
+    EXPECT_EQ(ve_spec_set_order(spec, 1, VE_MAX_ORDER + 1), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_spec_set_order(spec, 0, 1), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_spec_set_order(spec, 1, -1), VE_INVALID_ARGUMENT);
-    EXPECT_EQ(spec->spec.p, 1);
+    EXPECT_EQ(spec->spec.p, 2);
     EXPECT_EQ(spec->spec.q, 1);
+    ve_spec_free(spec);
+}
+
+TEST(CapiSpec, Arma)
+{
+    ve_spec* spec = nullptr;
+    ASSERT_EQ(ve_spec_create(VE_MODEL_SGARCH, &spec), VE_OK);
+    EXPECT_EQ(spec->spec.ar, 0);
+    EXPECT_EQ(spec->spec.ma, 0);
+    EXPECT_EQ(ve_spec_set_arma(spec, 0, 0), VE_OK);
+    EXPECT_EQ(ve_spec_set_arma(spec, VE_MAX_ORDER, VE_MAX_ORDER), VE_OK);
+    EXPECT_EQ(ve_spec_set_arma(spec, 2, 1), VE_OK);
+    EXPECT_EQ(ve_spec_set_arma(spec, -1, 0), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(error_mentions("VE_MAX_ORDER"));
+    EXPECT_EQ(ve_spec_set_arma(spec, 0, -1), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_spec_set_arma(spec, VE_MAX_ORDER + 1, 0), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_spec_set_arma(spec, 0, VE_MAX_ORDER + 1), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(spec->spec.ar, 2);
+    EXPECT_EQ(spec->spec.ma, 1);
+    EXPECT_EQ(ve_spec_set_arma(nullptr, 0, 0), VE_INVALID_HANDLE);
+    ve_spec_free(spec);
+}
+
+TEST(CapiSpec, NewDistributions)
+{
+    ve_spec* spec = nullptr;
+    ASSERT_EQ(ve_spec_create(VE_MODEL_SGARCH, &spec), VE_OK);
+    EXPECT_EQ(ve_spec_set_dist(spec, VE_DIST_STD), VE_OK);
+    EXPECT_EQ(spec->spec.dist, ve::Dist::Std);
+    EXPECT_EQ(ve_spec_set_dist(spec, VE_DIST_GED), VE_OK);
+    EXPECT_EQ(spec->spec.dist, ve::Dist::Ged);
+    EXPECT_EQ(ve_spec_set_dist(spec, 3), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(spec->spec.dist, ve::Dist::Ged);
     ve_spec_free(spec);
 }
 

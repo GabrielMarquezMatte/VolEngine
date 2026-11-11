@@ -5,6 +5,8 @@
 #include <memory>
 #include <string>
 
+static_assert(VE_MAX_ORDER == ve::kMaxOrder, "the C header and the engine disagree on the order limit");
+
 using ve::capi::guard;
 using ve::capi::set_error;
 
@@ -29,12 +31,17 @@ ve_status to_model(int32_t value, ve::Model& model)
 
 ve_status to_dist(int32_t value, ve::Dist& dist)
 {
-    if (value != VE_DIST_NORM)
+    if (value != VE_DIST_NORM && value != VE_DIST_STD && value != VE_DIST_GED)
     {
         return bad_value("dist", value);
     }
-    dist = ve::Dist::Norm;
+    dist = static_cast<ve::Dist>(value);
     return VE_OK;
+}
+
+bool in_range(int32_t value, int32_t low)
+{
+    return value >= low && value <= VE_MAX_ORDER;
 }
 
 ve_status to_var_init(int32_t value, ve::VarInit& var_init)
@@ -87,16 +94,31 @@ extern "C" ve_status ve_spec_set_order(ve_spec* s, int32_t p, int32_t q)
             {
                 return set_error(VE_INVALID_HANDLE, "s must not be null");
             }
-            if (p < 1 || q < 1)
+            if (!in_range(p, 1) || !in_range(q, 1))
             {
-                return set_error(VE_INVALID_ARGUMENT, "p and q must be >= 1");
-            }
-            if (p != 1 || q != 1)
-            {
-                return set_error(VE_UNSUPPORTED, "only order (1, 1) is supported in this version");
+                return set_error(VE_INVALID_ARGUMENT, "p and q must be in 1 .. VE_MAX_ORDER (6)");
             }
             s->spec.p = p;
             s->spec.q = q;
+            return VE_OK;
+        });
+}
+
+extern "C" ve_status ve_spec_set_arma(ve_spec* s, int32_t m, int32_t n)
+{
+    return guard(
+        [&]
+        {
+            if (s == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "s must not be null");
+            }
+            if (!in_range(m, 0) || !in_range(n, 0))
+            {
+                return set_error(VE_INVALID_ARGUMENT, "m and n must be in 0 .. VE_MAX_ORDER (6)");
+            }
+            s->spec.ar = m;
+            s->spec.ma = n;
             return VE_OK;
         });
 }

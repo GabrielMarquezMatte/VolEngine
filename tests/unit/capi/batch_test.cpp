@@ -130,6 +130,61 @@ std::vector<Snapshot> snapshots_of(const FitSet& fits)
     return snapshots;
 }
 
+struct SpecShape
+{
+    int32_t p;
+    int32_t q;
+    int32_t ar;
+    int32_t ma;
+    int32_t dist;
+};
+
+constexpr SpecShape kShapes[] = {{1, 1, 0, 0, VE_DIST_NORM}, {3, 3, 2, 2, VE_DIST_STD}, {2, 1, 1, 0, VE_DIST_GED}};
+
+SpecPtr make_shaped_spec(const SpecShape& shape)
+{
+    ve_spec* raw = nullptr;
+    EXPECT_EQ(ve_spec_create(VE_MODEL_SGARCH, &raw), VE_OK);
+    SpecPtr spec(raw);
+    EXPECT_EQ(ve_spec_set_order(raw, shape.p, shape.q), VE_OK);
+    EXPECT_EQ(ve_spec_set_arma(raw, shape.ar, shape.ma), VE_OK);
+    EXPECT_EQ(ve_spec_set_dist(raw, shape.dist), VE_OK);
+    return spec;
+}
+
+Snapshot direct_shaped_fit(const std::vector<double>& series, const SpecShape& shape)
+{
+    ve::Spec spec;
+    spec.p = shape.p;
+    spec.q = shape.q;
+    spec.ar = shape.ar;
+    spec.ma = shape.ma;
+    spec.dist = static_cast<ve::Dist>(shape.dist);
+    const ve::FitResult result = ve::fit_one(series, spec, {});
+    Snapshot snapshot;
+    snapshot.status = static_cast<int32_t>(result.status);
+    snapshot.nobs = result.nobs;
+    snapshot.estimate = result.estimate;
+    snapshot.loglik = result.loglik;
+    snapshot.sigma = result.sigma;
+    return snapshot;
+}
+
+FitSet mixed_fits(int32_t threads, const std::vector<SpecPtr>& specs, const ve_panel* panel)
+{
+    ve::testing::ContextPtr context = ve::testing::make_context(threads);
+    BatchInputs inputs;
+    for (const SpecPtr& spec : specs)
+    {
+        inputs.specs.push_back(spec.get());
+    }
+    inputs.panel = panel;
+    inputs.job_spec = repeat_each(specs.size(), kSeries);
+    inputs.job_series = cycle(kSeries, specs.size());
+    BatchPtr batch = ve::testing::build_batch(inputs);
+    return ve::testing::fit_all(context.get(), batch.get());
+}
+
 constexpr std::size_t kSpecCopies = 11;
 constexpr std::size_t kThirtyThreeJobs = kSpecCopies * kSeries;
 
@@ -193,6 +248,47 @@ TEST(CapiFit, CartesianBatchMatchesFitOne)
         const Snapshot expected = direct_fit(series, include_mean, {});
         EXPECT_EQ(expected.status, VE_FIT_CONVERGED) << "job " << job;
         EXPECT_EQ(ve::testing::read_snapshot(fits[job]), expected) << "job " << job;
+    }
+}
+
+TEST(CapiFit, MixedBucketsInOneBatch)
+{
+    std::vector<SpecPtr> specs;
+    for (const SpecShape& shape : kShapes)
+    {
+        specs.push_back(make_shaped_spec(shape));
+    }
+    PanelPtr panel = ve::testing::make_panel(matrix().data(), kT, kSeries);
+    for (const int32_t threads : {1, 4})
+    {
+        FitSet fits = mixed_fits(threads, specs, panel.get());
+        ASSERT_EQ(fits.size(), specs.size() * kSeries);
+        for (std::size_t job = 0; job < fits.size(); ++job)
+        {
+            const std::vector<double> series = column(matrix(), job % kSeries, 0, kT);
+            const Snapshot expected = direct_shaped_fit(series, kShapes[job / kSeries]);
+            EXPECT_EQ(ve::testing::read_snapshot(fits[job]), expected) << "threads " << threads << " job " << job;
+        }
+    }
+}
+
+TEST(CapiFit, GeneratedParamNames)
+{
+    const SpecShape shape{2, 1, 1, 1, VE_DIST_STD};
+    std::vector<SpecPtr> specs;
+    specs.push_back(make_shaped_spec(shape));
+    PanelPtr panel = ve::testing::make_panel(matrix().data(), kT, kSeries);
+    FitSet fits = mixed_fits(1, specs, panel.get());
+    const std::vector<std::string> expected = {
+        "mu", "ar1", "ma1", "omega", "alpha1", "alpha2", "beta1", "shape"};
+    std::size_t count = 0;
+    ASSERT_EQ(ve_fit_param_count(fits[0], &count), VE_OK);
+    ASSERT_EQ(count, expected.size());
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const char* name = nullptr;
+        ASSERT_EQ(ve_fit_param_name(fits[0], i, &name), VE_OK);
+        EXPECT_EQ(std::string(name), expected[i]);
     }
 }
 

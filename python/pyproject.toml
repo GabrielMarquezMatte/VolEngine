@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 dependencies = ["numpy"]
 
 [project.optional-dependencies]
-test = ["pytest", "numpy"]
+test = ["pytest", "numpy", "mypy"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/volengine"]

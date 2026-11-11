@@ -5,7 +5,7 @@ from __future__ import annotations
 import ctypes
 from collections.abc import Sequence
 from contextlib import ExitStack
-from typing import Any
+from typing import Any, overload
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -27,6 +27,8 @@ __all__ = [
     "loglik",
     "sic",
 ]
+
+Series1D = Sequence[float]
 
 ELEMENT_BYTES = np.dtype(np.float64).itemsize
 
@@ -105,6 +107,39 @@ class Context:
         threads = int32(threads, "threads")
         self._handle = create_handle(lib.ve_context_create, lib.ve_context_free)
         check(lib.ve_context_set_threads(self._handle.pointer, threads))
+
+    @overload
+    def fit(
+        self,
+        spec: Spec,
+        data: Series1D,
+        *,
+        options: FitOptions | None = ...,
+        starts: ArrayLike | None = ...,
+        lengths: ArrayLike | None = ...,
+    ) -> Fit: ...
+
+    @overload
+    def fit(
+        self,
+        spec: Spec,
+        data: ArrayLike,
+        *,
+        options: FitOptions | None = ...,
+        starts: ArrayLike | None = ...,
+        lengths: ArrayLike | None = ...,
+    ) -> Fit | NDArray[np.object_]: ...
+
+    @overload
+    def fit(
+        self,
+        spec: Sequence[Spec],
+        data: ArrayLike,
+        *,
+        options: FitOptions | None = ...,
+        starts: ArrayLike | None = ...,
+        lengths: ArrayLike | None = ...,
+    ) -> NDArray[np.object_]: ...
 
     def fit(
         self,

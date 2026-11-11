@@ -7,7 +7,7 @@ from dataclasses import KW_ONLY, dataclass
 from ._native import Handle, check, create_handle, int32, lib
 
 MODELS = {"sgarch": 0}
-DISTRIBUTIONS = {"norm": 0}
+DISTRIBUTIONS = {"norm": 0, "std": 1, "ged": 2}
 VAR_INITS = {"sample": 0, "backcast": 1}
 
 
@@ -23,24 +23,35 @@ class Spec:
 
     `p` is the ARCH order (number of alpha terms, lagged squared residuals) and `q` the GARCH order
     (number of beta terms, lagged variances), as in arch's `p` and `q` and in rugarch's
-    `garchOrder = c(p, q)`. Only p = q = 1 is supported in this version.
+    `garchOrder = c(alpha order, beta order)` (rugarch calls those orders q and p, the other way
+    round). `arma` is the ARMA(m, n) order of the conditional mean. Orders are limited to 1..6 for
+    `p` and `q` and 0..6 for `arma` (VE_MAX_ORDER).
     """
 
     model: str = "sgarch"
     _: KW_ONLY
     p: int = 1
     q: int = 1
+    arma: tuple[int, int] = (0, 0)
     dist: str = "norm"
     include_mean: bool = True
 
     def __post_init__(self) -> None:
         self.native_handle().close()
 
+    def arma_orders(self) -> tuple[int, int]:
+        arma = self.arma
+        if not isinstance(arma, tuple | list) or len(arma) != 2 or not all(type(i) is int for i in arma):
+            raise ValueError(f"arma must be a pair of integers (m, n), got {arma!r}")
+        return int32(arma[0], "arma m"), int32(arma[1], "arma n")
+
     def native_handle(self) -> Handle:
         model = code_of(MODELS, "model", self.model)
         dist = code_of(DISTRIBUTIONS, "dist", self.dist)
+        arma = self.arma_orders()
         handle = create_handle(lib.ve_spec_create, lib.ve_spec_free, model)
         check(lib.ve_spec_set_order(handle.pointer, int32(self.p, "p"), int32(self.q, "q")))
+        check(lib.ve_spec_set_arma(handle.pointer, *arma))
         check(lib.ve_spec_set_dist(handle.pointer, dist))
         check(lib.ve_spec_set_include_mean(handle.pointer, int(self.include_mean)))
         return handle
