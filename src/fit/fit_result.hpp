@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <string_view>
+#include <string>
 #include <vector>
 
 namespace ve
@@ -26,7 +26,7 @@ struct FitResult
     FitStatus status = FitStatus::Failed;
     Spec spec{};
     FitConfig config{};
-    std::vector<std::string_view> names;
+    std::vector<std::string> names;
     std::vector<double> estimate;
     std::vector<double> se_hessian;
     std::vector<double> se_robust;
