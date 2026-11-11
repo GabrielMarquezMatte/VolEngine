@@ -18,7 +18,7 @@ library whose ABI version differs).
   errors and the other parameters are computed on the remaining block.
 - C API: `VE_DIST_STD`, `VE_DIST_GED`, `VE_MAX_ORDER` and `ve_spec_set_arma`. Python: `Spec(arma=, dist=)` and
   typed `Context.fit` overloads, checked by mypy.
-- Oracle grid against `rugarch` and `arch` (orders, ARMA and distributions) in
+- Oracle grid against `rugarch` (orders, ARMA and distributions) and `arch` (orders and distributions, no ARMA) in
   [docs/guide/validation.md](docs/guide/validation.md).
 - C++ Google Benchmark suite ([docs/performance/benchmarks.md](docs/performance/benchmarks.md)) and a Python
   benchmark against `arch` on matched work ([docs/performance/python-vs-arch.md](docs/performance/python-vs-arch.md)).

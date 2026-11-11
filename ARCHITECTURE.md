@@ -131,6 +131,6 @@ template function and a `Layout` entry; the driver, the optimizer and the standa
 
 ## Validation
 
-The sGARCH(p,q) grid with ARMA means and the three distributions is compared with `rugarch` (default conventions) and `arch` (the `backcast` option) on
-committed fixtures. The conventions, tolerances and observed differences are in
+The sGARCH(p,q) grid with the three distributions is compared with `rugarch` (default conventions) and
+`arch` (the `backcast` option) on committed fixtures; the ARMA means are compared with `rugarch` only. The conventions, tolerances and observed differences are in
 [docs/guide/validation.md](docs/guide/validation.md).

@@ -164,7 +164,7 @@ def report(rows: dict[str, float], times: tuple[float, float, float], repetition
         lines.append(f"| {name} | {seconds:.2f} | {fits / seconds:.1f} | {arch_time / seconds:.2f}x |")
     lines += ["", "| Spec | Worst relative loglik difference over the series |", "| --- | ---: |"]
     lines += [f"| {label} | {value:.1e} |" for label, value in rows.items()]
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines) + "\n" + NOTES
 
 
 def main() -> None:

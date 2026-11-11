@@ -28,7 +28,7 @@ build/gcc-bench/volengine_benchmarks --benchmark_out=build/gcc-bench/bench.json 
 
 The run was not isolated: a normal desktop session, no pinned cores and no fixed frequency. The standard
 deviations in the tables are the measured spread over the 5 repetitions: under 5% of the median for nearly every
-benchmark, 11% for the `arma11_s11_ged` `Dual` evaluation. Differences smaller than that spread are not results. Runs on
+benchmark, 12% for the `arma11_s11_ged` `Dual` evaluation. Differences smaller than that spread are not results. Runs on
 different days on this machine moved some medians by more than the spread (for example `s21_std` `double`), so
 re-measure before and after a change instead of comparing against this table.
 
@@ -48,7 +48,7 @@ full gradient. The ratio is between two measurements from this run.
 ## Single fits
 
 `BM_FitOne/<spec>`: `ve::fit_one` on one series of T = 5000, default `FitConfig`, without the C layer. Every series is
-simulated from a model with the structure of the spec (see below). All fits ended `CONVERGED`.
+simulated from a model with the structure of the spec (see below). All fits ended `CONVERGED` (the `converged` counter of `bench.json` is 1 and `max_iter` is 0 for the four specs).
 
 | Spec | Median (ms) | sd (ms) | Fits per second |
 | --- | ---: | ---: | ---: |
