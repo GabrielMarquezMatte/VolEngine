@@ -253,7 +253,8 @@ the gradient grid still matches Richardson differences to 1e-6.
 threshold of the existing flat-decrease rule) now ends `CONVERGED` instead of `FAILED` (`src/optim/lbfgs.hpp`):
 the search has reached the resolution of the likelihood. With the smoothing, TGARCH on the scaled series of the
 scale-invariance test (`backcast`, ×100) ended `FAILED` at the optimum of the unscaled fit (ℓ and estimates equal
-to 8 digits). No oracle case depends on it.
+to 8 digits). No oracle case depends on it: the oracle suite passes 125/125 with the line-search-failure-to-`CONVERGED` rule
+disabled, and only the C++ TGARCH scale-invariance test relies on it.
 
 ### `arch` (`VE_VARINIT_BACKCAST`)
 

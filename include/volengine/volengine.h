@@ -69,6 +69,8 @@ VE_API void ve_context_free(ve_context* ctx);
 #define VE_MODEL_FGARCH_APARCH 11 /* eta11..eta1p, lambda free */
 #define VE_MODEL_FGARCH_GJRGARCH 12 /* eta11..eta1p, lambda = 2 fixed */
 #define VE_MODEL_FGARCH_ALLGARCH 13 /* eta11..eta1p, eta21..eta2p, lambda free */
+/* A model value outside VE_MODEL_SGARCH .. VE_MODEL_FGARCH_ALLGARCH makes ve_spec_create return
+   VE_INVALID_ARGUMENT. */
 /* VE_DIST_STD and VE_DIST_GED are standardized to zero mean and unit variance (as in rugarch and
    arch); their shape parameter is named "shape", with domain nu > 2 (std) and nu > 0 (ged). */
 #define VE_DIST_NORM 0

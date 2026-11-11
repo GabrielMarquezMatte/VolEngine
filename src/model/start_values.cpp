@@ -42,9 +42,19 @@ VarianceStart variance_start(Model model)
             return {0.01, 0.1, 0.0};
         case Model::CsGarch:
             return {0.02, kInitialArch, 0.0};
-        default:
+        case Model::SGarch:
+        case Model::ApArch:
+        case Model::FGarchGarch:
+        case Model::FGarchTGarch:
+        case Model::FGarchAvGarch:
+        case Model::FGarchNGarch:
+        case Model::FGarchNaGarch:
+        case Model::FGarchApArch:
+        case Model::FGarchGjrGarch:
+        case Model::FGarchAllGarch:
             return {kInitialOmegaShare, kInitialArch, 0.0};
     }
+    return {kInitialOmegaShare, kInitialArch, 0.0};
 }
 
 double sample_variance(std::span<const double> r, double mean)
