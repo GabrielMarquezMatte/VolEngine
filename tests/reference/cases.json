@@ -1,0 +1,19 @@
+[
+  {"id": "t5000/sgarch11_norm", "series": "t5000", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "oracles": ["rugarch", "arch"]},
+  {"id": "t3000/sgarch11_norm", "series": "t3000", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "oracles": ["rugarch", "arch"]},
+  {"id": "t1500/sgarch11_norm", "series": "t1500", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "oracles": ["rugarch", "arch"]},
+  {"id": "sgarch21_std/sgarch11_std", "series": "sgarch21_std", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "std", "oracles": ["rugarch", "arch"]},
+  {"id": "sgarch21_std/sgarch11_ged", "series": "sgarch21_std", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "ged", "oracles": ["rugarch", "arch"]},
+  {"id": "sgarch21_std/sgarch21_norm", "series": "sgarch21_std", "p": 2, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "oracles": ["rugarch", "arch"]},
+  {"id": "sgarch21_std/sgarch21_std", "series": "sgarch21_std", "p": 2, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "std", "oracles": ["rugarch", "arch"]},
+  {"id": "sgarch21_std/sgarch21_ged", "series": "sgarch21_std", "p": 2, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "ged", "oracles": ["rugarch", "arch"]},
+  {"id": "sgarch12_norm/sgarch12_norm", "series": "sgarch12_norm", "p": 1, "q": 2, "arma": [0, 0], "include_mean": true, "dist": "norm", "oracles": ["rugarch", "arch"]},
+  {"id": "arma11_sgarch11_ged/sgarch12_std", "series": "arma11_sgarch11_ged", "p": 1, "q": 2, "arma": [0, 0], "include_mean": true, "dist": "std", "oracles": ["rugarch", "arch"]},
+  {"id": "sgarch12_norm/sgarch12_ged", "series": "sgarch12_norm", "p": 1, "q": 2, "arma": [0, 0], "include_mean": true, "dist": "ged", "oracles": ["rugarch", "arch"]},
+  {"id": "sgarch22_ged/sgarch22_norm", "series": "sgarch22_ged", "p": 2, "q": 2, "arma": [0, 0], "include_mean": true, "dist": "norm", "oracles": ["rugarch"]},
+  {"id": "sgarch22_ged/sgarch22_std", "series": "sgarch22_ged", "p": 2, "q": 2, "arma": [0, 0], "include_mean": true, "dist": "std", "oracles": ["rugarch"]},
+  {"id": "sgarch22_ged/sgarch22_ged", "series": "sgarch22_ged", "p": 2, "q": 2, "arma": [0, 0], "include_mean": true, "dist": "ged", "oracles": ["rugarch"]},
+  {"id": "arma11_sgarch11_ged/arma11_sgarch11_norm", "series": "arma11_sgarch11_ged", "p": 1, "q": 1, "arma": [1, 1], "include_mean": true, "dist": "norm", "oracles": ["rugarch"]},
+  {"id": "arma11_sgarch11_ged/arma11_sgarch11_ged", "series": "arma11_sgarch11_ged", "p": 1, "q": 1, "arma": [1, 1], "include_mean": true, "dist": "ged", "oracles": ["rugarch"]},
+  {"id": "arma11_sgarch11_ged/arma20_sgarch11_norm", "series": "arma11_sgarch11_ged", "p": 1, "q": 1, "arma": [2, 0], "include_mean": true, "dist": "norm", "oracles": ["rugarch"]}
+]
