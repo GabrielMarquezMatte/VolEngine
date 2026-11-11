@@ -11,6 +11,8 @@ from typing import Any
 
 VE_ABI_VERSION = 0
 VE_INTERNAL_ERROR = 5
+INT32_MIN = -(2**31)
+INT32_MAX = 2**31 - 1
 LIBRARY_ENV = "VOLENGINE_LIB"
 LIBRARY_DIRECTORY = Path(__file__).resolve().parent / "_lib"
 LIBRARY_NAMES = ("libvolengine.dll", "volengine.dll", "libvolengine.so", "libvolengine.dylib")
@@ -145,6 +147,13 @@ def last_error() -> str:
     if message is None:
         return ""
     return message.decode("utf-8", errors="replace")
+
+
+def int32(value: int, name: str) -> int:
+    """`value` checked to fit a C int32_t, which ctypes would otherwise wrap around silently."""
+    if not INT32_MIN <= value <= INT32_MAX:
+        raise ValueError(f"{name} must fit in a 32-bit signed integer, got {value}")
+    return value
 
 
 def check(status: int) -> None:

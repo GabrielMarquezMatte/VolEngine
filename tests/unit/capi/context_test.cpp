@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <limits>
 #include <string>
 #include <thread>
 #include <volengine/volengine.h>
@@ -48,6 +49,24 @@ TEST(Context, NegativeThreadsIsInvalidArgument)
     ASSERT_EQ(ve_context_create(&context), VE_OK);
     EXPECT_EQ(ve_context_set_threads(context, -1), VE_INVALID_ARGUMENT);
     EXPECT_NE(std::string(ve_last_error()).find("threads"), std::string::npos);
+    ve_context_free(context);
+}
+
+TEST(Context, ThreadsAboveTheCapAreInvalidArgument)
+{
+    ve_context* context = nullptr;
+    ASSERT_EQ(ve_context_create(&context), VE_OK);
+    ASSERT_EQ(ve_context_set_threads(context, VE_MAX_THREADS), VE_OK);
+    EXPECT_EQ(threads_of(context), VE_MAX_THREADS);
+    ASSERT_EQ(ve_context_set_threads(context, 2), VE_OK);
+    for (int32_t threads : {VE_MAX_THREADS + 1, 2049, std::numeric_limits<int32_t>::max()})
+    {
+        EXPECT_EQ(ve_context_set_threads(context, threads), VE_INVALID_ARGUMENT) << threads;
+        const std::string message = ve_last_error();
+        EXPECT_NE(message.find("threads"), std::string::npos) << message;
+        EXPECT_NE(message.find("1024"), std::string::npos) << message;
+        EXPECT_EQ(threads_of(context), 2);
+    }
     ve_context_free(context);
 }
 

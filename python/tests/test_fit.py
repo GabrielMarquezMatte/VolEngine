@@ -282,6 +282,40 @@ def test_negative_threads_is_a_native_error():
         ve.Context(threads=-1)
 
 
+def test_threads_above_the_cap_are_a_native_error():
+    with pytest.raises(ve.VolEngineError, match="threads") as error:
+        ve.Context(threads=2049)
+    assert error.value.status == 1
+
+
+INT32_OVERFLOWS = [2**31, -(2**31) - 1, 2**32 + 1]
+
+
+@pytest.mark.parametrize("value", INT32_OVERFLOWS)
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda value: ve.Context(threads=value),
+        lambda value: ve.Spec(p=value),
+        lambda value: ve.Spec(q=value),
+        lambda value: ve.FitOptions(max_iter=value),
+    ],
+    ids=["threads", "p", "q", "max_iter"],
+)
+def test_integers_outside_int32_raise_value_error(build, value):
+    with pytest.raises(ValueError, match="32-bit"):
+        build(value)
+
+
+def test_unknown_native_status_is_named_by_its_code(monkeypatch, ctx, series):
+    def newer_status(pointer, out):
+        out._obj.value = 99
+        return 0
+
+    monkeypatch.setattr(native.lib, "ve_fit_status", newer_status)
+    assert ctx.fit(ve.Spec(), series[:, 0]).status == "unknown(99)"
+
+
 HANDLE_KINDS = [
     ("ve_spec_create", "ve_spec_free"),
     ("ve_fit_options_create", "ve_fit_options_free"),

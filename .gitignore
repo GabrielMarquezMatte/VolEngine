@@ -3,3 +3,4 @@ python/.venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+python/src/volengine/_lib/*

@@ -2,12 +2,14 @@
 #include "fit/fit.hpp"
 #include "simulated_garch.hpp"
 
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <limits>
 #include <string>
+#include <thread>
 #include <vector>
 #include <volengine/volengine.h>
 
@@ -118,6 +120,46 @@ struct Rectangular
     }
 };
 
+std::vector<Snapshot> snapshots_of(const FitSet& fits)
+{
+    std::vector<Snapshot> snapshots;
+    for (std::size_t job = 0; job < fits.size(); ++job)
+    {
+        snapshots.push_back(ve::testing::read_snapshot(fits[job]));
+    }
+    return snapshots;
+}
+
+constexpr std::size_t kSpecCopies = 11;
+constexpr std::size_t kThirtyThreeJobs = kSpecCopies * kSeries;
+
+// More jobs than the blocks of four threads (8 per thread), so one and four threads split them differently.
+struct ThirtyThreeJobs
+{
+    SpecPtr with_mean = ve::testing::make_spec(1);
+    SpecPtr without_mean = ve::testing::make_spec(0);
+    PanelPtr panel = ve::testing::make_panel(matrix().data(), kT, kSeries);
+    BatchPtr batch;
+
+    ThirtyThreeJobs()
+    {
+        BatchInputs inputs;
+        for (std::size_t copy = 0; copy < kSpecCopies; ++copy)
+        {
+            const ve_spec* spec = with_mean.get();
+            if (copy % 2 == 1)
+            {
+                spec = without_mean.get();
+            }
+            inputs.specs.push_back(spec);
+        }
+        inputs.panel = panel.get();
+        inputs.job_spec = repeat_each(kSpecCopies, kSeries);
+        inputs.job_series = cycle(kSeries, kSpecCopies);
+        batch = ve::testing::build_batch(inputs);
+    }
+};
+
 std::string last_error()
 {
     return ve_last_error();
@@ -156,22 +198,48 @@ TEST(CapiFit, CartesianBatchMatchesFitOne)
 
 TEST(CapiFit, ResultIndependentOfThreadCount)
 {
-    SpecPtr spec = ve::testing::make_spec(1);
-    PanelPtr panel = ve::testing::make_panel(matrix().data(), kT, kSeries);
-    BatchInputs inputs;
-    inputs.specs = {spec.get()};
-    inputs.panel = panel.get();
-    inputs.job_spec = repeat_each(1, kSeries);
-    inputs.job_series = cycle(kSeries, 1);
-    BatchPtr batch = ve::testing::build_batch(inputs);
+    ThirtyThreeJobs scenario;
     ve::testing::ContextPtr single = ve::testing::make_context(1);
     ve::testing::ContextPtr many = ve::testing::make_context(4);
-    FitSet one_thread = ve::testing::fit_all(single.get(), batch.get());
-    FitSet four_threads = ve::testing::fit_all(many.get(), batch.get());
-    ASSERT_EQ(one_thread.size(), kSeries);
-    for (std::size_t job = 0; job < kSeries; ++job)
+    const std::vector<Snapshot> one_thread =
+        snapshots_of(ve::testing::fit_all(single.get(), scenario.batch.get()));
+    const std::vector<Snapshot> four_threads =
+        snapshots_of(ve::testing::fit_all(many.get(), scenario.batch.get()));
+    ASSERT_EQ(one_thread.size(), kThirtyThreeJobs);
+    EXPECT_EQ(one_thread, four_threads);
+}
+
+TEST(CapiFit, SetThreadsDuringFitBatchKeepsResults)
+{
+    ThirtyThreeJobs scenario;
+    ve::testing::ContextPtr context = ve::testing::make_context(2);
+    const std::vector<Snapshot> reference =
+        snapshots_of(ve::testing::fit_all(context.get(), scenario.batch.get()));
+    std::atomic<bool> fitting = true;
+    std::atomic<int> toggles = 0;
+    std::atomic<int> failed_set_threads = 0;
+    std::thread toggler(
+        [&]
+        {
+            for (int32_t round = 0; fitting; ++round)
+            {
+                const int32_t threads = round % 2 == 0 ? 1 : 4;
+                failed_set_threads += ve_context_set_threads(context.get(), threads) != VE_OK;
+                ++toggles;
+            }
+        });
+    std::vector<std::vector<Snapshot>> runs;
+    for (int run = 0; run < 6; ++run)
     {
-        EXPECT_EQ(ve::testing::read_snapshot(one_thread[job]), ve::testing::read_snapshot(four_threads[job]));
+        runs.push_back(snapshots_of(ve::testing::fit_all(context.get(), scenario.batch.get())));
+    }
+    fitting = false;
+    toggler.join();
+    EXPECT_GT(toggles, 0);
+    EXPECT_EQ(failed_set_threads, 0);
+    for (const std::vector<Snapshot>& run : runs)
+    {
+        EXPECT_EQ(run, reference);
     }
 }
 
