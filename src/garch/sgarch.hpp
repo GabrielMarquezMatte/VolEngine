@@ -15,8 +15,8 @@ struct SGarchParameters
     std::span<const T> beta;
 };
 
-// sigma2_t = value for t < held; from t = held on the recursion runs, and a lag before t = 0 reads value for both the
-// squared residual and the variance.
+// sigma2_t = value for t < held; from t = held on the recursion runs, and a lag before t = 0 reads value for
+// both the squared residual and the variance.
 template <class T>
 struct Presample
 {
@@ -35,8 +35,8 @@ const T& lagged(std::span<const T> values, std::size_t t, std::size_t lag, const
 }
 
 template <class T>
-T next_variance(std::span<const T> squared_residuals, const SGarchParameters<T>& p, const Presample<T>& presample,
-                std::span<const T> sigma2, std::size_t t)
+T next_variance(std::span<const T> squared_residuals, const SGarchParameters<T>& p,
+                const Presample<T>& presample, std::span<const T> sigma2, std::size_t t)
 {
     T variance = p.omega;
     for (std::size_t i = 1; i <= p.alpha.size(); ++i)
@@ -50,10 +50,11 @@ T next_variance(std::span<const T> squared_residuals, const SGarchParameters<T>&
     return variance;
 }
 
-// sigma2_t = omega + sum_i alpha_i e^2_{t-i} + sum_j beta_j sigma2_{t-j}; sigma2 has the size of squared_residuals.
+// sigma2_t = omega + sum_i alpha_i e^2_{t-i} + sum_j beta_j sigma2_{t-j}; sigma2 has the size of
+// squared_residuals.
 template <class T>
-void sgarch_variance(std::span<const T> squared_residuals, const SGarchParameters<T>& p, const Presample<T>& presample,
-                     std::span<T> sigma2)
+void sgarch_variance(std::span<const T> squared_residuals, const SGarchParameters<T>& p,
+                     const Presample<T>& presample, std::span<T> sigma2)
 {
     std::size_t held = std::min(presample.held, sigma2.size());
     std::fill(sigma2.begin(), sigma2.begin() + static_cast<std::ptrdiff_t>(held), presample.value);

@@ -47,15 +47,20 @@ T stirling_series(const T& x)
 {
     T inverse = 1.0 / x;
     T inverse2 = inverse * inverse;
-    return inverse * (1.0 / 12.0 + inverse2 * (-1.0 / 360.0 + inverse2 * (1.0 / 1260.0 + inverse2 * (-1.0 / 1680.0 +
-                      inverse2 * (1.0 / 1188.0 + inverse2 * (-691.0 / 360360.0))))));
+    return inverse *
+           (1.0 / 12.0 +
+            inverse2 *
+                (-1.0 / 360.0 +
+                 inverse2 * (1.0 / 1260.0 +
+                             inverse2 * (-1.0 / 1680.0 +
+                                         inverse2 * (1.0 / 1188.0 + inverse2 * (-691.0 / 360360.0))))));
 }
 
 // lgamma((nu + 1) / 2) - lgamma(nu / 2) - log(pi (nu - 2)) / 2, with a = nu / 2. Its terms grow as a log(a)
-// while it tends to -log(2 pi) / 2, so subtracting them leaves an error of ulp(a log(a)): 1e-9 at nu = 1e6 and
-// 1.5e-5 at nu = 8e9, on a likelihood whose slope in nu vanishes as nu grows. For large a the cancellation is done
-// analytically: log(a) / 2 - log(pi (2 a - 2)) / 2 = -log(2 pi) / 2 - log1p(-1 / a) / 2, and the lgamma
-// difference is the difference of the Stirling expansions of both terms.
+// while it tends to -log(2 pi) / 2, so subtracting them leaves an error of ulp(a log(a)): 1e-9 at nu = 1e6
+// and 1.5e-5 at nu = 8e9, on a likelihood whose slope in nu vanishes as nu grows. For large a the
+// cancellation is done analytically: log(a) / 2 - log(pi (2 a - 2)) / 2 = -log(2 pi) / 2 - log1p(-1 / a) / 2,
+// and the lgamma difference is the difference of the Stirling expansions of both terms.
 template <class T>
 T student_log_constant(const T& nu)
 {

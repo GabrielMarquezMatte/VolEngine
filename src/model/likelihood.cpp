@@ -33,8 +33,8 @@ double sample_mean(std::span<const double> r)
     return sum / static_cast<double>(r.size());
 }
 
-// arch computes the backcast once, from the residuals at its starting mean (the sample mean, or zero without a
-// mean), and keeps it fixed during the optimization: it depends on no parameter.
+// arch computes the backcast once, from the residuals at its starting mean (the sample mean, or zero without
+// a mean), and keeps it fixed during the optimization: it depends on no parameter.
 double backcast(std::span<const double> r, bool include_mean)
 {
     double center = 0.0;
@@ -89,11 +89,11 @@ T shape_of(std::span<const T> theta, const Layout& layout)
     return theta[layout.shape()];
 }
 
-// rugarch holds sigma2_t at the sample mean of the squared residuals, taken at the current mean parameters, for
-// t < max(m, n, p, q): the ARMA orders count too.
+// rugarch holds sigma2_t at the sample mean of the squared residuals, taken at the current mean parameters,
+// for t < max(m, n, p, q): the ARMA orders count too.
 template <class T>
-garch::Presample<T> presample(std::span<const double> r, std::span<const T> squared_residuals, const Layout& layout,
-                              VarInit var_init)
+garch::Presample<T> presample(std::span<const double> r, std::span<const T> squared_residuals,
+                              const Layout& layout, VarInit var_init)
 {
     if (var_init == VarInit::Backcast)
     {
@@ -181,9 +181,8 @@ template double loglik<double>(std::span<const double>, std::span<const double>,
                                const LoglikOutputs<double>&);
 template ad::Dual<8> loglik<ad::Dual<8>>(std::span<const double>, std::span<const ad::Dual<8>>, const Layout&,
                                          VarInit, const LoglikOutputs<ad::Dual<8>>&);
-template ad::Dual<16> loglik<ad::Dual<16>>(std::span<const double>, std::span<const ad::Dual<16>>, const Layout&,
-                                           VarInit, const LoglikOutputs<ad::Dual<16>>&);
-template ad::Dual<32> loglik<ad::Dual<32>>(std::span<const double>, std::span<const ad::Dual<32>>, const Layout&,
-                                           VarInit, const LoglikOutputs<ad::Dual<32>>&);
-
+template ad::Dual<16> loglik<ad::Dual<16>>(std::span<const double>, std::span<const ad::Dual<16>>,
+                                           const Layout&, VarInit, const LoglikOutputs<ad::Dual<16>>&);
+template ad::Dual<32> loglik<ad::Dual<32>>(std::span<const double>, std::span<const ad::Dual<32>>,
+                                           const Layout&, VarInit, const LoglikOutputs<ad::Dual<32>>&);
 }

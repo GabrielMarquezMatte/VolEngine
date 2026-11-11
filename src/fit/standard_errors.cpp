@@ -32,7 +32,11 @@ struct Problem
 
 bool gradient_at(const Problem& problem, std::span<const double> theta, std::span<double> grad)
 {
-    return problem.gradient(theta, grad) && std::ranges::all_of(grad, [](double v) { return std::isfinite(v); });
+    return problem.gradient(theta, grad) && std::ranges::all_of(grad,
+                                                                [](double v)
+                                                                {
+                                                                    return std::isfinite(v);
+                                                                });
 }
 
 bool difference_column(const Problem& problem, std::span<const double> theta, std::size_t index, double step,
@@ -56,8 +60,8 @@ bool difference_column(const Problem& problem, std::span<const double> theta, st
     return true;
 }
 
-// Steps proportional to each parameter's own scale keep the Hessian equivariant to the units of r. Parameters that
-// may sit at ~0 (ARMA coefficients, alpha and beta) get an absolute floor.
+// Steps proportional to each parameter's own scale keep the Hessian equivariant to the units of r. Parameters
+// that may sit at ~0 (ARMA coefficients, alpha and beta) get an absolute floor.
 double initial_step(const Problem& problem, std::span<const double> theta, std::size_t index)
 {
     const model::Layout& layout = problem.layout;
@@ -92,9 +96,9 @@ bool shrinking_difference_column(const Problem& problem, std::span<const double>
     return false;
 }
 
-// The std likelihood tends to the normal one as 1/nu -> 0, its boundary. There its curvature in nu falls as nu^-4 and
-// its cross terms as nu^-2, below what differences of the gradient resolve, and noise in the shape row and column
-// alone can make the whole Hessian indefinite.
+// The std likelihood tends to the normal one as 1/nu -> 0, its boundary. There its curvature in nu falls as
+// nu^-4 and its cross terms as nu^-2, below what differences of the gradient resolve, and noise in the shape
+// row and column alone can make the whole Hessian indefinite.
 bool on_boundary(const model::Layout& layout, std::span<const double> theta, std::size_t index)
 {
     if (index >= layout.alpha_begin() && index < layout.shape())
@@ -132,7 +136,8 @@ void symmetrize(Matrix& matrix, std::size_t m)
 }
 
 // The Hessian block over `interior`, m x m row-major.
-std::optional<Matrix> numerical_hessian(const Problem& problem, std::span<const double> theta, const Indices& interior)
+std::optional<Matrix> numerical_hessian(const Problem& problem, std::span<const double> theta,
+                                        const Indices& interior)
 {
     std::size_t m = interior.size();
     Matrix hessian(m * m);
@@ -230,7 +235,8 @@ StandardErrors from_hessian(const Matrix& hessian, const Matrix& middle, std::si
 }
 
 StandardErrors standard_errors(const GradientFn& gradient, std::span<const double> theta,
-                               std::span<const double> scores, const model::Layout& layout, double series_scale)
+                               std::span<const double> scores, const model::Layout& layout,
+                               double series_scale)
 {
     std::size_t k = theta.size();
     Problem problem{gradient, layout, series_scale};

@@ -94,13 +94,15 @@ std::vector<ve::ad::Dual<N>> dual_seeds(const std::vector<double>& theta)
 }
 
 template <std::size_t N>
-double dual_loglik(std::span<const double> r, std::span<const ve::ad::Dual<N>> seeds, const ve::model::Layout& layout)
+double dual_loglik(std::span<const double> r, std::span<const ve::ad::Dual<N>> seeds,
+                   const ve::model::Layout& layout)
 {
     const ve::model::LoglikOutputs<ve::ad::Dual<N>> none{};
     return ve::model::loglik<ve::ad::Dual<N>>(r, seeds, layout, ve::VarInit::Sample, none).value;
 }
 
-double double_loglik(std::span<const double> r, const std::vector<double>& theta, const ve::model::Layout& layout)
+double double_loglik(std::span<const double> r, const std::vector<double>& theta,
+                     const ve::model::Layout& layout)
 {
     const ve::model::LoglikOutputs<double> none{};
     return ve::model::loglik<double>(r, theta, layout, ve::VarInit::Sample, none);
@@ -167,7 +169,8 @@ struct StatusCounts
     }
 };
 
-// The counters of a benchmark are the status counts of its last iteration; every iteration repeats the same fits.
+// The counters of a benchmark are the status counts of its last iteration; every iteration repeats the same
+// fits.
 void report_status(benchmark::State& state, const StatusCounts& counts)
 {
     state.counters["converged"] = static_cast<double>(counts.converged);
@@ -225,19 +228,20 @@ Owned<ve_spec, ve_spec_free> create_spec(const ve::Spec& spec)
     return handle;
 }
 
-// One ve_fit_batch workload: a context with the requested threads, a borrowed panel and one job per (spec, series).
+// One ve_fit_batch workload: a context with the requested threads, a borrowed panel and one job per (spec,
+// series).
 class BatchWorkload
 {
 public:
-    BatchWorkload(const std::vector<ve::Spec>& specs, std::vector<double> data, std::size_t series, int threads)
-        : data_(std::move(data))
-    {
-        ve_context* ctx = nullptr;
-        require_ok(ve_context_create(&ctx), "ve_context_create");
-        context_.reset(ctx);
-        require_ok(ve_context_set_threads(ctx, threads), "ve_context_set_threads");
-        describe(specs, series);
-    }
+  BatchWorkload(const std::vector<ve::Spec>& specs, std::vector<double> data, std::size_t series, int threads)
+      : data_(std::move(data))
+  {
+      ve_context* ctx = nullptr;
+      require_ok(ve_context_create(&ctx), "ve_context_create");
+      context_.reset(ctx);
+      require_ok(ve_context_set_threads(ctx, threads), "ve_context_set_threads");
+      describe(specs, series);
+  }
 
     std::size_t jobs() const { return jobs_; }
 
@@ -300,7 +304,8 @@ void report_counts(benchmark::State& state, const StatusCounts& counts, std::siz
         benchmark::Counter(static_cast<double>(jobs * state.iterations()), benchmark::Counter::kIsRate);
 }
 
-void run_batch(benchmark::State& state, const std::vector<ve::Spec>& specs, const ve::Spec& generator, int threads)
+void run_batch(benchmark::State& state, const std::vector<ve::Spec>& specs, const ve::Spec& generator,
+               int threads)
 {
     try
     {
@@ -375,7 +380,8 @@ void register_all()
     {
         benchmark::RegisterBenchmark("BM_Loglik/" + named.name + "/double", run_loglik, named, false);
         benchmark::RegisterBenchmark("BM_Loglik/" + named.name + "/dual", run_loglik, named, true);
-        benchmark::RegisterBenchmark("BM_FitOne/" + named.name, run_fit_one, named)->Unit(benchmark::kMillisecond);
+        benchmark::RegisterBenchmark("BM_FitOne/" + named.name, run_fit_one, named)
+            ->Unit(benchmark::kMillisecond);
     }
     static const std::vector<ve::Spec> single{named_specs().front().spec};
     for (const int threads : {1, 2, 4, 8, 0})
@@ -385,8 +391,8 @@ void register_all()
             ->Unit(benchmark::kMillisecond)
             ->UseRealTime();
     }
-    // Student-t innovations (nu = 8), like returns: on normal data the std fits run nu towards infinity, which is
-    // not the cost being measured.
+    // Student-t innovations (nu = 8), like returns: on normal data the std fits run nu towards infinity,
+    // which is not the cost being measured.
     static const std::vector<ve::Spec> grid = tcc_grid();
     static const ve::Spec heavy_tails = make_spec(1, 1, 0, 0, ve::Dist::Std);
     for (const int threads : {1, 0})

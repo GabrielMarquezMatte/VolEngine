@@ -23,9 +23,11 @@ using ve::model::loglik;
 template <std::size_t N>
 using Dual = ve::ad::Dual<N>;
 
-constexpr Layout kSGarch11Norm{.include_mean = true, .ar = 0, .ma = 0, .arch = 1, .garch = 1, .dist = Dist::Norm};
+constexpr Layout kSGarch11Norm{
+    .include_mean = true, .ar = 0, .ma = 0, .arch = 1, .garch = 1, .dist = Dist::Norm};
 
-double loglik_at(std::span<const double> r, std::span<const double> theta, const Layout& layout, VarInit var_init)
+double loglik_at(std::span<const double> r, std::span<const double> theta, const Layout& layout,
+                 VarInit var_init)
 {
     return loglik<double>(r, theta, layout, var_init, {});
 }
@@ -200,7 +202,8 @@ TEST(Likelihood, NoMeanUsesRawReturnsAsResiduals)
     std::vector<double> without_mean(3);
     std::vector<double> zero_mean_theta{0.0, 0.1, 0.1, 0.8};
     std::vector<double> no_mean_theta{0.1, 0.1, 0.8};
-    double ll_with = loglik<double>(r, zero_mean_theta, kSGarch11Norm, VarInit::Sample, {.sigma2 = with_mean});
+    double ll_with =
+        loglik<double>(r, zero_mean_theta, kSGarch11Norm, VarInit::Sample, {.sigma2 = with_mean});
     double ll_without = loglik<double>(r, no_mean_theta, no_mean, VarInit::Sample, {.sigma2 = without_mean});
     EXPECT_EQ(ll_with, ll_without);
     EXPECT_EQ(with_mean, without_mean);
@@ -323,7 +326,8 @@ TEST_P(LikelihoodGrid, GradientMatchesFiniteDifferences)
         std::vector<double> down = theta;
         up[i] += step;
         down[i] -= step;
-        double central = (loglik_at(r, up, layout, var_init) - loglik_at(r, down, layout, var_init)) / (2.0 * step);
+        double central =
+            (loglik_at(r, up, layout, var_init) - loglik_at(r, down, layout, var_init)) / (2.0 * step);
         EXPECT_NEAR(ll.grad[i], central, 1e-6 * std::max(1.0, std::abs(ll.grad[i]))) << "parameter " << i;
     }
 }
