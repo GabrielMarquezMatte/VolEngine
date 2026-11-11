@@ -8,6 +8,7 @@
 #include "garch/power_garch.hpp"
 #include "garch/sgarch.hpp"
 #include "mean/arma.hpp"
+#include "model/parameter_map.hpp"
 
 #include <algorithm>
 #include <array>
@@ -153,30 +154,13 @@ garch::PowerGarchParameters<T> power_garch_parameters(std::span<const T> theta, 
             moments.first(s.alpha.size())};
 }
 
-// kappa_i = E(|z - eta2_i| - eta1_i (z - eta2_i))^power.
-template <class T>
-T shock_moment(const garch::PowerGarchParameters<T>& p, const Layout& layout, const T& shape, std::size_t i)
-{
-    T eta1{0.0};
-    if (!p.eta1.empty())
-    {
-        eta1 = p.eta1[i];
-    }
-    if (p.eta2.empty())
-    {
-        return dist::asymmetric_moment(layout.dist, shape, eta1, p.power);
-    }
-    return dist::shifted_moment(layout.dist, shape, eta1, p.eta2[i], p.power);
-}
-
 // False when a kappa is not finite (std with shape <= power), which can come back as NaN as well as +inf.
 template <class T>
-bool shock_moments(const garch::PowerGarchParameters<T>& p, const Layout& layout, const T& shape,
-                   std::span<T> moments)
+bool shock_moments(std::span<const T> theta, const Layout& layout, std::span<T> moments)
 {
-    for (std::size_t i = 0; i < p.alpha.size(); ++i)
+    for (std::size_t i = 0; i < static_cast<std::size_t>(layout.arch); ++i)
     {
-        moments[i] = shock_moment(p, layout, shape, i);
+        moments[i] = shock_moment(theta, layout, i);
         if (!std::isfinite(ad::value_of(moments[i])))
         {
             return false;
@@ -252,7 +236,7 @@ bool power_variance(std::span<const T> residuals, std::span<const T> theta, cons
 {
     std::array<T, kMaxOrder> moments{};
     garch::PowerGarchParameters<T> p = power_garch_parameters<T>(theta, layout, moments);
-    if (!shock_moments(p, layout, shape_of(theta, layout), std::span<T>(moments)))
+    if (!shock_moments(theta, layout, std::span<T>(moments)))
     {
         return false;
     }
