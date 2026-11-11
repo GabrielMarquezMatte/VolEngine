@@ -1,9 +1,26 @@
 #pragma once
 
 #include "core/context.hpp"
+#include "core/panel.hpp"
+#include "core/spec.hpp"
 #include <volengine/volengine.h>
 
 struct ve_context
 {
     ve::Context context;
+};
+
+struct ve_spec
+{
+    ve::Spec spec;
+};
+
+struct ve_fit_options
+{
+    ve::FitConfig config;
+};
+
+struct ve_panel
+{
+    ve::PanelView view;
 };
