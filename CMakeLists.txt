@@ -48,6 +48,8 @@ target_compile_options(volengine_core PRIVATE ${VE_WARNING_FLAGS})
 add_library(volengine SHARED
     src/capi/version_api.cpp
     src/capi/context_api.cpp
+    src/capi/spec_api.cpp
+    src/capi/panel_api.cpp
     src/capi/error.cpp)
 target_include_directories(volengine PUBLIC include)
 target_compile_definitions(volengine PRIVATE VE_BUILDING)
@@ -74,6 +76,8 @@ if(VE_BUILD_TESTS)
     add_executable(volengine_tests
         tests/unit/capi/abi_test.cpp
         tests/unit/capi/context_test.cpp
+        tests/unit/capi/panel_test.cpp
+        tests/unit/capi/spec_test.cpp
         tests/unit/fit/criteria_test.cpp
         tests/unit/fit/fit_test.cpp
         tests/unit/garch/sgarch_test.cpp

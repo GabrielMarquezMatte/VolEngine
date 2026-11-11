@@ -1,0 +1,224 @@
+#include "capi/error.hpp"
+#include "capi/handles.hpp"
+
+#include <cmath>
+#include <memory>
+#include <string>
+
+using ve::capi::guard;
+using ve::capi::set_error;
+
+namespace
+{
+
+ve_status bad_value(const char* name, int32_t value)
+{
+    return set_error(VE_INVALID_ARGUMENT,
+        std::string(name) + " has unknown value " + std::to_string(value));
+}
+
+ve_status to_model(int32_t value, ve::Model& model)
+{
+    if (value != VE_MODEL_SGARCH)
+    {
+        return bad_value("model", value);
+    }
+    model = ve::Model::SGarch;
+    return VE_OK;
+}
+
+ve_status to_dist(int32_t value, ve::Dist& dist)
+{
+    if (value != VE_DIST_NORM)
+    {
+        return bad_value("dist", value);
+    }
+    dist = ve::Dist::Norm;
+    return VE_OK;
+}
+
+ve_status to_var_init(int32_t value, ve::VarInit& var_init)
+{
+    if (value == VE_VARINIT_SAMPLE)
+    {
+        var_init = ve::VarInit::Sample;
+        return VE_OK;
+    }
+    if (value == VE_VARINIT_BACKCAST)
+    {
+        var_init = ve::VarInit::Backcast;
+        return VE_OK;
+    }
+    return bad_value("var_init", value);
+}
+
+}
+
+extern "C" ve_status ve_spec_create(int32_t model, ve_spec** out)
+{
+    if (out != nullptr)
+    {
+        *out = nullptr;
+    }
+    return guard(
+        [&]
+        {
+            if (out == nullptr)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "out must not be null");
+            }
+            auto spec = std::make_unique<ve_spec>();
+            const ve_status status = to_model(model, spec->spec.model);
+            if (status != VE_OK)
+            {
+                return status;
+            }
+            *out = spec.release();
+            return VE_OK;
+        });
+}
+
+extern "C" ve_status ve_spec_set_order(ve_spec* s, int32_t p, int32_t q)
+{
+    return guard(
+        [&]
+        {
+            if (s == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "s must not be null");
+            }
+            if (p < 1 || q < 1)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "p and q must be >= 1");
+            }
+            if (p != 1 || q != 1)
+            {
+                return set_error(VE_UNSUPPORTED, "only order (1, 1) is supported in this version");
+            }
+            s->spec.p = p;
+            s->spec.q = q;
+            return VE_OK;
+        });
+}
+
+extern "C" ve_status ve_spec_set_dist(ve_spec* s, int32_t dist)
+{
+    return guard(
+        [&]
+        {
+            if (s == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "s must not be null");
+            }
+            ve::Dist parsed = s->spec.dist;
+            const ve_status status = to_dist(dist, parsed);
+            if (status != VE_OK)
+            {
+                return status;
+            }
+            s->spec.dist = parsed;
+            return VE_OK;
+        });
+}
+
+extern "C" ve_status ve_spec_set_include_mean(ve_spec* s, int32_t include_mean)
+{
+    return guard(
+        [&]
+        {
+            if (s == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "s must not be null");
+            }
+            if (include_mean != 0 && include_mean != 1)
+            {
+                return bad_value("include_mean", include_mean);
+            }
+            s->spec.include_mean = include_mean == 1;
+            return VE_OK;
+        });
+}
+
+extern "C" void ve_spec_free(ve_spec* s)
+{
+    std::unique_ptr<ve_spec> owner(s);
+}
+
+extern "C" ve_status ve_fit_options_create(ve_fit_options** out)
+{
+    if (out != nullptr)
+    {
+        *out = nullptr;
+    }
+    return guard(
+        [&]
+        {
+            if (out == nullptr)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "out must not be null");
+            }
+            *out = std::make_unique<ve_fit_options>().release();
+            return VE_OK;
+        });
+}
+
+extern "C" ve_status ve_fit_options_set_max_iter(ve_fit_options* o, int32_t max_iter)
+{
+    return guard(
+        [&]
+        {
+            if (o == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "o must not be null");
+            }
+            if (max_iter < 1)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "max_iter must be >= 1");
+            }
+            o->config.max_iter = max_iter;
+            return VE_OK;
+        });
+}
+
+extern "C" ve_status ve_fit_options_set_tolerance(ve_fit_options* o, double tol)
+{
+    return guard(
+        [&]
+        {
+            if (o == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "o must not be null");
+            }
+            if (!std::isfinite(tol) || tol <= 0.0)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "tol must be finite and > 0");
+            }
+            o->config.tol = tol;
+            return VE_OK;
+        });
+}
+
+extern "C" ve_status ve_fit_options_set_var_init(ve_fit_options* o, int32_t var_init)
+{
+    return guard(
+        [&]
+        {
+            if (o == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "o must not be null");
+            }
+            ve::VarInit parsed = o->config.var_init;
+            const ve_status status = to_var_init(var_init, parsed);
+            if (status != VE_OK)
+            {
+                return status;
+            }
+            o->config.var_init = parsed;
+            return VE_OK;
+        });
+}
+
+extern "C" void ve_fit_options_free(ve_fit_options* o)
+{
+    std::unique_ptr<ve_fit_options> owner(o);
+}
