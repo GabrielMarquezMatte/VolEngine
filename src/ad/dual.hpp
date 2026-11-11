@@ -90,7 +90,7 @@ Dual<N> operator*(const Dual<N>& a, const Dual<N>& b)
 }
 
 // The derivative is taken as (a' - q b') / b with q = a / b: the factor q / b of a' / b - (q / b) b'
-// underflows or overflows on its own once |b| passes ~1e154 (1 / x at x = 1e200 had a zero derivative).
+// underflows or overflows on its own once |b| passes ~1e154.
 template <std::size_t N>
 Dual<N> operator/(const Dual<N>& a, const Dual<N>& b)
 {

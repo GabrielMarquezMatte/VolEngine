@@ -50,6 +50,8 @@ VE_API ve_status ve_context_threads(const ve_context* ctx, int32_t* out);
 VE_API void ve_context_free(ve_context* ctx);
 
 #define VE_MODEL_SGARCH 0
+/* VE_DIST_STD and VE_DIST_GED are standardized to zero mean and unit variance (as in rugarch and
+   arch); their shape parameter is named "shape", with domain nu > 2 (std) and nu > 0 (ged). */
 #define VE_DIST_NORM 0
 #define VE_DIST_STD 1
 #define VE_DIST_GED 2

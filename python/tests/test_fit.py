@@ -419,6 +419,11 @@ def test_bad_arma_raises_value_error(arma):
         ve.Spec(arma=arma)
 
 
+def test_arma_list_equals_tuple_and_hashes():
+    assert ve.Spec(arma=[1, 1]) == ve.Spec(arma=(1, 1))
+    assert hash(ve.Spec(arma=[1, 1])) == hash(ve.Spec(arma=(1, 1)))
+
+
 def test_order_above_max_raises():
     with pytest.raises(ve.VolEngineError, match="VE_MAX_ORDER"):
         ve.Spec(p=7)

@@ -38,6 +38,7 @@ class Spec:
 
     def __post_init__(self) -> None:
         self.native_handle().close()
+        object.__setattr__(self, "arma", tuple(self.arma))
 
     def arma_orders(self) -> tuple[int, int]:
         arma = self.arma
