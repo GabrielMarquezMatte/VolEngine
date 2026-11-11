@@ -1,0 +1,544 @@
+# VolEngine Style Guide
+
+Code style rules. Every rule is literal and checkable. If a rule blocks a clearly better solution, stop
+and ask instead of breaking it silently.
+
+Code, identifiers, error messages and repository documentation (README, ARCHITECTURE, STYLEGUIDE,
+`docs/guide`) are in English. Working documents under `docs/superpowers/` are in Portuguese.
+
+## Priorities
+
+1. **Correctness** — the code must be right. No shortcuts that sacrifice safety or accuracy.
+2. **Performance** — optimize where it matters, but never at the cost of readability.
+3. **Readability** — code is read far more than it is written.
+
+## Automatic checks
+
+`tests/style/check_style.py` (standard library only) runs in `ctest` (test `style`) and in CI:
+
+```
+python tests/style/check_style.py [ROOT]
+```
+
+It prints one `path:line: rule: message` line per violation and exits 1 if there is any. It scans
+`src/`, `include/`, `cpp/`, `tests/`, `python/src/` and `python/tests/`, and skips `build/`,
+`python/.venv/`, `tests/reference/fixtures/` and `tests/reference/data/`.
+
+| Rule             | C / C++                | Python                              |
+|------------------|------------------------|-------------------------------------|
+| `else`           | token outside strings and comments | `else`/`elif`/`for…else`/`try…else` by AST; simple ternary allowed |
+| `folder-modules` | more than 8 modules    | more than 8 `.py` files (not counting `__init__.py`) |
+| `function-length`| clang-tidy             | more than 60 lines, by AST          |
+| `function-params`| clang-tidy             | more than 5 parameters, by AST      |
+| `nesting`        | clang-tidy             | more than 3 nested blocks, by AST   |
+
+In C++, function length, parameter count and nesting are enforced by `clang-tidy`
+(`readability-function-size`: `LineThreshold: 60`, `ParameterThreshold: 5`, `NestingThreshold: 3`,
+configured in `.clang-tidy`) in CI and locally when available. Formatting comes from `.clang-format`.
+
+---
+
+## Never `else`
+
+Forbidden: `else`, `else if`; in Python also `elif`, `for…else`, `while…else`, `try…else`. Use guard
+clauses and early returns. To choose among several cases, use a sequence of `if` with `return`, a
+`switch`, or a table. (The rule does not apply to CMake files.)
+
+```cpp
+// NOT OK
+double sign_of(double x)
+{
+    if (x > 0.0)
+    {
+        return 1.0;
+    }
+    else if (x < 0.0)
+    {
+        return -1.0;
+    }
+    else
+    {
+        return 0.0;
+    }
+}
+
+// OK
+double sign_of(double x)
+{
+    if (x > 0.0)
+    {
+        return 1.0;
+    }
+    if (x < 0.0)
+    {
+        return -1.0;
+    }
+    return 0.0;
+}
+```
+
+---
+
+## Control Flow — Prefer Early Return
+
+Avoid wrapping the happy path in a condition. Guard and exit early; keep the main logic at the lowest
+indentation level.
+
+```cpp
+// NOT OK: the body is nested under the guard
+void append_decoded(std::span<const std::byte> source)
+{
+    if (!source.empty())
+    {
+        reserve(length_ + source.size());
+        length_ += decode(source, buffer_.data() + length_);
+    }
+}
+
+// OK: the guard exits early
+void append_decoded(std::span<const std::byte> source)
+{
+    if (source.empty())
+    {
+        return;
+    }
+    reserve(length_ + source.size());
+    length_ += decode(source, buffer_.data() + length_);
+}
+```
+
+### `if` always has braces, body on its own line
+
+Never `if (cond) return;` on one line, never a brace-less body.
+
+```cpp
+// NOT OK
+if (series.empty()) return 0.0;
+if (series.empty())
+    return 0.0;
+
+// OK
+if (series.empty())
+{
+    return 0.0;
+}
+```
+
+---
+
+## Ternaries
+
+Use a ternary only with one condition and operands that are names, literals or members. Never nested,
+never with a function call in a branch, never broken across lines.
+
+```cpp
+// OK: two literals
+double sign = inverted ? -1.0 : 1.0;
+
+// OK: one member on each side
+std::size_t start = options.has_start ? options.start : 0;
+
+// NOT OK: nested
+double scale = a ? (b ? 1.0 : 2.0) : 3.0;
+
+// NOT OK: a call in a branch
+double value = positive ? std::sqrt(x) : 0.0;
+
+// Use if instead:
+double value = 0.0;
+if (positive)
+{
+    value = std::sqrt(x);
+}
+```
+
+When in doubt, use `if`.
+
+---
+
+## Scope Nesting — Maximum 3 Levels
+
+Count every block that introduces indentation: `if`, `for`, `while`, `switch`, `try`, `with`. A
+function body is level 0. Nesting beyond 3 is a signal to extract a function.
+
+```
+level 0: function body
+level 1: for (series : panel)
+level 2:   if (series.valid())
+level 3:     for (value : series)      <- maximum allowed
+level 4:       if (std::isnan(value))  <- extract this into a function
+```
+
+When you reach level 4, ask what the inner block is doing. Name it and move it.
+
+---
+
+## Function Length — Maximum 60 Lines
+
+Count every line from the signature to the closing brace, excluding blank lines and documentation
+comments. If a function exceeds 60 lines, split it. The target is 30.
+
+Do not game the limit by packing logic onto one line. The limit exists to keep functions focused, not
+to reward line-golf. A function that packs three operations on one line to stay under 60 is worse than
+one that spreads them across 61 readable lines and is then split.
+
+```cpp
+// NOT OK: three statements on one line to save two lines
+double a = f(x); double b = g(a); return h(a, b);
+
+// OK: split by responsibility
+double sigma2 = filter_variance(parameters, residuals);
+double quadratic_term = residual * residual / sigma2;
+return log_likelihood_term(sigma2, quadratic_term);
+```
+
+Common splits: validate vs. compute; compute one term vs. combine terms; find a boundary vs. process
+what is inside it.
+
+---
+
+## Parameters — Maximum 5 Per Function
+
+This includes the C interface. More than 5 means a handle with setters (C) or an aggregate type
+(C++/Python).
+
+```cpp
+// NOT OK
+ve_status ve_spec_configure(ve_spec* spec, int32_t p, int32_t q, int32_t include_mean,
+                            int32_t variance_init, int32_t distribution);
+
+// OK (C interface): one setter per option on an opaque handle
+ve_status ve_spec_set_order(ve_spec* spec, int32_t p, int32_t q);
+ve_status ve_spec_set_include_mean(ve_spec* spec, int32_t include_mean);
+
+// OK (C++): an aggregate for internal code
+struct FitConfig
+{
+    bool include_mean;
+    VarianceInit variance_init;
+    std::size_t max_iterations;
+};
+void fit(const PanelView& panel, const Spec& spec, const FitConfig& config);
+```
+
+---
+
+## Modules and Folders — Maximum 8 Per Folder
+
+A module is a `.hpp`/`.cpp` pair with the same name, or a lone file. In Python, a `.py` file not
+counting `__init__.py`. At the limit, create a subfolder per context. A file above ~300 lines is a
+sign to split it.
+
+```
+// NOT OK: src/fit/ with 9 modules
+src/fit/{fit,criteria,batch,hessian,scores,summary,report,export,cache}.{hpp,cpp}
+
+// OK: split by context
+src/fit/{fit,criteria,batch}.{hpp,cpp}
+src/fit/inference/{hessian,scores,summary}.{hpp,cpp}
+```
+
+No `utils`, `helpers`, `misc`, `common`: the module name states its context.
+
+```cpp
+// NOT OK
+#include "core/utils.hpp"
+
+// OK
+#include "core/panel.hpp"
+```
+
+No speculative abstraction: no base class with one implementation, no factory for one product, no
+configuration for a value that never changes.
+
+---
+
+## Layers
+
+Dependencies point one way: `core` ← `garch`, `optim` ← `fit` ← `capi`. Nothing in `src/` includes
+from `src/capi/` except `capi` itself.
+
+```cpp
+// NOT OK: src/fit/fit.cpp
+#include "capi/error.hpp"
+
+// OK: src/capi/fit_api.cpp
+#include "fit/fit.hpp"
+```
+
+---
+
+## Naming
+
+C++ follows the style of the ExcelReader C++ wrapper.
+
+- Types: `PascalCase` (`FitResult`, `PanelView`)
+- Functions and variables: `snake_case` (`fit_batch`, `sigma2`)
+- Private members: trailing underscore (`length_`)
+- Constants: `kPascalCase` (`kMaxLags`)
+- C interface: prefix `ve_` for functions and types, `VE_` for macros and constants
+- Whole words (`index`, not `idx`; `source`, not `src`) unless the abbreviation is idiomatic
+  (`len`, `buf`, `pos`) or mathematical notation (`sigma2`, `theta`, `omega`)
+- Braces in Allman style, 4 spaces of indentation (`.clang-format`)
+
+```cpp
+// NOT OK
+struct fit_result { double* Params; int nIdx; };
+
+// OK
+struct FitResult
+{
+    std::vector<double> parameters;
+    std::size_t parameter_count;
+};
+```
+
+### Public API naming must be symmetric across model families
+
+What exists for GARCH has the same shape for DCC. A caller who learns one family's entry point should
+be able to guess the other's: `ve_spec_set_garch_order` and `ve_spec_set_dcc_order`, not one of those
+plus a bare `ve_spec_set_order_dcc`. When you add a family-specific member, find its siblings and match
+them, or add the missing siblings in the same change.
+
+---
+
+## Comments
+
+**The default is no comment.** Code explains itself through naming and flow. Reaching for a comment is
+the signal to look at the code again: if a reader cannot follow the logic, that is a defect in the
+code, not a gap in its documentation. Rename the variable, extract the function, flatten the branch.
+
+A comment is justified only when the reason lives outside the code and no naming can bring it in:
+
+- A constraint imposed by an external convention (an oracle's definition), a platform or a format.
+- An invariant a reader could silently break, where breaking it still compiles and passes review.
+
+```cpp
+// OK: an external convention the code cannot express
+// rugarch initializes the variance recursion with the sample mean of the squared residuals.
+
+// NOT OK: describes what the code does
+// Loop over each series and fit it.
+
+// NOT OK: the code should have said this itself
+// p is the position of the first non-finite value
+std::size_t p = first_non_finite(series);   // name it first_non_finite_position and delete the comment
+```
+
+Never reference a plan, spec, task or ticket in a comment.
+
+### Findings do not belong in code
+
+Measurements, benchmark results and the reasoning that picked one approach over another are **not
+comments**. They go in `docs/`, with the numbers, the machine and the data, so the next person can
+re-run them and disagree. What may stay in the code is the constraint itself, without its evidence:
+
+```cpp
+// OK: the ceiling, not the benchmark that found it
+// At most 256 series per task; larger batches are split.
+
+// NOT OK: a finding, and it rots the moment anything around it changes
+// Measured 11 ms vs 36 ms for the scalar loop on 5000 series, so the blocked version stays.
+```
+
+### A comment must stay true, or it is worse than no comment
+
+- Do not describe a state the code is no longer in. When you refactor, reread the comments on what you
+  touched.
+- Do not cite a file that can disappear (plans, specs, section markers). A committed document under
+  `docs/` is different in kind: it is permanent, and pointing at one is how a finding stays out of the
+  code. The test is whether the target is expected to still exist in a year.
+
+---
+
+## Numerics
+
+- Only `double`.
+- Never form an explicit inverse to solve a system: use a Cholesky factorization or a solve.
+- Log-determinants come from the Cholesky factor, never `log(det(...))`.
+- Keep covariance matrices symmetrized (`0.5 * (P + P^T)`).
+- Break long formulas into named terms that match the documented equation.
+- Parameter constraints are imposed by a documented reparametrization (`exp` for variances, logistic
+  for values in (0, 1)), never by clamping inside the objective.
+- A missing value (NaN) inside a series is an argument error, never silently filled.
+
+```cpp
+// NOT OK: one line, no names
+double ll = -0.5 * (std::log(2 * kPi) + std::log(s2) + e * e / s2);
+
+// OK: terms named after the documented equation
+double log_two_pi = std::log(2.0 * kPi);
+double log_variance = std::log(sigma2);
+double quadratic_term = residual * residual / sigma2;
+double log_likelihood = -0.5 * (log_two_pi + log_variance + quadratic_term);
+```
+
+---
+
+## Error Handling
+
+Report errors at trust boundaries: every function of the C interface, constructor arguments, and
+malformed external data. Do not add defensive checks for conditions that are impossible given the
+internal invariants.
+
+- Every C function that can fail returns `ve_status`; the detailed message is in `ve_last_error()`,
+  which is thread-local.
+- No exception crosses the C interface. Every `extern "C"` function catches everything:
+  `std::bad_alloc` becomes `VE_OUT_OF_MEMORY`, anything else becomes `VE_INTERNAL_ERROR`.
+- Match the status to whose fault it is. A bad argument is `VE_INVALID_ARGUMENT`; a fit that does not
+  converge is a result flag on that fit, never a failure of the whole batch.
+- Internal code (below `capi`) may throw; the `capi` guard translates at the boundary.
+
+```cpp
+// NOT OK: an exception escapes through the C interface
+extern "C" ve_status ve_fit_batch(ve_batch* batch, ve_fit*** fits)
+{
+    return run(batch, fits);   // may throw
+}
+
+// OK: the boundary guards everything
+extern "C" ve_status ve_fit_batch(ve_batch* batch, ve_fit*** fits)
+{
+    return guard([&] { return run(batch, fits); });
+}
+```
+
+---
+
+## Untrusted Input
+
+Every argument that crosses the C interface is untrusted: callers are Python, C, or anything that can
+load the library. These rules are not optional in `capi` code.
+
+- **Validate every length, index, count and stride before it drives an allocation, an index or a loop
+  bound.** Check against what the caller's buffer can actually hold (the declared `T`, `N`, strides and
+  ranges) and reject with `VE_INVALID_ARGUMENT` before allocating, not after.
+- **When you add a guard for one argument, apply it to every sibling argument.** The expensive bugs are
+  inconsistency, not ignorance: a validated series count next to an unvalidated start offset. If one
+  field needs the guard, assume its neighbours do too.
+- **Check size arithmetic for overflow.** `count * stride * sizeof(double)` computed in `size_t` can wrap
+  into a small number that sails past a bounds check. Use a checked multiply/add helper and reject on
+  overflow.
+- **Never let a malformed value silently change semantics.** A negative stride, a null pointer with a
+  non-zero length, or a length that wraps must be reported, not reinterpreted.
+- **Validate before you allocate, not before you use.** Allocating first and discovering the
+  inconsistency during the walk still hands the caller the allocation.
+- New or changed argument handling needs a matching test that forges the malformed call. Assert the
+  status code and the message, not merely that something failed.
+
+```cpp
+// NOT OK: the product can overflow before it is compared
+if (count * stride > capacity)
+{
+    return VE_INVALID_ARGUMENT;
+}
+
+// OK: checked arithmetic, rejected before allocating
+std::size_t required = 0;
+if (!checked_mul(count, stride, required) || required > capacity)
+{
+    return set_error(VE_INVALID_ARGUMENT, "series range exceeds the panel");
+}
+```
+
+---
+
+## Ownership and RAII
+
+Resources are owned by objects, released by destructors, on every exit path including exceptions.
+
+- No naked `new`/`delete` and no manual `free`: `std::vector`, `std::unique_ptr` or a small RAII type.
+- A buffer that lives beyond one stack frame has one owner, stated by its type.
+- Bound reads by the logical length you tracked, never by the capacity of the container.
+- Handles that cross the C interface are opaque; freeing one never invalidates another. Results are
+  immutable once produced, so concurrent readers need no lock.
+
+```cpp
+// NOT OK: leaks if fit() throws
+double* work = new double[length];
+fit(work, length);
+delete[] work;
+
+// OK
+std::vector<double> work(length);
+fit(work);
+```
+
+---
+
+## Tests and Benchmarks
+
+Harness code is held to the same standard as library code, because a broken harness reports success.
+
+- **Fail loudly, never silently.** A fixture that was never built, a setup that never ran, an input
+  that parsed to nothing: assert it. The dangerous harness is not the one that crashes, it is the one
+  that measures zero work and publishes a number.
+- Assert real behavior: exact values, status codes, messages. A test that calls a function and asserts
+  "did not throw" documents nothing.
+- Name tests for what they cover (`Abi.RuntimeVersionMatchesHeader`). A hand-written series is not a
+  "real world" fixture, and calling it one hides the gap it was meant to close.
+- Python tests are `test_*` functions with plain `assert`; use `pytest.mark.parametrize` instead of a
+  loop and no `unittest` classes.
+- Benchmarks against another library compare matched work, or say plainly that they do not. State the
+  machine for every published number, and never derive a ratio across different hardware.
+- Tests never touch the network.
+
+```cpp
+// NOT OK
+TEST(Fit, Works)
+{
+    EXPECT_NO_THROW(fit(panel));
+}
+
+// OK
+TEST(Fit, ConstantSeriesReportsFitFailed)
+{
+    EXPECT_EQ(fit_status(constant_series), VE_FIT_FAILED);
+}
+```
+
+---
+
+## Performance Notes
+
+These rules apply only when a function is on a measured hot path (the likelihood recursion, scores,
+the batch loop):
+
+- Prefer `std::span<const double>` over `const std::vector<double>&` or a pointer and length pair for
+  data the function only reads.
+- Allocate once, outside the loop: workspaces are sized up front and reused across observations and
+  iterations.
+- Keep results bit-identical for any number of threads: no reduction whose order depends on scheduling.
+- Split cold paths (error construction, growth) out of the hot function so they do not bloat it.
+- Optimize against a measurement, and record what it showed in `docs/`, never in a comment. An
+  optimization with no number behind it is a guess that costs readability.
+
+```cpp
+// NOT OK: allocates on every observation
+for (std::size_t t = 0; t < length; ++t)
+{
+    std::vector<double> scratch(parameter_count);
+    accumulate(scratch, t);
+}
+
+// OK
+std::vector<double> scratch(parameter_count);
+for (std::size_t t = 0; t < length; ++t)
+{
+    accumulate(scratch, t);
+}
+```
+
+Outside the hot path (setup, argument validation, result assembly), ordinary allocations are fine.
+
+---
+
+## Checklist before finishing
+
+- [ ] `python tests/style/check_style.py` exits 0 (also run by `ctest`).
+- [ ] No `else` in C/C++/Python; every `if` has braces and its body on its own line.
+- [ ] No function above 60 lines, with more than 5 parameters, or nested deeper than 3 blocks.
+- [ ] No folder with more than 8 modules; no `utils`/`helpers`/`misc`/`common`.
+- [ ] No comment that describes what the code does, cites a plan or task, or records a measurement.
+- [ ] Every new C function validates its arguments, returns `ve_status` and lets no exception escape.
+- [ ] Tests assert exact values and pass.
