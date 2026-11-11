@@ -90,7 +90,15 @@ def check_python_else(path, tree, lines):
 def is_simple_operand(node):
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
         return isinstance(node.operand, ast.Constant)
-    return isinstance(node, (ast.Name, ast.Constant, ast.Attribute))
+    if isinstance(node, ast.Attribute):
+        return is_attribute_chain(node.value)
+    return isinstance(node, (ast.Name, ast.Constant))
+
+
+def is_attribute_chain(node):
+    if isinstance(node, ast.Attribute):
+        return is_attribute_chain(node.value)
+    return isinstance(node, ast.Name)
 
 
 def ternary_problem(node):
