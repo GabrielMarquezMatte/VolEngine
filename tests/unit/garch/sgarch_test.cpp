@@ -14,7 +14,7 @@ namespace
 {
 
 using ve::garch::SGarchConfig;
-using ve::garch::VarInit;
+using ve::VarInit;
 
 std::vector<double> simulate_garch_returns(std::size_t count)
 {

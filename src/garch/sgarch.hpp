@@ -1,16 +1,12 @@
 #pragma once
 
+#include "core/var_init.hpp"
+
 #include <cstddef>
 #include <span>
 
 namespace ve::garch
 {
-
-enum class VarInit
-{
-    Sample,
-    Backcast
-};
 
 struct SGarchConfig
 {
