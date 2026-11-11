@@ -81,23 +81,39 @@ VarianceState sample_initial_state(std::span<const double> r, const Parameters& 
     return state;
 }
 
-VarianceState backcast_initial_state(std::span<const double> r, const Parameters& p)
+double sample_mean(std::span<const double> r)
 {
+    double sum = 0.0;
+    for (double value : r)
+    {
+        sum += value;
+    }
+    return sum / static_cast<double>(r.size());
+}
+
+// arch computes the backcast once, from the residuals at its starting mean (the sample mean, or zero without
+// a mean), and keeps it fixed during the optimization: it does not depend on mu.
+VarianceState backcast_initial_state(std::span<const double> r, const Parameters& p, bool include_mean)
+{
+    double center = 0.0;
+    if (include_mean)
+    {
+        center = sample_mean(r);
+    }
     std::size_t window = std::min(kBackcastWindow, r.size());
-    MeanSquare b = decayed_mean_square(r.first(window), p.mu, kBackcastDecay);
-    VarianceState state{p.omega + p.alpha * b.value + p.beta * b.value, {}};
-    state.dsigma2[kMu] = (p.alpha + p.beta) * b.dmu;
+    double b = decayed_mean_square(r.first(window), center, kBackcastDecay).value;
+    VarianceState state{p.omega + p.alpha * b + p.beta * b, {}};
     state.dsigma2[kOmega] = 1.0;
-    state.dsigma2[kAlpha] = b.value;
-    state.dsigma2[kBeta] = b.value;
+    state.dsigma2[kAlpha] = b;
+    state.dsigma2[kBeta] = b;
     return state;
 }
 
-VarianceState initial_state(std::span<const double> r, const Parameters& p, VarInit var_init)
+VarianceState initial_state(std::span<const double> r, const Parameters& p, const SGarchConfig& config)
 {
-    if (var_init == VarInit::Backcast)
+    if (config.var_init == VarInit::Backcast)
     {
-        return backcast_initial_state(r, p);
+        return backcast_initial_state(r, p, config.include_mean);
     }
     return sample_initial_state(r, p);
 }
@@ -184,7 +200,7 @@ double sgarch_norm_loglik(std::span<const double> r, std::span<const double> the
     bool wants_score = !out.grad.empty() || !out.scores.empty();
     Parameters p = unpack(theta, config);
     std::ranges::fill(out.grad, 0.0);
-    VarianceState state = initial_state(r, p, config.var_init);
+    VarianceState state = initial_state(r, p, config);
     double loglik = 0.0;
     double previous_residual = 0.0;
     for (std::size_t t = 0; t < r.size(); ++t)
