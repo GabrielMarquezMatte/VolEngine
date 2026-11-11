@@ -19,3 +19,4 @@ CheckOptions:
     value: '-1'
   - key: readability-braces-around-statements.ShortStatementLines
     value: 0
+HeaderFilterRegex: '.*/src/.*'

@@ -23,8 +23,8 @@ jobs:
         include:
           - name: windows-msvc
             os: windows-latest
-            preset: msvc-release
-            library: build/msvc-release/Release/volengine.dll
+            preset: native-release
+            library: build/native-release/Release/volengine.dll
           - name: linux-gcc
             os: ubuntu-24.04
             preset: native-release
@@ -55,7 +55,26 @@ jobs:
           echo "CC=gcc-15" >> "$GITHUB_ENV"
           echo "CXX=g++-15" >> "$GITHUB_ENV"
 
-      # macOS uses the runner's Apple Clang and libc++ as shipped.
+      # CMake picks the newest Visual Studio on the runner, so the job does not depend on one generator name.
+      - name: Print CMake version
+        run: cmake --version
+
+      - name: Print GCC version (Linux)
+        if: runner.os == 'Linux'
+        run: g++-15 --version
+
+      # The sources use std::ranges algorithms and std::numbers (no std::expected, mdspan or <format>), which
+      # libc++ ships from Xcode 15 (Apple Clang 15). The runner's Apple Clang is used as shipped, if new enough.
+      - name: Check Apple Clang version (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          clang++ --version
+          major=$(clang++ --version | sed -n 's/.*clang version \([0-9]*\)\..*/\1/p' | head -n 1)
+          if [ -z "$major" ] || [ "$major" -lt 15 ]; then
+            echo "::error::Apple Clang 15 or newer is required for std::ranges; found '$major'"
+            exit 1
+          fi
+
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
 
@@ -96,10 +115,12 @@ jobs:
       - name: Install clang-tidy
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-tidy ninja-build
+          sudo apt-get install -y clang clang-tidy ninja-build
 
       - name: Configure
-        run: cmake -S . -B build/tidy -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVE_BUILD_TESTS=OFF
+        run: |
+          clang-tidy --version
+          cmake -S . -B build/tidy -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVE_BUILD_TESTS=OFF
 
       - name: Run clang-tidy over src/
         run: git ls-files 'src/*.cpp' | xargs clang-tidy -p build/tidy
