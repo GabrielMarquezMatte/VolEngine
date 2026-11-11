@@ -124,6 +124,24 @@ TEST(Likelihood, SampleInitHoldsFirstMaxOrderVariances)
     EXPECT_NEAR(sigma2[3], expected, 1e-12);
 }
 
+TEST(Likelihood, SampleInitHoldCountsTheArmaOrders)
+{
+    Layout layout{.include_mean = true, .ar = 0, .ma = 3, .arch = 1, .garch = 2, .dist = Dist::Norm};
+    std::vector<double> r = ve::testing::simulate_garch_series(3, 50);
+    std::vector<double> theta{0.04, 0.2, 0.1, -0.1, 0.02, 0.08, 0.5, 0.3};
+    std::vector<double> residuals(r.size());
+    std::vector<double> sigma2(r.size());
+    loglik<double>(r, theta, layout, VarInit::Sample, {.residuals = residuals, .sigma2 = sigma2});
+    std::vector<double> squared(r.size());
+    std::ranges::transform(residuals, squared.begin(), [](double e) { return e * e; });
+    double mean_square = mean_of(squared);
+    for (std::size_t t = 0; t < 3; ++t)
+    {
+        EXPECT_NEAR(sigma2[t], mean_square, 1e-12) << "t = " << t;
+    }
+    EXPECT_NEAR(sigma2[3], 0.02 + 0.08 * squared[2] + 0.5 * sigma2[2] + 0.3 * sigma2[1], 1e-12);
+}
+
 TEST(Likelihood, BackcastFeedsPresample)
 {
     Layout layout{.include_mean = true, .ar = 0, .ma = 0, .arch = 2, .garch = 2, .dist = Dist::Norm};

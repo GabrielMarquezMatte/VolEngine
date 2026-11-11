@@ -15,7 +15,8 @@ struct ArmaParameters
     std::span<const T> ma;
 };
 
-// e_t = (r_t - mu) - sum_i ar_i (r_{t-i} - mu) - sum_j ma_j e_{t-j}; a lag before the first observation adds nothing.
+// rugarch conditions on the first m = ar.size() observations: e_t = r_t - mu for t < m. From t = m on,
+// e_t = (r_t - mu) - sum_i ar_i (r_{t-i} - mu) - sum_j ma_j e_{t-j}, and an MA lag before t = 0 adds nothing.
 // residuals has the size of r.
 template <class T>
 void arma_residuals(std::span<const double> r, const ArmaParameters<T>& p, std::span<T> residuals)
@@ -23,8 +24,12 @@ void arma_residuals(std::span<const double> r, const ArmaParameters<T>& p, std::
     for (std::size_t t = 0; t < r.size(); ++t)
     {
         T residual = r[t] - p.mu;
-        std::size_t ar_lags = std::min(p.ar.size(), t);
-        for (std::size_t i = 1; i <= ar_lags; ++i)
+        if (t < p.ar.size())
+        {
+            residuals[t] = residual;
+            continue;
+        }
+        for (std::size_t i = 1; i <= p.ar.size(); ++i)
         {
             residual = residual - p.ar[i - 1] * (r[t - i] - p.mu);
         }
