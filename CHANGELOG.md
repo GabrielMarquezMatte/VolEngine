@@ -16,6 +16,14 @@ library whose ABI version differs).
   `ve.aic`, `ve.bic`, `ve.hqic` and `ve.sic` are removed, with no alias.
 
 ### Added
+- GARCH variants next to sGARCH: eGARCH, gjrGARCH, apARCH, iGARCH, csGARCH and fGARCH with its eight submodels
+  (garch, tgarch, avgarch, ngarch, nagarch, aparch, gjrgarch, allgarch), each with the three distributions and
+  an ARMA mean. C API: `VE_MODEL_*` constants 0 to 13. Python: `Spec(model=, submodel=)`.
+- Per-model Hessian steps, boundary rules for standard errors and start values; the fGARCH ALLGARCH shock
+  moments use Gauss-Legendre quadrature.
+- Validation of the new models against `rugarch` and `arch` ([docs/guide/validation.md](docs/guide/validation.md)).
+- Benchmarks for the new models (`BM_Loglik`, `BM_FitOne` per variant and `BM_TccGridAllModels`); they are not
+  measured yet ([docs/performance/benchmarks.md](docs/performance/benchmarks.md)).
 - Generic model engine: ARMA(m,n)-sGARCH(p,q) with orders up to `VE_MAX_ORDER` (6), a template log-likelihood over
   the scalar type, and forward-mode automatic differentiation (`ad::Dual<N>`) for exact gradients. The fit driver
   picks the narrowest `Dual` that holds the parameters.
