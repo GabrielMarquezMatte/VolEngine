@@ -67,11 +67,6 @@ void fill_block(std::vector<double>& theta, std::size_t begin, int count, double
     std::fill_n(theta.begin() + static_cast<std::ptrdiff_t>(begin), count, value);
 }
 
-bool is_power_family(Model model)
-{
-    return model == Model::ApArch || model >= Model::FGarchGarch;
-}
-
 // alpha_i = alpha / (p kappa_i), so that the alpha_i kappa_i weights sum to alpha.
 void scale_power_alpha(std::vector<double>& theta, const Layout& layout)
 {
@@ -88,7 +83,7 @@ double omega_start(const Layout& layout, double variance, double power)
     {
         return share * std::log(variance);
     }
-    if (is_power_family(layout.model))
+    if (layout.is_power_family())
     {
         return share * std::pow(variance, power / 2.0);
     }
@@ -131,7 +126,7 @@ std::vector<double> start_values(std::span<const double> r, const Layout& layout
     {
         theta[layout.shape()] = layout.dist == Dist::Std ? kInitialStdShape : kInitialGedShape;
     }
-    if (is_power_family(layout.model))
+    if (layout.is_power_family())
     {
         scale_power_alpha(theta, layout);
     }

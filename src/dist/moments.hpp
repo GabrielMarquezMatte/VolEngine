@@ -72,14 +72,14 @@ T student_abs_moment(const T& nu, const T& power)
     return exp(log_moment) / std::sqrt(std::numbers::pi);
 }
 
-// lambda^power 2^(power / nu) Gamma((power + 1) / nu) / Gamma(1 / nu), with the lambda of ged_log_density.
+// lambda^power 2^(power / nu) Gamma((power + 1) / nu) / Gamma(1 / nu), with the lambda of ged_log_density,
+// taken through its logarithm.
 template <class T>
 T ged_abs_moment(const T& nu, const T& power)
 {
     using std::exp;
     using std::lgamma;
-    using std::log;
-    T log_lambda = log(ged_log_density(nu).scale);
+    T log_lambda = ged_log_scale(nu);
     T log_gamma_ratio = lgamma((power + 1.0) / nu) - lgamma(1.0 / nu);
     return exp(power * log_lambda + (power / nu) * std::numbers::ln2 + log_gamma_ratio);
 }

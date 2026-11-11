@@ -142,6 +142,52 @@ std::size_t Layout::estimated_count() const
     return count() - (has_derived() ? 1 : 0);
 }
 
+bool Layout::is_power_family() const
+{
+    switch (model)
+    {
+        case Model::SGarch:
+        case Model::EGarch:
+        case Model::GjrGarch:
+        case Model::IGarch:
+        case Model::CsGarch:
+            return false;
+        case Model::ApArch:
+        case Model::FGarchGarch:
+        case Model::FGarchTGarch:
+        case Model::FGarchAvGarch:
+        case Model::FGarchNGarch:
+        case Model::FGarchNaGarch:
+        case Model::FGarchApArch:
+        case Model::FGarchGjrGarch:
+        case Model::FGarchAllGarch:
+            return true;
+    }
+    return false;
+}
+
+std::size_t Layout::asymmetry_begin() const
+{
+    if (model == Model::ApArch)
+    {
+        return gamma_begin();
+    }
+    return eta1_begin();
+}
+
+std::size_t Layout::asymmetry_count() const
+{
+    if (model == Model::ApArch)
+    {
+        return static_cast<std::size_t>(gamma);
+    }
+    if (model == Model::CsGarch)
+    {
+        return 0;
+    }
+    return static_cast<std::size_t>(eta1);
+}
+
 ParameterKind Layout::kind(std::size_t index) const
 {
     bool egarch = model == Model::EGarch;

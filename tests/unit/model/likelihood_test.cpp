@@ -462,17 +462,16 @@ protected:
     Layout layout = grid_layout(GetParam());
     VarInit var_init = std::get<VarInit>(GetParam());
     std::vector<double> theta = grid_theta(r, layout);
-};
 
-double central_difference(std::span<const double> r, std::span<const double> theta, const Layout& layout,
-                          VarInit var_init, std::size_t index, double step)
-{
-    std::vector<double> up(theta.begin(), theta.end());
-    std::vector<double> down(theta.begin(), theta.end());
-    up[index] += step;
-    down[index] -= step;
-    return (loglik_at(r, up, layout, var_init) - loglik_at(r, down, layout, var_init)) / (2.0 * step);
-}
+    double central_difference(std::size_t index, double step) const
+    {
+        std::vector<double> up = theta;
+        std::vector<double> down = theta;
+        up[index] += step;
+        down[index] -= step;
+        return (loglik_at(r, up, layout, var_init) - loglik_at(r, down, layout, var_init)) / (2.0 * step);
+    }
+};
 
 // Richardson extrapolation of central differences at step and 2 step, accurate to O(step^4). A small omega curves
 // the likelihood enough to put one central difference past the tolerance; a smaller step meets the rounding noise
@@ -485,8 +484,8 @@ TEST_P(LikelihoodGrid, GradientMatchesFiniteDifferences)
     for (std::size_t i = 0; i < theta.size(); ++i)
     {
         double step = 3e-6 * std::max(1.0, std::abs(theta[i]));
-        double fine = central_difference(r, theta, layout, var_init, i, step);
-        double coarse = central_difference(r, theta, layout, var_init, i, 2.0 * step);
+        double fine = central_difference(i, step);
+        double coarse = central_difference(i, 2.0 * step);
         double extrapolated = (4.0 * fine - coarse) / 3.0;
         EXPECT_NEAR(ll.grad[i], extrapolated, 1e-6 * std::max(1.0, std::abs(ll.grad[i]))) << "parameter " << i;
     }
