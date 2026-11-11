@@ -7,7 +7,7 @@ behind a decision (measurements, rejected approaches); that lives in `docs/`, an
 
 This document describes what exists today: an ARMA(m,n)-sGARCH(p,q) log-likelihood with normal, Student-t and
 GED innovations, a template over the scalar type so that automatic differentiation gives its gradient; and, on
-top of it, sGARCH(1,1) with normal innovations fitted in batches behind a C API and a Python package.
+top of it, those models fitted in batches behind a C API and a Python package.
 
 ## Layers
 
@@ -63,6 +63,8 @@ like any other wrapper would be.
 | `python/src/volengine/_spec.py`, `_fit.py`, `api.py` | `Spec` and `FitOptions`, `Fit` and the criteria, `Context.fit` |
 | `tests/unit/{ad,capi,dist,fit,garch,mean,model,optim}` | GoogleTest suites mirroring `src/`; `c_header_check.c` compiles the header as C11 |
 | `tests/style/check_style.py` | Style rules that can be checked without a compiler; runs as the `style` ctest |
+| `python/benchmarks/bench_vs_arch.py` | Timing against `arch` on matched work; writes `docs/performance/python-vs-arch.md` |
+| `tests/benchmarks` | Google Benchmark suite (preset `gcc-bench`) |
 | `python/tests` | Python tests, including `test_oracles.py` |
 | `tests/reference` | Data generator, oracle scripts and the committed fixtures; see [its README](tests/reference/README.md) |
 | `docs/guide/validation.md` | Oracle conventions, tolerances and observed differences |
@@ -118,8 +120,17 @@ The Python `Context.fit` builds the handles below and then makes one call; any C
 Every `extern "C"` function runs inside `guard` (`src/capi/error.cpp`), the single place that turns exceptions
 into statuses.
 
+## The AD flow
+
+The log-likelihood is written once, as a template over the scalar type (`src/model/likelihood.cpp`, with
+`src/mean`, `src/garch` and `src/dist` as its pieces). `fit_one` instantiates it with `double` for values and
+with `ad::Dual<N>` (N = 8, 16 or 32, the narrowest that holds k parameters) for gradients: the unconstrained
+parameters are seeded as dual variables, `model::parameter_map` maps them to the natural parameters inside the same
+computation, and the derivative of the objective comes out of one evaluation. A new model or distribution adds a
+template function and a `Layout` entry; the driver, the optimizer and the standard errors do not change.
+
 ## Validation
 
-sGARCH(1,1)-normal is compared with `rugarch` (default conventions) and `arch` (the `backcast` option) on
+The sGARCH(p,q) grid with ARMA means and the three distributions is compared with `rugarch` (default conventions) and `arch` (the `backcast` option) on
 committed fixtures. The conventions, tolerances and observed differences are in
 [docs/guide/validation.md](docs/guide/validation.md).

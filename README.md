@@ -7,9 +7,10 @@ not depend on the thread count. Default conventions follow R's `rugarch`; those 
 
 ## Status
 
-Version 0.1.0 (pre-release). Only the sGARCH(1,1) model with normal innovations is implemented, with Hessian and
-robust standard errors and the usual information criteria. More models and features come in later releases. Until
-1.0 the C ABI may change between releases. See [CHANGELOG.md](CHANGELOG.md).
+Version 0.1.0 (pre-release). Supported: sGARCH(p,q) with orders 1 to 6, an ARMA(m,n) conditional mean (orders 0
+to 6, with or without a constant) and normal (`norm`), Student-t (`std`) or GED (`ged`) innovations, with Hessian
+and robust standard errors and the usual information criteria. More models and features come in later releases.
+Until 1.0 the C ABI may change between releases. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Python example
 
@@ -26,6 +27,14 @@ print(fit.status)                 # "converged"
 print(fit.coef("robust"))         # CoefTable: names, estimate, std_error, t_value, p_value
 print(ve.loglik(fit), ve.aic(fit))
 print(fit.sigma[:5])              # conditional standard deviation, a read-only view
+```
+
+An ARMA mean and another innovation distribution are part of the spec:
+
+```python
+spec = ve.Spec(p=2, q=1, arma=(1, 1), dist="std")   # ARMA(1,1)-sGARCH(2,1) with Student-t innovations
+fit = ctx.fit(spec, returns)
+print(fit.coef("robust"))         # mu, ar1, ma1, omega, alpha1, alpha2, beta1, shape
 ```
 
 `ctx.fit` also takes a `(T, N)` array (one fit per column), a list of specs, `starts` and `lengths` for series of
@@ -46,7 +55,9 @@ ctest --preset gcc-release
 Other presets: `gcc-debug`, `msvc-release` and `native-release` (the default compiler, taken from `CC` and `CXX`).
 Install the Python package with `pip install -e "python[test]"` and point it to the built library with the
 `VOLENGINE_LIB` environment variable. See [CONTRIBUTING.md](CONTRIBUTING.md) for details and
-[ARCHITECTURE.md](ARCHITECTURE.md) for the code map.
+[ARCHITECTURE.md](ARCHITECTURE.md) for the code map. Measurements are in
+[docs/performance/benchmarks.md](docs/performance/benchmarks.md) (C++) and
+[docs/performance/python-vs-arch.md](docs/performance/python-vs-arch.md) (against `arch`).
 
 ## License
 

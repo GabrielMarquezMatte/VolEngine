@@ -10,7 +10,19 @@ library whose ABI version differs).
 ## [Unreleased]
 
 ### Added
-- sGARCH(1,1) with normal innovations: maximum-likelihood fit with L-BFGS on a constrained-to-unconstrained
+- Generic model engine: ARMA(m,n)-sGARCH(p,q) with orders up to `VE_MAX_ORDER` (6), a template log-likelihood over
+  the scalar type, and forward-mode automatic differentiation (`ad::Dual<N>`) for exact gradients. The fit driver
+  picks the narrowest `Dual` that holds the parameters.
+- Student-t (`std`) and GED (`ged`) innovations next to the normal; the `rugarch` ARMA presample convention.
+- Standard errors near the boundary: alpha or beta below 1e-8, and a `std` shape above 1e8, get NaN standard
+  errors and the other parameters are computed on the remaining block.
+- C API: `VE_DIST_STD`, `VE_DIST_GED`, `VE_MAX_ORDER` and `ve_spec_set_arma`. Python: `Spec(arma=, dist=)` and
+  typed `Context.fit` overloads, checked by mypy.
+- Oracle grid against `rugarch` and `arch` (orders, ARMA and distributions) in
+  [docs/guide/validation.md](docs/guide/validation.md).
+- C++ Google Benchmark suite ([docs/performance/benchmarks.md](docs/performance/benchmarks.md)) and a Python
+  benchmark against `arch` on matched work ([docs/performance/python-vs-arch.md](docs/performance/python-vs-arch.md)).
+- sGARCH with normal innovations: maximum-likelihood fit with L-BFGS on a constrained-to-unconstrained
   reparametrization, with or without a mean. Estimates, log-likelihood and standard errors are equivariant to
   the units of the data.
 - Hessian and robust (QML sandwich) standard errors, t-values and p-values; log-likelihood, AIC, BIC, HQIC and
@@ -26,3 +38,6 @@ library whose ABI version differs).
   `loglik`, `aic`, `bic`, `hqic` and `sic` functions; arrays are passed to the library without copying.
 - Validation against `rugarch` and `arch` with committed fixtures ([docs/guide/validation.md](docs/guide/validation.md)).
 - Style checker (`tests/style/check_style.py`), clang-tidy configuration and the CI workflow.
+
+### Fixed
+- `std` fits on near-normal data no longer fail at a large shape (the density lost precision for large nu).
