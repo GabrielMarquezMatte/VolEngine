@@ -14,14 +14,20 @@ enum class Model : int32_t
 
 enum class Dist : int32_t
 {
-    Norm = 0
+    Norm = 0,
+    Std = 1,
+    Ged = 2
 };
+
+constexpr int kMaxOrder = 6;
 
 struct Spec
 {
     Model model = Model::SGarch;
     int p = 1;
     int q = 1;
+    int ar = 0;
+    int ma = 0;
     Dist dist = Dist::Norm;
     bool include_mean = true;
 };

@@ -41,6 +41,7 @@ add_library(volengine_core STATIC
     src/fit/fit.cpp
     src/fit/standard_errors.cpp
     src/garch/sgarch.cpp
+    src/model/layout.cpp
     src/optim/transform.cpp)
 set_target_properties(volengine_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(volengine_core PUBLIC src include)
@@ -89,6 +90,7 @@ if(VE_BUILD_TESTS)
         tests/unit/fit/criteria_test.cpp
         tests/unit/fit/fit_test.cpp
         tests/unit/garch/sgarch_test.cpp
+        tests/unit/model/layout_test.cpp
         tests/unit/optim/lbfgs_test.cpp
         tests/unit/optim/transform_test.cpp)
     target_include_directories(volengine_tests PRIVATE tests/unit)
