@@ -25,7 +25,7 @@ fit = ctx.fit(ve.Spec(), returns)
 
 print(fit.status)                 # "converged"
 print(fit.coef("robust"))         # CoefTable: names, estimate, std_error, t_value, p_value
-print(ve.loglik(fit), ve.aic(fit))
+print(fit.loglik, fit.aic())
 print(fit.sigma[:5])              # conditional standard deviation, a read-only view
 ```
 

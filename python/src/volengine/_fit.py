@@ -72,6 +72,26 @@ class Fit:
     def fitted(self) -> NDArray[np.float64]:
         return self._view(lib.ve_fit_fitted)
 
+    @property
+    def loglik(self) -> float:
+        return read_scalar(ctypes.c_double, lib.ve_loglik, self._handle.pointer)
+
+    def aic(self, *, per_obs: bool = True) -> float:
+        return self._criterion(lib.ve_aic, per_obs)
+
+    def bic(self, *, per_obs: bool = True) -> float:
+        return self._criterion(lib.ve_bic, per_obs)
+
+    def hqic(self, *, per_obs: bool = True) -> float:
+        return self._criterion(lib.ve_hqic, per_obs)
+
+    def sic(self, *, per_obs: bool = True) -> float:
+        return self._criterion(lib.ve_sic, per_obs)
+
+    def _criterion(self, function: Callable[..., int], per_obs: bool) -> float:
+        scale = IC_PER_OBS if per_obs else IC_TOTAL
+        return read_scalar(ctypes.c_double, function, self._handle.pointer, scale)
+
     def coef(self, se: str = "hessian") -> CoefTable:
         kind = code_of(SE_KINDS, "se", se)
         return CoefTable(
@@ -102,28 +122,3 @@ class Fit:
 def read_only(array: NDArray[np.float64]) -> NDArray[np.float64]:
     array.flags.writeable = False
     return array
-
-
-def loglik(fit: Fit) -> float:
-    return read_scalar(ctypes.c_double, lib.ve_loglik, fit._handle.pointer)
-
-
-def criterion(function: Callable[..., int], fit: Fit, per_obs: bool) -> float:
-    scale = IC_PER_OBS if per_obs else IC_TOTAL
-    return read_scalar(ctypes.c_double, function, fit._handle.pointer, scale)
-
-
-def aic(fit: Fit, *, per_obs: bool = True) -> float:
-    return criterion(lib.ve_aic, fit, per_obs)
-
-
-def bic(fit: Fit, *, per_obs: bool = True) -> float:
-    return criterion(lib.ve_bic, fit, per_obs)
-
-
-def hqic(fit: Fit, *, per_obs: bool = True) -> float:
-    return criterion(lib.ve_hqic, fit, per_obs)
-
-
-def sic(fit: Fit, *, per_obs: bool = True) -> float:
-    return criterion(lib.ve_sic, fit, per_obs)

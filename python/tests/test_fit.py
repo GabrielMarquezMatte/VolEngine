@@ -1,3 +1,4 @@
+import ctypes
 import gc
 import weakref
 
@@ -136,7 +137,7 @@ def test_ragged_series_match_direct_fit_on_the_slice(ctx, series):
 def test_insufficient_data_fit_is_nan_with_empty_views(ctx, series):
     fit = ctx.fit(ve.Spec(), series, starts=RAGGED_STARTS, lengths=RAGGED_LENGTHS)[2]
     assert np.isnan(fit.coef().estimate).all()
-    assert np.isnan(ve.loglik(fit))
+    assert np.isnan(fit.loglik)
     assert fit.sigma.shape == (0,)
     assert fit.sigma.dtype == np.float64
     assert not fit.sigma.flags.writeable
@@ -168,18 +169,29 @@ def test_unsupported_ndim_raises_value_error(ctx, shape):
 
 def test_criteria_scale(ctx, series):
     f = ctx.fit(ve.Spec(), series[:, 0])
-    assert ve.aic(f, per_obs=False) == pytest.approx(ve.aic(f) * f.nobs)
+    assert f.aic(per_obs=False) == pytest.approx(f.aic() * f.nobs)
 
 
-@pytest.mark.parametrize("criterion", [ve.aic, ve.bic, ve.hqic, ve.sic])
-def test_every_criterion_total_is_per_obs_times_nobs(ctx, series, criterion):
+@pytest.mark.parametrize("name", ["aic", "bic", "hqic", "sic"])
+def test_every_criterion_total_is_per_obs_times_nobs(ctx, series, name):
     f = ctx.fit(ve.Spec(), series[:, 0])
-    assert criterion(f, per_obs=False) == pytest.approx(criterion(f) * f.nobs)
+    criterion = getattr(f, name)
+    assert criterion(per_obs=False) == pytest.approx(criterion() * f.nobs)
 
 
-def test_aic_matches_loglik_formula(ctx, series):
+def test_fit_statistics_are_members(ctx, series):
     f = ctx.fit(ve.Spec(), series[:, 0])
-    assert ve.aic(f) == pytest.approx((-2.0 * ve.loglik(f) + 2.0 * 4) / f.nobs)
+    n, k, ll = f.nobs, len(f.names), f.loglik
+    assert ll == native.read_scalar(ctypes.c_double, native.lib.ve_loglik, f._handle.pointer)
+    penalties = {"aic": 2.0 * k, "bic": k * np.log(n), "hqic": 2.0 * k * np.log(np.log(n))}
+    for name, penalty in penalties.items():
+        assert getattr(f, name)(per_obs=False) == pytest.approx(-2.0 * ll + penalty, rel=1e-14)
+        assert getattr(f, name)() == pytest.approx((-2.0 * ll + penalty) / n, rel=1e-14)
+    sic = -2.0 * ll / n + np.log((n + 2.0 * k) / n)
+    assert f.sic() == pytest.approx(sic, rel=1e-14)
+    assert f.sic(per_obs=False) == pytest.approx(sic * n, rel=1e-14)
+    assert not hasattr(ve, "aic")
+    assert not hasattr(ve, "loglik")
 
 
 def test_coef_table_fields_and_robust_difference(ctx, series):
