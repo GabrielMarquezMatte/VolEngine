@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <numbers>
 #include <span>
 
 namespace ve::garch
@@ -20,16 +21,23 @@ struct EGarchParameters
     T abs_moment;
 };
 
-// A lag before t = 0 has z = 0, so |z| - E|z| = 0 too and its shock term vanishes.
+// A lag before t = 0 has z = 0 and, as in arch, which drops its term in |z| - sqrt(2/pi), |z| = sqrt(2/pi) for
+// every distribution.
 template <class T>
 T next_log_variance(std::span<const T> residuals, const EGarchParameters<T>& p, const T& log_presample,
                     std::span<const T> log_sigma2, std::size_t t)
 {
     using std::abs;
     using std::exp;
+    const double presample_abs = std::sqrt(2.0 / std::numbers::pi);
     T log_variance = p.omega;
-    for (std::size_t i = 1; i <= std::min(p.alpha.size(), t); ++i)
+    for (std::size_t i = 1; i <= p.alpha.size(); ++i)
     {
+        if (i > t)
+        {
+            log_variance = log_variance + p.gamma[i - 1] * (presample_abs - p.abs_moment);
+            continue;
+        }
         T z = residuals[t - i] * exp(-0.5 * log_sigma2[t - i]);
         log_variance = log_variance + p.alpha[i - 1] * z + p.gamma[i - 1] * (abs(z) - p.abs_moment);
     }

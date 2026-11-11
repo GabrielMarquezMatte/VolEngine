@@ -35,14 +35,16 @@ T lagged_deviations(std::span<const T> weights, std::span<const T> values, std::
 
 // q_t = omega + rho q_{t-1} + phi (e^2_{t-1} - sigma2_{t-1});
 // sigma2_t = q_t + sum_i alpha_i (e^2_{t-i} - q_{t-i}) + sum_j beta_j (sigma2_{t-j} - q_{t-j}).
-// sigma2 and permanent (q) have the size of squared_residuals.
+// sigma2 and permanent (q) have the size of squared_residuals. For t < held, as in rugarch, q sits at its
+// unconditional value omega / (1 - rho) and the transitory part sigma2 - q at presample.value.
 template <class T>
 void csgarch_variance(std::span<const T> squared_residuals, const CsGarchParameters<T>& p,
                       const Presample<T>& presample, std::span<T> sigma2, std::span<T> permanent)
 {
     std::size_t held = std::min(presample.held, sigma2.size());
-    std::fill(sigma2.begin(), sigma2.begin() + static_cast<std::ptrdiff_t>(held), presample.value);
-    std::fill(permanent.begin(), permanent.begin() + static_cast<std::ptrdiff_t>(held), presample.value);
+    T long_run = p.omega / (1.0 - p.rho);
+    std::fill(sigma2.begin(), sigma2.begin() + static_cast<std::ptrdiff_t>(held), presample.value + long_run);
+    std::fill(permanent.begin(), permanent.begin() + static_cast<std::ptrdiff_t>(held), long_run);
     std::span<const T> phi(&p.phi, 1);
     for (std::size_t t = held; t < sigma2.size(); ++t)
     {

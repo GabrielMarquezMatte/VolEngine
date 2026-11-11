@@ -108,6 +108,18 @@ garch::CsGarchParameters<T> csgarch_parameters(std::span<const T> theta, const L
     return {s.omega, s.alpha, s.beta, theta[layout.eta1_begin()], theta[layout.eta2_begin()]};
 }
 
+// rugarch's fGARCH takes |z - eta2| as sqrt((z - eta2)^2 + 1e-6) in every submodel; its apARCH is exact.
+constexpr double kFGarchAbsSmoothing = 1e-6;
+
+double abs_smoothing_of(const Layout& layout)
+{
+    if (layout.model == Model::ApArch)
+    {
+        return 0.0;
+    }
+    return kFGarchAbsSmoothing;
+}
+
 // moments must outlive the result, whose moments span views it; shock_moments fills it.
 template <class T>
 garch::PowerGarchParameters<T> power_garch_parameters(std::span<const T> theta, const Layout& layout,
@@ -120,7 +132,8 @@ garch::PowerGarchParameters<T> power_garch_parameters(std::span<const T> theta, 
             theta.subspan(layout.asymmetry_begin(), layout.asymmetry_count()),
             block(theta, layout.eta2_begin(), layout.eta2),
             power_of(theta, layout),
-            moments.first(s.alpha.size())};
+            moments.first(s.alpha.size()),
+            abs_smoothing_of(layout)};
 }
 
 // False when a kappa is not finite (std with shape <= power), which can come back as NaN as well as +inf.
@@ -138,23 +151,48 @@ bool shock_moments(std::span<const T> theta, const Layout& layout, std::span<T> 
     return true;
 }
 
-// rugarch holds sigma2_t at the sample mean of the squared residuals, taken at the current mean parameters,
-// for t < max(m, n, p, q): the ARMA orders count too.
 template <class T>
-garch::Presample<T> presample(std::span<const double> r, std::span<const T> residuals, const Layout& layout,
-                              VarInit var_init)
+T mean_square(std::span<const T> residuals)
 {
-    if (var_init == VarInit::Backcast)
-    {
-        return {T{backcast(r, layout.include_mean)}, 0};
-    }
     T sum{0.0};
     for (const T& e : residuals)
     {
         sum = sum + e * e;
     }
+    return sum / static_cast<double>(residuals.size());
+}
+
+// (mean |e|^power)^(2 / power): the variance whose sigma^power is the sample mean of |e|^power.
+template <class T>
+T mean_power_variance(std::span<const T> residuals, const T& power)
+{
+    using std::abs;
+    using std::pow;
+    T sum{0.0};
+    for (const T& e : residuals)
+    {
+        sum = sum + pow(abs(e), power);
+    }
+    return pow(sum / static_cast<double>(residuals.size()), 2.0 / power);
+}
+
+// rugarch holds sigma2_t for t < max(m, n, p, q), the ARMA orders included, at the sample mean of the squared
+// residuals taken at the current mean parameters; in apARCH and fGARCH it holds sigma^power at the sample mean of
+// |e|^power instead.
+template <class T>
+garch::Presample<T> presample(std::span<const double> r, std::span<const T> residuals, std::span<const T> theta,
+                              const Layout& layout, VarInit var_init)
+{
+    if (var_init == VarInit::Backcast)
+    {
+        return {T{backcast(r, layout.include_mean)}, 0};
+    }
     std::size_t held = static_cast<std::size_t>(std::max({layout.ar, layout.ma, layout.arch, layout.garch}));
-    return {sum / static_cast<double>(residuals.size()), held};
+    if (layout.is_power_family())
+    {
+        return {mean_power_variance(residuals, power_of(theta, layout)), held};
+    }
+    return {mean_square(residuals), held};
 }
 
 template <class T>
@@ -312,7 +350,7 @@ T loglik(std::span<const double> r, std::span<const T> theta, const Layout& layo
     std::span<T> residuals = provided_or(out.residuals, residual_storage, r.size());
     std::span<T> sigma2 = provided_or(out.sigma2, variance_storage, r.size());
     mean::arma_residuals(r, arma_parameters(theta, layout), residuals);
-    garch::Presample<T> initial = presample<T>(r, residuals, layout, var_init);
+    garch::Presample<T> initial = presample<T>(r, residuals, theta, layout, var_init);
     if (!fill_variance<T>(residuals, theta, layout, initial, sigma2))
     {
         return T{kInvalid};

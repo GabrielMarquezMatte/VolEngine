@@ -72,6 +72,10 @@ public:
                 return finish(Stop::MaxIter, iterations);
             }
             Step step = iterate();
+            if (step == Step::Failed && gradient_nearly_small())
+            {
+                return finish(Stop::Converged, iterations);
+            }
             if (step == Step::Failed)
             {
                 return finish(Stop::LineSearchFailed, iterations);
@@ -108,7 +112,8 @@ private:
         return max_abs(current_.g) <= options_.gtol * scale();
     }
 
-    // A decrease below ftol alone also happens on a shallow slope far from the optimum.
+    // A decrease below ftol, or a line search that finds no decrease, alone also happens on a shallow slope far
+    // from the optimum.
     bool gradient_nearly_small() const
     {
         return max_abs(current_.g) <= std::sqrt(options_.gtol) * scale();

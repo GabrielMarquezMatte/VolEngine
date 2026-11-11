@@ -6,8 +6,9 @@
 namespace ve::garch
 {
 
-// sigma2_t = value for t < held; from t = held on the recursion runs, and a lag before t = 0 reads the expected
-// value of its term given value. value is always a variance: each recursion derives its own state from it.
+// For t < held the recursion holds its state at value; from t = held on it runs, and a lag before t = 0 reads the
+// expected value of its term given value. value is always a variance: each recursion derives its own state from it
+// (csGARCH holds its transitory part, sigma2 - q, at value).
 template <class T>
 struct Presample
 {

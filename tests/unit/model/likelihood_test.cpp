@@ -147,6 +147,33 @@ TEST(Likelihood, SampleInitHoldCountsTheArmaOrders)
     EXPECT_NEAR(sigma2[3], 0.02 + 0.08 * squared[2] + 0.5 * sigma2[2] + 0.3 * sigma2[1], 1e-12);
 }
 
+TEST(Likelihood, PowerSampleInitHoldsMeanAbsolutePower)
+{
+    for (Model model : {Model::ApArch, Model::FGarchTGarch})
+    {
+        SCOPED_TRACE(::testing::Message() << "model " << static_cast<int>(model));
+        Layout layout = ve::model::layout_of({.model = model, .p = 2, .q = 1, .ar = 3});
+        std::vector<double> r = ve::testing::simulate_garch_series(3, 50);
+        std::vector<double> theta = ve::model::start_values(r, layout);
+        theta[layout.ar_begin()] = 0.2;
+        if (layout.free_power)
+        {
+            theta[layout.power()] = 1.3;
+        }
+        double power = ve::model::power_of<double>(theta, layout);
+        std::vector<double> residuals(r.size());
+        std::vector<double> sigma2(r.size());
+        loglik<double>(r, theta, layout, VarInit::Sample, {.residuals = residuals, .sigma2 = sigma2});
+        std::vector<double> powers(r.size());
+        std::ranges::transform(residuals, powers.begin(), [&](double e) { return std::pow(std::abs(e), power); });
+        double held = std::pow(mean_of(powers), 2.0 / power);
+        for (std::size_t t = 0; t < 3; ++t)
+        {
+            EXPECT_NEAR(sigma2[t], held, 1e-12) << "t = " << t;
+        }
+    }
+}
+
 TEST(Likelihood, BackcastFeedsPresample)
 {
     Layout layout{.include_mean = true, .ar = 0, .ma = 0, .arch = 2, .garch = 2, .dist = Dist::Norm};
@@ -293,6 +320,9 @@ struct ModelPoint
     std::vector<double> theta;
 };
 
+// fGARCH takes |z - eta2| as sqrt((z - eta2)^2 + 1e-6), as rugarch does, so a submodel matches its named model
+// only up to that smoothing: by up to 1.3e-6 in sigma2 and 3e-7 in loglik (relative) on this series. A wrong
+// parameter mapping moves both by orders of magnitude more.
 void expect_same_variance(std::span<const double> r, const ModelPoint& model, const ModelPoint& reference,
                           VarInit var_init)
 {
@@ -302,10 +332,10 @@ void expect_same_variance(std::span<const double> r, const ModelPoint& model, co
     double reference_ll =
         loglik<double>(r, reference.theta, reference.layout, var_init, {.sigma2 = reference_sigma2});
     ASSERT_TRUE(std::isfinite(reference_ll));
-    EXPECT_NEAR(ll, reference_ll, 1e-12 * std::abs(reference_ll));
+    EXPECT_NEAR(ll, reference_ll, 1e-6 * std::abs(reference_ll));
     for (std::size_t t = 0; t < r.size(); ++t)
     {
-        ASSERT_NEAR(sigma2[t], reference_sigma2[t], 1e-12 * reference_sigma2[t]) << "t = " << t;
+        ASSERT_NEAR(sigma2[t], reference_sigma2[t], 1e-5 * reference_sigma2[t]) << "t = " << t;
     }
 }
 
