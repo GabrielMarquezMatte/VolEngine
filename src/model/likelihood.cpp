@@ -195,15 +195,6 @@ garch::Presample<T> presample(std::span<const double> r, std::span<const T> resi
     return {mean_square(residuals), held};
 }
 
-template <class T>
-void sgarch_from_residuals(std::span<const T> residuals, const garch::SGarchParameters<T>& p,
-                           const garch::Presample<T>& initial, std::span<T> sigma2)
-{
-    std::vector<T> squared_residuals(residuals.size());
-    std::ranges::transform(residuals, squared_residuals.begin(), [](const T& e) { return e * e; });
-    garch::sgarch_variance<T>(squared_residuals, p, initial, sigma2);
-}
-
 // The sGARCH recursion with beta_q = 1 - sum alpha - sum_{j<q} beta_j; the stored beta_q is never read.
 template <class T>
 void igarch_variance(std::span<const T> residuals, std::span<const T> theta, const Layout& layout,
@@ -223,7 +214,7 @@ void igarch_variance(std::span<const T> residuals, std::span<const T> theta, con
     }
     beta[p.beta.size() - 1] = last;
     p.beta = std::span<const T>(beta).first(p.beta.size());
-    sgarch_from_residuals<T>(residuals, p, initial, sigma2);
+    garch::sgarch_variance<T>(residuals, p, initial, sigma2);
 }
 
 template <class T>
@@ -259,7 +250,7 @@ bool fill_variance(std::span<const T> residuals, std::span<const T> theta, const
     switch (layout.model)
     {
         case Model::SGarch:
-            sgarch_from_residuals<T>(residuals, sgarch_parameters(theta, layout), initial, sigma2);
+            garch::sgarch_variance<T>(residuals, sgarch_parameters(theta, layout), initial, sigma2);
             return true;
         case Model::IGarch:
             igarch_variance<T>(residuals, theta, layout, initial, sigma2);

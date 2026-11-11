@@ -26,4 +26,16 @@ const T& lagged(std::span<const T> values, std::size_t t, std::size_t lag, const
     return values[t - lag];
 }
 
+// e^2 of lag `lag`; before t = 0, its expected value, the presample variance.
+template <class T>
+T lagged_square(std::span<const T> residuals, std::size_t t, std::size_t lag, const T& presample)
+{
+    if (lag > t)
+    {
+        return presample;
+    }
+    const T& e = residuals[t - lag];
+    return e * e;
+}
+
 }
