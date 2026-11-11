@@ -89,11 +89,27 @@ TEST(Lbfgs, ConvergesThroughFtolWhenDecreaseIsBelowTolerance)
     };
     std::vector<double> x{1e-8};
     LbfgsOptions options;
-    options.gtol = 0.0;
+    options.gtol = 1e-12;
     LbfgsResult result = ve::optim::lbfgs_minimize(tiny_quadratic, x, options);
     EXPECT_EQ(result.stop, Stop::Converged);
     EXPECT_EQ(result.iterations, 1);
     EXPECT_NE(x[0], 0.0);
+}
+
+TEST(Lbfgs, FlatStepWithLargeGradientKeepsIterating)
+{
+    auto shallow_quadratic = [](std::span<const double> x, std::span<double> g)
+    {
+        g[0] = 0.02 * (x[0] - 1.0);
+        return 0.01 * (x[0] - 1.0) * (x[0] - 1.0);
+    };
+    std::vector<double> x{0.0};
+    LbfgsOptions options;
+    options.ftol = 0.1;
+    LbfgsResult result = ve::optim::lbfgs_minimize(shallow_quadratic, x, options);
+    EXPECT_EQ(result.stop, Stop::Converged);
+    EXPECT_GT(result.iterations, 1);
+    EXPECT_LT(std::abs(x[0] - 1.0), 1e-6);
 }
 
 TEST(Lbfgs, FallbackStepBelowFtolIsNotReportedAsConverged)

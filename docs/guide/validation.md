@@ -78,7 +78,7 @@ Read: `arch/univariate/base.py` (`ARCHModel.fit`, `ARCHModel.compute_param_cov`,
   numerical per-observation scores (centered, divisor n − 1). At the optimum the scores average to zero, so
   this equals VolEngine's H⁻¹ (SᵀS) H⁻¹ up to a factor √(n/(n − 1)) on the standard errors.
 - **Variance bounds.** `arch` clamps σ²ₜ to loose bounds derived from an EWMA of ε²; they do not bind at
-  these estimates (σₜ agrees with VolEngine to 1e-5).
+  these estimates (σₜ agrees with VolEngine to 2.2e-5).
 
 **Core change.** VolEngine originally recomputed b from the residuals at the current μ and differentiated
 it through μ. That is a different likelihood from `arch`'s, and on `t1500` it moved μ̂ by 1.4e-3
@@ -93,16 +93,16 @@ Fixed before the comparison; none was loosened. "Observed" is the worst value ov
 
 | Quantity | Tolerance | Why | Observed, `rugarch` | Observed, `arch` |
 |----------|-----------|-----|---------------------|------------------|
-| Log-likelihood, one-sided | ℓ_VE ≥ ℓ_oracle − 1e-6·\|ℓ_oracle\| | VolEngine must reach an optimum at least as good as the oracle's | ℓ_VE − ℓ_oracle ≥ −5.0e-8 | ≥ −2.1e-9 |
-| Log-likelihood, two-sided | relative 1e-4 | Same likelihood, different optimizers and stopping rules | 1.7e-11 | 5.8e-12 |
-| Parameters | relative 1e-3; absolute 1e-5 when \|θ\| < 1e-2 | Flat likelihood near the optimum: parameters agree less than ℓ | 5.5e-5 rel; ω 7.7e-7 abs | 2.8e-5 rel; ω 3.0e-7 abs |
-| Hessian SE | relative 5e-2 | Numerical second derivatives on both sides with different step rules | 2.4e-3 | 7.4e-5 |
-| Robust SE | relative 5e-2 | Same, plus the oracle's numerical scores | 4.7e-3 (QML sandwich) | 3.3e-4 |
-| σₜ | maximum relative 1e-3 | Follows the parameter tolerance through the recursion | 9.1e-6 | 9.0e-6 |
-| Criteria | absolute 1e-6 on the oracle's scale | Deterministic functions of ℓ, n and k | 3.3e-11 (per observation) | 5.9e-8 (totals) |
+| Log-likelihood, one-sided | ℓ_VE ≥ ℓ_oracle − 1e-6·\|ℓ_oracle\| | VolEngine must reach an optimum at least as good as the oracle's | ℓ_VE − ℓ_oracle ≥ −1.9e-8 | ≥ −8.7e-9 |
+| Log-likelihood, two-sided | relative 1e-4 | Same likelihood, different optimizers and stopping rules | 1.2e-11 | 1.7e-12 |
+| Parameters | relative 1e-3; absolute 1e-5 when \|θ\| < 1e-2 | Flat likelihood near the optimum: parameters agree less than ℓ | 4.7e-5 rel; ω 4.8e-7 abs | 8.4e-5 rel; ω 9.0e-7 abs |
+| Hessian SE | relative 5e-2 | Numerical second derivatives on both sides with different step rules | 2.4e-3 | 1.2e-4 |
+| Robust SE | relative 5e-2 | Same, plus the oracle's numerical scores | 4.8e-3 (QML sandwich) | 3.3e-4 |
+| σₜ | maximum relative 1e-3 | Follows the parameter tolerance through the recursion | 1.2e-5 | 2.2e-5 |
+| Criteria | absolute 1e-6 on the oracle's scale | Deterministic functions of ℓ, n and k | 2.6e-11 (per observation) | 1.7e-8 (totals) |
 
 On the totals scale the criteria tolerance is the tightest check: it holds only if ℓ agrees to 5e-7, which it
-does (5.9e-8 in AIC, that is 3e-8 in ℓ, on `t5000`).
+does (1.7e-8 in AIC, that is 8.7e-9 in ℓ, on `t5000`).
 
 ## Observed differences
 
@@ -112,17 +112,17 @@ VolEngine built from this repository (`gcc-debug`), default `FitOptions` apart f
 
 | Series | ℓ_VE − ℓ_oracle | Max param rel | Max SE rel | Max QML robust SE rel | Max NW robust SE rel (not compared) | Max σ rel | Max criteria abs |
 |--------|-----------------|---------------|------------|-----------------------|-------------------------------------|-----------|------------------|
-| `t5000` | +1.5e-9 | 1.0e-5 | 2.4e-3 | 4.7e-3 | 9.3e-2 | 1.8e-6 | 6.0e-13 |
-| `t3000` | −5.0e-8 | 5.5e-5 | 5.9e-4 | 1.2e-3 | 1.1e-1 | 9.1e-6 | 3.3e-11 |
-| `t1500` | −3.0e-9 | 4.1e-6 | 2.9e-5 | 5.8e-5 | 1.2e-1 | 2.8e-6 | 4.0e-12 |
+| `t5000` | −1.8e-9 | 8.1e-6 | 2.4e-3 | 4.8e-3 | 9.3e-2 | 3.7e-6 | 7.0e-13 |
+| `t3000` | +6.2e-10 | 3.1e-6 | 5.7e-4 | 1.1e-3 | 1.1e-1 | 1.1e-6 | 4.1e-13 |
+| `t1500` | −1.9e-8 | 4.7e-5 | 3.4e-5 | 2.8e-5 | 1.2e-1 | 1.2e-5 | 2.6e-11 |
 
 ### `arch`
 
 | Series | ℓ_VE − ℓ_oracle | Max param rel | Max SE rel | Max robust SE rel | Max σ rel | Max criteria abs |
 |--------|-----------------|---------------|------------|-------------------|-----------|------------------|
-| `t5000` | +2.9e-8 | 2.8e-5 | 7.4e-5 | 1.0e-4 | 9.0e-6 | 5.9e-8 |
-| `t3000` | −2.1e-9 | 2.1e-5 | 6.0e-5 | 1.7e-4 | 3.2e-6 | 4.1e-9 |
-| `t1500` | +1.1e-9 | 1.6e-5 | 2.4e-5 | 3.3e-4 | 3.7e-6 | 2.2e-9 |
+| `t5000` | −8.7e-9 | 8.4e-5 | 1.2e-4 | 1.0e-4 | 2.2e-5 | 1.7e-8 |
+| `t3000` | +6.0e-10 | 1.3e-5 | 4.6e-5 | 1.7e-4 | 4.1e-6 | 1.2e-9 |
+| `t1500` | +8.3e-10 | 1.8e-5 | 2.2e-5 | 3.3e-4 | 2.6e-6 | 1.7e-9 |
 
 ## Regenerating
 

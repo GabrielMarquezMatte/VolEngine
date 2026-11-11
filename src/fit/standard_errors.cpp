@@ -15,7 +15,7 @@ namespace
 {
 
 constexpr double kRelativeStep = 1e-5;
-constexpr double kStepScaleFloor = 1e-3;
+constexpr double kPersistenceStepFloor = 1e-6;
 constexpr int kMaxStepHalvings = 30;
 
 using Matrix = std::vector<double>;
@@ -24,6 +24,7 @@ struct Problem
 {
     std::span<const double> r;
     const garch::SGarchConfig& config;
+    double series_scale;
 };
 
 std::size_t mean_offset(const garch::SGarchConfig& config)
@@ -73,10 +74,26 @@ bool difference_column(const Problem& problem, std::span<const double> theta, st
     return true;
 }
 
+// Steps proportional to each parameter's own scale keep the Hessian equivariant to the units of r. alpha and
+// beta may sit at ~0, so only their steps have an absolute floor.
+double initial_step(const Problem& problem, std::span<const double> theta, std::size_t index)
+{
+    std::size_t offset = mean_offset(problem.config);
+    if (index < offset)
+    {
+        return kRelativeStep * std::max(std::abs(theta[index]), problem.series_scale);
+    }
+    if (index == offset)
+    {
+        return kRelativeStep * theta[index];
+    }
+    return kRelativeStep * std::max(theta[index], kPersistenceStepFloor);
+}
+
 bool shrinking_difference_column(const Problem& problem, std::span<const double> theta, std::size_t index,
                                  std::span<double> column)
 {
-    double step = kRelativeStep * std::max(std::abs(theta[index]), kStepScaleFloor);
+    double step = initial_step(problem, theta, index);
     for (int attempt = 0; attempt <= kMaxStepHalvings; ++attempt)
     {
         if (difference_column(problem, theta, index, step, column))
@@ -193,10 +210,11 @@ StandardErrors from_hessian(const Matrix& hessian, std::span<const double> score
 }
 
 StandardErrors sgarch_standard_errors(std::span<const double> r, std::span<const double> theta,
-                                      const garch::SGarchConfig& config, std::span<const double> scores)
+                                      const garch::SGarchConfig& config, std::span<const double> scores,
+                                      double series_scale)
 {
     std::size_t k = theta.size();
-    Problem problem{r, config};
+    Problem problem{r, config, series_scale};
     std::optional<Matrix> hessian = numerical_hessian(problem, theta);
     if (!hessian)
     {

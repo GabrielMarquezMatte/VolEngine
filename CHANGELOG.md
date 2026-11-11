@@ -11,7 +11,8 @@ library whose ABI version differs).
 
 ### Added
 - sGARCH(1,1) with normal innovations: maximum-likelihood fit with L-BFGS on a constrained-to-unconstrained
-  reparametrization, with or without a mean.
+  reparametrization, with or without a mean. Estimates, log-likelihood and standard errors are equivariant to
+  the units of the data.
 - Hessian and robust (QML sandwich) standard errors, t-values and p-values; log-likelihood, AIC, BIC, HQIC and
   SIC, per observation (default, `rugarch`) or as totals (`arch`).
 - Two variance initializations: `sample` (default, `rugarch`) and `backcast` (`arch`).
