@@ -1,5 +1,7 @@
 #include "fit/criteria.hpp"
 
+#include "model/layout.hpp"
+
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -24,7 +26,8 @@ bool is_usable(const FitResult& result)
 
 Counts counts_of(const FitResult& result)
 {
-    return {result.loglik, static_cast<double>(result.estimate.size()), static_cast<double>(result.nobs)};
+    double parameters = static_cast<double>(model::layout_of(result.spec).estimated_count());
+    return {result.loglik, parameters, static_cast<double>(result.nobs)};
 }
 
 double rescale(double per_observation, const Counts& counts, IcScale scale)

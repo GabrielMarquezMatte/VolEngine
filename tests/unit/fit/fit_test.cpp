@@ -1,4 +1,8 @@
+#include "fit/criteria.hpp"
 #include "fit/fit.hpp"
+#include "model/layout.hpp"
+#include "model/likelihood.hpp"
+#include "model/start_values.hpp"
 #include "simulated_garch.hpp"
 
 #include <algorithm>
@@ -9,6 +13,7 @@
 #include <gtest/gtest.h>
 #include <initializer_list>
 #include <limits>
+#include <optional>
 #include <random>
 #include <span>
 #include <string>
@@ -537,6 +542,354 @@ TEST(FitGeneric, BucketSpecsHaveFourElevenAndTwentySevenParameters)
     EXPECT_EQ(ve::fit_one(r, Spec{}, ve::FitConfig{}).names.size(), 4u);
     EXPECT_EQ(ve::fit_one(r, full_spec(2, 2), ve::FitConfig{}).names.size(), 11u);
     EXPECT_EQ(ve::fit_one(r, full_spec(6, 6), ve::FitConfig{}).names.size(), 27u);
+}
+
+using ve::testing::VariantProcess;
+
+constexpr std::uint64_t kFirstVariantSeed = 31;
+
+const VariantProcess& variant_process(std::size_t index)
+{
+    static const std::vector<VariantProcess> processes = ve::testing::variant_processes();
+    return processes[index];
+}
+
+const std::vector<double>& variant_series(std::size_t index)
+{
+    static const std::vector<std::vector<double>> series = []
+    {
+        std::vector<std::vector<double>> all;
+        for (std::size_t i = 0; i < 6; ++i)
+        {
+            all.push_back(ve::testing::simulate_variant(variant_process(i), kFirstVariantSeed + i, kObservations));
+        }
+        return all;
+    }();
+    return series[index];
+}
+
+Spec variant_spec(const VariantProcess& process)
+{
+    Spec spec;
+    spec.model = process.model;
+    spec.dist = process.dist;
+    return spec;
+}
+
+double true_value(const VariantProcess& process, const std::string& name)
+{
+    bool cs = process.model == ve::Model::CsGarch;
+    if (name == "mu")
+    {
+        return 0.05;
+    }
+    if (name == "omega")
+    {
+        return process.omega;
+    }
+    if (name == "alpha1")
+    {
+        return process.alpha;
+    }
+    if (name == "beta1")
+    {
+        return process.beta;
+    }
+    if (name == "gamma1")
+    {
+        return process.gamma;
+    }
+    if (name == "eta11")
+    {
+        return cs ? process.rho : process.eta1;
+    }
+    if (name == "eta21")
+    {
+        return cs ? process.phi : process.eta2;
+    }
+    if (name == "shape")
+    {
+        return process.shape;
+    }
+    return process.power;
+}
+
+std::vector<double> true_theta(const VariantProcess& process, const std::vector<std::string>& names)
+{
+    std::vector<double> theta;
+    for (const std::string& name : names)
+    {
+        theta.push_back(true_value(process, name));
+    }
+    return theta;
+}
+
+double loglik_at(std::span<const double> r, const Spec& spec, std::span<const double> theta)
+{
+    return ve::model::loglik<double>(r, theta, ve::model::layout_of(spec), ve::VarInit::Sample, {});
+}
+
+class FitModels : public ::testing::TestWithParam<std::size_t>
+{
+};
+
+TEST_P(FitModels, BeatsTrueParameters)
+{
+    const VariantProcess& process = variant_process(GetParam());
+    const std::vector<double>& r = variant_series(GetParam());
+    Spec spec = variant_spec(process);
+    FitResult result = ve::fit_one(r, spec, ve::FitConfig{});
+    ASSERT_EQ(result.status, FitStatus::Converged);
+    double truth = loglik_at(r, spec, true_theta(process, result.names));
+    ASSERT_TRUE(std::isfinite(truth));
+    EXPECT_GE(result.loglik, truth - 1e-6 * std::abs(truth));
+}
+
+INSTANTIATE_TEST_SUITE_P(Processes, FitModels, ::testing::Range<std::size_t>(0, 6),
+                         [](const ::testing::TestParamInfo<std::size_t>& info)
+                         { return std::string(variant_process(info.param).name); });
+
+// No tolerance for mu and omega.
+std::optional<double> recovery_tolerance(const FitResult& result, std::size_t index)
+{
+    ve::model::Layout layout = ve::model::layout_of(result.spec);
+    const std::string& name = result.names[index];
+    bool cs = layout.model == ve::Model::CsGarch;
+    if (name == "mu" || name == "omega")
+    {
+        return std::nullopt;
+    }
+    if (cs && name == "eta11")
+    {
+        return 0.02;
+    }
+    if (name == "delta")
+    {
+        return 0.3;
+    }
+    if (name == "shape")
+    {
+        return layout.dist == ve::Dist::Std ? 1.5 : 0.15;
+    }
+    if (layout.kind(index) == ve::model::ParameterKind::Weight)
+    {
+        return 0.03;
+    }
+    return 0.06;
+}
+
+TEST(FitModels, RecoversIdentifiedParameters)
+{
+    for (std::size_t i = 0; i < 5; ++i)
+    {
+        const VariantProcess& process = variant_process(i);
+        FitResult result = ve::fit_one(variant_series(i), variant_spec(process), ve::FitConfig{});
+        ASSERT_EQ(result.status, FitStatus::Converged) << process.name;
+        for (std::size_t j = 0; j < result.names.size(); ++j)
+        {
+            std::optional<double> tolerance = recovery_tolerance(result, j);
+            double truth = true_value(process, result.names[j]);
+            EXPECT_TRUE(!tolerance || std::abs(result.estimate[j] - truth) <= *tolerance)
+                << process.name << " " << result.names[j] << " = " << result.estimate[j] << ", true " << truth;
+        }
+    }
+}
+
+TEST(FitModels, GarchSubmodelFitsLikeSGarch)
+{
+    Spec submodel;
+    submodel.model = ve::Model::FGarchGarch;
+    FitResult sgarch = fit_simulated(Spec{});
+    FitResult fgarch = fit_simulated(submodel);
+    ASSERT_EQ(sgarch.status, FitStatus::Converged);
+    ASSERT_EQ(fgarch.status, FitStatus::Converged);
+    EXPECT_LE(std::abs(fgarch.loglik - sgarch.loglik), 1e-6 * std::abs(sgarch.loglik));
+}
+
+// omega scales like sigma^power; the eGARCH omega shifts by (1 - beta) log(scale^2) instead.
+double expected_scaled_estimate(const FitResult& reference, std::size_t index, double scale)
+{
+    ve::model::Layout layout = ve::model::layout_of(reference.spec);
+    double value = reference.estimate[index];
+    if (layout.include_mean && index == layout.mu())
+    {
+        return value * scale;
+    }
+    if (index != layout.omega())
+    {
+        return value;
+    }
+    if (layout.model == ve::Model::EGarch)
+    {
+        return value + (1.0 - reference.estimate[layout.beta_begin()]) * std::log(scale * scale);
+    }
+    double power = ve::model::power_of<double>(reference.estimate, layout);
+    return value * std::pow(scale, power);
+}
+
+// The scaled omega depends on beta (eGARCH) or on a free power as well, so its standard error does not
+// scale alone.
+std::optional<double> se_unit(const FitResult& reference, std::size_t index, double scale)
+{
+    ve::model::Layout layout = ve::model::layout_of(reference.spec);
+    if (layout.include_mean && index == layout.mu())
+    {
+        return scale;
+    }
+    if (index != layout.omega())
+    {
+        return 1.0;
+    }
+    if (layout.model == ve::Model::EGarch || layout.free_power)
+    {
+        return std::nullopt;
+    }
+    return std::pow(scale, layout.fixed_power);
+}
+
+void expect_scaled_se(double expected, double actual, const std::string& name)
+{
+    if (std::isnan(expected))
+    {
+        EXPECT_TRUE(std::isnan(actual)) << name;
+        return;
+    }
+    EXPECT_NEAR(actual / expected, 1.0, 1e-3) << name;
+}
+
+void expect_se_scaled(const FitResult& reference, const FitResult& result, std::size_t index, double scale)
+{
+    std::optional<double> unit = se_unit(reference, index, scale);
+    if (!unit)
+    {
+        return;
+    }
+    expect_scaled_se(reference.se_hessian[index] * *unit, result.se_hessian[index], result.names[index]);
+    expect_scaled_se(reference.se_robust[index] * *unit, result.se_robust[index], result.names[index]);
+}
+
+void expect_model_scale_invariant(std::span<const double> series, const Spec& spec, ve::VarInit var_init)
+{
+    constexpr double kScale = 100.0;
+    ve::FitConfig config;
+    config.var_init = var_init;
+    // A free power maps omega nonlinearly, so its standard errors scale only at a stationary point.
+    config.tol = 1e-9;
+    FitResult reference = fit_scaled(series, 1.0, spec, config).result;
+    FitResult result = fit_scaled(series, kScale, spec, config).result;
+    ASSERT_EQ(reference.status, FitStatus::Converged);
+    ASSERT_EQ(result.status, FitStatus::Converged);
+    double count = static_cast<double>(result.nobs);
+    EXPECT_NEAR(result.loglik + count * std::log(kScale), reference.loglik, 1e-6 * count);
+    for (std::size_t i = 0; i < result.estimate.size(); ++i)
+    {
+        EXPECT_NEAR(result.estimate[i] / expected_scaled_estimate(reference, i, kScale), 1.0, 1e-5)
+            << result.names[i];
+        expect_se_scaled(reference, result, i, kScale);
+    }
+}
+
+// csGARCH fits its own series; the others fit the fGARCH-ALLGARCH series, which nests every power submodel.
+TEST(FitModels, ScaleInvarianceAllModels)
+{
+    constexpr std::size_t kCsGarchSeries = 4;
+    constexpr std::size_t kAllGarchSeries = 5;
+    for (int model = 0; model < 14; ++model)
+    {
+        Spec spec;
+        spec.model = static_cast<ve::Model>(model);
+        SCOPED_TRACE(model);
+        std::span<const double> r = variant_series(kAllGarchSeries);
+        if (spec.model == ve::Model::CsGarch)
+        {
+            r = variant_series(kCsGarchSeries);
+        }
+        expect_model_scale_invariant(r, spec, ve::VarInit::Sample);
+        expect_model_scale_invariant(r, spec, ve::VarInit::Backcast);
+    }
+}
+
+TEST(FitModels, DeterministicAcrossBuckets)
+{
+    std::vector<double> r = ve::testing::simulate_variant(variant_process(5), kFirstVariantSeed + 5, 600);
+    Spec spec = full_spec(6, 6);
+    spec.model = ve::Model::FGarchAllGarch;
+    ASSERT_EQ(ve::model::layout_of(spec).count(), 40u);
+    ve::FitConfig config;
+    config.max_iter = 30;
+    FitResult first = ve::fit_one(r, spec, config);
+    FitResult second = ve::fit_one(r, spec, config);
+    EXPECT_EQ(first.status, second.status);
+    EXPECT_EQ(bits(first.loglik), bits(second.loglik));
+    expect_bit_identical(first.estimate, second.estimate);
+    expect_bit_identical(first.se_hessian, second.se_hessian);
+    expect_bit_identical(first.se_robust, second.se_robust);
+    expect_bit_identical(first.sigma, second.sigma);
+}
+
+TEST(FitModels, IGarchDerivedParameter)
+{
+    FitResult result = ve::fit_one(variant_series(3), variant_spec(variant_process(3)), ve::FitConfig{});
+    ASSERT_EQ(result.status, FitStatus::Converged);
+    std::size_t derived = index_of(result, "beta1");
+    EXPECT_NEAR(result.estimate[derived], 1.0 - estimate_of(result, "alpha1"), 1e-15);
+    for (std::size_t i = 0; i < result.estimate.size(); ++i)
+    {
+        bool expect_nan = i == derived;
+        EXPECT_EQ(std::isnan(result.se_hessian[i]), expect_nan) << result.names[i];
+        EXPECT_EQ(std::isnan(result.se_robust[i]), expect_nan) << result.names[i];
+        EXPECT_TRUE(expect_nan || (result.se_hessian[i] > 0.0 && std::isfinite(result.se_hessian[i])));
+        EXPECT_TRUE(expect_nan || (result.se_robust[i] > 0.0 && std::isfinite(result.se_robust[i])));
+    }
+    double estimated = static_cast<double>(result.estimate.size() - 1);
+    double n = static_cast<double>(result.nobs);
+    EXPECT_DOUBLE_EQ(ve::aic(result, ve::IcScale::Total), -2.0 * result.loglik + 2.0 * estimated);
+    EXPECT_DOUBLE_EQ(ve::bic(result, ve::IcScale::Total), -2.0 * result.loglik + std::log(n) * estimated);
+}
+
+void expect_ends_finite(const FitResult& result)
+{
+    ASSERT_TRUE(result.status == FitStatus::Converged || result.status == FitStatus::MaxIter ||
+                result.status == FitStatus::Failed);
+    EXPECT_TRUE(all_finite(result.estimate) || all_nan(result.estimate));
+    if (result.status == FitStatus::Converged)
+    {
+        EXPECT_TRUE(all_finite(result.estimate));
+        EXPECT_TRUE(std::isfinite(result.loglik));
+    }
+}
+
+TEST(FitModels, PowerStdLowShapeEndsFinite)
+{
+    VariantProcess process = variant_process(2);
+    process.dist = ve::Dist::Std;
+    process.shape = 2.5;
+    std::vector<double> r = ve::testing::simulate_variant(process, kFirstVariantSeed + 2, kObservations);
+    FitResult result = ve::fit_one(r, variant_spec(process), ve::FitConfig{});
+    expect_ends_finite(result);
+    if (result.status == FitStatus::Converged)
+    {
+        EXPECT_GT(estimate_of(result, "shape"), estimate_of(result, "delta"));
+    }
+}
+
+TEST(FitModels, EGarchOutlierEndsFinite)
+{
+    std::vector<double> r = variant_series(0);
+    r[2500] = 1e3 * ve::model::standardization_of(r).scale;
+    expect_ends_finite(ve::fit_one(r, variant_spec(variant_process(0)), ve::FitConfig{}));
+}
+
+TEST(FitModels, ShortSeriesUsesEstimatedCount)
+{
+    Spec spec;
+    spec.model = ve::Model::IGarch;
+    spec.include_mean = false;
+    ASSERT_EQ(ve::model::layout_of(spec).estimated_count(), 2u);
+    std::vector<double> r = ve::testing::simulate_portable_garch_series(9, 4);
+    EXPECT_NE(ve::fit_one(r, spec, ve::FitConfig{}).status, FitStatus::InsufficientData);
+    r.pop_back();
+    EXPECT_EQ(ve::fit_one(r, spec, ve::FitConfig{}).status, FitStatus::InsufficientData);
 }
 
 }

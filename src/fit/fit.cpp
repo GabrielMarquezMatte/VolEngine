@@ -169,10 +169,10 @@ FitResult empty_result(const Spec& spec, const FitConfig& config, std::size_t no
     return result;
 }
 
-bool has_insufficient_data(std::span<const double> r, const Spec& spec, std::size_t k)
+bool has_insufficient_data(std::span<const double> r, const Spec& spec, const model::Layout& layout)
 {
     std::size_t max_order = static_cast<std::size_t>(std::max({spec.ar, spec.ma, spec.p, spec.q}));
-    return r.size() < k + 2 || r.size() <= max_order;
+    return r.size() < layout.estimated_count() + 2 || r.size() <= max_order;
 }
 
 bool has_valid_start(std::span<const double> r, std::span<const double> theta, const model::Layout& layout)
@@ -243,7 +243,7 @@ FitStatus estimate(std::span<const double> r, FitResult& result)
 {
     fit::LikelihoodProblem problem{r, model::layout_of(result.spec), result.config.var_init};
     std::size_t k = problem.layout.count();
-    if (has_insufficient_data(r, result.spec, k))
+    if (has_insufficient_data(r, result.spec, problem.layout))
     {
         return FitStatus::InsufficientData;
     }
