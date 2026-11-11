@@ -1,8 +1,8 @@
 #include "ad/dual.hpp"
 #include "dist/densities.hpp"
+#include "dist/reference_quadrature.hpp"
 
 #include <cmath>
-#include <cstddef>
 #include <gtest/gtest.h>
 #include <initializer_list>
 #include <numbers>
@@ -13,60 +13,11 @@ namespace
 
 using ve::Dist;
 
-constexpr double kBound = 60.0;
-constexpr std::size_t kPoints = 200001;
-constexpr int kTailTerms = 8;
-
 struct DensityCase
 {
     Dist dist;
     double shape;
 };
-
-struct Moments
-{
-    double mass;
-    double variance;
-};
-
-Moments trapezoid_moments(const ve::dist::LogDensity<double>& density)
-{
-    double step = 2.0 * kBound / static_cast<double>(kPoints - 1);
-    Moments moments{0.0, 0.0};
-    for (std::size_t i = 0; i < kPoints; ++i)
-    {
-        double z = -kBound + step * static_cast<double>(i);
-        double weight = step;
-        if (i == 0 || i == kPoints - 1)
-        {
-            weight = 0.5 * step;
-        }
-        double f = std::exp(ve::dist::log_density(density, z));
-        moments.mass += weight * f;
-        moments.variance += weight * z * z * f;
-    }
-    return moments;
-}
-
-// The Student-t tails beyond the quadrature bound decay only as a power of z and do not vanish at 60, so they
-// are added from the series of C a^m z^-2m (1 + a/z^2)^-m, with a = nu - 2 and m = (nu + 1) / 2.
-Moments student_tails(const ve::dist::LogDensity<double>& density, double nu)
-{
-    double a = nu - 2.0;
-    double m = 0.5 * (nu + 1.0);
-    double both_sides = 2.0 * std::exp(density.log_constant + m * std::log(a));
-    double coefficient = 1.0;
-    Moments tails{0.0, 0.0};
-    for (int j = 0; j < kTailTerms; ++j)
-    {
-        double power = -2.0 * m - 2.0 * j;
-        double weight = coefficient * std::pow(a, j);
-        tails.mass += weight * std::pow(kBound, power + 1.0) / -(power + 1.0);
-        tails.variance += weight * std::pow(kBound, power + 3.0) / -(power + 3.0);
-        coefficient *= -(m + j) / (j + 1.0);
-    }
-    return {both_sides * tails.mass, both_sides * tails.variance};
-}
 
 std::string case_name(const ::testing::TestParamInfo<DensityCase>& info)
 {
@@ -83,15 +34,16 @@ TEST_P(Densities, IntegrateToOneWithUnitVariance)
 {
     DensityCase c = GetParam();
     ve::dist::LogDensity<double> density = ve::dist::make_log_density(c.dist, c.shape);
-    Moments moments = trapezoid_moments(density);
+    auto f = [&](double z) { return std::exp(ve::dist::log_density(density, z)); };
+    double mass = ve::testing::trapezoid(f);
+    double variance = ve::testing::trapezoid([&](double z) { return z * z * f(z); });
     if (c.dist == Dist::Std)
     {
-        Moments tails = student_tails(density, c.shape);
-        moments.mass += tails.mass;
-        moments.variance += tails.variance;
+        mass += ve::testing::student_tails(density, c.shape, 0.0);
+        variance += ve::testing::student_tails(density, c.shape, 2.0);
     }
-    EXPECT_NEAR(moments.mass, 1.0, 1e-6);
-    EXPECT_NEAR(moments.variance, 1.0, 1e-6);
+    EXPECT_NEAR(mass, 1.0, 1e-6);
+    EXPECT_NEAR(variance, 1.0, 1e-6);
 }
 
 INSTANTIATE_TEST_SUITE_P(Densities, Densities,
