@@ -7,10 +7,12 @@
 #include <benchmark/benchmark.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -28,6 +30,7 @@ struct NamedSpec
 {
     std::string name;
     ve::Spec spec;
+    std::optional<ve::testing::VariantProcess> process;
 };
 
 // p is the ARCH order and q the GARCH order: s21 is sGARCH(2, 1).
@@ -42,15 +45,104 @@ ve::Spec make_spec(int p, int q, int ar, int ma, ve::Dist dist)
     return spec;
 }
 
+ve::Spec variant_spec(ve::Model model, ve::Dist dist)
+{
+    ve::Spec spec = make_spec(1, 1, 0, 0, dist);
+    spec.model = model;
+    return spec;
+}
+
+ve::testing::VariantProcess oracle_process(const std::string& name)
+{
+    for (const ve::testing::VariantProcess& process : ve::testing::variant_processes())
+    {
+        if (name == process.name)
+        {
+            return process;
+        }
+    }
+    throw std::logic_error("no simulated process named " + name);
+}
+
+// The variants are simulated from the processes of the oracle series; TGARCH is the ALLGARCH recursion with
+// lambda = 1 and no eta2.
+std::vector<NamedSpec> variant_specs()
+{
+    const ve::testing::VariantProcess tgarch{.name = "fgarch_tgarch11_norm",
+                                             .model = ve::Model::FGarchAllGarch,
+                                             .omega = 0.02,
+                                             .alpha = 0.08,
+                                             .beta = 0.88,
+                                             .eta1 = 0.3,
+                                             .power = 1.0};
+    using ve::Dist;
+    using ve::Model;
+    return {
+        {"egarch11_std", variant_spec(Model::EGarch, Dist::Std), oracle_process("egarch11_std")},
+        {"gjrgarch11_norm", variant_spec(Model::GjrGarch, Dist::Norm), oracle_process("gjrgarch11_norm")},
+        {"aparch11_ged", variant_spec(Model::ApArch, Dist::Ged), oracle_process("aparch11_ged")},
+        {"igarch11_norm", variant_spec(Model::IGarch, Dist::Norm), oracle_process("igarch11_norm")},
+        {"csgarch11_std", variant_spec(Model::CsGarch, Dist::Std), oracle_process("csgarch11_std")},
+        {"fgarch_tgarch11_norm", variant_spec(Model::FGarchTGarch, Dist::Norm), tgarch},
+        {"fgarch_allgarch11_norm", variant_spec(Model::FGarchAllGarch, Dist::Norm),
+         oracle_process("fgarch_allgarch11_norm")},
+    };
+}
+
 const std::vector<NamedSpec>& named_specs()
 {
-    static const std::vector<NamedSpec> specs{
-        {"s11_norm", make_spec(1, 1, 0, 0, ve::Dist::Norm)},
-        {"s21_std", make_spec(2, 1, 0, 0, ve::Dist::Std)},
-        {"arma11_s11_ged", make_spec(1, 1, 1, 1, ve::Dist::Ged)},
-        {"arma22_s33_std", make_spec(3, 3, 2, 2, ve::Dist::Std)},
-    };
+    static const std::vector<NamedSpec> specs = [] {
+        std::vector<NamedSpec> all{
+            {"s11_norm", make_spec(1, 1, 0, 0, ve::Dist::Norm), std::nullopt},
+            {"s21_std", make_spec(2, 1, 0, 0, ve::Dist::Std), std::nullopt},
+            {"arma11_s11_ged", make_spec(1, 1, 1, 1, ve::Dist::Ged), std::nullopt},
+            {"arma22_s33_std", make_spec(3, 3, 2, 2, ve::Dist::Std), std::nullopt},
+        };
+        for (NamedSpec& variant : variant_specs())
+        {
+            all.push_back(std::move(variant));
+        }
+        return all;
+    }();
     return specs;
+}
+
+std::vector<double> series_of(const NamedSpec& named)
+{
+    if (named.process)
+    {
+        return ve::testing::simulate_variant(*named.process, 1, kObservations);
+    }
+    return ve::bench::simulate_series(named.spec, 1, kObservations);
+}
+
+void fill_block(std::vector<double>& theta, std::size_t begin, int count, double value)
+{
+    for (int i = 0; i < count; ++i)
+    {
+        theta[begin + static_cast<std::size_t>(i)] = value;
+    }
+}
+
+// The parameters of the process the series was simulated from; csGARCH keeps rho in eta1 and phi in eta2.
+void apply_process(std::vector<double>& theta, const ve::model::Layout& layout,
+                   const ve::testing::VariantProcess& process)
+{
+    const bool cs = layout.model == ve::Model::CsGarch;
+    theta[layout.omega()] = process.omega;
+    fill_block(theta, layout.alpha_begin(), layout.arch, process.alpha);
+    fill_block(theta, layout.beta_begin(), layout.garch, process.beta);
+    fill_block(theta, layout.gamma_begin(), layout.gamma, process.gamma);
+    fill_block(theta, layout.eta1_begin(), layout.eta1, cs ? process.rho : process.eta1);
+    fill_block(theta, layout.eta2_begin(), layout.eta2, cs ? process.phi : process.eta2);
+    if (layout.free_power)
+    {
+        theta[layout.power()] = process.power;
+    }
+    if (layout.has_shape())
+    {
+        theta[layout.shape()] = process.shape;
+    }
 }
 
 // A point inside the stationary region, in the natural space of the layout.
@@ -78,6 +170,16 @@ std::vector<double> reference_theta(const ve::model::Layout& layout)
     if (layout.has_shape())
     {
         theta[layout.shape()] = ve::bench::innovation_shape(layout.dist);
+    }
+    return theta;
+}
+
+std::vector<double> reference_theta(const NamedSpec& named, const ve::model::Layout& layout)
+{
+    std::vector<double> theta = reference_theta(layout);
+    if (named.process)
+    {
+        apply_process(theta, layout, *named.process);
     }
     return theta;
 }
@@ -128,9 +230,9 @@ void time_evaluations(benchmark::State& state, std::size_t parameters, Evaluate 
 // The Dual seeds are built once, outside the timed loop.
 void run_loglik(benchmark::State& state, const NamedSpec& named, bool with_gradient)
 {
-    const std::vector<double> r = ve::bench::simulate_series(named.spec, 1, kObservations);
+    const std::vector<double> r = series_of(named);
     const ve::model::Layout layout = ve::model::layout_of(named.spec);
-    const std::vector<double> theta = reference_theta(layout);
+    const std::vector<double> theta = reference_theta(named, layout);
     const std::size_t parameters = layout.count();
     if (!with_gradient)
     {
@@ -180,7 +282,7 @@ void report_status(benchmark::State& state, const StatusCounts& counts)
 
 void run_fit_one(benchmark::State& state, const NamedSpec& named)
 {
-    const std::vector<double> r = ve::bench::simulate_series(named.spec, 1, kObservations);
+    const std::vector<double> r = series_of(named);
     const ve::FitConfig config;
     StatusCounts counts;
     for (auto _ : state)
@@ -220,7 +322,7 @@ void require_ok(ve_status status, const char* call)
 Owned<ve_spec, ve_spec_free> create_spec(const ve::Spec& spec)
 {
     ve_spec* raw = nullptr;
-    require_ok(ve_spec_create(VE_MODEL_SGARCH, &raw), "ve_spec_create");
+    require_ok(ve_spec_create(static_cast<int32_t>(spec.model), &raw), "ve_spec_create");
     Owned<ve_spec, ve_spec_free> handle(raw);
     require_ok(ve_spec_set_order(raw, spec.p, spec.q), "ve_spec_set_order");
     require_ok(ve_spec_set_arma(raw, spec.ar, spec.ma), "ve_spec_set_arma");
@@ -245,17 +347,28 @@ public:
 
     std::size_t jobs() const { return jobs_; }
 
-    StatusCounts run()
+    // The status of every job, in job order: spec-major, then series.
+    std::vector<int32_t> run_statuses()
     {
         std::vector<ve_fit*> fits(jobs_, nullptr);
         require_ok(ve_fit_batch(context_.get(), batch_.get(), fits.data()), "ve_fit_batch");
-        StatusCounts counts;
+        std::vector<int32_t> statuses;
         for (ve_fit* fit : fits)
         {
             int32_t status = VE_FIT_FAILED;
             require_ok(ve_fit_status(fit, &status), "ve_fit_status");
-            counts.add(status);
+            statuses.push_back(status);
             ve_fit_free(fit);
+        }
+        return statuses;
+    }
+
+    StatusCounts run()
+    {
+        StatusCounts counts;
+        for (const int32_t status : run_statuses())
+        {
+            counts.add(status);
         }
         return counts;
     }
@@ -359,6 +472,110 @@ std::vector<ve::Spec> tcc_grid()
     return grid;
 }
 
+constexpr std::size_t kModelCount = 14;
+constexpr double kMaxFailureShare = 0.05;
+constexpr std::array<const char*, kModelCount> kModelNames{
+    "sgarch",       "egarch",        "gjrgarch",      "aparch",         "igarch",
+    "csgarch",      "fgarch_garch",  "fgarch_tgarch", "fgarch_avgarch", "fgarch_ngarch",
+    "fgarch_nagarch", "fgarch_aparch", "fgarch_gjrgarch", "fgarch_allgarch"};
+
+using ModelCounts = std::array<StatusCounts, kModelCount>;
+
+// Every model over the orders, ARMA and distributions of the TCC grid.
+std::vector<ve::Spec> all_models_grid()
+{
+    std::vector<ve::Spec> grid;
+    for (std::size_t model = 0; model < kModelCount; ++model)
+    {
+        for (ve::Spec spec : tcc_grid())
+        {
+            spec.model = static_cast<ve::Model>(model);
+            grid.push_back(spec);
+        }
+    }
+    return grid;
+}
+
+ModelCounts counts_by_model(const std::vector<ve::Spec>& specs, const std::vector<int32_t>& statuses)
+{
+    ModelCounts by_model{};
+    const std::size_t per_spec = statuses.size() / specs.size();
+    for (std::size_t job = 0; job < statuses.size(); ++job)
+    {
+        by_model[static_cast<std::size_t>(specs[job / per_spec].model)].add(statuses[job]);
+    }
+    return by_model;
+}
+
+// The names of the models over the failure limit; empty when every model is within it.
+std::string models_over_limit(const ModelCounts& by_model)
+{
+    std::string over;
+    for (std::size_t model = 0; model < kModelCount; ++model)
+    {
+        const StatusCounts& counts = by_model[model];
+        const std::size_t fits = counts.converged + counts.max_iter + counts.other;
+        if (static_cast<double>(counts.other) > kMaxFailureShare * static_cast<double>(fits))
+        {
+            over += std::string(over.empty() ? "" : ", ") + kModelNames[model];
+        }
+    }
+    return over;
+}
+
+void report_models(benchmark::State& state, const ModelCounts& by_model)
+{
+    StatusCounts total;
+    for (std::size_t model = 0; model < kModelCount; ++model)
+    {
+        const StatusCounts& counts = by_model[model];
+        const std::string name = kModelNames[model];
+        state.counters[name + "_ok"] = static_cast<double>(counts.converged + counts.max_iter);
+        state.counters[name + "_other"] = static_cast<double>(counts.other);
+        total.converged += counts.converged;
+        total.max_iter += counts.max_iter;
+        total.other += counts.other;
+    }
+    report_status(state, total);
+}
+
+// One call with every model of the grid; fails loudly if a model has more than 5% of its fits outside
+// CONVERGED and MAX_ITER.
+void run_all_models(benchmark::State& state, const ve::Spec& generator)
+{
+    try
+    {
+        const std::vector<ve::Spec> specs = all_models_grid();
+        const std::vector<double> data =
+            ve::bench::simulate_panel(ve::bench::simulated_model_for(generator), kObservations, kBatchSeries);
+        BatchWorkload workload(specs, data, kBatchSeries, 0);
+        if (workload.jobs() == 0)
+        {
+            state.SkipWithError("the grid produced no jobs");
+            return;
+        }
+        ModelCounts by_model{};
+        for (auto _ : state)
+        {
+            by_model = counts_by_model(specs, workload.run_statuses());
+        }
+        const std::string over = models_over_limit(by_model);
+        if (!over.empty())
+        {
+            state.SkipWithError(("more than 5% of the fits ended neither CONVERGED nor MAX_ITER: " + over).c_str());
+            return;
+        }
+        report_models(state, by_model);
+        state.counters["jobs"] = static_cast<double>(workload.jobs());
+        state.counters["fits_per_s"] =
+            benchmark::Counter(static_cast<double>(workload.jobs() * state.iterations()), benchmark::Counter::kIsRate);
+    }
+    catch (const std::exception& error)
+    {
+        state.SkipWithError(error.what());
+    }
+}
+
 int hardware_threads()
 {
     return static_cast<int>(std::max(1U, std::thread::hardware_concurrency()));
@@ -403,6 +620,10 @@ void register_all()
             ->UseRealTime()
             ->Iterations(1);
     }
+    benchmark::RegisterBenchmark("BM_TccGridAllModels/threads:hw", run_all_models, heavy_tails)
+        ->Unit(benchmark::kSecond)
+        ->UseRealTime()
+        ->Iterations(1);
 }
 
 }

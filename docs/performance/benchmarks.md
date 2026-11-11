@@ -32,6 +32,16 @@ benchmark, 12% for the `arma11_s11_ged` `Dual` evaluation. Differences smaller t
 different days on this machine moved some medians by more than the spread (for example `s21_std` `double`), so
 re-measure before and after a change instead of comparing against this table.
 
+## Plan 2b cases: not measured yet
+
+The GARCH variants have their own cases in `tests/benchmarks/fit_benchmarks.cpp`: `BM_Loglik/<spec>/{double,dual}`
+and `BM_FitOne/<spec>` for `egarch11_std`, `gjrgarch11_norm`, `aparch11_ged`, `igarch11_norm`, `csgarch11_std`,
+`fgarch_tgarch11_norm` and `fgarch_allgarch11_norm` (T = 5000), and `BM_TccGridAllModels/threads:hw`, the TCC grid
+over the 14 models (15120 fits in one `ve_fit_batch` call). None of them appears in the tables below: they have
+not been run on the machine of this page yet, so this page publishes no number for them. The same run is to
+record the profile of `BM_TccGridAllModels` and `BM_FitOne/fgarch_allgarch11_norm` and the assembly of the new
+recursions here. The tables below are those of plan 2a and describe sGARCH only.
+
 ## Cost of the log-likelihood and of its gradient by AD
 
 `BM_Loglik/<spec>/double` is one evaluation of `loglik<double>`, `BM_Loglik/<spec>/dual` one of `loglik<Dual<N>>`

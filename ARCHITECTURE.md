@@ -5,9 +5,10 @@ the code carries its own meaning through naming and flow. What it deliberately d
 behind a decision (measurements, rejected approaches); that lives in `docs/`, and
 [STYLEGUIDE.md](STYLEGUIDE.md#comments) says why.
 
-This document describes what exists today: an ARMA(m,n)-sGARCH(p,q) log-likelihood with normal, Student-t and
-GED innovations, a template over the scalar type so that automatic differentiation gives its gradient; and, on
-top of it, those models fitted in batches behind a C API and a Python package.
+This document describes what exists today: ARMA(m,n)-GARCH(p,q) log-likelihoods for sGARCH, eGARCH, gjrGARCH,
+apARCH, iGARCH, csGARCH and fGARCH (eight submodels) with normal, Student-t and GED innovations, a template over
+the scalar type so that automatic differentiation gives their gradients; and, on top of them, those models
+fitted in batches behind a C API and a Python package.
 
 ## Layers
 
@@ -48,11 +49,14 @@ like any other wrapper would be.
 | `src/core/var_init.hpp` | The variance initialization enum (`Sample`, `Backcast`) |
 | `src/ad/dual.hpp`, `special.hpp`, `special.cpp` | `ve::ad::Dual<N>`: forward-mode dual numbers and their elementary functions; `digamma` |
 | `src/mean/arma.hpp` | ARMA(m,n) residuals, a template over the scalar type |
-| `src/garch/sgarch.hpp` | sGARCH(p,q) variance recursion and its presample, a template over the scalar type |
+| `src/garch/presample.hpp` | The pre-sample rule shared by the recursions: a state held at a value up to a time, and the expected value of a term before the first observation |
+| `src/garch/sgarch.hpp`, `egarch.hpp`, `gjrgarch.hpp`, `csgarch.hpp` | The variance recursions of sGARCH (also iGARCH), eGARCH, gjrGARCH and csGARCH, templates over the scalar type |
+| `src/garch/power_garch.hpp` | The recursion in sigma^power shared by apARCH and the eight fGARCH submodels |
 | `src/dist/densities.hpp` | Log-densities of the standardized normal, Student-t and GED, templates over the scalar type |
-| `src/model/layout.hpp`, `layout.cpp` | `Layout`: parameter blocks, offsets, count and rugarch names of a `Spec` |
-| `src/model/likelihood.hpp`, `likelihood.cpp` | `loglik<T>`: the log-likelihood with its per-observation terms, residuals and variances, and the backcast; instantiated for `double` and `Dual<8>`, `Dual<16>`, `Dual<32>` |
-| `src/model/parameter_map.*`, `start_values.*` | Layout-driven map between the unconstrained and natural parameter spaces, a template over the scalar type; validity check and start values |
+| `src/dist/moments.hpp`, `moments.cpp` | Expected absolute shock and the fGARCH news moments (Gauss-Legendre quadrature for the shifted ALLGARCH moment) |
+| `src/model/layout.hpp`, `layout.cpp` | `Layout`: parameter blocks (gamma, eta1, eta2, power), offsets, count, `ParameterKind` of each parameter and rugarch names of a `Spec` |
+| `src/model/likelihood.hpp`, `likelihood.cpp` | `loglik<T>`: the log-likelihood with its per-observation terms, residuals and variances, and the backcast; dispatches by model to the recursion; instantiated for `double` and `Dual<8>`, `Dual<16>`, `Dual<32>`, `Dual<40>` |
+| `src/model/parameter_map.*`, `start_values.*` | Layout-driven map between the unconstrained and natural parameter spaces, a template over the scalar type; validity check, start values, and `on_boundary` (parameters left out of the standard-error blocks) |
 | `src/optim/lbfgs.hpp` (+ `curvature_memory.hpp`, `line_search.hpp`, `vector_math.hpp`) | L-BFGS minimizer, a template over the objective |
 | `src/fit/fit.hpp`, `fit.cpp` | `fit_one`: one series, one spec |
 | `src/fit/standard_errors.*`, `cholesky.*` | Hessian and robust standard errors; Cholesky solves, no explicit inverse |
@@ -124,10 +128,11 @@ into statuses.
 
 The log-likelihood is written once, as a template over the scalar type (`src/model/likelihood.cpp`, with
 `src/mean`, `src/garch` and `src/dist` as its pieces). `fit_one` instantiates it with `double` for values and
-with `ad::Dual<N>` (N = 8, 16 or 32, the narrowest that holds k parameters) for gradients: the unconstrained
+with `ad::Dual<N>` (N = 8, 16, 32 or 40, the narrowest that holds k parameters; 40 holds the widest layout, orders 6 with every block) for gradients: the unconstrained
 parameters are seeded as dual variables, `model::parameter_map` maps them to the natural parameters inside the same
-computation, and the derivative of the objective comes out of one evaluation. A new model or distribution adds a
-template function and a `Layout` entry; the driver, the optimizer and the standard errors do not change.
+computation, and the derivative of the objective comes out of one evaluation. `model::loglik` picks the variance recursion by `Layout::model`. A new model or
+distribution adds a template function, a `Layout` entry and its `ParameterKind`s; the driver and the optimizer do not
+change, and the standard errors only need the model's boundary rule in `on_boundary`.
 
 ## Performance method
 
@@ -153,6 +158,7 @@ the compiler (`-Wnrvo` on GCC 14+), not by review.
 
 ## Validation
 
-The sGARCH(p,q) grid with the three distributions is compared with `rugarch` (default conventions) and
-`arch` (the `backcast` option) on committed fixtures; the ARMA means are compared with `rugarch` only. The conventions, tolerances and observed differences are in
+The sGARCH(p,q) grid with the three distributions and the GARCH variants are compared with `rugarch` (default
+conventions) and `arch` (the `backcast` option, where it has the model) on committed fixtures; the ARMA means are
+compared with `rugarch` only. The conventions, tolerances and observed differences are in
 [docs/guide/validation.md](docs/guide/validation.md).
