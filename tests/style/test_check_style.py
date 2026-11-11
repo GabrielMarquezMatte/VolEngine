@@ -59,6 +59,9 @@ def test_ternary_and_else_in_string_allowed(tmp_path):
         "x = a if c else (b if d else e)\n",
         "x = (a if c else b) if d else e\n",
         "x = a if c else b + 1\n",
+        "x = f(a).attr if c else b\n",
+        "x = g().y if c else None\n",
+        "x = a if c else items[0].y\n",
         "x = (\n    a\n    if c\n    else b\n)\n",
     ],
 )
@@ -73,6 +76,7 @@ def test_non_simple_python_ternary_rejected(tmp_path, capsys, source):
     [
         "sign = -1.0 if inverted else 1.0\n",
         "a = x.attr if c else None\n",
+        "a = self.cfg.value if c else None\n",
         "a = name if x.ready else other.value\n",
         'label = "none" if empty else "some"\n',
     ],
