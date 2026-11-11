@@ -90,7 +90,7 @@ T shape_of(std::span<const T> theta, const Layout& layout)
 }
 
 // rugarch holds sigma2_t at the sample mean of the squared residuals, taken at the current mean parameters, for
-// t < max(p, q).
+// t < max(m, n, p, q): the ARMA orders count too.
 template <class T>
 garch::Presample<T> presample(std::span<const double> r, std::span<const T> squared_residuals, const Layout& layout,
                               VarInit var_init)
@@ -104,7 +104,7 @@ garch::Presample<T> presample(std::span<const double> r, std::span<const T> squa
     {
         sum = sum + square;
     }
-    std::size_t held = static_cast<std::size_t>(std::max(layout.arch, layout.garch));
+    std::size_t held = static_cast<std::size_t>(std::max({layout.ar, layout.ma, layout.arch, layout.garch}));
     return {sum / static_cast<double>(squared_residuals.size()), held};
 }
 
