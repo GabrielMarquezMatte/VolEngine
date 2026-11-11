@@ -1,5 +1,6 @@
 #include "model/likelihood.hpp"
 
+#include "model/start_values.hpp"
 #include "simulated_garch.hpp"
 
 #include <algorithm>
@@ -7,6 +8,7 @@
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <numbers>
+#include <random>
 #include <span>
 #include <string>
 #include <tuple>
@@ -383,41 +385,7 @@ Layout grid_layout(const GridCase& c)
                                  .include_mean = include_mean});
 }
 
-struct VarianceTheta
-{
-    double omega;
-    double alpha;
-    double beta;
-    double gamma;
-    double eta1;
-    double eta2;
-    double power;
-};
-
-// Interior points per model, each with its persistence below 1 (iGARCH derives its last beta). A model reads
-// only the entries of its own blocks; csGARCH keeps rho in eta1 and phi in eta2.
-VarianceTheta variance_theta(Model model)
-{
-    switch (model)
-    {
-        case Model::EGarch:
-            return {-0.1, -0.05, 0.85, 0.1, 0.0, 0.0, 0.0};
-        case Model::GjrGarch:
-            return {0.02, 0.05, 0.85, 0.06, 0.0, 0.0, 0.0};
-        case Model::ApArch:
-            return {0.02, 0.08, 0.85, 0.2, 0.0, 0.0, 1.5};
-        case Model::CsGarch:
-            return {0.01, 0.05, 0.85, 0.0, 0.95, 0.03, 0.0};
-        default:
-            return {0.02, 0.08, 0.85, 0.0, 0.3, 0.2, 1.5};
-    }
-}
-
-void fill_block(std::span<double> theta, std::size_t begin, int count, double value)
-{
-    std::fill_n(theta.begin() + static_cast<std::ptrdiff_t>(begin), count, value);
-}
-
+// An sGARCH point, kept from before the variants.
 std::vector<double> interior_theta(const Layout& layout)
 {
     std::vector<double> theta(layout.count());
@@ -433,31 +401,43 @@ std::vector<double> interior_theta(const Layout& layout)
     {
         theta[layout.ma_begin() + j] = -0.15 / static_cast<double>(j + 1);
     }
-    VarianceTheta variance = variance_theta(layout.model);
-    theta[layout.omega()] = variance.omega;
+    theta[layout.omega()] = 0.02;
     for (std::size_t i = 0; i < static_cast<std::size_t>(layout.arch); ++i)
     {
-        theta[layout.alpha_begin() + i] = variance.alpha / layout.arch;
+        theta[layout.alpha_begin() + i] = 0.08 / layout.arch;
     }
     for (std::size_t j = 0; j < static_cast<std::size_t>(layout.garch); ++j)
     {
-        theta[layout.beta_begin() + j] = variance.beta / layout.garch;
-    }
-    for (std::size_t i = 0; i < static_cast<std::size_t>(layout.gamma); ++i)
-    {
-        theta[layout.gamma_begin() + i] = variance.gamma / layout.gamma;
-    }
-    fill_block(theta, layout.eta1_begin(), layout.eta1, variance.eta1);
-    fill_block(theta, layout.eta2_begin(), layout.eta2, variance.eta2);
-    if (layout.free_power)
-    {
-        theta[layout.power()] = variance.power;
+        theta[layout.beta_begin() + j] = 0.85 / layout.garch;
     }
     if (layout.has_shape())
     {
         theta[layout.shape()] = layout.dist == Dist::Std ? 6.0 : 1.5;
     }
     return theta;
+}
+
+// theta = to_natural(to_unconstrained(start_values) + 0.1 N(0, 1)).
+std::vector<double> drawn_theta(std::span<const double> r, const Layout& layout)
+{
+    std::mt19937_64 engine(13);
+    std::normal_distribution<double> draw(0.0, 1.0);
+    ve::model::Standardization standardization = ve::model::standardization_of(r);
+    std::vector<double> u(layout.count());
+    ve::model::to_unconstrained(ve::model::start_values(r, layout), u, layout, standardization);
+    std::ranges::transform(u, u.begin(), [&](double value) { return value + 0.1 * draw(engine); });
+    std::vector<double> theta(layout.count());
+    ve::model::to_natural<double>(u, theta, layout, standardization);
+    return theta;
+}
+
+std::vector<double> grid_theta(std::span<const double> r, const Layout& layout)
+{
+    if (layout.model == Model::SGarch)
+    {
+        return interior_theta(layout);
+    }
+    return drawn_theta(r, layout);
 }
 
 std::string grid_name(const ::testing::TestParamInfo<GridCase>& info)
@@ -481,9 +461,22 @@ protected:
     std::vector<double> r = ve::testing::simulate_garch_series(11, 600);
     Layout layout = grid_layout(GetParam());
     VarInit var_init = std::get<VarInit>(GetParam());
-    std::vector<double> theta = interior_theta(layout);
+    std::vector<double> theta = grid_theta(r, layout);
 };
 
+double central_difference(std::span<const double> r, std::span<const double> theta, const Layout& layout,
+                          VarInit var_init, std::size_t index, double step)
+{
+    std::vector<double> up(theta.begin(), theta.end());
+    std::vector<double> down(theta.begin(), theta.end());
+    up[index] += step;
+    down[index] -= step;
+    return (loglik_at(r, up, layout, var_init) - loglik_at(r, down, layout, var_init)) / (2.0 * step);
+}
+
+// Richardson extrapolation of central differences at step and 2 step, accurate to O(step^4). A small omega curves
+// the likelihood enough to put one central difference past the tolerance; a smaller step meets the rounding noise
+// of the likelihood, and a larger one crosses the kinks of |z - eta2| in the power-1 models.
 TEST_P(LikelihoodGrid, GradientMatchesFiniteDifferences)
 {
     std::vector<Dual<32>> seeds = seeded<32>(theta);
@@ -491,14 +484,11 @@ TEST_P(LikelihoodGrid, GradientMatchesFiniteDifferences)
     ASSERT_TRUE(std::isfinite(ll.value));
     for (std::size_t i = 0; i < theta.size(); ++i)
     {
-        double step = 1e-6 * std::max(1.0, std::abs(theta[i]));
-        std::vector<double> up = theta;
-        std::vector<double> down = theta;
-        up[i] += step;
-        down[i] -= step;
-        double central =
-            (loglik_at(r, up, layout, var_init) - loglik_at(r, down, layout, var_init)) / (2.0 * step);
-        EXPECT_NEAR(ll.grad[i], central, 1e-6 * std::max(1.0, std::abs(ll.grad[i]))) << "parameter " << i;
+        double step = 3e-6 * std::max(1.0, std::abs(theta[i]));
+        double fine = central_difference(r, theta, layout, var_init, i, step);
+        double coarse = central_difference(r, theta, layout, var_init, i, 2.0 * step);
+        double extrapolated = (4.0 * fine - coarse) / 3.0;
+        EXPECT_NEAR(ll.grad[i], extrapolated, 1e-6 * std::max(1.0, std::abs(ll.grad[i]))) << "parameter " << i;
     }
 }
 
