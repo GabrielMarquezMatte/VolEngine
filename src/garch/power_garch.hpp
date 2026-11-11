@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ad/dual.hpp"
 #include "garch/presample.hpp"
 
 #include <algorithm>
@@ -12,7 +13,8 @@ namespace ve::garch
 
 // An empty eta1 or eta2 means eta1 = 0 or eta2 = 0. moments[i] = E(|z - eta2_i| - eta1_i (z - eta2_i))^power, the
 // expected shock factor of lag i + 1 before t = 0. With abs_smoothing = c > 0, |u| for u = z - eta2 is taken as
-// sqrt(u^2 + c), as rugarch's fGARCH does (c = 1e-6); with c = 0 it is exact.
+// sqrt(u^2 + c), as rugarch's fGARCH does (c = 1e-6); with c = 0 it is exact. free_power is false when power is a
+// constant 1 or 2, as in most fGARCH submodels.
 template <class T>
 struct PowerGarchParameters
 {
@@ -24,20 +26,47 @@ struct PowerGarchParameters
     T power;
     std::span<const T> moments;
     double abs_smoothing = 0.0;
+    bool free_power = true;
 };
+
+// x^exponent. Under a fixed power of 1 or 2 the recursion meets only the exponents 1/2, 1 and 2, which are taken
+// without pow.
+template <class T>
+T raise(const T& x, const T& exponent, bool free_power)
+{
+    using std::pow;
+    using std::sqrt;
+    if (free_power)
+    {
+        return pow(x, exponent);
+    }
+    double fixed = ad::value_of(exponent);
+    if (fixed == 1.0)
+    {
+        return x;
+    }
+    if (fixed == 2.0)
+    {
+        return x * x;
+    }
+    if (fixed == 0.5)
+    {
+        return sqrt(x);
+    }
+    return pow(x, exponent);
+}
 
 // sigma |u| for u = z - eta2 and shift = sigma u: |shift| or, smoothed, sqrt(shift^2 + c sigma^2).
 template <class T>
 T scaled_abs(const T& shift, const T& sigma_power, const PowerGarchParameters<T>& p)
 {
     using std::abs;
-    using std::pow;
     using std::sqrt;
     if (p.abs_smoothing == 0.0)
     {
         return abs(shift);
     }
-    T variance = pow(sigma_power, 2.0 / p.power);
+    T variance = raise(sigma_power, 2.0 / p.power, p.free_power);
     return sqrt(shift * shift + p.abs_smoothing * variance);
 }
 
@@ -46,18 +75,17 @@ T scaled_abs(const T& shift, const T& sigma_power, const PowerGarchParameters<T>
 template <class T>
 T power_shock(const T& residual, const T& sigma_power, const PowerGarchParameters<T>& p, std::size_t i)
 {
-    using std::pow;
     T shift = residual;
     if (!p.eta2.empty())
     {
-        shift = residual - p.eta2[i] * pow(sigma_power, 1.0 / p.power);
+        shift = residual - p.eta2[i] * raise(sigma_power, 1.0 / p.power, p.free_power);
     }
     T asymmetry = scaled_abs(shift, sigma_power, p);
     if (!p.eta1.empty())
     {
         asymmetry = asymmetry - p.eta1[i] * shift;
     }
-    return pow(asymmetry, p.power);
+    return raise(asymmetry, p.power, p.free_power);
 }
 
 template <class T>
@@ -88,8 +116,7 @@ template <class T>
 void power_garch_variance(std::span<const T> residuals, const PowerGarchParameters<T>& p,
                           const Presample<T>& presample, std::span<T> sigma2)
 {
-    using std::pow;
-    T presample_power = pow(presample.value, 0.5 * p.power);
+    T presample_power = raise(presample.value, 0.5 * p.power, p.free_power);
     std::size_t held = std::min(presample.held, sigma2.size());
     std::fill(sigma2.begin(), sigma2.begin() + static_cast<std::ptrdiff_t>(held), presample_power);
     for (std::size_t t = held; t < sigma2.size(); ++t)
@@ -97,7 +124,8 @@ void power_garch_variance(std::span<const T> residuals, const PowerGarchParamete
         sigma2[t] = next_power_variance<T>(residuals, p, presample_power, sigma2, t);
     }
     T exponent = 2.0 / p.power;
-    std::ranges::transform(sigma2, sigma2.begin(), [&exponent](const T& power) { return pow(power, exponent); });
+    std::ranges::transform(sigma2, sigma2.begin(),
+                           [&exponent, &p](const T& power) { return raise(power, exponent, p.free_power); });
 }
 
 }

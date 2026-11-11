@@ -54,6 +54,30 @@ TEST(PowerGarch, AllGarchHandCase)
     EXPECT_NEAR(std::pow(sigma2[2], 0.75), sigma_power_2, 1e-14);
 }
 
+// A fixed power of 1 or 2 skips pow; the recursion must not change.
+TEST(PowerGarch, FixedPowerMatchesFreePower)
+{
+    std::vector<double> residuals{0.1, -0.2, 0.3, -0.05};
+    std::vector<double> alpha{0.1};
+    std::vector<double> beta{0.8};
+    std::vector<double> eta1{0.3};
+    std::vector<double> eta2{0.2};
+    std::vector<double> moments{1.1};
+    for (double power : {1.0, 2.0})
+    {
+        std::vector<double> free(4);
+        std::vector<double> fixed(4);
+        ve::garch::PowerGarchParameters<double> p{0.1, alpha, beta, eta1, eta2, power, moments, 1e-6};
+        ve::garch::power_garch_variance<double>(residuals, p, {0.05, 1}, free);
+        p.free_power = false;
+        ve::garch::power_garch_variance<double>(residuals, p, {0.05, 1}, fixed);
+        for (std::size_t t = 0; t < residuals.size(); ++t)
+        {
+            EXPECT_NEAR(fixed[t], free[t], 1e-15 * free[t]) << "power " << power << ", t = " << t;
+        }
+    }
+}
+
 // z_0 = eta2 exactly: the smoothed |z - eta2| is sqrt(1e-6) there, not 0.
 TEST(PowerGarch, SmoothedAbsoluteValue)
 {
