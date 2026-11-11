@@ -27,7 +27,7 @@ TEST(StartValues, FollowRule)
         variance += (value - mean) * (value - mean);
     }
     variance /= 400.0;
-    Layout layout{true, 1, 1, 2, 3, Dist::Std};
+    Layout layout{.include_mean = true, .ar = 1, .ma = 1, .arch = 2, .garch = 3, .dist = Dist::Std};
     std::vector<double> theta = start_values(r, layout);
     ASSERT_EQ(theta.size(), layout.count());
     EXPECT_DOUBLE_EQ(theta[layout.mu()], mean);
@@ -58,7 +58,8 @@ TEST(StartValues, AreValidForEveryLayout)
             {
                 for (bool include_mean : {true, false})
                 {
-                    Layout layout{include_mean, 2, 1, arch, garch, dist};
+                    Layout layout{
+                        .include_mean = include_mean, .ar = 2, .ma = 1, .arch = arch, .garch = garch, .dist = dist};
                     EXPECT_TRUE(is_valid(start_values(r, layout), layout));
                 }
             }

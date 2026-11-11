@@ -9,13 +9,27 @@
 namespace ve::model
 {
 
+enum class ParameterKind
+{
+    Location,
+    Real,
+    Positive,
+    Weight
+};
+
 struct Layout
 {
+    Model model = Model::SGarch;
     bool include_mean;
     int ar;
     int ma;
     int arch;
     int garch;
+    int gamma = 0;
+    int eta1 = 0;
+    int eta2 = 0;
+    bool free_power = false;
+    double fixed_power = 2.0;
     Dist dist;
 
     std::size_t mu() const { return 0; }
@@ -24,9 +38,17 @@ struct Layout
     std::size_t omega() const;
     std::size_t alpha_begin() const;
     std::size_t beta_begin() const;
+    std::size_t gamma_begin() const;
+    std::size_t eta1_begin() const;
+    std::size_t eta2_begin() const;
+    std::size_t power() const;
     bool has_shape() const;
     std::size_t shape() const;
     std::size_t count() const;
+    bool has_derived() const;
+    std::size_t derived() const;
+    std::size_t estimated_count() const;
+    ParameterKind kind(std::size_t index) const;
 };
 
 Layout layout_of(const Spec& spec);

@@ -2,12 +2,15 @@
 
 #include <gtest/gtest.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
 {
 
 using Names = std::vector<std::string>;
+using ve::Model;
+using ve::model::ParameterKind;
 
 TEST(Layout, PlanOneShape)
 {
@@ -66,6 +69,153 @@ TEST(Layout, LargestShapeFitsDual32)
     auto l = ve::model::layout_of(s);
     EXPECT_EQ(l.count(), 27u);
     EXPECT_EQ(ve::model::parameter_names(l).size(), 27u);
+}
+
+ve::Spec spec_of(Model model, int p = 1, int q = 1)
+{
+    ve::Spec s;
+    s.model = model;
+    s.p = p;
+    s.q = q;
+    return s;
+}
+
+using NamesCase = std::pair<Model, Names>;
+
+class LayoutNames : public testing::TestWithParam<NamesCase>
+{
+};
+
+TEST_P(LayoutNames, FollowRugarchOrder)
+{
+    auto [model, tail] = GetParam();
+    Names expected{"mu", "omega", "alpha1", "beta1"};
+    expected.insert(expected.end(), tail.begin(), tail.end());
+    auto l = ve::model::layout_of(spec_of(model));
+    EXPECT_EQ(ve::model::parameter_names(l), expected);
+    EXPECT_EQ(l.count(), expected.size());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    AllModels, LayoutNames,
+    testing::Values(NamesCase{Model::SGarch, {}}, NamesCase{Model::IGarch, {}}, NamesCase{Model::FGarchGarch, {}},
+                    NamesCase{Model::EGarch, {"gamma1"}}, NamesCase{Model::GjrGarch, {"gamma1"}},
+                    NamesCase{Model::ApArch, {"gamma1", "delta"}}, NamesCase{Model::CsGarch, {"eta11", "eta21"}},
+                    NamesCase{Model::FGarchTGarch, {"eta11"}}, NamesCase{Model::FGarchGjrGarch, {"eta11"}},
+                    NamesCase{Model::FGarchAvGarch, {"eta11", "eta21"}}, NamesCase{Model::FGarchNGarch, {"lambda"}},
+                    NamesCase{Model::FGarchNaGarch, {"eta21"}}, NamesCase{Model::FGarchApArch, {"eta11", "lambda"}},
+                    NamesCase{Model::FGarchAllGarch, {"eta11", "eta21", "lambda"}}));
+
+TEST(Layout, HigherOrdersRepeatPerLag)
+{
+    ve::Spec all = spec_of(Model::FGarchAllGarch, 2, 1);
+    all.ar = 1;
+    all.dist = ve::Dist::Std;
+    EXPECT_EQ(ve::model::parameter_names(ve::model::layout_of(all)),
+              (Names{"mu", "ar1", "omega", "alpha1", "alpha2", "beta1", "eta11", "eta12", "eta21", "eta22", "lambda",
+                     "shape"}));
+    EXPECT_EQ(ve::model::parameter_names(ve::model::layout_of(spec_of(Model::CsGarch, 2, 2))),
+              (Names{"mu", "omega", "alpha1", "alpha2", "beta1", "beta2", "eta11", "eta21"}));
+}
+
+TEST(Layout, BlockOffsetsChain)
+{
+    ve::Spec all = spec_of(Model::FGarchAllGarch, 2, 1);
+    all.dist = ve::Dist::Std;
+    auto l = ve::model::layout_of(all);
+    EXPECT_EQ(l.gamma_begin(), 5u);
+    EXPECT_EQ(l.eta1_begin(), 5u);
+    EXPECT_EQ(l.eta2_begin(), 7u);
+    EXPECT_EQ(l.power(), 9u);
+    EXPECT_EQ(l.shape(), 10u);
+    EXPECT_EQ(l.count(), 11u);
+    auto apa = ve::model::layout_of(spec_of(Model::ApArch, 2, 1));
+    EXPECT_EQ(apa.gamma_begin(), 5u);
+    EXPECT_EQ(apa.power(), 7u);
+}
+
+TEST(Layout, IGarchDerivesLastBeta)
+{
+    auto l = ve::model::layout_of(spec_of(Model::IGarch, 1, 2));
+    EXPECT_TRUE(l.has_derived());
+    EXPECT_EQ(l.derived(), l.beta_begin() + 1);
+    EXPECT_EQ(l.estimated_count(), l.count() - 1);
+    EXPECT_EQ(l.count(), 5u);
+    for (Model model : {Model::SGarch, Model::EGarch, Model::CsGarch, Model::FGarchGarch})
+    {
+        auto other = ve::model::layout_of(spec_of(model, 1, 2));
+        EXPECT_FALSE(other.has_derived());
+        EXPECT_EQ(other.estimated_count(), other.count());
+    }
+}
+
+TEST(Layout, WidestFitsWidestDual)
+{
+    ve::Spec s = spec_of(Model::FGarchAllGarch, ve::kMaxOrder, ve::kMaxOrder);
+    s.ar = s.ma = ve::kMaxOrder;
+    s.dist = ve::Dist::Std;
+    auto l = ve::model::layout_of(s);
+    EXPECT_EQ(l.count(), ve::kMaxParameterCount);
+    EXPECT_EQ(l.count(), 40u);
+    EXPECT_EQ(ve::model::parameter_names(l).size(), 40u);
+}
+
+TEST(Layout, ParameterKinds)
+{
+    ve::Spec s = spec_of(Model::SGarch);
+    s.ar = 1;
+    s.dist = ve::Dist::Std;
+    auto sg = ve::model::layout_of(s);
+    EXPECT_EQ(sg.kind(sg.mu()), ParameterKind::Location);
+    EXPECT_EQ(sg.kind(sg.ar_begin()), ParameterKind::Real);
+    EXPECT_EQ(sg.kind(sg.omega()), ParameterKind::Positive);
+    EXPECT_EQ(sg.kind(sg.alpha_begin()), ParameterKind::Weight);
+    EXPECT_EQ(sg.kind(sg.beta_begin()), ParameterKind::Weight);
+    EXPECT_EQ(sg.kind(sg.shape()), ParameterKind::Positive);
+
+    auto eg = ve::model::layout_of(spec_of(Model::EGarch));
+    EXPECT_EQ(eg.kind(eg.omega()), ParameterKind::Real);
+    EXPECT_EQ(eg.kind(eg.alpha_begin()), ParameterKind::Real);
+    EXPECT_EQ(eg.kind(eg.beta_begin()), ParameterKind::Weight);
+    EXPECT_EQ(eg.kind(eg.gamma_begin()), ParameterKind::Real);
+
+    auto gjr = ve::model::layout_of(spec_of(Model::GjrGarch));
+    EXPECT_EQ(gjr.kind(gjr.alpha_begin()), ParameterKind::Weight);
+    EXPECT_EQ(gjr.kind(gjr.gamma_begin()), ParameterKind::Real);
+
+    auto cs = ve::model::layout_of(spec_of(Model::CsGarch));
+    EXPECT_EQ(cs.kind(cs.eta1_begin()), ParameterKind::Positive);
+    EXPECT_EQ(cs.kind(cs.eta2_begin()), ParameterKind::Weight);
+
+    auto all = ve::model::layout_of(spec_of(Model::FGarchAllGarch));
+    EXPECT_EQ(all.kind(all.eta1_begin()), ParameterKind::Real);
+    EXPECT_EQ(all.kind(all.eta2_begin()), ParameterKind::Real);
+    EXPECT_EQ(all.kind(all.power()), ParameterKind::Positive);
+
+    auto ap = ve::model::layout_of(spec_of(Model::ApArch));
+    EXPECT_EQ(ap.kind(ap.gamma_begin()), ParameterKind::Real);
+    EXPECT_EQ(ap.kind(ap.power()), ParameterKind::Positive);
+}
+
+TEST(Layout, FixedPowers)
+{
+    for (Model model : {Model::FGarchTGarch, Model::FGarchAvGarch})
+    {
+        auto l = ve::model::layout_of(spec_of(model));
+        EXPECT_FALSE(l.free_power);
+        EXPECT_EQ(l.fixed_power, 1.0);
+    }
+    for (Model model : {Model::FGarchGarch, Model::FGarchNaGarch, Model::FGarchGjrGarch, Model::SGarch,
+                        Model::CsGarch})
+    {
+        auto l = ve::model::layout_of(spec_of(model));
+        EXPECT_FALSE(l.free_power);
+        EXPECT_EQ(l.fixed_power, 2.0);
+    }
+    for (Model model : {Model::FGarchNGarch, Model::FGarchApArch, Model::FGarchAllGarch, Model::ApArch})
+    {
+        EXPECT_TRUE(ve::model::layout_of(spec_of(model)).free_power);
+    }
 }
 
 }

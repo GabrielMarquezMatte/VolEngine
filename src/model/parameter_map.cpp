@@ -112,6 +112,8 @@ template void to_natural<ad::Dual<16>>(std::span<const ad::Dual<16>>, std::span<
                                        const Standardization&);
 template void to_natural<ad::Dual<32>>(std::span<const ad::Dual<32>>, std::span<ad::Dual<32>>, const Layout&,
                                        const Standardization&);
+template void to_natural<ad::Dual<40>>(std::span<const ad::Dual<40>>, std::span<ad::Dual<40>>, const Layout&,
+                                       const Standardization&);
 
 void to_unconstrained(std::span<const double> theta, std::span<double> u, const Layout& layout,
                       const Standardization& standardization)

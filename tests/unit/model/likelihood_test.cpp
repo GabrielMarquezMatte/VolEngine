@@ -260,7 +260,12 @@ using GridCase = std::tuple<Orders, ArmaOrders, Dist, VarInit, bool>;
 Layout grid_layout(const GridCase& c)
 {
     auto [orders, arma, dist, var_init, include_mean] = c;
-    return Layout{include_mean, arma.ar, arma.ma, orders.arch, orders.garch, dist};
+    return Layout{.include_mean = include_mean,
+                  .ar = arma.ar,
+                  .ma = arma.ma,
+                  .arch = orders.arch,
+                  .garch = orders.garch,
+                  .dist = dist};
 }
 
 std::vector<double> interior_theta(const Layout& layout)
