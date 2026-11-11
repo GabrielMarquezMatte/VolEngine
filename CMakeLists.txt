@@ -32,7 +32,9 @@ FetchContent_Declare(bs_thread_pool
     SOURCE_SUBDIR header-only-no-cmake)
 FetchContent_MakeAvailable(bs_thread_pool)
 
-add_library(volengine_core STATIC src/core/context.cpp)
+add_library(volengine_core STATIC
+    src/core/context.cpp
+    src/garch/sgarch.cpp)
 set_target_properties(volengine_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(volengine_core PUBLIC src include)
 target_include_directories(volengine_core SYSTEM PUBLIC ${bs_thread_pool_SOURCE_DIR}/include)
@@ -66,7 +68,8 @@ if(VE_BUILD_TESTS)
 
     add_executable(volengine_tests
         tests/unit/capi/abi_test.cpp
-        tests/unit/capi/context_test.cpp)
+        tests/unit/capi/context_test.cpp
+        tests/unit/garch/sgarch_test.cpp)
     target_link_libraries(volengine_tests PRIVATE volengine_core volengine GTest::gtest_main)
     target_compile_options(volengine_tests PRIVATE ${VE_WARNING_FLAGS})
     include(GoogleTest)
