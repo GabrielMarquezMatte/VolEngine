@@ -39,6 +39,28 @@ Este é o plano 1 de 6. Cada plano entrega software testável e é escrito quand
 - Anti-objetivo: não fazer mais do que o necessário. Nada fora do que este plano lista.
 - O código do `rugarch` (GPL-3) pode ser lido para entender convenções, nunca copiado ou traduzido.
 - Commits sem trailer `Co-Authored-By`.
+
+### Estilo (vale para todo código desde a Task 1; texto completo em `STYLEGUIDE.md`, criado na Task 1)
+
+Base: `STYLEGUIDE.md` do ExcelReader (`C:\Users\x\Documents\Programs\Csharp\ExcelReader\STYLEGUIDE.md`), com os limites de tamanho e estrutura do MacroEcon (`C:\Users\x\Documents\Programs\Python\MacroEcon\STYLEGUIDE.md`):
+
+- Prioridades: corretude, performance, legibilidade.
+- **Nunca `else`** (nem `else if`; em Python nem `elif`/`for…else`/`try…else`). Guard clause e early return; vários casos viram sequência de `if` com `return`, `switch` ou tabela.
+- `if` sempre com chaves e corpo em linha própria.
+- Ternário só com uma condição e operandos que são nomes, literais ou membros; nunca aninhado, nunca com chamada nos ramos, nunca quebrando linha.
+- Aninhamento: no máximo 3 níveis de bloco dentro de uma função (corpo = nível 0).
+- **Função: no máximo 60 linhas** (da assinatura à chave/linha final, sem linhas em branco e sem comentário de documentação); alvo 30. Sem compactar lógica numa linha para caber.
+- **No máximo 5 parâmetros por função**, inclusive na interface C. Mais que isso: um handle com setters (C) ou um tipo agregado (C++/Python).
+- **No máximo 8 módulos por pasta** (módulo = par `.hpp`/`.cpp` de mesmo nome, ou arquivo isolado; em Python, `.py` sem contar `__init__.py`). Atingiu o limite: subpasta por contexto. Arquivo com mais de ~300 linhas é sinal para dividir.
+- Sem `utils`, `helpers`, `misc`, `common`: o nome do módulo diz o contexto.
+- Camadas em um sentido só: `core` ← `garch`, `optim` ← `fit` ← `capi`. Nada em `src/` inclui de `src/capi/` exceto o próprio `capi`.
+- Nomes C++ (como `cpp/include/xl` do ExcelReader): tipos `PascalCase`, funções e variáveis `snake_case`, membros privados com sufixo `_`, constantes `kPascalCase`; palavras inteiras (`index`, não `idx`), salvo abreviação idiomática (`len`, `buf`, `pos`, notação matemática como `sigma2`, `theta`). Chaves no estilo Allman, 4 espaços (`.clang-format`).
+- Nomes públicos simétricos entre famílias de modelo: o que existe para GARCH tem a mesma forma para DCC.
+- Comentários: o padrão é nenhum. Só restrição externa (convenção de oráculo, plataforma) ou invariante que o tipo não expressa. Medições e justificativas vão para `docs/`, nunca para comentário. Nunca citar plano, spec ou task em comentário.
+- Numérica (do MacroEcon): nunca inversa explícita para resolver sistema (Cholesky/solve); log-det por Cholesky; covariâncias simetrizadas; fórmulas longas quebradas em termos nomeados que correspondem à equação documentada; restrições por reparametrização documentada.
+- Testes: asserts de valores exatos, nunca "não lançou"; fixture que não foi construída falha alto; nome do teste diz o que cobre. Python: funções `test_*`, `pytest.mark.parametrize` em vez de loop, sem classes `unittest`.
+- Idioma: código, identificadores, mensagens de erro e documentação do repositório (README, ARCHITECTURE, STYLEGUIDE, docs/guide) em inglês, porque a biblioteca é pública no PyPI. Documentos de trabalho em `docs/superpowers/` ficam em português.
+- Verificação automática: `tests/style/check_style.py` (stdlib) roda no `ctest` e no CI e falha em `else`, pasta acima de 8 módulos, e — em Python, pela AST — função acima de 60 linhas, mais de 5 parâmetros ou aninhamento acima de 3. Em C++, tamanho de função, parâmetros e aninhamento são verificados por `clang-tidy` (`readability-function-size`: `LineThreshold: 60`, `ParameterThreshold: 5`, `NestingThreshold: 3`) no CI e localmente quando disponível.
 - Windows/MinGW: a DLL linka `libstdc++`, `libgcc` e `winpthread` estaticamente, para que o Python do Windows a carregue sem DLLs do MSYS2 no PATH.
 - Python dos testes: um venv em `python/.venv` criado com o Python 3.14 do Windows (`py -3.14 -m venv python/.venv`, ou `uv venv --python 3.14 python/.venv`), nunca com o Python do MSYS2 que está primeiro no PATH (`C:\msys64\ucrt64\bin\python.exe`, sem wheels de numpy). `arch` é instalado nesse venv.
 
@@ -57,11 +79,18 @@ Este é o plano 1 de 6. Cada plano entrega software testável e é escrito quand
 ```
 CMakeLists.txt                     alvo `volengine` (SHARED), testes, FetchContent
 CMakePresets.json                  gcc-debug, gcc-release, msvc-release
-.gitignore  .editorconfig
+.gitignore  .editorconfig  .clang-format  .clang-tidy
+STYLEGUIDE.md                      regras de estilo (Task 1)
+tests/style/check_style.py         verificação automática do estilo
 include/volengine/volengine.h      interface C (o contrato)
-src/capi/export.cpp                todas as funções extern "C"; fronteira de exceções
-src/capi/error.hpp/.cpp            last_error thread-local, set_error, guard
-src/capi/handles.hpp               definições de ve_context/ve_spec/ve_fit_options/ve_panel/ve_fit
+src/capi/version_api.cpp           ve_abi_version
+src/capi/context_api.cpp           ve_context_*
+src/capi/spec_api.cpp              ve_spec_*, ve_fit_options_*
+src/capi/panel_api.cpp             ve_panel_*
+src/capi/batch_api.cpp             ve_batch_*, ve_fit_batch
+src/capi/fit_api.cpp               acessores de ve_fit e critérios
+src/capi/error.hpp/.cpp            last_error thread-local, set_error, guard (fronteira de exceções)
+src/capi/handles.hpp               definições de ve_context/ve_spec/ve_fit_options/ve_panel/ve_batch/ve_fit
 src/core/context.hpp/.cpp          ve::Context (thread pool)
 src/core/spec.hpp                  ve::Spec, ve::FitConfig (valores copiáveis)
 src/core/panel.hpp                 ve::PanelView (ponteiro, T, N, strides, ranges)
@@ -72,8 +101,8 @@ src/fit/fit_result.hpp             ve::FitResult
 src/fit/fit.hpp/.cpp               driver do ajuste, Hessiana, erros-padrão
 src/fit/criteria.hpp/.cpp          loglik, aic, bic, hqic, sic
 src/fit/batch.hpp/.cpp             execução do lote no pool
-tests/unit/*.cpp                   GoogleTest
-tests/unit/c_header_check.c        compila o header como C11 puro
+tests/unit/{capi,garch,optim,fit}/*_test.cpp   GoogleTest, espelhando src/
+tests/unit/capi/c_header_check.c   compila o header como C11 puro
 python/pyproject.toml
 python/src/volengine/__init__.py, _native.py, api.py
 python/tests/test_*.py
@@ -98,28 +127,45 @@ README.md ARCHITECTURE.md STYLEGUIDE.md CHANGELOG.md LICENSE CITATION.cff
 
 ---
 
-### Task 1: Esqueleto de build, header C e versão da ABI
+### Task 1: Esqueleto de build, styleguide, header C e versão da ABI
 
 **Files:**
-- Create: `CMakeLists.txt`, `CMakePresets.json`, `.gitignore`, `.editorconfig`
+- Create: `CMakeLists.txt`, `CMakePresets.json`, `.gitignore`, `.editorconfig`, `.clang-format`, `.clang-tidy`
+- Create: `STYLEGUIDE.md`, `tests/style/check_style.py`
 - Create: `include/volengine/volengine.h`
-- Create: `src/capi/export.cpp`
-- Test: `tests/unit/abi_test.cpp`, `tests/unit/c_header_check.c`
+- Create: `src/capi/version_api.cpp`
+- Test: `tests/unit/capi/abi_test.cpp`, `tests/unit/capi/c_header_check.c`, `tests/style/test_check_style.py`
 
 **Interfaces:**
-- Produces: alvo CMake `volengine` (SHARED, `VE_BUILDING` definido ao compilar); alvo `volengine_tests` (GoogleTest, `gtest_discover_tests`); macro `VE_API` (dllexport/visibility default); `#define VE_ABI_VERSION 0`; `VE_API int32_t ve_abi_version(void);`
+- Produces: alvo CMake `volengine` (SHARED, `VE_BUILDING` definido ao compilar); alvo `volengine_tests` (GoogleTest, `gtest_discover_tests`); teste CTest `style` (roda `check_style.py` sobre o repositório); macro `VE_API` (dllexport/visibility default); `#define VE_ABI_VERSION 0`; `VE_API int32_t ve_abi_version(void);`
+- `check_style.py`: `python tests/style/check_style.py [ROOT]` → código de saída 0 ou 1 e uma linha `path:line: rule: message` por violação. Varre `src/`, `include/`, `cpp/`, `tests/`, `python/src/`, `python/tests/`; ignora `build/`, `python/.venv/`, `tests/reference/fixtures/`, `tests/reference/data/`. Regras: `else` (C/C++: token `else` fora de string/comentário; Python: `else`/`elif` pela AST, exceto o ternário simples), `folder-modules` (> 8 módulos), e em Python `function-length` (> 60), `function-params` (> 5, sem contar `self`/`cls`), `nesting` (> 3).
+- `STYLEGUIDE.md`: em inglês, as regras da seção "Estilo" das Global Constraints, com um exemplo bom/ruim em C++ por regra, no formato do STYLEGUIDE do ExcelReader, mais as seções "Error Handling", "Untrusted Input" (aplicada aos argumentos da interface C: validar todo comprimento, índice e stride antes de alocar ou indexar; aritmética de tamanhos com verificação de overflow), "Tests and Benchmarks" e "Performance Notes" do ExcelReader, traduzidas para C++ (RAII no lugar de `ArrayPool`; `std::span` no lugar de `ReadOnlySpan`).
 
 - [ ] **Step 1: Escrever os testes**
 
+```python
+# tests/style/test_check_style.py — cada caso cria uma árvore mínima em tmp_path e roda check_style.main(root)
+@pytest.mark.parametrize("source,rule", [
+    ("int f(int x)\n{\n    if (x) {\n        return 1;\n    }\n    else {\n        return 2;\n    }\n}\n", "else"),
+    ("def f(x):\n    if x:\n        return 1\n    elif x < 0:\n        return 2\n    return 3\n", "else"),
+    ("def f(a, b, c, d, e, g):\n    return a\n", "function-params"),
+])
+def test_rule_detected(tmp_path, source, rule): ...   # violação reportada com a regra esperada; saída 1
+def test_ternary_and_else_in_string_allowed(tmp_path): ...  # 'x = a if c else b' e '"else"' → saída 0
+def test_nine_modules_in_folder_rejected(tmp_path): ...     # 9 pares .hpp/.cpp → folder-modules
+def test_eight_modules_with_pairs_allowed(tmp_path): ...    # 8 pares .hpp/.cpp → saída 0
+def test_long_python_function_rejected(tmp_path): ...       # 61 linhas → function-length
+```
+
 ```cpp
-// tests/unit/abi_test.cpp
+// tests/unit/capi/abi_test.cpp
 #include <gtest/gtest.h>
 #include <volengine/volengine.h>
 TEST(Abi, RuntimeVersionMatchesHeader) { EXPECT_EQ(ve_abi_version(), VE_ABI_VERSION); }
 ```
 
 ```c
-/* tests/unit/c_header_check.c — compilado como C11 num alvo OBJECT `volengine_c_header_check` */
+/* tests/unit/capi/c_header_check.c — compilado como C11 num alvo OBJECT `volengine_c_header_check` */
 #include <volengine/volengine.h>
 int ve_c_header_check(void) { return ve_abi_version(); }
 ```
@@ -135,13 +181,13 @@ CMake: `cmake_minimum_required(VERSION 3.28)`, `project(VolEngine VERSION 0.1.0 
 
 - [ ] **Step 4: Rodar e ver passar**
 
-Run: `cmake --build --preset gcc-debug && ctest --preset gcc-debug`
-Expected: `Abi.RuntimeVersionMatchesHeader` PASS; `c_header_check.c` compila sem aviso.
+Run: `cmake --build --preset gcc-debug && ctest --preset gcc-debug && python/.venv/Scripts/python -m pytest tests/style -q`
+Expected: `Abi.RuntimeVersionMatchesHeader` PASS; `style` PASS; `c_header_check.c` compila sem aviso; testes do `check_style` PASS. (O venv é criado aqui, conforme Global Constraints, com `pytest`.)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add -A && git commit -m "build: add CMake skeleton, C header and ABI version"
+git add -A && git commit -m "build: add CMake skeleton, styleguide, C header and ABI version"
 ```
 
 ---
@@ -149,9 +195,9 @@ git add -A && git commit -m "build: add CMake skeleton, C header and ABI version
 ### Task 2: Status, erro thread-local e `ve_context`
 
 **Files:**
-- Modify: `include/volengine/volengine.h`, `src/capi/export.cpp`, `CMakeLists.txt`
-- Create: `src/capi/error.hpp`, `src/capi/error.cpp`, `src/capi/handles.hpp`, `src/core/context.hpp`, `src/core/context.cpp`
-- Test: `tests/unit/context_test.cpp`
+- Modify: `include/volengine/volengine.h`, `CMakeLists.txt`
+- Create: `src/capi/context_api.cpp`, `src/capi/error.hpp`, `src/capi/error.cpp`, `src/capi/handles.hpp`, `src/core/context.hpp`, `src/core/context.cpp`
+- Test: `tests/unit/capi/context_test.cpp`
 
 **Interfaces:**
 - Produces (C):
@@ -209,7 +255,7 @@ FetchContent de `https://github.com/bshoshany/thread-pool` tag `v5.0.0` (só o i
 
 **Files:**
 - Create: `src/garch/sgarch.hpp`, `src/garch/sgarch.cpp`
-- Test: `tests/unit/sgarch_test.cpp`
+- Test: `tests/unit/garch/sgarch_test.cpp`
 
 **Interfaces:**
 - Produces:
@@ -220,10 +266,10 @@ FetchContent de `https://github.com/bshoshany/thread-pool` tag `v5.0.0` (só o i
   std::size_t sgarch_param_count(const SGarchConfig&);            // 4 ou 3
   // theta no espaço natural, na ordem mu?, omega, alpha1, beta1.
   // sigma2 (T), grad (k), scores (T×k, row-major): spans vazios = não calcular.
+  struct SGarchOutputs { std::span<double> sigma2; std::span<double> grad; std::span<double> scores; };
   // Retorna a loglik; não finita se σ²ₜ ≤ 0 em algum t.
   double sgarch_norm_loglik(std::span<const double> r, std::span<const double> theta,
-                            const SGarchConfig& cfg, std::span<double> sigma2,
-                            std::span<double> grad, std::span<double> scores);
+                            const SGarchConfig& cfg, const SGarchOutputs& out);
   }
   ```
 
@@ -233,7 +279,7 @@ FetchContent de `https://github.com/bshoshany/thread-pool` tag `v5.0.0` (só o i
 TEST(SGarch, SampleInitRecursionMatchesHand) {
   std::vector<double> r{0.1, -0.2, 0.3}, s2(3);
   std::vector<double> th{0.0, 0.1, 0.1, 0.8};
-  double ll = ve::garch::sgarch_norm_loglik(r, th, {}, s2, {}, {});
+  double ll = ve::garch::sgarch_norm_loglik(r, th, {}, {.sigma2 = s2});
   EXPECT_NEAR(s2[0], 0.14 / 3, 1e-12);
   EXPECT_NEAR(s2[1], 0.1 + 0.1 * 0.01 + 0.8 * (0.14 / 3), 1e-12);
   EXPECT_NEAR(s2[2], 0.1 + 0.1 * 0.04 + 0.8 * s2[1], 1e-12);
@@ -265,7 +311,7 @@ TEST(SGarch, NonPositiveVarianceGivesNonFinite) { /* omega = -1 → !std::isfini
 
 **Files:**
 - Create: `src/optim/transform.hpp`, `src/optim/transform.cpp`, `src/optim/lbfgs.hpp`
-- Test: `tests/unit/optim_test.cpp`
+- Test: `tests/unit/optim/lbfgs_test.cpp`, `tests/unit/optim/transform_test.cpp`
 
 **Interfaces:**
 - Produces:
@@ -310,7 +356,7 @@ TEST(Transform, ChainGradientMatchesFiniteDifferences) { /* g(u) = Σ cᵢ θᵢ
 
 **Files:**
 - Create: `src/core/spec.hpp`, `src/fit/fit_result.hpp`, `src/fit/fit.hpp`, `src/fit/fit.cpp`, `src/fit/criteria.hpp`, `src/fit/criteria.cpp`
-- Test: `tests/unit/fit_test.cpp`
+- Test: `tests/unit/fit/fit_test.cpp`, `tests/unit/fit/criteria_test.cpp`
 
 **Interfaces:**
 - Consumes: `sgarch_norm_loglik`, `sgarch_param_count` (Task 3); `lbfgs_minimize`, transformações (Task 4).
@@ -367,9 +413,9 @@ TEST(Fit, Deterministic) { /* duas chamadas → estimate bit-idêntico */ }
 ### Task 6: Interface C de especificação, opções e painel
 
 **Files:**
-- Modify: `include/volengine/volengine.h`, `src/capi/export.cpp`, `src/capi/handles.hpp`
-- Create: `src/core/panel.hpp`
-- Test: `tests/unit/capi_spec_test.cpp`
+- Modify: `include/volengine/volengine.h`, `src/capi/handles.hpp`
+- Create: `src/capi/spec_api.cpp`, `src/capi/panel_api.cpp`, `src/core/panel.hpp`
+- Test: `tests/unit/capi/spec_test.cpp`, `tests/unit/capi/panel_test.cpp`
 
 **Interfaces:**
 - Consumes: `ve::Spec`, `ve::FitConfig` (Task 5); `guard`, `set_error` (Task 2).
@@ -393,15 +439,16 @@ TEST(Fit, Deterministic) { /* duas chamadas → estimate bit-idêntico */ }
   VE_API ve_status ve_fit_options_set_var_init(ve_fit_options* o, int32_t var_init);
   VE_API void ve_fit_options_free(ve_fit_options* o);
   /* Painel emprestado: não copia `data`; os dados precisam viver até o fim de cada ve_fit_batch que o usa.
-     Elemento (t, j) em data[t*stride_t + j*stride_n]; strides em elementos, podem ser negativos. */
-  VE_API ve_status ve_panel_create(const double* data, size_t t, size_t n,
-                                   ptrdiff_t stride_t, ptrdiff_t stride_n, ve_panel** out);
+     Padrão: ordem C, stride_t = n, stride_n = 1. */
+  VE_API ve_status ve_panel_create(const double* data, size_t t, size_t n, ve_panel** out);
+  /* Elemento (t, j) em data[t*stride_t + j*stride_n]; strides em elementos, podem ser negativos. */
+  VE_API ve_status ve_panel_set_strides(ve_panel* p, ptrdiff_t stride_t, ptrdiff_t stride_n);
   /* Opcional: série j ocupa as linhas starts[j] .. starts[j]+lengths[j]-1. Copia os arrays. */
   VE_API ve_status ve_panel_set_ranges(ve_panel* p, const size_t* starts, const size_t* lengths);
   VE_API void ve_panel_free(ve_panel* p);
   ```
 - Neste plano, só `VE_MODEL_SGARCH`, `VE_DIST_NORM` e ordem (1,1) são aceitos: outros valores conhecidos do enum futuro ainda não existem, então qualquer outro valor é `VE_INVALID_ARGUMENT`, e ordem ≠ (1,1) com p,q ≥ 1 é `VE_UNSUPPORTED`.
-- Validação no `ve_panel_set_ranges`: starts[j] + lengths[j] ≤ T, senão `VE_INVALID_ARGUMENT` e o painel não muda. NaN é verificado no `ve_fit_batch` (Task 7), sobre o intervalo de cada série usada.
+- Validação no `ve_panel_set_ranges`: starts[j] + lengths[j] ≤ T (soma com verificação de overflow), senão `VE_INVALID_ARGUMENT` e o painel não muda. Stride 0 com a dimensão correspondente > 1 é `VE_INVALID_ARGUMENT`. NaN é verificado no `ve_fit_batch` (Task 7), sobre o intervalo de cada série usada.
 
 - [ ] **Step 1: Escrever os testes**
 
@@ -412,6 +459,7 @@ TEST(CapiSpec, OrderOtherThanOneOneIsUnsupported) { /* set_order(2,1) == VE_UNSU
 TEST(CapiOptions, Validation) { /* max_iter 0 → INVALID; tol −1, NaN → INVALID; var_init 7 → INVALID */ }
 TEST(CapiPanel, RangesOutOfBoundsRejected) { /* T=10, starts={5}, lengths={6} → INVALID_ARGUMENT */ }
 TEST(CapiPanel, NullDataRejected) { /* data == nullptr com t·n > 0 → INVALID_ARGUMENT */ }
+TEST(CapiPanel, ZeroStrideRejected) { /* t=10, n=2, set_strides(p, 0, 1) → INVALID_ARGUMENT */ }
 TEST(CapiHandles, NullHandleIsInvalidHandle) { /* ve_spec_set_dist(nullptr, 0) == VE_INVALID_HANDLE */ }
 TEST(CapiHandles, FreeNullIsNoop) { ve_spec_free(nullptr); ve_fit_options_free(nullptr); ve_panel_free(nullptr); }
 ```
@@ -426,9 +474,9 @@ TEST(CapiHandles, FreeNullIsNoop) { ve_spec_free(nullptr); ve_fit_options_free(n
 ### Task 7: `ve_fit_batch` e acessores do resultado
 
 **Files:**
-- Modify: `include/volengine/volengine.h`, `src/capi/export.cpp`, `src/capi/handles.hpp`
-- Create: `src/fit/batch.hpp`, `src/fit/batch.cpp`
-- Test: `tests/unit/capi_fit_test.cpp`
+- Modify: `include/volengine/volengine.h`, `src/capi/handles.hpp`
+- Create: `src/capi/batch_api.cpp`, `src/capi/fit_api.cpp`, `src/fit/batch.hpp`, `src/fit/batch.cpp`
+- Test: `tests/unit/capi/batch_test.cpp`, `tests/unit/capi/fit_accessors_test.cpp`
 
 **Interfaces:**
 - Consumes: `ve::fit_one`, critérios (Task 5); `ve::Context` (Task 2); handles da Task 6.
@@ -442,19 +490,29 @@ TEST(CapiHandles, FreeNullIsNoop) { ve_spec_free(nullptr); ve_fit_options_free(n
   #define VE_SE_ROBUST 1
   #define VE_IC_PER_OBS 0
   #define VE_IC_TOTAL 1
+  typedef struct ve_batch ve_batch;
   typedef struct ve_fit ve_fit;
-  /* Trabalho i ajusta specs[job_spec[i]] na série job_series[i]. options NULL = padrões.
-     Em sucesso, fits_out[i] recebe um handle novo por trabalho; em erro, nenhum handle é criado. */
-  VE_API ve_status ve_fit_batch(ve_context* ctx, const ve_spec* const* specs, size_t n_specs,
-                                const ve_panel* panel, const size_t* job_spec, const size_t* job_series,
-                                size_t n_jobs, const ve_fit_options* options, ve_fit** fits_out);
+  /* Descrição de um lote. Copia specs, opções e jobs; o painel continua emprestado. */
+  VE_API ve_status ve_batch_create(ve_batch** out);
+  VE_API ve_status ve_batch_set_specs(ve_batch* b, const ve_spec* const* specs, size_t n_specs);
+  VE_API ve_status ve_batch_set_panel(ve_batch* b, const ve_panel* panel);
+  /* Trabalho i ajusta specs[job_spec[i]] na série job_series[i]. */
+  VE_API ve_status ve_batch_set_jobs(ve_batch* b, const size_t* job_spec, const size_t* job_series, size_t n_jobs);
+  VE_API ve_status ve_batch_set_options(ve_batch* b, const ve_fit_options* options); /* não chamado = padrões */
+  VE_API ve_status ve_batch_job_count(const ve_batch* b, size_t* out);
+  VE_API void ve_batch_free(ve_batch* b);
+  /* fits_out tem ve_batch_job_count elementos. Em sucesso, um handle novo por trabalho;
+     em erro, nenhum handle é criado. Sem specs, painel ou jobs → VE_INVALID_ARGUMENT. */
+  VE_API ve_status ve_fit_batch(ve_context* ctx, const ve_batch* batch, ve_fit** fits_out);
   VE_API ve_status ve_fit_status(const ve_fit* f, int32_t* out);
   VE_API ve_status ve_fit_nobs(const ve_fit* f, size_t* out);
   VE_API ve_status ve_fit_param_count(const ve_fit* f, size_t* out);
   VE_API ve_status ve_fit_param_name(const ve_fit* f, size_t i, const char** out); /* string estática */
-  /* Arrays de param_count elementos; qualquer um pode ser NULL. */
-  VE_API ve_status ve_fit_coef(const ve_fit* f, int32_t se_kind, double* estimate, double* std_error,
-                               double* t_value, double* p_value);
+  /* Cada um preenche `out` com param_count elementos. */
+  VE_API ve_status ve_fit_estimates(const ve_fit* f, double* out);
+  VE_API ve_status ve_fit_std_errors(const ve_fit* f, int32_t se_kind, double* out);
+  VE_API ve_status ve_fit_t_values(const ve_fit* f, int32_t se_kind, double* out);
+  VE_API ve_status ve_fit_p_values(const ve_fit* f, int32_t se_kind, double* out);
   VE_API ve_status ve_loglik(const ve_fit* f, double* out);
   VE_API ve_status ve_aic(const ve_fit* f, int32_t scale, double* out);
   VE_API ve_status ve_bic(const ve_fit* f, int32_t scale, double* out);
@@ -480,13 +538,15 @@ TEST(CapiFit, FortranOrderAndNegativeStrideMatchContiguous) { /* mesmos dados em
 TEST(CapiFit, RaggedPanel) { /* starts={0,1000,2990}, lengths={3000,2000,10}: nobs 3000/2000/10; série 3 → INSUFFICIENT_DATA; outras CONVERGED */ }
 TEST(CapiFit, ZeroLengthSeries) { /* lengths[j]=0 → INSUFFICIENT_DATA, sem crash */ }
 TEST(CapiFit, JobIndexOutOfRange) { /* job_spec={5} → INVALID_ARGUMENT; fits_out[0] permanece nullptr; ve_last_error() menciona "job" */ }
+TEST(CapiFit, IncompleteBatchRejected) { /* batch sem painel → INVALID_ARGUMENT; sem jobs → INVALID_ARGUMENT */ }
+TEST(CapiFit, BatchCopiesSpecs) { /* muda a spec depois de ve_batch_set_specs → resultado igual ao da spec original */ }
 TEST(CapiFit, NaNInsideUsedRangeRejected) { /* NaN em (100, 1) → INVALID_ARGUMENT; NaN fora do intervalo da série num painel irregular → OK */ }
 TEST(CapiFit, AccessorsConsistent) {
-  /* param_count == 4; nomes; coef com SE_HESSIAN: t == est/se, p == 2(1−Φ(|t|)) (1e-12);
+  /* param_count == 4; nomes; com SE_HESSIAN: t_values == estimates/std_errors, p == 2(1−Φ(|t|)) (1e-12);
      ve_aic(PER_OBS)·nobs == ve_aic(TOTAL) (1e-9); sigma len == nobs */
 }
-TEST(CapiFit, HandlesOutliveInputs) { /* libera spec, options, panel, contexto e o buffer de dados; depois lê sigma e coef do ve_fit */ }
-TEST(CapiFit, ConcurrentReads) { /* 8 std::thread lendo coef/sigma do mesmo ve_fit 1000×; resultados iguais */ }
+TEST(CapiFit, HandlesOutliveInputs) { /* libera spec, options, panel, batch, contexto e o buffer de dados; depois lê sigma e estimates do ve_fit */ }
+TEST(CapiFit, ConcurrentReads) { /* 8 std::thread lendo estimates/sigma do mesmo ve_fit 1000×; resultados iguais */ }
 TEST(CapiFit, FailedFitAccessorsReturnNaN) { /* série constante → status FAILED; ve_loglik == VE_OK e isnan */ }
 ```
 
@@ -575,12 +635,17 @@ def test_unknown_dist_raises():
 - `rugarch`: `ugarchspec(variance.model=list(model="sGARCH", garchOrder=c(1,1)), mean.model=list(armaOrder=c(0,0), include.mean=TRUE), distribution.model="norm")`, `ugarchfit(solver="hybrid")`; `infocriteria()` dá AIC/BIC/SIC/HQIC por observação. Comparação com `var_init="sample"`.
 - `arch`: `arch_model(y, mean="Constant", vol="GARCH", p=1, q=1, dist="normal", rescale=False).fit(disp="off")`; SE Hessiana em `fit(cov_type="classic")`, robusta em `cov_type="robust"`; `aic`/`bic` totais. Comparação com `var_init="backcast"` e `per_obs=False`.
 - Tolerâncias (fixadas; registradas em `docs/guide/validation.md`): loglik — `ll_ve ≥ ll_oracle − 1e-6·|ll_oracle|` e `|ll_ve − ll_oracle| ≤ 1e-4·|ll_oracle|`; parâmetros — relativo 1e-3 (absoluto 1e-5 se |θ| < 1e-2); SE e SE robusto — relativo 5e-2; σₜ — relativo máximo 1e-3; critérios — absoluto 1e-6 na escala do oráculo após conversão.
-- **Pré-requisito:** R ≥ 4.4 com `rugarch` (e `jsonlite`) instalado, e `arch` no venv. Se o R não estiver disponível, o executor para nesta task e pede ao usuário para instalar o R ou rodar `oracle_rugarch.R`; não inventa fixtures.
+- **Ambiente:** R 4.6.2 instalado em `C:\Program Files\R\R-4.6.2` (fora do PATH; usar `"C:/Program Files/R/R-4.6.2/bin/Rscript.exe"`). `rugarch`, `rmgarch` e `jsonlite` ainda não estão instalados. `arch` vai no venv. Se a instalação de algum pacote falhar, o executor para e reporta; não inventa fixtures.
 
-- [ ] **Step 1: Gerar dados e fixtures**
+- [ ] **Step 1: Instalar os oráculos**
 
-Run: `python/.venv/Scripts/python tests/reference/generate_data.py && Rscript tests/reference/oracle_rugarch.R && python/.venv/Scripts/python tests/reference/oracle_arch.py`
-Expected: os três arquivos gerados; JSON com 3 resultados cada.
+Run: `"C:/Program Files/R/R-4.6.2/bin/Rscript.exe" -e "install.packages(c('rugarch','rmgarch','jsonlite'), repos='https://cloud.r-project.org')"` e `python/.venv/Scripts/pip install arch`
+Expected: `Rscript -e "packageVersion('rugarch')"` imprime uma versão; `python -c "import arch"` sem erro.
+
+- [ ] **Step 1b: Gerar dados e fixtures**
+
+Run: `python/.venv/Scripts/python tests/reference/generate_data.py && "C:/Program Files/R/R-4.6.2/bin/Rscript.exe" tests/reference/oracle_rugarch.R && python/.venv/Scripts/python tests/reference/oracle_arch.py`
+Expected: os três arquivos gerados; JSON com 3 resultados cada. O script R também segue o STYLEGUIDE onde se aplica (sem `else`, funções ≤ 60 linhas).
 
 - [ ] **Step 2: Escrever o teste**
 
@@ -609,7 +674,7 @@ def test_matches_oracle(ctx, oracle, var_init, per_obs):
 ### Task 10: Documentos do projeto e CI
 
 **Files:**
-- Create: `README.md`, `ARCHITECTURE.md`, `STYLEGUIDE.md`, `CHANGELOG.md`, `LICENSE`, `CITATION.cff`, `CONTRIBUTING.md`, `.github/workflows/ci.yml`
+- Create: `README.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `LICENSE`, `CITATION.cff`, `CONTRIBUTING.md`, `.github/workflows/ci.yml`
 
 **Interfaces:**
 - Consumes: tudo acima.
@@ -619,14 +684,13 @@ def test_matches_oracle(ctx, oracle, var_init, per_obs):
 - `LICENSE`: MIT, `Copyright (c) 2026 Gabriel Matte` (igual aos outros projetos do autor).
 - `CITATION.cff`: `cff-version: 1.2.0`, título VolEngine, autor Gabriel Matte, versão 0.1.0, licença MIT.
 - `ARCHITECTURE.md`: o mapa do código no estilo do FixedWidthParser — camadas (núcleo → interface C → wrappers), onde vive cada responsabilidade (tabela do mapa de arquivos), as regras de estabilidade da seção 5 do spec e o fluxo de um `ve_fit_batch`.
-- `STYLEGUIDE.md`: prioridades (corretude, performance, legibilidade) como no FixedWidthParser, para C++23 moderno: `std::expected` para falhas esperadas no núcleo, `std::span`/`std::mdspan` para dados, sem `else` depois de `return`, ternário só com valores simples numa linha, nada de "C++ estilo C" fora de `src/capi/`.
 - `CHANGELOG.md`: Keep a Changelog, seção `[Unreleased]` listando o que este plano entrega.
 - `README.md`: o que é, exemplo Python mínimo (`ctx.fit(ve.Spec(), returns)`), build com presets.
 - `CONTRIBUTING.md`: build, testes C++ e Python, como regenerar fixtures.
 
 - [ ] **Step 2: Escrever o CI**
 
-`ci.yml`: matriz `windows-latest` (preset `msvc-release`), `ubuntu-latest` com GCC ≥ 15, `macos-latest` com Clang/libc++ ≥ 18; em cada uma: configure, build, `ctest`, criar venv, `pip install -e python[test] arch`, `pytest python/tests` com `VOLENGINE_LIB` apontando para a biblioteca construída. Os testes de oráculo usam os fixtures commitados; o CI não roda R.
+`ci.yml`: matriz `windows-latest` (preset `msvc-release`), `ubuntu-latest` com GCC ≥ 15, `macos-latest` com Clang/libc++ ≥ 18; em cada uma: configure, build, `ctest` (inclui o teste `style`), criar venv, `pip install -e python[test] arch`, `pytest python/tests` com `VOLENGINE_LIB` apontando para a biblioteca construída. Os testes de oráculo usam os fixtures commitados; o CI não roda R. Um job `ubuntu-latest` extra roda `clang-tidy` (com o `.clang-tidy` da Task 1) sobre `src/` usando o `compile_commands.json`.
 
 - [ ] **Step 3: Verificar localmente** — `cmake --build --preset gcc-release && ctest --preset gcc-release && python/.venv/Scripts/python -m pytest python/tests -q` → tudo PASS. `cmake --preset msvc-release && cmake --build --preset msvc-release && ctest --preset msvc-release` → PASS.
 - [ ] **Step 4: Commit** — `git commit -m "docs: add project documents and CI workflow"`
