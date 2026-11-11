@@ -1,6 +1,6 @@
 #pragma once
 
-#include "garch/sgarch.hpp"
+#include "core/var_init.hpp"
 
 #include <cstdint>
 
@@ -30,7 +30,7 @@ struct FitConfig
 {
     int max_iter = 500;
     double tol = 1e-6;
-    garch::VarInit var_init = garch::VarInit::Sample;
+    VarInit var_init = VarInit::Sample;
 };
 
 }
