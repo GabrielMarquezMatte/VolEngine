@@ -50,6 +50,45 @@ def test_ternary_and_else_in_string_allowed(tmp_path):
     assert check_style.main(tmp_path) == 0
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "x = f(a) if c else g(b)\n",
+        "x = a if c else g(b)\n",
+        "x = f(a) if c else b\n",
+        "x = a if c else (b if d else e)\n",
+        "x = (a if c else b) if d else e\n",
+        "x = a if c else b + 1\n",
+        "x = (\n    a\n    if c\n    else b\n)\n",
+    ],
+)
+def test_non_simple_python_ternary_rejected(tmp_path, capsys, source):
+    write(tmp_path, "python/src/pkg/a.py", source)
+    assert check_style.main(tmp_path) == 1
+    assert rules_reported(capsys) == ["ternary"]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "sign = -1.0 if inverted else 1.0\n",
+        "a = x.attr if c else None\n",
+        "a = name if x.ready else other.value\n",
+        'label = "none" if empty else "some"\n',
+    ],
+)
+def test_simple_python_ternary_allowed(tmp_path, source):
+    write(tmp_path, "python/src/pkg/a.py", source)
+    assert check_style.main(tmp_path) == 0
+
+
+def test_else_line_points_at_else_not_body_starting_with_else(tmp_path, capsys):
+    source = "def f(x):\n    if x:\n        return 1\n    else:\n        elsewhere = 1\n        return elsewhere\n"
+    write(tmp_path, "python/src/pkg/a.py", source)
+    assert check_style.main(tmp_path) == 1
+    assert capsys.readouterr().out.startswith("python/src/pkg/a.py:4: else: ")
+
+
 @pytest.mark.parametrize("keyword", ["for", "while", "try"])
 def test_python_loop_else_rejected(tmp_path, capsys, keyword):
     sources = {
