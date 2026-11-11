@@ -337,8 +337,8 @@ void register_all()
             ->Unit(benchmark::kMillisecond)
             ->UseRealTime();
     }
-    // Student-t innovations (nu = 8), like returns: a std fit on normal data has nu running to infinity and often ends
-    // FAILED, which says nothing about the cost of the grid.
+    // Student-t innovations (nu = 8), like returns: on normal data the std fits run nu towards infinity, which is
+    // not the cost being measured.
     static const std::vector<ve::Spec> grid = tcc_grid();
     static const ve::Spec heavy_tails = make_spec(1, 1, 0, 0, ve::Dist::Std);
     for (const int threads : {1, 0})

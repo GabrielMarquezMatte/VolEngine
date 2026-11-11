@@ -92,13 +92,25 @@ bool shrinking_difference_column(const Problem& problem, std::span<const double>
     return false;
 }
 
+// The std likelihood tends to the normal one as 1/nu -> 0, its boundary. There its curvature in nu falls as nu^-4 and
+// its cross terms as nu^-2, below what differences of the gradient resolve, and noise in the shape row and column
+// alone can make the whole Hessian indefinite.
+bool on_boundary(const model::Layout& layout, std::span<const double> theta, std::size_t index)
+{
+    if (index >= layout.alpha_begin() && index < layout.shape())
+    {
+        return theta[index] < kBoundaryWeight;
+    }
+    bool is_std_shape = layout.has_shape() && index == layout.shape() && layout.dist == Dist::Std;
+    return is_std_shape && 1.0 / theta[index] < kBoundaryWeight;
+}
+
 Indices interior_indices(const model::Layout& layout, std::span<const double> theta)
 {
     Indices interior;
     for (std::size_t i = 0; i < theta.size(); ++i)
     {
-        bool is_weight = i >= layout.alpha_begin() && i < layout.shape();
-        if (!is_weight || theta[i] >= kBoundaryWeight)
+        if (!on_boundary(layout, theta, i))
         {
             interior.push_back(i);
         }

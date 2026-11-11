@@ -198,6 +198,36 @@ unconstrained parametrization, is below `tol` = 1e-6 by default. On the ill-cond
 (1e-8, 1e-9) changes no estimate. The default is unchanged: the 4.7e-3 relative error in β̂₁ = 0.21 is
 9.7e-4 in absolute terms, 0.5% of its standard error (0.20).
 
+### VolEngine: Student-t near the normal limit
+
+On data with normal innovations the std likelihood keeps rising as ν → ∞, and the fit stops wherever the
+gradient falls below `tol`: on 44 simulated normal series (T = 5000) ν̂ ranged from 83 to 7e34, and on the
+benchmark's TCC grid up to 1e211. Three computations are arranged so that this region stays smooth:
+
+- **Log normalizer.** lgamma((ν+1)/2) − lgamma(ν/2) − ½ log(π(ν−2)) is computed, for ν ≥ 20, as
+  a log1p(1/(2a)) − ½ + S(a + ½) − S(a) − ½ log1p(−1/a) − ½ log 2π, with a = ν/2 and S the Stirling series
+  of lgamma (`student_log_constant` in `src/dist/densities.hpp`). Subtracting the two lgamma values, each
+  about a log a, leaves an error of one unit in their last place: 1e-9 at ν = 1e6 and 1.5e-5 at ν = 8e9,
+  more than the change of the mean log-likelihood along a step. The line search then saw noise instead of a
+  slope, and 11 of 20 sGARCH(1,1)-std fits and 13 of 20 ARMA(1,1)-sGARCH(1,3)-std fits on normal data ended
+  `FAILED` (one at ν = 1.5e15 with ℓ = +29704, a value made of that noise). The forward-mode derivative had
+  the same cancellation.
+- **Kernel.** ((ν+1)/2) log1p(z²/(ν−2)) replaces ((ν+1)/2) log(1 + z²/(ν−2)), whose rounding of 1 + z²/(ν−2)
+  is multiplied by (ν+1)/2.
+- **Quotients in `ad::Dual`.** The derivative of a/b is (a′ − q b′)/b with q = a/b, not a′/b − (q/b) b′:
+  q/b alone underflows once |b| passes ~1e154, and the derivative of 1/(2a) in the normalizer was then zero.
+  That gave a wrong gradient in ν past ν ≈ 1e154 and ended 2 of 360 std fits of the normal-innovation grid
+  `FAILED`.
+
+Below ν = 20 the normalizer is the lgamma difference, computed as before; elsewhere the old and new forms
+agree to rounding (2e-12 at ν = 1e4), and every oracle case passes with unchanged tolerances.
+
+ν is not bounded. For the standard errors, a std shape with 1/ν < 1e-8 (ν > 1e8) sits on the boundary of
+the normal limit, as α and β entries below 1e-8 do: its curvature in ν falls as ν⁻⁴ and its cross terms as
+ν⁻², below what central differences of the gradient resolve (at ν̂ = 2e22 that noise alone made −H
+indefinite and every standard error NaN). It leaves H and S and gets NaN, and μ, ω, α and β come from the
+remaining block. Below 1e8 the shape stays in H, with a standard error that grows as ν².
+
 ## Tolerances
 
 Fixed in plan 1 before any comparison and unchanged for the grid; none was loosened. "Observed" is the worst

@@ -57,6 +57,24 @@ TEST(Dual, PowAndAbs)
     EXPECT_EQ(zero.grad[0], 0.0);
 }
 
+// x = e^u with u = 460: x and the seed x' = x sit near 1e200, where 1 / x^2 underflows.
+TEST(Dual, QuotientsOfLargeOperandsKeepTheirDerivative)
+{
+    auto u = ve::ad::variable<1>(460.0, 0);
+    auto x = ve::ad::exp(u);
+    EXPECT_NEAR((1.0 / x).grad[0] / (1.0 / x).value, -1.0, 1e-15);
+    EXPECT_NEAR((u / x).grad[0] / (u / x).value, 1.0 / 460.0 - 1.0, 1e-15);
+    EXPECT_NEAR((x / x).grad[0], 0.0, 1e-15);
+}
+
+TEST(Dual, Log1pMatchesItsDerivative)
+{
+    auto x = ve::ad::variable<1>(1e-12, 0);
+    auto f = ve::ad::log1p(x);
+    EXPECT_EQ(f.value, std::log1p(1e-12));
+    EXPECT_EQ(f.grad[0], 1.0 / (1.0 + 1e-12));
+}
+
 TEST(Dual, ComparisonsUseValue)
 {
     auto a = ve::ad::variable<2>(1.0, 0);

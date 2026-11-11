@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ad/dual.hpp"
 #include "core/spec.hpp"
 
 #include <cmath>
@@ -10,7 +11,7 @@ namespace ve::dist
 
 // log f(z) of a density with mean 0 and variance 1, as rugarch and arch standardize them:
 //   norm: log_constant - z^2 / 2
-//   std:  log_constant - power * log(1 + z^2 / scale), scale = nu - 2, power = (nu + 1) / 2
+//   std:  log_constant - power * log1p(z^2 / scale), scale = nu - 2, power = (nu + 1) / 2
 //   ged:  log_constant - |z / scale|^power / 2,       scale = lambda,  power = nu
 template <class T>
 struct LogDensity
@@ -34,15 +35,50 @@ inline bool in_domain(Dist dist, double shape)
     return true;
 }
 
+namespace detail
+{
+
+// The Stirling series of lgamma(x) through x^-11 is accurate to ~1e-15 only from x = 10.
+constexpr double kStirlingThreshold = 10.0;
+
+// lgamma(x) - ((x - 1/2) log(x) - x + log(2 pi) / 2).
 template <class T>
-LogDensity<T> student_log_density(const T& nu)
+T stirling_series(const T& x)
+{
+    T inverse = 1.0 / x;
+    T inverse2 = inverse * inverse;
+    return inverse * (1.0 / 12.0 + inverse2 * (-1.0 / 360.0 + inverse2 * (1.0 / 1260.0 + inverse2 * (-1.0 / 1680.0 +
+                      inverse2 * (1.0 / 1188.0 + inverse2 * (-691.0 / 360360.0))))));
+}
+
+// lgamma((nu + 1) / 2) - lgamma(nu / 2) - log(pi (nu - 2)) / 2, with a = nu / 2. Its terms grow as a log(a)
+// while it tends to -log(2 pi) / 2, so subtracting them leaves an error of ulp(a log(a)): 1e-9 at nu = 1e6 and
+// 1.5e-5 at nu = 8e9, on a likelihood whose slope in nu vanishes as nu grows. For large a the cancellation is done
+// analytically: log(a) / 2 - log(pi (2 a - 2)) / 2 = -log(2 pi) / 2 - log1p(-1 / a) / 2, and the lgamma
+// difference is the difference of the Stirling expansions of both terms.
+template <class T>
+T student_log_constant(const T& nu)
 {
     using std::lgamma;
     using std::log;
+    using std::log1p;
+    T a = nu / 2.0;
+    if (ad::value_of(a) < kStirlingThreshold)
+    {
+        return (lgamma(a + 0.5) - lgamma(a)) - 0.5 * log(std::numbers::pi * (nu - 2.0));
+    }
+    T expansion = (a * log1p(0.5 / a) - 0.5) + (stirling_series(a + 0.5) - stirling_series(a));
+    return expansion - 0.5 * log1p(-1.0 / a) - 0.5 * std::log(2.0 * std::numbers::pi);
+}
+
+}
+
+template <class T>
+LogDensity<T> student_log_density(const T& nu)
+{
     T scale = nu - 2.0;
     T power = (nu + 1.0) / 2.0;
-    T log_normalizer = lgamma(power) - lgamma(nu / 2.0);
-    T log_constant = log_normalizer - 0.5 * log(std::numbers::pi * scale);
+    T log_constant = detail::student_log_constant(nu);
     return {Dist::Std, log_constant, scale, power};
 }
 
@@ -79,11 +115,11 @@ template <class T>
 T log_density(const LogDensity<T>& density, const T& z)
 {
     using std::abs;
-    using std::log;
+    using std::log1p;
     using std::pow;
     if (density.dist == Dist::Std)
     {
-        return density.log_constant - density.power * log(1.0 + z * z / density.scale);
+        return density.log_constant - density.power * log1p(z * z / density.scale);
     }
     if (density.dist == Dist::Ged)
     {
