@@ -648,6 +648,16 @@ Decomposição do loglik `Dual<8>` do s11_norm (T = 5000), medida num driver des
 
 `BM_FitOne`, comparado com `01a0325`: TGARCH −48%, s11_norm −38%, iGARCH −30%, s21_std −28%, ALLGARCH −23%, apARCH e ged −20%. eGARCH, gjrGARCH e csGARCH ficaram dentro do ruído.
 
+Repartição de um ajuste, medida com contadores num build descartável:
+- o otimizador fica com 57–78% do tempo, em 17–65 avaliações por ajuste;
+- os erros-padrão ficam com 22–43%, quase tudo na Hessiana numérica (2k gradientes).
+
+Cada gradiente da Hessiana alocava seus buffers. `b006a58` passou a reaproveitá-los, e o `BM_FitOne` caiu mais 5 a 12%.
+
+FTZ/DAZ não mudou o tempo de nenhum modelo, então números subnormais estão descartados como causa.
+
+`arma22_s33_std` para em `max_iter` (500 iterações), porque o ARMA(2,2) sobre uma série sem ARMA não é identificável. No `BM_TccGrid` (1080 ajustes) são 8 casos assim, que somam ~12% do tempo do grid. O problema é de convergência, não de custo por avaliação.
+
 Medidas e descartadas:
 - divisão do `Dual` por recíproco: nenhum efeito;
 - `multiply_add` fundido: a recursão escrita à mão saiu com o mesmo tempo;
@@ -660,5 +670,5 @@ A fazer aqui, nesta máquina:
    - csGARCH ainda aloca o vetor de e² e o de q;
    - ALLGARCH calcula σ e σ² com dois `pow` por lag (dá para tirar σ² de σ·σ);
    - quadratura de κ com η₂ livre (320 avaliações por lag a cada chamada);
-   - Hessiana numérica dos erros-padrão (2k gradientes, cada um com alocações);
-   - `BM_FitOne/arma22_s33_std` (~450 ms): ver se o custo vem do número de iterações e não de cada avaliação.
+   - Hessiana numérica dos erros-padrão: são 2k gradientes; diferenças progressivas fariam com k, mas perdem precisão (só com o aval dos oráculos);
+   - ajustes que param em `max_iter` (ver acima): um critério de parada mais cedo em cristas planas, se o plano 5 não cuidar disso.
