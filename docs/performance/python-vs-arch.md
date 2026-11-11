@@ -15,9 +15,9 @@ with the same specs: constant mean, sGARCH(p,q) and normal, Student-t or GED inn
 
 | Run | Wall time (s) | Fits per second | Relative to arch on this machine |
 | --- | ---: | ---: | ---: |
-| arch, sequential (matched work) | 5.72 | 31.4 | 1.00x |
+| arch, sequential (matched work) | 5.73 | 31.4 | 1.00x |
 | volengine, threads=1 (matched work) | 3.12 | 57.7 | 1.84x |
-| volengine, threads=0 (all cores; not matched work) | 0.57 | 318.2 | 10.12x |
+| volengine, threads=0 (all cores; not matched work) | 0.56 | 319.1 | 10.15x |
 
 | Spec | Worst relative loglik difference over the series |
 | --- | ---: |
@@ -30,3 +30,14 @@ with the same specs: constant mean, sGARCH(p,q) and normal, Student-t or GED inn
 | sGARCH(1,2) norm | 5.7e-09 |
 | sGARCH(1,2) std | 1.2e-09 |
 | sGARCH(1,2) ged | 9.6e-10 |
+
+Notes:
+
+- The optimizers differ (L-BFGS in VolEngine, SLSQP in `arch`), so the times include different numbers of
+  iterations. The second table shows that both reach the same optimum: the largest relative difference of the
+  log-likelihood over the 20 series is below 1e-4 for every spec (the script fails otherwise).
+- The `threads=0` row is not matched work: `arch` does not parallelize a fit, so that row measures the batch
+  parallelism of VolEngine, not the algorithms. Fits are bit-identical for any thread count.
+- The run was not isolated: a normal desktop session, no pinned cores and no fixed frequency.
+- Reproduce with `VOLENGINE_LIB=<path to the library> python python/benchmarks/bench_vs_arch.py --out
+  docs/performance/python-vs-arch.md` in the `python/.venv` environment.
