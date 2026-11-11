@@ -53,11 +53,6 @@ const std::vector<NamedSpec>& named_specs()
     return specs;
 }
 
-bool is_usable(ve::FitStatus status)
-{
-    return status == ve::FitStatus::Converged || status == ve::FitStatus::MaxIter;
-}
-
 // A point inside the stationary region, in the natural space of the layout.
 std::vector<double> reference_theta(const ve::model::Layout& layout)
 {
@@ -82,68 +77,122 @@ std::vector<double> reference_theta(const ve::model::Layout& layout)
     }
     if (layout.has_shape())
     {
-        theta[layout.shape()] = layout.dist == ve::Dist::Std ? 8.0 : 1.5;
+        theta[layout.shape()] = ve::bench::innovation_shape(layout.dist);
     }
     return theta;
 }
 
 template <std::size_t N>
-double dual_loglik(std::span<const double> r, const std::vector<double>& theta, const ve::model::Layout& layout)
+std::vector<ve::ad::Dual<N>> dual_seeds(const std::vector<double>& theta)
 {
     std::vector<ve::ad::Dual<N>> seeds;
     for (std::size_t i = 0; i < theta.size(); ++i)
     {
         seeds.push_back(ve::ad::variable<N>(theta[i], i));
     }
+    return seeds;
+}
+
+template <std::size_t N>
+double dual_loglik(std::span<const double> r, std::span<const ve::ad::Dual<N>> seeds, const ve::model::Layout& layout)
+{
     const ve::model::LoglikOutputs<ve::ad::Dual<N>> none{};
     return ve::model::loglik<ve::ad::Dual<N>>(r, seeds, layout, ve::VarInit::Sample, none).value;
 }
 
-double evaluate(std::span<const double> r, const std::vector<double>& theta, const ve::model::Layout& layout,
-                bool with_gradient)
+double double_loglik(std::span<const double> r, const std::vector<double>& theta, const ve::model::Layout& layout)
 {
-    if (!with_gradient)
-    {
-        const ve::model::LoglikOutputs<double> none{};
-        return ve::model::loglik<double>(r, theta, layout, ve::VarInit::Sample, none);
-    }
-    return layout.count() <= 8 ? dual_loglik<8>(r, theta, layout) : dual_loglik<16>(r, theta, layout);
+    const ve::model::LoglikOutputs<double> none{};
+    return ve::model::loglik<double>(r, theta, layout, ve::VarInit::Sample, none);
 }
 
-void run_loglik(benchmark::State& state, const NamedSpec& named, bool with_gradient)
+template <class Evaluate>
+void time_evaluations(benchmark::State& state, std::size_t parameters, Evaluate evaluate)
 {
-    const std::vector<double> r = ve::bench::simulate_series(named.spec, 1, kObservations);
-    const ve::model::Layout layout = ve::model::layout_of(named.spec);
-    const std::vector<double> theta = reference_theta(layout);
-    if (!std::isfinite(evaluate(r, theta, layout, with_gradient)))
+    if (!std::isfinite(evaluate()))
     {
         state.SkipWithError("the log-likelihood at the reference point is not finite");
         return;
     }
     for (auto _ : state)
     {
-        benchmark::DoNotOptimize(evaluate(r, theta, layout, with_gradient));
+        benchmark::DoNotOptimize(evaluate());
     }
-    state.counters["parameters"] = static_cast<double>(layout.count());
+    state.counters["parameters"] = static_cast<double>(parameters);
     state.counters["evaluations_per_s"] =
         benchmark::Counter(static_cast<double>(state.iterations()), benchmark::Counter::kIsRate);
+}
+
+// The Dual seeds are built once, outside the timed loop.
+void run_loglik(benchmark::State& state, const NamedSpec& named, bool with_gradient)
+{
+    const std::vector<double> r = ve::bench::simulate_series(named.spec, 1, kObservations);
+    const ve::model::Layout layout = ve::model::layout_of(named.spec);
+    const std::vector<double> theta = reference_theta(layout);
+    const std::size_t parameters = layout.count();
+    if (!with_gradient)
+    {
+        time_evaluations(state, parameters, [&] { return double_loglik(r, theta, layout); });
+        return;
+    }
+    if (parameters <= 8)
+    {
+        const auto seeds = dual_seeds<8>(theta);
+        time_evaluations(state, parameters, [&] { return dual_loglik<8>(r, seeds, layout); });
+        return;
+    }
+    const auto seeds = dual_seeds<16>(theta);
+    time_evaluations(state, parameters, [&] { return dual_loglik<16>(r, seeds, layout); });
+}
+
+struct StatusCounts
+{
+    std::size_t converged = 0;
+    std::size_t max_iter = 0;
+    std::size_t other = 0;
+
+    void add(int32_t status)
+    {
+        if (status == VE_FIT_CONVERGED)
+        {
+            ++converged;
+            return;
+        }
+        if (status == VE_FIT_MAX_ITER)
+        {
+            ++max_iter;
+            return;
+        }
+        ++other;
+    }
+};
+
+// The counters of a benchmark are the status counts of its last iteration; every iteration repeats the same fits.
+void report_status(benchmark::State& state, const StatusCounts& counts)
+{
+    state.counters["converged"] = static_cast<double>(counts.converged);
+    state.counters["max_iter"] = static_cast<double>(counts.max_iter);
+    state.counters["other"] = static_cast<double>(counts.other);
 }
 
 void run_fit_one(benchmark::State& state, const NamedSpec& named)
 {
     const std::vector<double> r = ve::bench::simulate_series(named.spec, 1, kObservations);
     const ve::FitConfig config;
+    StatusCounts counts;
     for (auto _ : state)
     {
         ve::FitResult result = ve::fit_one(r, named.spec, config);
-        if (!is_usable(result.status))
+        counts = StatusCounts{};
+        counts.add(static_cast<int32_t>(result.status));
+        if (counts.other != 0)
         {
             state.SkipWithError("the fit ended neither CONVERGED nor MAX_ITER");
             return;
         }
-        state.counters["converged"] = result.status == ve::FitStatus::Converged ? 1.0 : 0.0;
         benchmark::DoNotOptimize(result.loglik);
     }
+    report_status(state, counts);
     state.counters["fits_per_s"] =
         benchmark::Counter(static_cast<double>(state.iterations()), benchmark::Counter::kIsRate);
 }
@@ -176,13 +225,6 @@ Owned<ve_spec, ve_spec_free> create_spec(const ve::Spec& spec)
     return handle;
 }
 
-struct StatusCounts
-{
-    std::size_t converged = 0;
-    std::size_t max_iter = 0;
-    std::size_t other = 0;
-};
-
 // One ve_fit_batch workload: a context with the requested threads, a borrowed panel and one job per (spec, series).
 class BatchWorkload
 {
@@ -208,9 +250,7 @@ public:
         {
             int32_t status = VE_FIT_FAILED;
             require_ok(ve_fit_status(fit, &status), "ve_fit_status");
-            counts.converged += status == VE_FIT_CONVERGED ? 1 : 0;
-            counts.max_iter += status == VE_FIT_MAX_ITER ? 1 : 0;
-            counts.other += status > VE_FIT_MAX_ITER ? 1 : 0;
+            counts.add(status);
             ve_fit_free(fit);
         }
         return counts;
@@ -255,8 +295,7 @@ private:
 void report_counts(benchmark::State& state, const StatusCounts& counts, std::size_t jobs)
 {
     state.counters["jobs"] = static_cast<double>(jobs);
-    state.counters["converged"] = static_cast<double>(counts.converged);
-    state.counters["max_iter"] = static_cast<double>(counts.max_iter);
+    report_status(state, counts);
     state.counters["fits_per_s"] =
         benchmark::Counter(static_cast<double>(jobs * state.iterations()), benchmark::Counter::kIsRate);
 }
@@ -291,6 +330,17 @@ void run_batch(benchmark::State& state, const std::vector<ve::Spec>& specs, cons
     }
 }
 
+void append_orders(std::vector<ve::Spec>& grid, ve::Dist dist, int arma)
+{
+    for (int p = 1; p <= 3; ++p)
+    {
+        for (int q = 1; q <= 3; ++q)
+        {
+            grid.push_back(make_spec(p, q, arma, arma, dist));
+        }
+    }
+}
+
 std::vector<ve::Spec> tcc_grid()
 {
     std::vector<ve::Spec> grid;
@@ -298,13 +348,7 @@ std::vector<ve::Spec> tcc_grid()
     {
         for (const int arma : {0, 1})
         {
-            for (int p = 1; p <= 3; ++p)
-            {
-                for (int q = 1; q <= 3; ++q)
-                {
-                    grid.push_back(make_spec(p, q, arma, arma, dist));
-                }
-            }
+            append_orders(grid, dist, arma);
         }
     }
     return grid;
@@ -318,7 +362,11 @@ int hardware_threads()
 // threads == 0 is the context's "hardware concurrency" setting.
 std::string thread_label(int threads)
 {
-    return threads == 0 ? "hw" : std::to_string(threads);
+    if (threads == 0)
+    {
+        return "hw";
+    }
+    return std::to_string(threads);
 }
 
 void register_all()

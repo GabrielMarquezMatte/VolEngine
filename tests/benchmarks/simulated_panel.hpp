@@ -10,6 +10,19 @@
 namespace ve::bench
 {
 
+inline double innovation_shape(ve::Dist dist)
+{
+    if (dist == ve::Dist::Std)
+    {
+        return 8.0;
+    }
+    if (dist == ve::Dist::Ged)
+    {
+        return 1.5;
+    }
+    return 0.0;
+}
+
 // A data-generating process with the structure of spec: persistence 0.98 split evenly over the ARCH and GARCH lags, and
 // ARMA terms of moderate size. Built on the portable generators of the unit tests, so every standard library produces
 // the same series.
@@ -23,7 +36,7 @@ inline ve::testing::SimulatedModel simulated_model_for(const ve::Spec& spec)
     model.alpha.assign(static_cast<std::size_t>(spec.p), 0.08 / spec.p);
     model.beta.assign(static_cast<std::size_t>(spec.q), 0.9 / spec.q);
     model.dist = spec.dist;
-    model.shape = spec.dist == ve::Dist::Std ? 8.0 : spec.dist == ve::Dist::Ged ? 1.5 : 0.0;
+    model.shape = innovation_shape(spec.dist);
     return model;
 }
 
