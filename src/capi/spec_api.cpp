@@ -19,13 +19,28 @@ ve_status bad_value(const char* name, int32_t value)
         std::string(name) + " has unknown value " + std::to_string(value));
 }
 
+static_assert(VE_MODEL_SGARCH == static_cast<int32_t>(ve::Model::SGarch));
+static_assert(VE_MODEL_EGARCH == static_cast<int32_t>(ve::Model::EGarch));
+static_assert(VE_MODEL_GJRGARCH == static_cast<int32_t>(ve::Model::GjrGarch));
+static_assert(VE_MODEL_APARCH == static_cast<int32_t>(ve::Model::ApArch));
+static_assert(VE_MODEL_IGARCH == static_cast<int32_t>(ve::Model::IGarch));
+static_assert(VE_MODEL_CSGARCH == static_cast<int32_t>(ve::Model::CsGarch));
+static_assert(VE_MODEL_FGARCH_GARCH == static_cast<int32_t>(ve::Model::FGarchGarch));
+static_assert(VE_MODEL_FGARCH_TGARCH == static_cast<int32_t>(ve::Model::FGarchTGarch));
+static_assert(VE_MODEL_FGARCH_AVGARCH == static_cast<int32_t>(ve::Model::FGarchAvGarch));
+static_assert(VE_MODEL_FGARCH_NGARCH == static_cast<int32_t>(ve::Model::FGarchNGarch));
+static_assert(VE_MODEL_FGARCH_NAGARCH == static_cast<int32_t>(ve::Model::FGarchNaGarch));
+static_assert(VE_MODEL_FGARCH_APARCH == static_cast<int32_t>(ve::Model::FGarchApArch));
+static_assert(VE_MODEL_FGARCH_GJRGARCH == static_cast<int32_t>(ve::Model::FGarchGjrGarch));
+static_assert(VE_MODEL_FGARCH_ALLGARCH == static_cast<int32_t>(ve::Model::FGarchAllGarch));
+
 ve_status to_model(int32_t value, ve::Model& model)
 {
-    if (value != VE_MODEL_SGARCH)
+    if (value < VE_MODEL_SGARCH || value > VE_MODEL_FGARCH_ALLGARCH)
     {
         return bad_value("model", value);
     }
-    model = ve::Model::SGarch;
+    model = static_cast<ve::Model>(value);
     return VE_OK;
 }
 

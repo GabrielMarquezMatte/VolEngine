@@ -6,7 +6,17 @@ from dataclasses import KW_ONLY, dataclass
 
 from ._native import Handle, check, create_handle, int32, lib
 
-MODELS = {"sgarch": 0}
+MODELS = {"sgarch": 0, "egarch": 1, "gjrgarch": 2, "aparch": 3, "igarch": 4, "csgarch": 5}
+SUBMODELS = {
+    "garch": 6,
+    "tgarch": 7,
+    "avgarch": 8,
+    "ngarch": 9,
+    "nagarch": 10,
+    "aparch": 11,
+    "gjrgarch": 12,
+    "allgarch": 13,
+}
 DISTRIBUTIONS = {"norm": 0, "std": 1, "ged": 2}
 VAR_INITS = {"sample": 0, "backcast": 1}
 
@@ -26,6 +36,12 @@ class Spec:
     `garchOrder = c(alpha order, beta order)` (rugarch calls those orders q and p, the other way
     round). `arma` is the ARMA(m, n) order of the conditional mean. Orders are limited to 1..6 for
     `p` and `q` and 0..6 for `arma` (VE_MAX_ORDER).
+
+    `model` is one of "sgarch", "egarch", "gjrgarch", "aparch", "igarch", "csgarch" and "fgarch".
+    "fgarch" requires `submodel`, one of "garch", "tgarch", "avgarch", "ngarch", "nagarch", "aparch",
+    "gjrgarch" and "allgarch"; every other model rejects it. The iGARCH `beta_q` is derived
+    (1 - sum of alphas - the other betas), not estimated: it has a name and a value, its standard error
+    is NaN and the criteria count the estimated parameters only.
     """
 
     model: str = "sgarch"
@@ -35,6 +51,7 @@ class Spec:
     arma: tuple[int, int] = (0, 0)
     dist: str = "norm"
     include_mean: bool = True
+    submodel: str | None = None
 
     def __post_init__(self) -> None:
         self.native_handle().close()
@@ -46,8 +63,17 @@ class Spec:
             raise ValueError(f"arma must be a pair of integers (m, n), got {arma!r}")
         return int32(arma[0], "arma m"), int32(arma[1], "arma n")
 
+    def model_code(self) -> int:
+        if self.model != "fgarch":
+            if self.submodel is not None:
+                raise ValueError(f"submodel is only for model 'fgarch', got model {self.model!r}")
+            return code_of(MODELS, "model", self.model)
+        if self.submodel is None:
+            raise ValueError(f"model 'fgarch' requires a submodel, one of {sorted(SUBMODELS)}")
+        return code_of(SUBMODELS, "submodel", self.submodel)
+
     def native_handle(self) -> Handle:
-        model = code_of(MODELS, "model", self.model)
+        model = self.model_code()
         dist = code_of(DISTRIBUTIONS, "dist", self.dist)
         arma = self.arma_orders()
         handle = create_handle(lib.ve_spec_create, lib.ve_spec_free, model)

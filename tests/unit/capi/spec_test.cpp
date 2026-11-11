@@ -39,6 +39,25 @@ TEST(CapiSpec, UnknownModelIsInvalid)
     EXPECT_TRUE(error_mentions("99"));
 }
 
+TEST(CapiSpec, AllModels)
+{
+    for (int32_t model = 0; model <= VE_MODEL_FGARCH_ALLGARCH; ++model)
+    {
+        ve_spec* spec = nullptr;
+        ASSERT_EQ(ve_spec_create(model, &spec), VE_OK) << "model " << model;
+        ASSERT_NE(spec, nullptr);
+        EXPECT_EQ(static_cast<int32_t>(spec->spec.model), model);
+        ve_spec_free(spec);
+    }
+    for (const int32_t model : {VE_MODEL_FGARCH_ALLGARCH + 1, -1})
+    {
+        ve_spec* spec = reinterpret_cast<ve_spec*>(0x1);
+        EXPECT_EQ(ve_spec_create(model, &spec), VE_INVALID_ARGUMENT);
+        EXPECT_EQ(spec, nullptr);
+        EXPECT_TRUE(error_mentions("model"));
+    }
+}
+
 TEST(CapiSpec, CreateNullOutIsInvalid)
 {
     EXPECT_EQ(ve_spec_create(VE_MODEL_SGARCH, nullptr), VE_INVALID_ARGUMENT);

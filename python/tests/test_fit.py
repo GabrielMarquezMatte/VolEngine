@@ -1,5 +1,6 @@
 import ctypes
 import gc
+import math
 import weakref
 
 import numpy as np
@@ -262,7 +263,7 @@ def test_unknown_dist_raises():
 
 def test_unknown_model_raises():
     with pytest.raises(ValueError, match="unknown model"):
-        ve.Spec(model="egarch")
+        ve.Spec(model="figarch")
 
 
 def test_invalid_order_is_a_native_error():
@@ -441,3 +442,49 @@ def test_order_above_max_raises():
         ve.Spec(p=7)
     with pytest.raises(ve.VolEngineError, match="VE_MAX_ORDER"):
         ve.Spec(arma=(0, 7))
+
+
+def simulate_igarch(seed):
+    shocks = np.random.default_rng(seed).standard_normal(4000)
+    returns = np.empty(4000)
+    variance = 1.0
+    for t, shock in enumerate(shocks):
+        residual = math.sqrt(variance) * shock
+        returns[t] = 0.05 + residual
+        variance = 0.01 + 0.1 * residual * residual + 0.9 * variance
+    return returns[1000:]
+
+
+@pytest.mark.parametrize(
+    ("model", "submodel", "extra"),
+    [
+        ("egarch", None, ("gamma1",)),
+        ("csgarch", None, ("eta11", "eta21")),
+        ("fgarch", "allgarch", ("eta11", "eta21", "lambda")),
+    ],
+)
+def test_variant_names(ctx, series, model, submodel, extra):
+    fit = ctx.fit(ve.Spec(model, submodel=submodel), series[:, 0], options=ve.FitOptions(max_iter=30))
+    assert fit.names == ("mu", "omega", "alpha1", "beta1", *extra)
+
+
+def test_fgarch_requires_submodel():
+    with pytest.raises(ValueError, match="submodel"):
+        ve.Spec(model="fgarch")
+
+
+def test_submodel_only_for_fgarch():
+    with pytest.raises(ValueError, match="submodel"):
+        ve.Spec(model="egarch", submodel="tgarch")
+
+
+def test_unknown_submodel_raises():
+    with pytest.raises(ValueError, match="submodel"):
+        ve.Spec(model="fgarch", submodel="cgarch")
+
+
+def test_igarch_derived_beta_has_nan_se(ctx):
+    fit = ctx.fit(ve.Spec("igarch"), simulate_igarch(1))
+    std_error = dict(zip(fit.names, fit.coef().std_error, strict=True))
+    assert math.isnan(std_error["beta1"])
+    assert all(math.isfinite(value) for name, value in std_error.items() if name != "beta1")

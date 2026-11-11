@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <limits>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -132,6 +133,7 @@ std::vector<Snapshot> snapshots_of(const FitSet& fits)
 
 struct SpecShape
 {
+    int32_t model;
     int32_t p;
     int32_t q;
     int32_t ar;
@@ -139,13 +141,18 @@ struct SpecShape
     int32_t dist;
 };
 
-constexpr SpecShape kShapes[] = {
-    {1, 1, 0, 0, VE_DIST_NORM}, {3, 3, 2, 2, VE_DIST_STD}, {2, 1, 1, 0, VE_DIST_GED}};
+constexpr std::size_t kShortT = 600;
+constexpr int kShortMaxIter = 30;
+
+// The biggest layout of each bucket: 4 (k = 4), 8 (eGARCH(2,1) with std) and 40 (ALLGARCH ARMA(6,6)-(6,6)).
+constexpr SpecShape kShapes[] = {{VE_MODEL_SGARCH, 1, 1, 0, 0, VE_DIST_NORM},
+    {VE_MODEL_EGARCH, 2, 1, 0, 0, VE_DIST_STD},
+    {VE_MODEL_FGARCH_ALLGARCH, 6, 6, 6, 6, VE_DIST_STD}};
 
 SpecPtr make_shaped_spec(const SpecShape& shape)
 {
     ve_spec* raw = nullptr;
-    EXPECT_EQ(ve_spec_create(VE_MODEL_SGARCH, &raw), VE_OK);
+    EXPECT_EQ(ve_spec_create(shape.model, &raw), VE_OK);
     SpecPtr spec(raw);
     EXPECT_EQ(ve_spec_set_order(raw, shape.p, shape.q), VE_OK);
     EXPECT_EQ(ve_spec_set_arma(raw, shape.ar, shape.ma), VE_OK);
@@ -153,15 +160,23 @@ SpecPtr make_shaped_spec(const SpecShape& shape)
     return spec;
 }
 
+ve::FitConfig short_config()
+{
+    ve::FitConfig config;
+    config.max_iter = kShortMaxIter;
+    return config;
+}
+
 Snapshot direct_shaped_fit(const std::vector<double>& series, const SpecShape& shape)
 {
     ve::Spec spec;
+    spec.model = static_cast<ve::Model>(shape.model);
     spec.p = shape.p;
     spec.q = shape.q;
     spec.ar = shape.ar;
     spec.ma = shape.ma;
     spec.dist = static_cast<ve::Dist>(shape.dist);
-    const ve::FitResult result = ve::fit_one(series, spec, {});
+    const ve::FitResult result = ve::fit_one(series, spec, short_config());
     Snapshot snapshot;
     snapshot.status = static_cast<int32_t>(result.status);
     snapshot.nobs = result.nobs;
@@ -171,8 +186,20 @@ Snapshot direct_shaped_fit(const std::vector<double>& series, const SpecShape& s
     return snapshot;
 }
 
+struct OptionsFree
+{
+    void operator()(ve_fit_options* handle) const
+    {
+        ve_fit_options_free(handle);
+    }
+};
+
 FitSet mixed_fits(int32_t threads, const std::vector<SpecPtr>& specs, const ve_panel* panel)
 {
+    ve_fit_options* raw = nullptr;
+    EXPECT_EQ(ve_fit_options_create(&raw), VE_OK);
+    std::unique_ptr<ve_fit_options, OptionsFree> options(raw);
+    EXPECT_EQ(ve_fit_options_set_max_iter(raw, kShortMaxIter), VE_OK);
     ve::testing::ContextPtr context = ve::testing::make_context(threads);
     BatchInputs inputs;
     for (const SpecPtr& spec : specs)
@@ -182,6 +209,7 @@ FitSet mixed_fits(int32_t threads, const std::vector<SpecPtr>& specs, const ve_p
     inputs.panel = panel;
     inputs.job_spec = repeat_each(specs.size(), kSeries);
     inputs.job_series = cycle(kSeries, specs.size());
+    inputs.options = options.get();
     BatchPtr batch = ve::testing::build_batch(inputs);
     return ve::testing::fit_all(context.get(), batch.get());
 }
@@ -215,6 +243,20 @@ struct ThirtyThreeJobs
         batch = ve::testing::build_batch(inputs);
     }
 };
+
+std::vector<std::string> param_names(const ve_fit* fit)
+{
+    std::size_t count = 0;
+    EXPECT_EQ(ve_fit_param_count(fit, &count), VE_OK);
+    std::vector<std::string> names;
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const char* name = nullptr;
+        EXPECT_EQ(ve_fit_param_name(fit, i, &name), VE_OK);
+        names.push_back(name);
+    }
+    return names;
+}
 
 std::string last_error()
 {
@@ -259,14 +301,14 @@ TEST(CapiFit, MixedBucketsInOneBatch)
     {
         specs.push_back(make_shaped_spec(shape));
     }
-    PanelPtr panel = ve::testing::make_panel(matrix().data(), kT, kSeries);
+    PanelPtr panel = ve::testing::make_panel(matrix().data(), kShortT, kSeries);
     for (const int32_t threads : {1, 4})
     {
         FitSet fits = mixed_fits(threads, specs, panel.get());
         ASSERT_EQ(fits.size(), specs.size() * kSeries);
         for (std::size_t job = 0; job < fits.size(); ++job)
         {
-            const std::vector<double> series = column(matrix(), job % kSeries, 0, kT);
+            const std::vector<double> series = column(matrix(), job % kSeries, 0, kShortT);
             const Snapshot expected = direct_shaped_fit(series, kShapes[job / kSeries]);
             EXPECT_EQ(ve::testing::read_snapshot(fits[job]), expected)
                 << "threads " << threads << " job " << job;
@@ -276,22 +318,48 @@ TEST(CapiFit, MixedBucketsInOneBatch)
 
 TEST(CapiFit, GeneratedParamNames)
 {
-    const SpecShape shape{2, 1, 1, 1, VE_DIST_STD};
+    const SpecShape shape{VE_MODEL_SGARCH, 2, 1, 1, 1, VE_DIST_STD};
     std::vector<SpecPtr> specs;
     specs.push_back(make_shaped_spec(shape));
-    PanelPtr panel = ve::testing::make_panel(matrix().data(), kT, kSeries);
+    PanelPtr panel = ve::testing::make_panel(matrix().data(), kShortT, kSeries);
     FitSet fits = mixed_fits(1, specs, panel.get());
     const std::vector<std::string> expected = {
         "mu", "ar1", "ma1", "omega", "alpha1", "alpha2", "beta1", "shape"};
+    EXPECT_EQ(param_names(fits[0]), expected);
+}
+
+TEST(CapiFit, VariantParamNames)
+{
+    const SpecShape all_garch{VE_MODEL_FGARCH_ALLGARCH, 2, 1, 0, 0, VE_DIST_STD};
+    const SpecShape cs_garch{VE_MODEL_CSGARCH, 1, 1, 0, 0, VE_DIST_NORM};
+    std::vector<SpecPtr> specs;
+    specs.push_back(make_shaped_spec(all_garch));
+    specs.push_back(make_shaped_spec(cs_garch));
+    PanelPtr panel = ve::testing::make_panel(matrix().data(), kShortT, kSeries);
+    FitSet fits = mixed_fits(1, specs, panel.get());
+    const std::vector<std::string> all_garch_names = {"mu", "omega", "alpha1", "alpha2", "beta1", "eta11", "eta12",
+        "eta21", "eta22", "lambda", "shape"};
+    const std::vector<std::string> cs_garch_names = {"mu", "omega", "alpha1", "beta1", "eta11", "eta21"};
+    EXPECT_EQ(param_names(fits[0]), all_garch_names);
+    EXPECT_EQ(param_names(fits[kSeries]), cs_garch_names);
+}
+
+TEST(CapiFit, IGarchCriteriaCountEstimated)
+{
+    const SpecShape igarch{VE_MODEL_IGARCH, 1, 1, 0, 0, VE_DIST_NORM};
+    std::vector<SpecPtr> specs;
+    specs.push_back(make_shaped_spec(igarch));
+    PanelPtr panel = ve::testing::make_panel(matrix().data(), kShortT, kSeries);
+    FitSet fits = mixed_fits(1, specs, panel.get());
+    const ve_fit* fit = fits[0];
     std::size_t count = 0;
-    ASSERT_EQ(ve_fit_param_count(fits[0], &count), VE_OK);
-    ASSERT_EQ(count, expected.size());
-    for (std::size_t i = 0; i < count; ++i)
-    {
-        const char* name = nullptr;
-        ASSERT_EQ(ve_fit_param_name(fits[0], i, &name), VE_OK);
-        EXPECT_EQ(std::string(name), expected[i]);
-    }
+    ASSERT_EQ(ve_fit_param_count(fit, &count), VE_OK);
+    ASSERT_EQ(count, 4u);
+    double loglik = 0.0;
+    double aic = 0.0;
+    ASSERT_EQ(ve_loglik(fit, &loglik), VE_OK);
+    ASSERT_EQ(ve_aic(fit, VE_IC_TOTAL, &aic), VE_OK);
+    EXPECT_NEAR(aic, -2.0 * loglik + 2.0 * static_cast<double>(count - 1), 1e-9);
 }
 
 TEST(CapiFit, ResultIndependentOfThreadCount)
