@@ -611,6 +611,15 @@ double true_value(const VariantProcess& process, const std::string& name)
     {
         return process.shape;
     }
+    if (name == "skew")
+    {
+        return process.skew;
+    }
+    // ghyp is fitted only to the nig series, whose ghlambda is -1/2.
+    if (name == "ghlambda")
+    {
+        return -0.5;
+    }
     return process.power;
 }
 
@@ -649,6 +658,36 @@ INSTANTIATE_TEST_SUITE_P(Processes, FitModels, ::testing::Range<std::size_t>(0, 
                          [](const ::testing::TestParamInfo<std::size_t>& info)
                          { return std::string(variant_process(info.param).name); });
 
+std::optional<double> distribution_tolerance(ve::Dist dist, const std::string& name)
+{
+    using ve::Dist;
+    if (name == "skew" && dist == Dist::Nig)
+    {
+        return 0.08;
+    }
+    if (name == "skew" && dist == Dist::Jsu)
+    {
+        return 0.15;
+    }
+    if (name == "skew")
+    {
+        return 0.05;
+    }
+    if (dist == Dist::Std || dist == Dist::Sstd)
+    {
+        return 1.5;
+    }
+    if (dist == Dist::Nig)
+    {
+        return 0.5;
+    }
+    if (dist == Dist::Jsu)
+    {
+        return 0.3;
+    }
+    return 0.15;
+}
+
 // About two standard errors at T = 5000 for the apARCH gamma and the csGARCH alpha, beta and phi, whose components
 // are weakly identified (at this seed SE 0.02, 0.16 and 0.016); no tolerance for mu and omega.
 std::optional<double> recovery_tolerance(const FitResult& result, std::size_t index)
@@ -680,9 +719,9 @@ std::optional<double> recovery_tolerance(const FitResult& result, std::size_t in
     {
         return 0.3;
     }
-    if (name == "shape")
+    if (name == "skew" || name == "shape")
     {
-        return layout.dist == ve::Dist::Std ? 1.5 : 0.15;
+        return distribution_tolerance(layout.dist, name);
     }
     if (layout.kind(index) == ve::model::ParameterKind::Weight)
     {
@@ -908,6 +947,170 @@ TEST(FitModels, ShortSeriesUsesEstimatedCount)
     EXPECT_NE(ve::fit_one(r, spec, ve::FitConfig{}).status, FitStatus::InsufficientData);
     r.pop_back();
     EXPECT_EQ(ve::fit_one(r, spec, ve::FitConfig{}).status, FitStatus::InsufficientData);
+}
+
+using ve::testing::SkewedFit;
+
+const std::vector<double>& skewed_series(std::size_t index)
+{
+    static const std::vector<std::vector<double>> series = []
+    {
+        std::vector<std::vector<double>> all;
+        for (std::size_t i = 0; i < ve::testing::skewed_processes().size(); ++i)
+        {
+            all.push_back(ve::testing::simulate_skewed(i, kObservations));
+        }
+        return all;
+    }();
+    return series[index];
+}
+
+const VariantProcess& skewed_process(std::size_t index)
+{
+    static const std::vector<VariantProcess> processes = ve::testing::skewed_processes();
+    return processes[index];
+}
+
+const SkewedFit& skewed_fit(std::size_t index)
+{
+    static const std::vector<SkewedFit> fits = ve::testing::skewed_fits();
+    return fits[index];
+}
+
+Spec skewed_spec(const SkewedFit& fit)
+{
+    Spec spec;
+    spec.model = skewed_process(fit.series).model;
+    spec.dist = fit.dist;
+    return spec;
+}
+
+class FitDistributions : public ::testing::TestWithParam<std::size_t>
+{
+};
+
+TEST_P(FitDistributions, BeatsTrueParameters)
+{
+    const SkewedFit& fit = skewed_fit(GetParam());
+    const std::vector<double>& r = skewed_series(fit.series);
+    Spec spec = skewed_spec(fit);
+    FitResult result = ve::fit_one(r, spec, ve::FitConfig{});
+    ASSERT_EQ(result.status, FitStatus::Converged);
+    double truth = loglik_at(r, spec, true_theta(skewed_process(fit.series), result.names));
+    ASSERT_TRUE(std::isfinite(truth));
+    EXPECT_GE(result.loglik, truth - 1e-6 * std::abs(truth));
+}
+
+INSTANTIATE_TEST_SUITE_P(Processes, FitDistributions, ::testing::Range<std::size_t>(0, 5),
+                         [](const ::testing::TestParamInfo<std::size_t>& info)
+                         { return std::string(skewed_fit(info.param).name); });
+
+TEST(FitDistributions, RecoversShapeParameters)
+{
+    for (std::size_t i = 0; i < ve::testing::skewed_processes().size(); ++i)
+    {
+        const VariantProcess& process = skewed_process(i);
+        FitResult result = ve::fit_one(skewed_series(i), variant_spec(process), ve::FitConfig{});
+        ASSERT_EQ(result.status, FitStatus::Converged) << process.name;
+        for (std::size_t j = 0; j < result.names.size(); ++j)
+        {
+            std::optional<double> tolerance = recovery_tolerance(result, j);
+            double truth = true_value(process, result.names[j]);
+            EXPECT_TRUE(!tolerance || std::abs(result.estimate[j] - truth) <= *tolerance)
+                << process.name << " " << result.names[j] << " = " << result.estimate[j] << ", true " << truth;
+        }
+    }
+}
+
+TEST(FitDistributions, SymmetricLimitMatchesKernel)
+{
+    const VariantProcess process{.name = "sgarch11_std", .model = ve::Model::SGarch, .omega = 0.02, .alpha = 0.08,
+                                 .beta = 0.9, .dist = ve::Dist::Std, .shape = 6.0};
+    std::vector<double> r = ve::testing::simulate_variant(process, 45, kObservations);
+    FitResult kernel = ve::fit_one(r, generic_spec(1, 1, ve::Dist::Std), ve::FitConfig{});
+    FitResult skewed = ve::fit_one(r, generic_spec(1, 1, ve::Dist::Sstd), ve::FitConfig{});
+    ASSERT_EQ(kernel.status, FitStatus::Converged);
+    ASSERT_EQ(skewed.status, FitStatus::Converged);
+    EXPECT_GE(skewed.loglik, kernel.loglik - 1e-6 * std::abs(kernel.loglik));
+}
+
+TEST(FitDistributions, NearNormalEndsFinite)
+{
+    std::vector<double> r = ve::testing::simulate_portable_garch_series(46, kObservations);
+    for (ve::Dist dist : {ve::Dist::Nig, ve::Dist::Ghyp})
+    {
+        SCOPED_TRACE(static_cast<int>(dist));
+        expect_ends_finite(ve::fit_one(r, generic_spec(1, 1, dist), ve::FitConfig{}));
+    }
+}
+
+TEST(FitDistributions, DeterministicWidestBucket)
+{
+    std::vector<double> r = ve::testing::simulate_variant(variant_process(5), kFirstVariantSeed + 5, 600);
+    Spec spec = full_spec(6, 6);
+    spec.model = ve::Model::FGarchAllGarch;
+    spec.dist = ve::Dist::Ghyp;
+    ASSERT_EQ(ve::model::layout_of(spec).count(), 42u);
+    ve::FitConfig config;
+    config.max_iter = 30;
+    FitResult first = ve::fit_one(r, spec, config);
+    FitResult second = ve::fit_one(r, spec, config);
+    EXPECT_EQ(first.status, second.status);
+    EXPECT_EQ(bits(first.loglik), bits(second.loglik));
+    expect_bit_identical(first.estimate, second.estimate);
+    expect_bit_identical(first.se_hessian, second.se_hessian);
+    expect_bit_identical(first.se_robust, second.se_robust);
+    expect_bit_identical(first.sigma, second.sigma);
+}
+
+// The sample mean of values lies within five standard errors of expected.
+void expect_mean_near(std::span<const double> values, double expected, const std::string& what)
+{
+    double count = static_cast<double>(values.size());
+    double sum = 0.0;
+    for (double value : values)
+    {
+        sum += value;
+    }
+    double mean = sum / count;
+    double squares = 0.0;
+    for (double value : values)
+    {
+        squares += (value - mean) * (value - mean);
+    }
+    double standard_error = std::sqrt(squares / (count - 1.0) / count);
+    EXPECT_NEAR(mean, expected, 5.0 * standard_error) << what;
+}
+
+void expect_standardized(const VariantProcess& process)
+{
+    constexpr std::size_t kDraws = 200000;
+    ve::testing::PortableShocks shocks(1);
+    std::vector<double> z(kDraws);
+    std::vector<double> square(kDraws);
+    std::vector<double> magnitude(kDraws);
+    for (std::size_t i = 0; i < kDraws; ++i)
+    {
+        z[i] = shocks.draw(process.dist, process.skew, process.shape);
+        square[i] = z[i] * z[i];
+        magnitude[i] = std::abs(z[i]);
+    }
+    std::string name = process.name;
+    expect_mean_near(z, 0.0, name + " mean");
+    expect_mean_near(square, 1.0, name + " variance");
+    double mean_abs = ve::testing::expected_abs_shock(process.dist, process.skew, process.shape);
+    if (std::isfinite(mean_abs))
+    {
+        expect_mean_near(magnitude, mean_abs, name + " E|z|");
+    }
+}
+
+TEST(SimulatedShocks, SkewedShocksAreStandardized)
+{
+    for (const VariantProcess& process : ve::testing::skewed_processes())
+    {
+        expect_standardized(process);
+    }
 }
 
 }
