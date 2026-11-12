@@ -226,12 +226,53 @@ TEST(Layout, RegressorSpecProblems)
     EXPECT_FALSE(ve::model::spec_problem(s));
 }
 
+TEST(Layout, ArfimaFollowsMa)
+{
+    ve::Spec s = spec_of(Model::SGarch);
+    s.ar = s.ma = 1;
+    s.arfima = true;
+    s.mxreg = 1;
+    auto l = ve::model::layout_of(s);
+    EXPECT_EQ(ve::model::parameter_names(l),
+              (Names{"mu", "ar1", "ma1", "arfima", "mxreg1", "omega", "alpha1", "beta1"}));
+    EXPECT_TRUE(l.has_arfima());
+    EXPECT_EQ(l.arfima_index(), 3u);
+    EXPECT_EQ(l.mxreg_begin(), 4u);
+    EXPECT_EQ(l.kind(l.arfima_index()), ParameterKind::Real);
+    EXPECT_EQ(l.kind(l.mxreg_begin()), ParameterKind::Location);
+}
+
+TEST(Layout, WidestArfimaFitsWidestDual)
+{
+    ve::Spec s = spec_of(Model::FGarchAllGarch, ve::kMaxOrder, ve::kMaxOrder);
+    s.ar = s.ma = ve::kMaxOrder;
+    s.dist = ve::Dist::Ghyp;
+    s.arfima = true;
+    s.mxreg = s.vxreg = ve::kMaxRegressors;
+    auto l = ve::model::layout_of(s);
+    EXPECT_EQ(l.count(), ve::kMaxParameterCount);
+    EXPECT_EQ(l.count(), 59u);
+}
+
+TEST(Layout, ArfimaWithArchmIsAProblem)
+{
+    ve::Spec s;
+    s.arfima = true;
+    EXPECT_FALSE(ve::model::spec_problem(s));
+    s.archm = 1;
+    std::string problem = ve::model::spec_problem(s).value_or("");
+    EXPECT_NE(problem.find("arfima"), std::string::npos);
+    EXPECT_NE(problem.find("archm"), std::string::npos);
+}
+
 TEST(Layout, PlainSpecHasNoRegressorBlocks)
 {
     for (int m = 0; m <= static_cast<int>(Model::FGarchAllGarch); ++m)
     {
         auto l = ve::model::layout_of(spec_of(static_cast<Model>(m), 2, 1));
         EXPECT_FALSE(l.has_archm());
+        EXPECT_FALSE(l.has_arfima());
+        EXPECT_EQ(l.arfima_index(), l.archm_index());
         EXPECT_EQ(l.omega(), 1u);
         EXPECT_EQ(l.mxreg_begin(), l.omega());
         EXPECT_EQ(l.vxreg_begin(), l.skew());

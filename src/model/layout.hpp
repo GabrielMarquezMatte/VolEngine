@@ -44,10 +44,13 @@ struct Layout
     int archm = 0;
     int mxreg = 0;
     int vxreg = 0;
+    bool arfima = false;
 
     std::size_t mu() const { return 0; }
     std::size_t ar_begin() const;
     std::size_t ma_begin() const;
+    bool has_arfima() const { return arfima; }
+    std::size_t arfima_index() const;
     bool has_archm() const { return archm != 0; }
     std::size_t archm_index() const;
     std::size_t mxreg_begin() const;
