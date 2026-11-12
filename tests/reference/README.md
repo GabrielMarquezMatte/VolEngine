@@ -94,4 +94,5 @@ Regenerating on another machine can change the last digits: on the plan-2b machi
 `grid.csv` at the last digit of some entries, and the plan-1/2a fixture results come back with the same estimates,
 ℓ, σ and criteria but standard errors that differ in the ninth digit. The committed plan-1/2a data and results
 were therefore kept as they are; only the new series and cases were added (see `docs/guide/validation.md`). The
-same holds for the plan-2b data and results, regenerated on the plan-2c machine.
+same holds for the plan-2b data and results, regenerated on the plan-2c machine. sged's `hess.d = 1e-4` was chosen
+against the committed fixtures and may need re-tuning on another machine or R version.

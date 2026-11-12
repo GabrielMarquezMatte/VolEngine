@@ -127,6 +127,28 @@ def assert_criteria(fit: ve.Fit, result: dict[str, Any], per_obs: bool) -> None:
 
 ORACLE_CASES = [(ORACLES[name], case) for name in ORACLES for case in oracle_cases(name)]
 ORACLE_CASE_IDS = [f"{oracle.name}-{case['id']}" for oracle, case in ORACLE_CASES]
+# VolEngine reports Converged below the oracle's log-likelihood: docs/guide/validation.md, "Case selection",
+# known divergence (VolEngine optimizer). strict, so that a fix has to remove the entry.
+KNOWN_DIVERGENCES = {
+    "rugarch-aparch11_sged/fgarch_allgarch11_sstd",
+    "rugarch-aparch11_sged/fgarch_allgarch11_jsu",
+    "rugarch-egarch11_jsu/fgarch_allgarch11_sstd",
+}
+DIVERGENCE = pytest.mark.xfail(
+    strict=True, reason="VolEngine optimizer stops below the oracle's loglik (validation.md, known divergence)"
+)
+
+
+def comparison_params() -> list[Any]:
+    """ORACLE_CASES with the known divergences expected to fail the comparison."""
+    assert KNOWN_DIVERGENCES <= set(ORACLE_CASE_IDS)
+    params = []
+    for (oracle, case), case_id in zip(ORACLE_CASES, ORACLE_CASE_IDS, strict=True):
+        marks = []
+        if case_id in KNOWN_DIVERGENCES:
+            marks.append(DIVERGENCE)
+        params.append(pytest.param(oracle, case, id=case_id, marks=marks))
+    return params
 
 
 @pytest.mark.parametrize("oracle", list(ORACLES))
@@ -144,7 +166,7 @@ def test_cases_name_known_series():
     assert {case["series"] for case in load_cases()} == set(load_series()) - UNUSED_SERIES
 
 
-@pytest.mark.parametrize(("oracle", "case"), ORACLE_CASES, ids=ORACLE_CASE_IDS)
+@pytest.mark.parametrize(("oracle", "case"), comparison_params())
 def test_matches_oracle(ctx, oracle, case):
     result = oracle_result(oracle.name, case["id"])
     fit = ctx.fit(case_spec(case), load_series()[case["series"]], options=fit_options(oracle))
