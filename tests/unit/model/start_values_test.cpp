@@ -160,10 +160,10 @@ TEST(StartValues, FollowRulePowerFamily)
             expect_block(theta, layout.eta2_begin(), layout.eta2, 0.0);
             EXPECT_NEAR(theta[layout.omega()], 0.05 * std::pow(s.variance, power / 2.0), 1e-15);
             expect_block(theta, layout.beta_begin(), 3, 0.3);
-            double kappa = ve::dist::abs_moment(dist, theta[layout.count() - 1], power);
+            double kappa = ve::dist::abs_moment(dist, {.shape = theta[layout.count() - 1]}, power);
             if (dist == Dist::Norm)
             {
-                kappa = ve::dist::abs_moment(dist, 0.0, power);
+                kappa = ve::dist::abs_moment(dist, {}, power);
             }
             expect_block(theta, layout.alpha_begin(), 2, 0.05 / (2.0 * kappa));
             if (power == 2.0)

@@ -91,7 +91,7 @@ garch::EGarchParameters<T> egarch_parameters(std::span<const T> theta, const Lay
 {
     garch::SGarchParameters<T> s = sgarch_parameters(theta, layout);
     return {s.omega, s.alpha, s.beta, block(theta, layout.gamma_begin(), layout.gamma),
-            dist::abs_moment(layout.dist, shape_parameters_of(theta, layout).shape, T{1.0})};
+            dist::abs_moment(layout.dist, shape_parameters_of(theta, layout), T{1.0})};
 }
 
 template <class T>

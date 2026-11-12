@@ -396,7 +396,7 @@ T shock_moment(std::span<const T> theta, const Layout& layout, std::size_t i)
     {
         eta1 = theta[layout.asymmetry_begin() + i];
     }
-    T shape = shape_parameters_of(theta, layout).shape;
+    dist::ShapeParameters<T> shape = shape_parameters_of(theta, layout);
     T power = power_of(theta, layout);
     if (layout.eta2 == 0)
     {
