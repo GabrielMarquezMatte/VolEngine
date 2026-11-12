@@ -251,14 +251,14 @@ Parameters shifted(Parameters p, const Start<T>& start)
     return p;
 }
 
-// The sGARCH recursion with beta_q = 1 - sum alpha - sum_{j<q} beta_j; the stored beta_q is never read.
+// The sGARCH parameters with beta_q = 1 - sum alpha - sum_{j<q} beta_j, held in the beta of the caller; the stored
+// beta_q is never read.
 template <class T>
-void igarch_variance(std::span<const T> residuals, std::span<const T> theta, const Layout& layout,
-                     const Start<T>& start, std::span<T> sigma2)
+garch::SGarchParameters<T> igarch_parameters(std::span<const T> theta, const Layout& layout, const Start<T>& start,
+                                             std::array<T, kMaxOrder>& beta)
 {
     garch::SGarchParameters<T> p = sgarch_parameters(theta, layout);
     p.intercept_shift = start.intercept_shift;
-    std::array<T, kMaxOrder> beta{};
     std::ranges::copy(p.beta, beta.begin());
     T last{1.0};
     for (const T& alpha : p.alpha)
@@ -271,7 +271,15 @@ void igarch_variance(std::span<const T> residuals, std::span<const T> theta, con
     }
     beta[p.beta.size() - 1] = last;
     p.beta = std::span<const T>(beta).first(p.beta.size());
-    garch::sgarch_variance<T>(residuals, p, start.presample, sigma2);
+    return p;
+}
+
+template <class T>
+void igarch_variance(std::span<const T> residuals, std::span<const T> theta, const Layout& layout,
+                     const Start<T>& start, std::span<T> sigma2)
+{
+    std::array<T, kMaxOrder> beta{};
+    garch::sgarch_variance<T>(residuals, igarch_parameters(theta, layout, start, beta), start.presample, sigma2);
 }
 
 template <class T>
@@ -411,7 +419,21 @@ T sum_of_density_terms(std::span<const T> residuals, std::span<const T> sigma2,
                       { return sum_of_alternative<T>(residuals, sigma2, alternative, terms); }, density);
 }
 
-// e_t of the mean rule over d_t = r_t - mu - sum_k delta_k x_t,k. Without regressors it is the ARMA recursion on r.
+// r_t - mu - sum_k delta_k x_t,k.
+template <class T>
+T deviation_at(const Data& data, std::span<const T> theta, const Layout& layout, const T& mu, std::size_t t)
+{
+    std::span<const T> delta = block(theta, layout.mxreg_begin(), layout.mxreg);
+    T deviation = data.r[t] - mu;
+    for (std::size_t k = 0; k < delta.size(); ++k)
+    {
+        deviation = deviation - delta[k] * data.mean.at(t, k);
+    }
+    return deviation;
+}
+
+// e_t of the mean rule over d_t = r_t - mu - sum_k delta_k x_t,k, without the ARCH-in-mean term. Without
+// regressors it is the ARMA recursion on r.
 template <class T>
 void mean_residuals(const Data& data, std::span<const T> theta, const Layout& layout, std::span<T> residuals)
 {
@@ -421,25 +443,215 @@ void mean_residuals(const Data& data, std::span<const T> theta, const Layout& la
         mean::arma_residuals(data.r, p, residuals);
         return;
     }
-    std::span<const T> delta = block(theta, layout.mxreg_begin(), layout.mxreg);
     std::vector<T> d(data.r.size());
     for (std::size_t t = 0; t < d.size(); ++t)
     {
-        T deviation = data.r[t] - p.mu;
-        for (std::size_t k = 0; k < delta.size(); ++k)
-        {
-            deviation = deviation - delta[k] * data.mean.at(t, k);
-        }
-        d[t] = deviation;
+        d[t] = deviation_at<T>(data, theta, layout, p.mu, t);
     }
     mean::arma_residuals_of_deviations<T>(d, p, residuals);
+}
+
+// ARCH-in-mean: the mean and the variance advance together, since m_t reads sigma_t and sigma2_t reads e_{t-1}.
+// d holds r_t - m_t, archm included, and the AR part of the ARMA acts on it.
+template <class T>
+struct JointMean
+{
+    const Data& data;
+    std::span<const T> theta;
+    const Layout& layout;
+    mean::ArmaParameters<T> arma;
+    std::vector<T> d;
+    std::span<T> residuals;
+
+    // xi sigma_t^p: xi sqrt(sigma2) for p = 1, xi sigma2 for p = 2.
+    T archm_term(const T& sigma2) const
+    {
+        using std::sqrt;
+        const T& xi = theta[layout.archm_index()];
+        if (layout.archm == 1)
+        {
+            return xi * sqrt(sigma2);
+        }
+        return xi * sigma2;
+    }
+
+    void step(const T& sigma2, std::size_t t)
+    {
+        d[t] = deviation_at<T>(data, theta, layout, arma.mu, t) - archm_term(sigma2);
+        residuals[t] = mean::arma_step<T>(d, residuals, arma, t);
+    }
+};
+
+// For each t, the variance from the residuals before t (false when it is not positive and finite), then the mean.
+template <class T, class VarianceAt>
+bool joint_loop(JointMean<T>& mean, std::span<T> sigma2, VarianceAt variance_at)
+{
+    for (std::size_t t = 0; t < sigma2.size(); ++t)
+    {
+        T variance = variance_at(std::span<const T>(mean.residuals), t);
+        if (!is_valid_variance(variance))
+        {
+            return false;
+        }
+        sigma2[t] = variance;
+        mean.step(variance, t);
+    }
+    return true;
+}
+
+// sGARCH and iGARCH keep sigma2 itself as their state.
+template <class T>
+bool joint_sgarch(JointMean<T>& mean, const garch::SGarchParameters<T>& p, const garch::Presample<T>& presample,
+                  std::span<T> sigma2)
+{
+    return joint_loop<T>(mean, sigma2,
+                         [&](std::span<const T> e, std::size_t t)
+                         {
+                             if (t < presample.held)
+                             {
+                                 return presample.value;
+                             }
+                             return garch::sgarch_step<T>(e, p, presample, sigma2, t);
+                         });
+}
+
+template <class T>
+bool joint_igarch(JointMean<T>& mean, std::span<const T> theta, const Layout& layout, const Start<T>& start,
+                  std::span<T> sigma2)
+{
+    std::array<T, kMaxOrder> beta{};
+    return joint_sgarch<T>(mean, igarch_parameters(theta, layout, start, beta), start.presample, sigma2);
+}
+
+template <class T>
+bool joint_gjrgarch(JointMean<T>& mean, const garch::GjrGarchParameters<T>& p,
+                    const garch::Presample<T>& presample, std::span<T> sigma2)
+{
+    return joint_loop<T>(mean, sigma2,
+                         [&](std::span<const T> e, std::size_t t)
+                         {
+                             if (t < presample.held)
+                             {
+                                 return presample.value;
+                             }
+                             return garch::gjrgarch_step<T>(e, p, presample, sigma2, t);
+                         });
+}
+
+// log sigma2 is the state; sigma2 = exp of it.
+template <class T>
+bool joint_egarch(JointMean<T>& mean, const garch::EGarchParameters<T>& p, const garch::Presample<T>& presample,
+                  std::span<T> sigma2)
+{
+    using std::exp;
+    using std::log;
+    T log_presample = log(presample.value);
+    std::vector<T> log_sigma2(sigma2.size());
+    return joint_loop<T>(mean, sigma2,
+                         [&](std::span<const T> e, std::size_t t)
+                         {
+                             log_sigma2[t] = log_presample;
+                             if (t >= presample.held)
+                             {
+                                 log_sigma2[t] = garch::egarch_step<T>(e, p, log_presample, log_sigma2, t);
+                             }
+                             return exp(log_sigma2[t]);
+                         });
+}
+
+// q and e^2 are the state beside sigma2; e^2_{t-1} enters the step as soon as e_{t-1} exists.
+template <class T>
+bool joint_csgarch(JointMean<T>& mean, const garch::CsGarchParameters<T>& p, const garch::Presample<T>& presample,
+                   std::span<T> sigma2)
+{
+    std::vector<T> permanent(sigma2.size());
+    std::vector<T> squared_residuals(sigma2.size());
+    T long_run = p.omega / (1.0 - p.rho);
+    return joint_loop<T>(mean, sigma2,
+                         [&](std::span<const T> e, std::size_t t)
+                         {
+                             if (t > 0)
+                             {
+                                 squared_residuals[t - 1] = e[t - 1] * e[t - 1];
+                             }
+                             if (t < presample.held)
+                             {
+                                 permanent[t] = long_run;
+                                 return presample.value + long_run;
+                             }
+                             garch::CsGarchStep<T> step =
+                                 garch::csgarch_step<T>(squared_residuals, p, presample, sigma2, permanent, t);
+                             permanent[t] = step.permanent;
+                             return step.variance;
+                         });
+}
+
+// sigma^power is the state; sigma2 = (sigma^power)^(2 / power). False when a shock moment is not finite.
+template <class T>
+bool joint_power(JointMean<T>& mean, std::span<const T> theta, const Layout& layout, const Start<T>& start,
+                 std::span<T> sigma2)
+{
+    std::array<T, kMaxOrder> moments{};
+    garch::PowerGarchParameters<T> p = power_garch_parameters<T>(theta, layout, moments);
+    p.intercept_shift = start.intercept_shift;
+    if (!shock_moments(theta, layout, std::span<T>(moments)))
+    {
+        return false;
+    }
+    T presample_power = garch::raise(start.presample.value, 0.5 * p.power, p.free_power);
+    T exponent = 2.0 / p.power;
+    std::vector<T> sigma_power(sigma2.size());
+    return joint_loop<T>(mean, sigma2,
+                         [&](std::span<const T> e, std::size_t t)
+                         {
+                             sigma_power[t] = presample_power;
+                             if (t >= start.presample.held)
+                             {
+                                 sigma_power[t] = garch::power_garch_step<T>(e, p, presample_power, sigma_power, t);
+                             }
+                             return garch::raise(sigma_power[t], exponent, p.free_power);
+                         });
+}
+
+// The residuals and the variance of ARCH-in-mean; false when the point is outside the domain of the recursion.
+template <class T>
+bool joint_series(JointMean<T>& mean, const Layout& layout, const Start<T>& start, std::span<T> sigma2)
+{
+    std::span<const T> theta = mean.theta;
+    switch (layout.model)
+    {
+        case Model::SGarch:
+            return joint_sgarch<T>(mean, shifted(sgarch_parameters(theta, layout), start), start.presample, sigma2);
+        case Model::IGarch:
+            return joint_igarch<T>(mean, theta, layout, start, sigma2);
+        case Model::EGarch:
+            return joint_egarch<T>(mean, shifted(egarch_parameters(theta, layout), start), start.presample, sigma2);
+        case Model::GjrGarch:
+            return joint_gjrgarch<T>(mean, shifted(gjrgarch_parameters(theta, layout), start), start.presample,
+                                     sigma2);
+        case Model::CsGarch:
+            return joint_csgarch<T>(mean, shifted(csgarch_parameters(theta, layout), start), start.presample,
+                                    sigma2);
+        case Model::ApArch:
+        case Model::FGarchGarch:
+        case Model::FGarchTGarch:
+        case Model::FGarchAvGarch:
+        case Model::FGarchNGarch:
+        case Model::FGarchNaGarch:
+        case Model::FGarchApArch:
+        case Model::FGarchGjrGarch:
+        case Model::FGarchAllGarch:
+            return joint_power<T>(mean, theta, layout, start, sigma2);
+    }
+    return false;
 }
 
 template <class T>
 struct Evaluation
 {
     const Data& data;
-    std::span<const T> residuals;
+    std::span<const T> e0;
+    std::span<T> residuals;
     std::span<T> sigma2;
     std::span<T> terms;
     VarInit var_init;
@@ -489,11 +701,25 @@ T mean_shift(const RegressorMatrix& variance, std::span<const T> theta, const La
     return total;
 }
 
+// Without ARCH-in-mean the residuals are e0 and the variance a recursion over them; with it the two are stepped
+// together, and e0 only feeds the presample and the target.
+template <class T>
+bool fill_series(const Evaluation<T>& e, std::span<const T> theta, const Layout& layout, const Start<T>& start)
+{
+    if (!layout.has_archm())
+    {
+        return fill_variance<T>(e.e0, theta, layout, start, e.sigma2);
+    }
+    JointMean<T> mean{e.data, theta, layout, arma_parameters(theta, layout), std::vector<T>(e.sigma2.size()),
+                      e.residuals};
+    return joint_series<T>(mean, layout, start, e.sigma2);
+}
+
 template <class T>
 T evaluate(const Evaluation<T>& e, std::span<const T> theta, const Layout& layout)
 {
-    Start<T> start{presample<T>(e.data, e.residuals, theta, layout, e.var_init), e.intercept_shift};
-    if (!fill_variance<T>(e.residuals, theta, layout, start, e.sigma2))
+    Start<T> start{presample<T>(e.data, e.e0, theta, layout, e.var_init), e.intercept_shift};
+    if (!fill_series<T>(e, theta, layout, start))
     {
         return T{kInvalidLoglik};
     }
@@ -556,17 +782,24 @@ T loglik(const Data& data, std::span<const T> theta, const Layout& layout, VarIn
     std::vector<T> variance_storage;
     std::span<T> residuals = provided_or(out.residuals, residual_storage, r.size());
     std::span<T> sigma2 = provided_or(out.sigma2, variance_storage, r.size());
-    mean_residuals<T>(data, theta, layout, residuals);
+    std::vector<T> e0_storage;
+    std::span<T> e0 = residuals;
+    if (layout.has_archm())
+    {
+        e0_storage.resize(r.size());
+        e0 = e0_storage;
+    }
+    mean_residuals<T>(data, theta, layout, e0);
     std::vector<T> shift_storage;
-    Evaluation<T> evaluation{data,    residuals, sigma2, out.terms, var_init,
-                             shape,   variance_shift<T>(data, theta, layout, shift_storage)};
+    Evaluation<T> evaluation{data,  e0,        residuals, sigma2,
+                             out.terms, var_init, shape,     variance_shift<T>(data, theta, layout, shift_storage)};
     if (!layout.variance_targeting)
     {
         return evaluate<T>(evaluation, theta, layout);
     }
     std::array<T, kMaxParameterCount> targeted;
     std::ranges::copy(theta, targeted.begin());
-    targeted[layout.omega()] = targeted_omega<T>(residuals, theta, layout, data.variance);
+    targeted[layout.omega()] = targeted_omega<T>(e0, theta, layout, data.variance);
     return evaluate<T>(evaluation, std::span<const T>(targeted).first(theta.size()), layout);
 }
 
