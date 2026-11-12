@@ -9,6 +9,7 @@
 #include "garch/sgarch.hpp"
 #include "linalg/least_squares.hpp"
 #include "mean/arma.hpp"
+#include "mean/fractional.hpp"
 #include "model/likelihood_terms.hpp"
 #include "model/parameter_map.hpp"
 
@@ -435,7 +436,7 @@ T deviation_at(const Data& data, std::span<const T> theta, const Layout& layout,
 // e_t of the mean rule over d_t = r_t - mu - sum_k delta_k x_t,k, without the ARCH-in-mean term. Without
 // regressors it is the ARMA recursion on r.
 template <class T>
-void mean_residuals(const Data& data, std::span<const T> theta, const Layout& layout, std::span<T> residuals)
+void arma_mean_residuals(const Data& data, std::span<const T> theta, const Layout& layout, std::span<T> residuals)
 {
     mean::ArmaParameters<T> p = arma_parameters(theta, layout);
     if (layout.mxreg == 0)
@@ -449,6 +450,18 @@ void mean_residuals(const Data& data, std::span<const T> theta, const Layout& la
         d[t] = deviation_at<T>(data, theta, layout, p.mu, t);
     }
     mean::arma_residuals_of_deviations<T>(d, p, residuals);
+}
+
+// The residuals of the mean: those of the ARMA, fractionally differenced with ARFIMA (rugarch applies the
+// difference to the whole ARMA residual series).
+template <class T>
+void mean_residuals(const Data& data, std::span<const T> theta, const Layout& layout, std::span<T> residuals)
+{
+    arma_mean_residuals<T>(data, theta, layout, residuals);
+    if (layout.has_arfima())
+    {
+        mean::fractional_difference<T>(residuals, theta[layout.arfima_index()]);
+    }
 }
 
 // ARCH-in-mean: the mean and the variance advance together, since m_t reads sigma_t and sigma2_t reads e_{t-1}.
@@ -771,6 +784,7 @@ T loglik(const Data& data, std::span<const T> theta, const Layout& layout, VarIn
     assert(data.variance.columns == static_cast<std::size_t>(layout.vxreg));
     assert(data.variance.values.size() == r.size() * data.variance.columns);
     assert(theta.size() == layout.count());
+    assert(!(layout.has_arfima() && layout.has_archm()));
     assert(out.terms.empty() || out.terms.size() == r.size());
     assert(out.residuals.empty() || out.residuals.size() == r.size());
     assert(out.sigma2.empty() || out.sigma2.size() == r.size());
