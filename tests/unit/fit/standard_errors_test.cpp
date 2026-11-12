@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <string>
 #include <gtest/gtest.h>
 #include <span>
 #include <vector>
@@ -144,6 +145,28 @@ TEST(StandardErrors, InvalidEverywhereGivesNaN)
     {
         EXPECT_TRUE(std::isnan(errors.hessian[i]));
         EXPECT_TRUE(std::isnan(errors.robust[i]));
+    }
+}
+
+
+TEST(StandardErrors, SkewedFinite)
+{
+    for (const ve::testing::SkewedFit& fit : ve::testing::skewed_fits())
+    {
+        SCOPED_TRACE(fit.name);
+        ve::Spec spec;
+        spec.model = ve::testing::skewed_processes()[fit.series].model;
+        spec.dist = fit.dist;
+        std::vector<double> r = ve::testing::simulate_skewed(fit.series, 5000);
+        ve::FitResult result = ve::fit_one(r, spec, ve::FitConfig{});
+        ASSERT_EQ(result.status, ve::FitStatus::Converged);
+        for (std::size_t i = 0; i < result.estimate.size(); ++i)
+        {
+            EXPECT_TRUE(std::isfinite(result.se_hessian[i])) << result.names[i];
+            EXPECT_GT(result.se_hessian[i], 0.0) << result.names[i];
+            EXPECT_TRUE(std::isfinite(result.se_robust[i])) << result.names[i];
+            EXPECT_GT(result.se_robust[i], 0.0) << result.names[i];
+        }
     }
 }
 
