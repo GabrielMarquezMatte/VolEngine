@@ -4,6 +4,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace ve
 {
@@ -42,6 +44,12 @@ constexpr int kMaxOrder = 6;
 // mu, ar, ma, omega, alpha, beta, gamma, eta1, eta2, power, skew, shape and ghlambda of the widest layout.
 constexpr std::size_t kMaxParameterCount = 6 * kMaxOrder + 6;
 
+struct ParameterValue
+{
+    std::string name;
+    double value;
+};
+
 struct Spec
 {
     Model model = Model::SGarch;
@@ -51,6 +59,9 @@ struct Spec
     int ma = 0;
     Dist dist = Dist::Norm;
     bool include_mean = true;
+    std::vector<ParameterValue> fixed{};
+    std::vector<ParameterValue> start{};
+    bool variance_targeting = false;
 };
 
 struct FitConfig

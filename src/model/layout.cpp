@@ -1,6 +1,7 @@
 #include "model/layout.hpp"
 
 #include <array>
+#include <algorithm>
 #include <cassert>
 #include <string>
 
@@ -63,6 +64,122 @@ void append_block(std::vector<std::string>& names, const char* prefix, int count
     {
         names.push_back(prefix + std::to_string(i));
     }
+}
+
+Layout base_layout(const Spec& spec)
+{
+    auto model_index = static_cast<std::size_t>(spec.model);
+    assert(model_index < kBlocks.size());
+    const Blocks& blocks = kBlocks[model_index];
+    return Layout{.model = spec.model,
+                  .include_mean = spec.include_mean,
+                  .ar = spec.ar,
+                  .ma = spec.ma,
+                  .arch = spec.p,
+                  .garch = spec.q,
+                  .gamma = block_size(blocks.gamma, spec.p),
+                  .eta1 = block_size(blocks.eta1, spec.p),
+                  .eta2 = block_size(blocks.eta2, spec.p),
+                  .free_power = blocks.free_power,
+                  .fixed_power = blocks.fixed_power,
+                  .dist = spec.dist};
+}
+
+std::optional<std::size_t> index_of(const std::vector<std::string>& names, const std::string& name)
+{
+    auto found = std::find(names.begin(), names.end(), name);
+    if (found == names.end())
+    {
+        return std::nullopt;
+    }
+    return static_cast<std::size_t>(found - names.begin());
+}
+
+std::string joined(const std::vector<std::string>& names)
+{
+    std::string text;
+    for (const std::string& name : names)
+    {
+        if (!text.empty())
+        {
+            text += ' ';
+        }
+        text += name;
+    }
+    return text;
+}
+
+bool is_fixed_by_name(const Spec& spec, const std::string& name)
+{
+    return std::any_of(spec.fixed.begin(), spec.fixed.end(),
+                       [&](const ParameterValue& entry) { return entry.name == name; });
+}
+
+std::optional<std::string> unknown_name_problem(const Spec& spec, const std::vector<std::string>& names)
+{
+    for (const auto* list : {&spec.fixed, &spec.start})
+    {
+        for (const ParameterValue& entry : *list)
+        {
+            if (!index_of(names, entry.name))
+            {
+                return "unknown parameter " + entry.name + "; the spec has: " + joined(names);
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> derived_beta_problem(const Spec& spec, const std::vector<std::string>& names)
+{
+    if (spec.model != Model::IGarch)
+    {
+        return std::nullopt;
+    }
+    const std::string& name = names[base_layout(spec).derived()];
+    if (!is_fixed_by_name(spec, name))
+    {
+        return std::nullopt;
+    }
+    return name + " is derived in the igarch model and cannot be fixed";
+}
+
+std::optional<std::string> variance_targeting_problem(const Spec& spec)
+{
+    if (!spec.variance_targeting)
+    {
+        return std::nullopt;
+    }
+    if (spec.model == Model::IGarch)
+    {
+        return "variance targeting is not supported by the igarch model";
+    }
+    if (spec.model == Model::CsGarch)
+    {
+        return "variance targeting is not supported by the csgarch model";
+    }
+    if (is_fixed_by_name(spec, "omega"))
+    {
+        return "omega is derived under variance targeting and cannot be fixed";
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> fixed_phi_problem(const Spec& spec, const std::vector<std::string>& names)
+{
+    if (spec.model != Model::CsGarch || !is_fixed_by_name(spec, "eta21"))
+    {
+        return std::nullopt;
+    }
+    Layout layout = base_layout(spec);
+    for (std::size_t index = layout.beta_begin(); index < layout.gamma_begin(); ++index)
+    {
+        if (!is_fixed_by_name(spec, names[index]))
+        {
+            return "eta21 is fixed in the csgarch model, so every beta must be fixed too";
+        }
+    }
+    return std::nullopt;
 }
 
 }
@@ -159,7 +276,32 @@ std::size_t Layout::derived() const
 
 std::size_t Layout::estimated_count() const
 {
-    return count() - (has_derived() ? 1 : 0);
+    std::size_t derived_count = (has_derived() ? 1 : 0) + (variance_targeting ? 1 : 0);
+    return count() - fixed.count() - derived_count;
+}
+
+bool Layout::is_fixed(std::size_t index) const
+{
+    return fixed.test(index);
+}
+
+bool Layout::is_started(std::size_t index) const
+{
+    return started.test(index);
+}
+
+bool Layout::is_derived(std::size_t index) const
+{
+    if (has_derived() && index == derived())
+    {
+        return true;
+    }
+    return variance_targeting && index == omega();
+}
+
+bool Layout::is_estimated(std::size_t index) const
+{
+    return !is_fixed(index) && !is_derived(index);
 }
 
 bool Layout::is_power_family() const
@@ -261,21 +403,45 @@ ParameterKind Layout::kind(std::size_t index) const
 
 Layout layout_of(const Spec& spec)
 {
-    auto model_index = static_cast<std::size_t>(spec.model);
-    assert(model_index < kBlocks.size());
-    const Blocks& blocks = kBlocks[model_index];
-    return Layout{.model = spec.model,
-                  .include_mean = spec.include_mean,
-                  .ar = spec.ar,
-                  .ma = spec.ma,
-                  .arch = spec.p,
-                  .garch = spec.q,
-                  .gamma = block_size(blocks.gamma, spec.p),
-                  .eta1 = block_size(blocks.eta1, spec.p),
-                  .eta2 = block_size(blocks.eta2, spec.p),
-                  .free_power = blocks.free_power,
-                  .fixed_power = blocks.fixed_power,
-                  .dist = spec.dist};
+    assert(!spec_problem(spec));
+    Layout layout = base_layout(spec);
+    layout.variance_targeting = spec.variance_targeting;
+    std::vector<std::string> names = parameter_names(layout);
+    for (const ParameterValue& entry : spec.fixed)
+    {
+        std::size_t index = *index_of(names, entry.name);
+        layout.fixed.set(index);
+        layout.given[index] = entry.value;
+    }
+    for (const ParameterValue& entry : spec.start)
+    {
+        std::size_t index = *index_of(names, entry.name);
+        if (layout.is_estimated(index))
+        {
+            layout.started.set(index);
+            layout.given[index] = entry.value;
+        }
+    }
+    return layout;
+}
+
+std::optional<std::string> spec_problem(const Spec& spec)
+{
+    std::vector<std::string> names = parameter_names(base_layout(spec));
+    std::optional<std::string> problem = unknown_name_problem(spec, names);
+    if (!problem)
+    {
+        problem = derived_beta_problem(spec, names);
+    }
+    if (!problem)
+    {
+        problem = variance_targeting_problem(spec);
+    }
+    if (!problem)
+    {
+        problem = fixed_phi_problem(spec, names);
+    }
+    return problem;
 }
 
 std::vector<std::string> parameter_names(const Layout& layout)
