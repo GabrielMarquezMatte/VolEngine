@@ -186,8 +186,13 @@ void apply_user_values(std::vector<double>& theta, const Layout& layout, Part pa
     }
 }
 
+// A given csGARCH rho sets the ceiling of the weights, so it counts as well.
 bool weights_have_user_value(const Layout& layout)
 {
+    if (layout.model == Model::CsGarch && has_user_value(layout, layout.eta1_begin()))
+    {
+        return true;
+    }
     WeightBlock block = weight_block(layout);
     for (std::size_t index = block.begin; index < block.begin + block.count; ++index)
     {
