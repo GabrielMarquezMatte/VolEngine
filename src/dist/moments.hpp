@@ -30,7 +30,7 @@ struct QuadratureNode
 // The Gauss-Legendre rule on [0, 1].
 const std::array<QuadratureNode, kGaussLegendreNodes>& gauss_legendre();
 
-// norm, std and ged keep the closed forms of plan 2b.
+// norm, std and ged keep their closed forms.
 inline bool is_symmetric(Dist dist)
 {
     return dist == Dist::Norm || dist == Dist::Std || dist == Dist::Ged;

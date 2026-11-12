@@ -112,11 +112,6 @@ void persistence_to_natural(std::span<const T> u, std::span<T> weights)
     softmax_to_natural<T>(u.subspan(1), persistence, weights);
 }
 
-bool is_fernandez_steel(Dist dist)
-{
-    return dist == Dist::Sstd || dist == Dist::Sged;
-}
-
 bool is_hyperbolic(Dist dist)
 {
     return dist == Dist::Nig || dist == Dist::Ghyp;
@@ -132,7 +127,7 @@ template <class T>
 T skew_to_natural(const T& x, Dist dist)
 {
     using std::exp;
-    if (is_fernandez_steel(dist))
+    if (dist::is_fernandez_steel(dist))
     {
         return exp(x);
     }
@@ -145,7 +140,7 @@ T skew_to_natural(const T& x, Dist dist)
 
 double skew_to_unconstrained(double skew, Dist dist)
 {
-    if (is_fernandez_steel(dist))
+    if (dist::is_fernandez_steel(dist))
     {
         return std::log(skew);
     }

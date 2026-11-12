@@ -246,9 +246,17 @@ ParameterKind Layout::kind(std::size_t index) const
     }
     if (index == skew() && has_skew())
     {
-        return dist == Dist::Sstd || dist == Dist::Sged ? ParameterKind::Positive : ParameterKind::Real;
+        if (dist::is_fernandez_steel(dist))
+        {
+            return ParameterKind::Positive;
+        }
+        return ParameterKind::Real;
     }
-    return index == ghlambda() && has_ghlambda() ? ParameterKind::Real : ParameterKind::Positive;
+    if (index == ghlambda() && has_ghlambda())
+    {
+        return ParameterKind::Real;
+    }
+    return ParameterKind::Positive;
 }
 
 Layout layout_of(const Spec& spec)
