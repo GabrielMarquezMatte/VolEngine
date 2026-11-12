@@ -12,6 +12,7 @@
 #include <limits>
 #include <numbers>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -438,6 +439,119 @@ TEST(Moments, SkewedDerivativesMatchFiniteDifferences)
         const ve::dist::ShapeParameters<double>& p = c.parameters;
         expect_skewed_gradients_match(c.dist, {p.skew, p.shape, p.ghlambda, 0.3, 0.4, 1.5});
         expect_skewed_gradients_match(c.dist, {p.skew, p.shape, p.ghlambda, -0.2, -0.3, 0.8});
+    }
+}
+
+// jsu is z = c (sqrt(w) sinh(omega) + sinh((r + nu) / tau)) of a standard normal r, with w = exp(1 / tau^2),
+// omega = -nu / tau and c = [(w - 1) (w cosh(2 omega) + 1) / 2]^(-1/2).
+struct JohnsonTransform
+{
+    double nu;
+    double tau;
+    double center;
+    double c;
+
+    double z_of(double r) const
+    {
+        return c * (center + std::sinh((r + nu) / tau));
+    }
+
+    double r_of(double z) const
+    {
+        return -nu + tau * std::asinh(z / c - center);
+    }
+};
+
+JohnsonTransform johnson_transform(double nu, double tau)
+{
+    double w = std::exp(1.0 / (tau * tau));
+    double omega = -nu / tau;
+    double c = 1.0 / std::sqrt(0.5 * (w - 1.0) * (w * std::cosh(2.0 * omega) + 1.0));
+    return {nu, tau, std::sqrt(w) * std::sinh(omega), c};
+}
+
+// E(|z| - eta1 z)^power as an integral in r, split at the cusp r(0). Past |r| = 60 the normal density
+// outweighs any power of z for the tau here, and the integrand is taken as 0 there.
+double johnson_reference_moment(const JohnsonTransform& transform, double eta1, double power)
+{
+    auto integrand = [&](double r)
+    {
+        if (std::abs(r) > 60.0)
+        {
+            return 0.0;
+        }
+        double z = transform.z_of(r);
+        return std::pow(std::abs(z) - eta1 * z, power) * normal_pdf(r);
+    };
+    double cusp = transform.r_of(0.0);
+    return ve::testing::reference_integral(integrand, cusp, cusp);
+}
+
+// A jsu with a small tau holds its mass in a peak of width ~c, far below the unit scale of the z quadrature.
+TEST(Moments, JohnsonMatchesNormalTransform)
+{
+    for (double tau : {0.2, 0.3, 0.5, 0.7, 1.0, 3.0})
+    {
+        for (double nu : {-2.5, 0.0, 2.5})
+        {
+            SCOPED_TRACE(::testing::Message() << "nu " << nu << ", tau " << tau);
+            ve::dist::ShapeParameters<double> parameters{nu, tau, 0.0};
+            JohnsonTransform transform = johnson_transform(nu, tau);
+            EXPECT_NEAR(abs_moment(Dist::Jsu, parameters, 2.0), 1.0, 1e-6);
+            EXPECT_NEAR(probability_below_zero(Dist::Jsu, parameters), normal_cdf(transform.r_of(0.0)), 1e-8);
+            double kappa = johnson_reference_moment(transform, 0.3, 1.5);
+            EXPECT_NEAR(asymmetric_moment(Dist::Jsu, parameters, 0.3, 1.5) / kappa, 1.0, 1e-6);
+        }
+    }
+}
+
+// sged with a small shape has a kernel of scale lambda << 1 and a stretched-exponential tail; nig and ghyp
+// with a small zeta have a peak of width delta at their location. sstd is left out: the reference loses its
+// tail as the shape nears 2.
+std::vector<SkewedCase> sharp_cases()
+{
+    std::vector<SkewedCase> cases;
+    for (double skew : {0.3, 3.0})
+    {
+        for (double shape : {0.3, 0.5, 0.8})
+        {
+            cases.push_back({Dist::Sged, {skew, shape, 0.0}, skew < 1.0});
+        }
+    }
+    for (double zeta : {0.05, 0.3})
+    {
+        for (double rho : {-0.9, 0.9})
+        {
+            cases.push_back({Dist::Nig, {rho, zeta, 0.0}, rho < 0.0});
+            cases.push_back({Dist::Ghyp, {rho, zeta, -2.5}, rho < 0.0});
+            cases.push_back({Dist::Ghyp, {rho, zeta, 1.5}, rho < 0.0});
+        }
+    }
+    return cases;
+}
+
+TEST(Moments, SharpCoresMatchReferenceQuadrature)
+{
+    for (const SkewedCase& c : sharp_cases())
+    {
+        SCOPED_TRACE(case_label(c));
+        EXPECT_NEAR(abs_moment(c.dist, c.parameters, 2.0), 1.0, 1e-6);
+        EXPECT_NEAR(probability_below_zero(c.dist, c.parameters), reference_probability_below_zero(c), 1e-6);
+        double kappa = reference_shock_moment(c, 0.3, 1.5);
+        EXPECT_NEAR(asymmetric_moment(c.dist, c.parameters, 0.3, 1.5) / kappa, 1.0, 1e-6);
+    }
+}
+
+TEST(Moments, JohnsonDerivativesMatchFiniteDifferences)
+{
+    for (double tau : {0.3, 1.0})
+    {
+        for (double nu : {-2.5, 2.5})
+        {
+            SCOPED_TRACE(::testing::Message() << "nu " << nu << ", tau " << tau);
+            expect_skewed_gradients_match(Dist::Jsu, {nu, tau, 0.0, 0.3, 0.4, 1.5});
+            expect_skewed_gradients_match(Dist::Jsu, {nu, tau, 0.0, -0.2, -0.3, 0.8});
+        }
     }
 }
 

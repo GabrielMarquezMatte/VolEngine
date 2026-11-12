@@ -120,4 +120,18 @@ TEST(Dual, HyperbolicFunctions)
     }
 }
 
+TEST(Dual, ErfcMatchesItsDerivative)
+{
+    for (double v : {-2.0, 0.0, 0.3, 4.0})
+    {
+        auto x = ve::ad::variable<2>(v, 1);
+        auto e = ve::ad::erfc(x);
+        EXPECT_EQ(e.value, std::erfc(v));
+        double step = 1e-6;
+        double difference = (std::erfc(v + step) - std::erfc(v - step)) / (2.0 * step);
+        EXPECT_NEAR(e.grad[1], difference, 1e-9);
+        EXPECT_EQ(e.grad[0], 0.0);
+    }
+}
+
 }
