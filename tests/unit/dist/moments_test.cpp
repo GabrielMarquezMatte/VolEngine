@@ -351,6 +351,24 @@ TEST(Moments, ProbabilityBelowZero)
     }
 }
 
+// The narrow side of a Fernandez-Steel density has the z-scale 1 / (xi sigma) or xi / sigma, ~1e-3 here.
+TEST(Moments, VerySkewedMatchReferenceQuadrature)
+{
+    for (Dist dist : {Dist::Sstd, Dist::Sged})
+    {
+        for (double skew : {0.05, 20.0, 30.0})
+        {
+            SkewedCase c{dist, {skew, 5.0, 0.0}, skew < 1.0};
+            EXPECT_NEAR(abs_moment(c.dist, c.parameters, 2.0), 1.0, 1e-6) << case_label(c);
+            double kappa = reference_shock_moment(c, 0.3, 1.5);
+            EXPECT_NEAR(asymmetric_moment(c.dist, c.parameters, 0.3, 1.5) / kappa, 1.0, 1e-6)
+                << case_label(c);
+            double probability = reference_probability_below_zero(c);
+            EXPECT_NEAR(probability_below_zero(c.dist, c.parameters), probability, 1e-6) << case_label(c);
+        }
+    }
+}
+
 // The tail of the sstd is the tail of the t.
 TEST(Moments, SkewedStudentInfiniteAtOrAbovePower)
 {

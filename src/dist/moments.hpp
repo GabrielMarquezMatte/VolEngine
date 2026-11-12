@@ -10,6 +10,8 @@
 #include <cstddef>
 #include <limits>
 #include <numbers>
+#include <span>
+#include <variant>
 
 namespace ve::dist
 {
@@ -124,40 +126,149 @@ double tail_exponent(Dist dist, const ShapeParameters<T>& parameters, const T& p
     return std::max(1.0, 2.0 / (ad::value_of(parameters.shape) - ad::value_of(power)));
 }
 
+// The narrow side of a Fernandez-Steel density holds its mass within a few z-scales of the kink, and that
+// scale falls as 1 / xi^2 with the skew. A side whose scale is below kRefinedBelow gets split points at
+// scale 4^k from the kink, out to kRefinedBelow; at most kMaxRefinements of them, so a scale below
+// 0.5 4^-12 (xi ~ 6000) starts with a first piece wider than the scale.
+constexpr std::size_t kMaxRefinements = 12;
+constexpr double kRefinedBelow = 0.5;
+constexpr double kRefinementRatio = 4.0;
+
+// The z-scale of the density on each side of its kink: 1 / (xi sigma) below and xi / sigma above for sstd and
+// sged, 1 for the others.
+struct SideScales
+{
+    double below;
+    double above;
+};
+
+template <class T>
+SideScales side_scales(const Density<T>& density)
+{
+    const SkewedLogDensity<T>* skewed = std::get_if<SkewedLogDensity<T>>(&density);
+    if (skewed == nullptr)
+    {
+        return {1.0, 1.0};
+    }
+    double skew = ad::value_of(skewed->skew);
+    double stretch = ad::value_of(skewed->stretch);
+    return {1.0 / (skew * stretch), skew / stretch};
+}
+
+// The split points of one quadrature.
+template <class T>
+struct Breakpoints
+{
+    std::array<T, 2 * kMaxRefinements + 2> points{};
+    std::size_t count = 0;
+
+    void add(const T& point)
+    {
+        points[count] = point;
+        ++count;
+    }
+
+    void sort()
+    {
+        std::sort(points.begin(), points.begin() + static_cast<std::ptrdiff_t>(count),
+                  [](const T& a, const T& b) { return ad::value_of(a) < ad::value_of(b); });
+    }
+
+    std::span<const T> view() const
+    {
+        return {points.data(), count};
+    }
+};
+
+template <class T>
+void add_refinements(Breakpoints<T>& breakpoints, const T& kink, double direction, double scale)
+{
+    double smallest = kRefinedBelow * std::pow(kRefinementRatio, -static_cast<double>(kMaxRefinements));
+    for (double distance = std::max(scale, smallest); distance < kRefinedBelow; distance *= kRefinementRatio)
+    {
+        breakpoints.add(kink + direction * distance);
+    }
+}
+
+template <class T>
+void add_side_refinements(Breakpoints<T>& breakpoints, const Density<T>& density, const T& kink)
+{
+    SideScales scales = side_scales(density);
+    add_refinements(breakpoints, kink, -1.0, scales.below);
+    add_refinements(breakpoints, kink, 1.0, scales.above);
+}
+
+// int over [points[0] - 1, points.back()], one piece between each pair of neighbouring points.
+template <class T, class Integrand>
+T breakpoint_sum(const Integrand& integrand, std::span<const T> points)
+{
+    T sum = segment_integral(integrand, points[0] - 1.0, points[0]);
+    for (std::size_t i = 1; i < points.size(); ++i)
+    {
+        sum = sum + segment_integral(integrand, points[i - 1], points[i]);
+    }
+    return sum;
+}
+
 // The integrand has a cusp at z = eta2, and the density is not smooth at its kink (0 for ged, z* for sstd
 // and sged): the quadrature is split at both, so that no piece holds a kink. With eta2 on the kink both split
 // points follow eta2, so that no piece differentiates the cusp of a power below 1.
 template <class T>
-T shock_power_quadrature(const ShockPowerIntegrand<T>& integrand, double exponent)
+Breakpoints<T> shock_breakpoints(const ShockPowerIntegrand<T>& integrand)
 {
     T kink = density_kink(integrand.density);
-    T lower = integrand.eta2;
-    T upper = integrand.eta2;
-    if (ad::value_of(integrand.eta2) > ad::value_of(kink))
+    if (ad::value_of(integrand.eta2) == ad::value_of(kink))
     {
-        lower = kink;
+        kink = integrand.eta2;
     }
-    if (ad::value_of(integrand.eta2) < ad::value_of(kink))
-    {
-        upper = kink;
-    }
-    T near = segment_integral(integrand, lower - 1.0, lower) + segment_integral(integrand, lower, upper) +
-             segment_integral(integrand, upper, upper + 1.0);
-    return tail_integral(integrand, lower, -1.0, exponent) + near + tail_integral(integrand, upper, 1.0, exponent);
+    Breakpoints<T> breakpoints;
+    breakpoints.add(kink);
+    breakpoints.add(integrand.eta2);
+    add_side_refinements(breakpoints, integrand.density, kink);
+    breakpoints.sort();
+    return breakpoints;
 }
 
-// int over (-inf, 0), split at the kink when it lies below 0.
 template <class T>
-T below_zero_quadrature(const DensityIntegrand<T>& integrand, double exponent)
+T shock_power_quadrature(const ShockPowerIntegrand<T>& integrand, double exponent)
 {
-    T kink = density_kink(integrand.density);
+    Breakpoints<T> breakpoints = shock_breakpoints(integrand);
+    std::span<const T> points = breakpoints.view();
+    T last = points.back();
+    T near = breakpoint_sum(integrand, points) + segment_integral(integrand, last, last + 1.0);
+    return tail_integral(integrand, points.front(), -1.0, exponent) + near +
+           tail_integral(integrand, last, 1.0, exponent);
+}
+
+// The kink when it lies below 0, 0, and the refinements below 0.
+template <class T>
+Breakpoints<T> below_zero_breakpoints(const Density<T>& density)
+{
+    T kink = density_kink(density);
     T lower{0.0};
     if (ad::value_of(kink) < 0.0)
     {
         lower = kink;
     }
-    T near = segment_integral(integrand, lower - 1.0, lower) + segment_integral(integrand, lower, T{0.0});
-    return tail_integral(integrand, lower, -1.0, exponent) + near;
+    Breakpoints<T> breakpoints;
+    breakpoints.add(lower);
+    breakpoints.add(T{0.0});
+    add_side_refinements(breakpoints, density, kink);
+    breakpoints.sort();
+    while (ad::value_of(breakpoints.points[breakpoints.count - 1]) > 0.0)
+    {
+        --breakpoints.count;
+    }
+    return breakpoints;
+}
+
+// int over (-inf, 0).
+template <class T>
+T below_zero_quadrature(const DensityIntegrand<T>& integrand, double exponent)
+{
+    Breakpoints<T> breakpoints = below_zero_breakpoints(integrand.density);
+    std::span<const T> points = breakpoints.view();
+    return tail_integral(integrand, points.front(), -1.0, exponent) + breakpoint_sum(integrand, points);
 }
 
 }

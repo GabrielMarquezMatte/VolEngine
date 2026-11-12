@@ -396,13 +396,13 @@ T shock_moment(std::span<const T> theta, const Layout& layout, std::size_t i)
     {
         eta1 = theta[layout.asymmetry_begin() + i];
     }
-    dist::ShapeParameters<T> shape = shape_parameters_of(theta, layout);
+    dist::ShapeParameters<T> parameters = shape_parameters_of(theta, layout);
     T power = power_of(theta, layout);
     if (layout.eta2 == 0)
     {
-        return dist::asymmetric_moment(layout.dist, shape, eta1, power);
+        return dist::asymmetric_moment(layout.dist, parameters, eta1, power);
     }
-    return dist::shifted_moment(layout.dist, shape, eta1, theta[layout.eta2_begin() + i], power);
+    return dist::shifted_moment(layout.dist, parameters, eta1, theta[layout.eta2_begin() + i], power);
 }
 
 template <class T>

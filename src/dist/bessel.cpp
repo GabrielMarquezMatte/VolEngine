@@ -85,7 +85,7 @@ double boost_log_k(double order, double x)
 
 // order >= 0 and x < kAsymptoticFrom. Beside 5/2, K_v = K_(v-2) + 2 (v - 1) / x K_(v-1), from orders Boost
 // takes by its general method.
-double boost_log_k_outside_five_halves(double order, double x)
+double log_k_avoiding_five_halves_shortcut(double order, double x)
 {
     if (std::fabs(4.0 * order * order - 25.0) >= 8.0 * x * kFiveHalvesBand)
     {
@@ -112,7 +112,7 @@ double log_bessel_k(double order, double x)
     {
         return scaled_recurrence_log_k(std::fabs(order), x);
     }
-    return boost_log_k_outside_five_halves(std::fabs(order), x);
+    return log_k_avoiding_five_halves_shortcut(std::fabs(order), x);
 }
 
 }
