@@ -27,13 +27,14 @@ them, those models fitted in batches behind a C API and a Python package.
           \     |     /
             src/ad                 dual numbers, digamma
               |
-        src/linalg                 Cholesky, least squares
-              |
         src/core   context, spec, panel
+
+  src/linalg   Cholesky, least squares (depends on nothing; used by model and fit)
 ```
 
-Dependencies point one way: `core` <- `ad` <- `mean`, `garch`, `dist` <- `model` <- `fit` <- `capi`, `core` <- `linalg` <- `model`, and
-`optim` <- `fit`. Nothing in `src/` includes from `src/capi/` except `capi` itself. Everything below the C API is
+Dependencies point one way: `core` <- `ad` <- `mean`, `garch`, `dist` <- `model` <- `fit` <- `capi`, and
+`optim` <- `fit`. `linalg` sits beside the stack: it depends on nothing, and both `model` (the start values and the
+backcast with mean regressors) and `fit` (the standard errors) use it. Nothing in `src/` includes from `src/capi/` except `capi` itself. Everything below the C API is
 internal and may change in any release; only the header is a contract, and the Python package is a consumer of it
 like any other wrapper would be.
 
@@ -61,7 +62,7 @@ like any other wrapper would be.
 | `src/dist/moments.hpp`, `moments.cpp` | Expected absolute shock, P(z < 0) and the fGARCH news moments (Gauss-Legendre quadrature for the shifted and the asymmetric ones) |
 | `src/model/data.hpp` | `Data`: the series and its row-major regressor matrices (mean and variance) |
 | `src/model/layout.hpp`, `layout.cpp` | `Layout`: parameter blocks (gamma, eta1, eta2, power), offsets, count, `ParameterKind` of each parameter, rugarch names of a `Spec`, and the role of each parameter (estimated, fixed or derived; `estimated_count`) |
-| `src/model/likelihood.hpp`, `likelihood.cpp` | `loglik<T>`: the log-likelihood (under variance targeting it computes omega from the current residuals, so the AD carries the dependence) with its per-observation terms, residuals and variances, and the backcast (from the least squares of r on the mean regressors, when there are any); dispatches by model to the recursion; instantiated for `double` and `Dual<8>`, `Dual<16>`, `Dual<32>`, `Dual<42>` |
+| `src/model/likelihood.hpp`, `likelihood.cpp` | `loglik<T>`: the log-likelihood (under variance targeting it computes omega from the current residuals, so the AD carries the dependence) with its per-observation terms, residuals and variances, and the backcast (from the least squares of r on the mean regressors, when there are any); dispatches by model to the recursion; instantiated for `double` and `Dual<8>`, `Dual<16>`, `Dual<32>`, `Dual<59>` |
 | `src/model/weight_terms.hpp` | The weight block seen as terms that sum to the persistence: fixed terms are constants and the free ones share the remaining budget (logistic and softmax) |
 | `src/model/parameter_map.*`, `start_values.*` | Layout-driven map between the unconstrained and natural parameter spaces, a template over the scalar type; validity check, start values, and `on_boundary` (parameters left out of the standard-error blocks) |
 | `src/optim/lbfgs.hpp` (+ `curvature_memory.hpp`, `line_search.hpp`, `vector_math.hpp`) | L-BFGS minimizer, a template over the objective |
@@ -135,12 +136,25 @@ into statuses.
 
 The log-likelihood is written once, as a template over the scalar type (`src/model/likelihood.cpp`, with
 `src/mean`, `src/garch` and `src/dist` as its pieces). `fit_one` instantiates it with `double` for values and
-with `ad::Dual<N>` (N = 8, 16, 32 or 42, the narrowest that holds k parameters; 42 holds the widest layout, orders 6 with every block
-and `ghyp`) for gradients: the unconstrained
+with `ad::Dual<N>` (N = 8, 16, 32 or 59, the narrowest that holds k parameters; 59 is `kMaxParameterCount`, the widest layout: orders 6
+with every block, `ghyp`, `archm` and 8 regressors in each of the mean and the variance) for gradients: the unconstrained
 parameters are seeded as dual variables, `model::parameter_map` maps them to the natural parameters inside the same
 computation, and the derivative of the objective comes out of one evaluation. `model::loglik` picks the variance recursion by `Layout::model`. A new model or
 distribution adds a template function, a `Layout` entry and its `ParameterKind`s; the driver and the optimizer do not
 change, and the standard errors only need the model's boundary rule in `on_boundary`.
+
+## Regressors and ARCH-in-mean
+
+`model::Data` (`src/model/data.hpp`) is what the likelihood reads: the series plus two row-major regressor matrices
+(mean and variance), all borrowed. A series without regressors is `Data{r}`, and the `loglik` overload that takes a
+span of returns builds it. The variance recursions in `src/garch` are written in step form: one function computes
+sigma^2 at t from the state at t-1 and the intercept shift c_t of the variance regressors, so the same step serves
+the plain loop and the joint one. Without `archm` the mean residuals are computed first, for the whole series, and
+then the variance (the loop of plan 2d, bit for bit). With `archm` the mean at t needs sigma_t, so one joint loop
+advances the variance step and the mean residual together. The pre-sample residuals e^0 (the mean without the
+`archm` term) feed the sample initialization and variance targeting. `src/linalg` gives the OLS start of `mu` and the
+mean coefficients, and the backcast residuals, by minimum-norm least squares, so a collinear column leaves a finite
+start. The conventions, with their sources, are in [docs/guide/validation.md](docs/guide/validation.md).
 
 ## Performance method
 
