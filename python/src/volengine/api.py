@@ -173,7 +173,9 @@ class Context:
     @overload
     def fit(self, spec: Sequence[Spec], data: ArrayLike, **keywords: Unpack[FitKeywords]) -> NDArray[np.object_]: ...
 
-    def fit(self, spec: Spec | Sequence[Spec], data: ArrayLike, **keywords: Unpack[FitKeywords]) -> Fit | NDArray[np.object_]:
+    def fit(
+        self, spec: Spec | Sequence[Spec], data: ArrayLike, **keywords: Unpack[FitKeywords]
+    ) -> Fit | NDArray[np.object_]:
         """Fit every spec on every series of `data`: (T,) or (T, N), optionally with row ranges.
 
         One spec and a 1D series give a Fit; one spec and (T, N) data give an object array of
