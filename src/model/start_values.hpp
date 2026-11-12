@@ -9,7 +9,10 @@
 namespace ve::model
 {
 
-// Natural-space start: mu = mean(r), ARMA = 0, beta_j = 0.9 / q, shape = 8 (std) or 2 (ged), and by model
+// Natural-space start: mu = mean(r), ARMA = 0, beta_j = 0.9 / q, the distribution parameters
+//   std: shape 8; ged: shape 2; sstd: (xi, nu) = (1, 8); sged: (1, 2); nig: (rho, zeta) = (0, 2);
+//   ghyp: (rho, zeta, lambda) = (0, 2, -0.5); jsu: (nu, tau) = (0, 2),
+// and by model
 //   sGARCH:   omega = 0.05 var, alpha = 0.05 / p
 //   eGARCH:   omega = 0.1 log var, alpha = 0, gamma = 0.1 / p
 //   gjrGARCH: omega = 0.05 var, alpha = 0.03 / p, gamma = 0.04 / p
