@@ -32,7 +32,8 @@ namespace ve::model
 std::vector<double> start_values(const Data& data, const Layout& layout);
 std::vector<double> start_values(std::span<const double> r, const Layout& layout);
 
-// Mean and population standard deviation of r, and of each regressor column, with 1 for a constant column.
+// Mean and population standard deviation of r, the population standard deviation of each regressor column, with
+// 1 for a constant column, and the mean of each mean regressor column.
 Standardization standardization_of(const Data& data);
 Standardization standardization_of(std::span<const double> r);
 

@@ -214,6 +214,24 @@ void regressors_to_natural(std::span<const T> u, std::span<T> theta, const Layou
     }
 }
 
+// mu is estimated beside mean regressors, and its u then sets the mean level at the column centers.
+bool mean_is_centered(const Layout& layout)
+{
+    return layout.include_mean && layout.mxreg > 0 && layout.is_estimated(layout.mu());
+}
+
+// sum_k mxreg_k center_k, with the natural mxreg_k.
+template <class T>
+T regressor_offset(std::span<const T> theta, const Layout& layout, const Standardization& standardization)
+{
+    T offset{0.0};
+    for (std::size_t k = 0; k < static_cast<std::size_t>(layout.mxreg); ++k)
+    {
+        offset = offset + theta[layout.mxreg_begin() + k] * standardization.mean_regressor_center[k];
+    }
+    return offset;
+}
+
 void regressors_to_unconstrained(std::span<const double> theta, std::span<double> u, const Layout& layout,
                                  const Standardization& standardization)
 {
@@ -619,6 +637,10 @@ void to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout,
     shock_parameters_to_natural<T>(u, theta, layout);
     write_fixed<T>(theta, layout);
     regressors_to_natural<T>(u, theta, layout, standardization);
+    if (mean_is_centered(layout))
+    {
+        theta[layout.mu()] = theta[layout.mu()] - regressor_offset<T>(theta, layout, standardization);
+    }
     weights_to_natural<T>(u, theta, layout);
     if (layout.model == Model::CsGarch)
     {
@@ -666,7 +688,9 @@ void to_unconstrained(std::span<const double> theta, std::span<double> u, const 
     double scale = standardization.scale;
     if (layout.include_mean)
     {
-        u[layout.mu()] = (theta[layout.mu()] - standardization.location) / scale;
+        double mu = theta[layout.mu()];
+        mu = mean_is_centered(layout) ? mu + regressor_offset<double>(theta, layout, standardization) : mu;
+        u[layout.mu()] = (mu - standardization.location) / scale;
     }
     std::copy(theta.begin() + static_cast<std::ptrdiff_t>(layout.ar_begin()),
               theta.begin() + static_cast<std::ptrdiff_t>(layout.archm_index()),

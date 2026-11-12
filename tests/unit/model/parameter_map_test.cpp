@@ -1004,10 +1004,10 @@ TEST(ParameterMap, DualMatchesDoubleSkewed)
     }
 }
 
-void expect_jacobian_matches(const Layout& layout, std::span<const double> u)
+void expect_jacobian_matches(const Layout& layout, std::span<const double> u,
+                             const Standardization& standardization = Standardization{0.02, 1.7})
 {
     using Dual16 = ve::ad::Dual<16>;
-    const Standardization standardization{0.02, 1.7};
     std::vector<Dual16> seeds;
     for (std::size_t i = 0; i < u.size(); ++i)
     {
@@ -1490,6 +1490,7 @@ Standardization regressor_standardization(double factor, double regressor_factor
     standardization.mean_regressor_scale = {1.3 * regressor_factor, 0.4 * regressor_factor, 1.0, 1.0,
                                             1.0,                    1.0,                    1.0, 1.0};
     standardization.variance_regressor_scale = {2.1 * regressor_factor, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+    standardization.mean_regressor_center = {0.8 * regressor_factor, -1.5 * regressor_factor};
     return standardization;
 }
 
@@ -1590,14 +1591,39 @@ TEST(ParameterMap, NaturalScaleOfEachLocation)
     EXPECT_EQ(ve::model::natural_scale(layout, standardization, theta, layout.archm_index()), 1.0);
 }
 
+// mu, mxreg and the apARCH vxreg, whose scale reads the natural delta, depend on other entries of u.
+TEST(ParameterMap, DualJacobianMatchesFiniteDifferencesWithRegressors)
+{
+    Layout layout = regressor_layout(Model::ApArch, 2, 2, 1);
+    std::vector<double> u(layout.count());
+    to_unconstrained(regressor_interior_theta(layout), u, layout, regressor_standardization(1.0, 1.0));
+    expect_jacobian_matches(layout, u, regressor_standardization(1.0, 1.0));
+}
+
+// A shift c of column k moves mu by -mxreg_k c and leaves u unchanged.
+TEST(ParameterMap, ShiftedRegressorMovesMuAlone)
+{
+    Layout layout = regressor_layout(Model::SGarch, 0, 2, 0);
+    std::vector<double> theta = regressor_interior_theta(layout);
+    Standardization standardization = regressor_standardization(1.0, 1.0);
+    std::vector<double> u(theta.size());
+    to_unconstrained(theta, u, layout, standardization);
+    standardization.mean_regressor_center[1] += 100.0;
+    theta[layout.mu()] -= theta[layout.mxreg_begin() + 1] * 100.0;
+    std::vector<double> shifted(theta.size());
+    to_unconstrained(theta, shifted, layout, standardization);
+    EXPECT_NEAR(shifted[layout.mu()], u[layout.mu()], 1e-12);
+}
+
 TEST(ParameterMap, FixedRegressorsKeepTheirValue)
 {
     Layout layout = ve::model::layout_of(
-        {.fixed = {{"mxreg1", 0.7}, {"vxreg1", -0.02}}, .mxreg = 2, .vxreg = 1, .archm = 2});
+        {.fixed = {{"mu", 0.05}, {"mxreg1", 0.7}, {"vxreg1", -0.02}}, .mxreg = 2, .vxreg = 1, .archm = 2});
     const Standardization standardization = regressor_standardization(1.0, 1.0);
     std::vector<double> u(layout.count(), 0.4);
     std::vector<double> theta(layout.count());
     to_natural<double>(u, theta, layout, standardization);
+    EXPECT_EQ(theta[layout.mu()], 0.05);
     EXPECT_EQ(theta[layout.mxreg_begin()], 0.7);
     EXPECT_EQ(theta[layout.vxreg_begin()], -0.02);
     EXPECT_NEAR(theta[layout.mxreg_begin() + 1], 0.4 * 0.7 / 0.4, 1e-15);
@@ -1632,7 +1658,10 @@ TEST(ParameterMap, ConstantColumnScaleIsOne)
     Standardization varying = ve::model::standardization_of(ve::model::Data{r, {x, 2}});
     EXPECT_EQ(varying.mean_regressor_scale[1], 0.5);
     EXPECT_EQ(varying.variance_regressor_scale[0], 1.0);
+    EXPECT_EQ(constant.mean_regressor_center[0], 1.0);
+    EXPECT_DOUBLE_EQ(varying.mean_regressor_center[1], 0.5);
     Standardization plain = ve::model::standardization_of(r);
+    EXPECT_EQ(plain.mean_regressor_center[0], 0.0);
     EXPECT_EQ(plain.location, varying.location);
     EXPECT_EQ(plain.scale, varying.scale);
 }

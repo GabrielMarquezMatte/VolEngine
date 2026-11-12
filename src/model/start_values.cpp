@@ -396,17 +396,25 @@ void set_mean_start(std::vector<double>& theta, const Data& data, const Layout& 
     }
 }
 
-// The population standard deviation of column k, 1 when the column is constant.
-double column_scale(const RegressorMatrix& matrix, std::size_t k, std::size_t rows)
+double column_mean(const RegressorMatrix& matrix, std::size_t k, std::size_t rows)
 {
     double sum = 0.0;
-    bool constant = true;
     for (std::size_t t = 0; t < rows; ++t)
     {
         sum += matrix.at(t, k);
+    }
+    return sum / static_cast<double>(rows);
+}
+
+// The population standard deviation of column k, 1 when the column is constant.
+double column_scale(const RegressorMatrix& matrix, std::size_t k, std::size_t rows)
+{
+    bool constant = true;
+    for (std::size_t t = 0; t < rows; ++t)
+    {
         constant = constant && matrix.at(t, k) == matrix.at(0, k);
     }
-    double mean = sum / static_cast<double>(rows);
+    double mean = column_mean(matrix, k, rows);
     double squares = 0.0;
     for (std::size_t t = 0; t < rows; ++t)
     {
@@ -431,6 +439,10 @@ Standardization standardization_of(const Data& data)
     Standardization standardization{mean, std::sqrt(sample_variance(data.r, mean))};
     fill_column_scales(data.mean, data.r.size(), standardization.mean_regressor_scale);
     fill_column_scales(data.variance, data.r.size(), standardization.variance_regressor_scale);
+    for (std::size_t k = 0; k < data.mean.columns; ++k)
+    {
+        standardization.mean_regressor_center[k] = column_mean(data.mean, k, data.r.size());
+    }
     return standardization;
 }
 
