@@ -31,8 +31,8 @@ struct Standardization
 
 // Both spaces follow the Layout order, and each unconstrained entry sits at the position of the natural one it
 // maps to; s = scale. mu = location + s m, less sum_k mxreg_k center_k when mu is estimated beside mean
-// regressors, so that shifting a column moves mu alone; ARMA unchanged; skew: xi = exp(x) (sstd, sged),
-// rho = 2 logistic(x) - 1 (nig, ghyp), nu = x (jsu); shape: 2 + exp(x) (std, sstd), exp(x) (the others);
+// regressors, so that shifting a column moves mu alone; ARMA unchanged; arfima d = 1e-8 + (0.5 - 1e-8) logistic(x);
+// skew: xi = exp(x) (sstd, sged), rho = 2 logistic(x) - 1 (nig, ghyp), nu = x (jsu); shape: 2 + exp(x) (std, sstd), exp(x) (the others);
 // ghlambda = x.
 // The weights are entries >= 0 summing to the persistence P: the first weight position holds v, with
 // P = logistic(v) (1 - 1e-8), and the others the logits of softmax(w, 0):
@@ -67,13 +67,14 @@ void to_unconstrained(std::span<const double> theta, std::span<double> u, const 
 double natural_scale(const Layout& layout, const Standardization& standardization, std::span<const double> theta,
                      std::size_t index);
 
-// All entries finite; skew, shape and ghlambda in their domain; |eta1|, |apARCH gamma| < 1; delta,
-// lambda > 0; omega > 0 (but in eGARCH); weights >= 0 with P < 1 - 1e-8 (iGARCH: alpha, beta_{<q} >= 0
+// All entries finite; 1e-8 < arfima d < 0.5; skew, shape and ghlambda in their domain; |eta1|, |apARCH gamma| < 1;
+// delta, lambda > 0; omega > 0 (but in eGARCH); weights >= 0 with P < 1 - 1e-8 (iGARCH: alpha, beta_{<q} >= 0
 // summing to at most 1), so kappa is finite; gjrGARCH: 0 < pi < 1; csGARCH: P < rho < 1 - 1e-8 and
 // 0 <= phi <= sum(beta). The derived entries (the iGARCH beta_q, omega under variance targeting) are not read.
 bool is_valid(std::span<const double> theta, const Layout& layout);
 
-// Whether theta[index] sits on the boundary of its domain, where it leaves the Hessian: a weight below 1e-8
+// Whether theta[index] sits on the boundary of its domain, where it leaves the Hessian: an arfima d within 1e-8
+// of 1e-8 or of 0.5; a weight below 1e-8
 // (gjrGARCH: alpha_i below 1e-8 marks alpha_i, alpha_i + gamma_i below 1e-8 marks gamma_i, and with gamma_i
 // fixed and alpha_i free, alpha_i - max(0, -gamma_i) below 1e-8 marks alpha_i); |eta1_i| or
 // |apARCH gamma_i| above 1 - 1e-8; csGARCH phi below 1e-8, or rho - P below 1e-8; the iGARCH derived beta_q;

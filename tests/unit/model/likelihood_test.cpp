@@ -1405,8 +1405,8 @@ protected:
                                      .arfima = arfima});
     }
 
-    // The point of the same grid without regressors, with 0.3 in the arfima slot, 0.15 in the archm slot, the coefficients 0.3, -0.2 put in
-    // the mxreg block and 0.01 in the vxreg block.
+    // The point of the same grid without regressors, with 0.3 in the arfima slot, 0.15 in the archm slot, the
+    // coefficients 0.3, -0.2 put in the mxreg block and 0.01 in the vxreg block.
     std::vector<double> theta_of_case() const
     {
         Layout plain = layout;

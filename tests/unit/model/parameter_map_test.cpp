@@ -1666,4 +1666,61 @@ TEST(ParameterMap, ConstantColumnScaleIsOne)
     EXPECT_EQ(plain.scale, varying.scale);
 }
 
+Layout arfima_layout(Model model)
+{
+    return ve::model::layout_of({.model = model, .ar = 1, .dist = Dist::Norm, .arfima = true});
+}
+
+std::vector<double> arfima_theta(const Layout& layout, double d)
+{
+    Layout plain = layout;
+    plain.arfima = false;
+    std::vector<double> theta = model_interior_theta(plain);
+    theta.insert(theta.begin() + static_cast<std::ptrdiff_t>(layout.arfima_index()), d);
+    return theta;
+}
+
+TEST(ParameterMap, ArfimaRoundTrip)
+{
+    const Standardization standardization{0.03, 0.7};
+    for (Model model : {Model::SGarch, Model::EGarch, Model::ApArch, Model::CsGarch})
+    {
+        Layout layout = arfima_layout(model);
+        for (double d : {1e-6, 0.25, 0.49})
+        {
+            SCOPED_TRACE(name_of(layout) + ", d " + std::to_string(d));
+            std::vector<double> theta = arfima_theta(layout, d);
+            ASSERT_TRUE(is_valid(theta, layout));
+            std::vector<double> u(theta.size());
+            std::vector<double> back(theta.size());
+            to_unconstrained(theta, u, layout, standardization);
+            to_natural<double>(u, back, layout, standardization);
+            for (std::size_t i = 0; i < theta.size(); ++i)
+            {
+                EXPECT_NEAR(back[i], theta[i], 1e-12 * std::max(1.0, std::abs(theta[i]))) << "parameter " << i;
+            }
+            EXPECT_NEAR(back[layout.arfima_index()], d, 1e-12 * d);
+        }
+    }
+}
+
+TEST(ParameterMap, ArfimaValidity)
+{
+    Layout layout = arfima_layout(Model::SGarch);
+    EXPECT_TRUE(is_valid(arfima_theta(layout, 0.25), layout));
+    for (double d : {1e-8, 0.0, -0.1, 0.5, 0.6})
+    {
+        EXPECT_FALSE(is_valid(arfima_theta(layout, d), layout)) << "d " << d;
+    }
+}
+
+TEST(ParameterMap, ArfimaBoundary)
+{
+    Layout layout = arfima_layout(Model::SGarch);
+    std::size_t index = layout.arfima_index();
+    EXPECT_TRUE(ve::model::on_boundary(layout, arfima_theta(layout, 1.5e-8), index));
+    EXPECT_TRUE(ve::model::on_boundary(layout, arfima_theta(layout, 0.5 - 5e-9), index));
+    EXPECT_FALSE(ve::model::on_boundary(layout, arfima_theta(layout, 0.25), index));
+}
+
 }

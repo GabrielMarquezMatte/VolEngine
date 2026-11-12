@@ -10,7 +10,7 @@
 namespace ve::model
 {
 
-// Natural-space start: mu = mean(r), ARMA = 0, beta_j = 0.9 / q, the distribution parameters
+// Natural-space start: mu = mean(r), ARMA = 0, arfima = 0.25, beta_j = 0.9 / q, the distribution parameters
 //   std: shape 8; ged: shape 2; sstd: (xi, nu) = (1, 8); sged: (1, 2); nig: (rho, zeta) = (0, 2);
 //   ghyp: (rho, zeta, lambda) = (0, 2, -0.5); jsu: (nu, tau) = (0, 2),
 // and by model
