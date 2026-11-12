@@ -28,15 +28,31 @@ models <- c(sgarch = "sGARCH", egarch = "eGARCH", gjrgarch = "gjrGARCH", aparch 
 
 # rugarch's garchOrder is c(ARCH order, GARCH order): VolEngine's (p, q).
 case_spec <- function(case) {
-    variance <- list(model = models[[case$model]], garchOrder = c(case$p, case$q))
+    variance <- list(model = models[[case$model]], garchOrder = c(case$p, case$q),
+                     variance.targeting = isTRUE(case$variance_targeting))
     if (!is.null(case$submodel)) {
         variance$submodel <- toupper(case$submodel)
     }
     ugarchspec(
         variance.model = variance,
         mean.model = list(armaOrder = unlist(case$arma), include.mean = case$include_mean),
-        distribution.model = case$dist
+        distribution.model = case$dist,
+        fixed.pars = if (is.null(case$fixed)) list() else case$fixed
     )
+}
+
+# A case with every parameter fixed is an evaluation: ugarchfilter, no optimizer.
+is_evaluation <- function(spec) {
+    pars <- spec@model$pars
+    all(pars[pars[, "Include"] == 1, "Fixed"] == 1)
+}
+
+# rugarch lists the fixed parameters in place but appends the variance-targeting omega to coef(); VolEngine's
+# order is rugarch's parameter table.
+in_model_order <- function(values, fit) {
+    position <- match(names(values), rownames(fit@model$pars))
+    stopifnot(!anyNA(position))
+    values[order(position)]
 }
 
 # rugarch's robust.se.coef is a Newey-West sandwich (Bartlett kernel, floor(1.2 T^(1/3)) lags). The QML
@@ -50,14 +66,21 @@ qml_robust_se <- function(fit) {
     as.list(se)
 }
 
+# The parameters the optimizer moved: neither fixed nor derived (the iGARCH beta_q, the variance-targeting omega).
+estimated_names <- function(fit) {
+    ipars <- fit@fit$ipars
+    rownames(ipars)[ipars[, "Estimate"] == 1]
+}
+
 block <- function(params, name) {
     params[grepl(sprintf("^%s[0-9]+$", name), names(params))]
 }
 
-# The weights are the non-negative entries that sum to the persistence P. A power-family weight is alpha * kappa,
-# taken from rugarch's persistence, so these cases have p = 1. The gjrGARCH weights use pi = P(z < 0), which
-# rugarch integrates into its persistence P = sum(alpha) + sum(beta) + pi sum(gamma).
-interior_weights <- function(case, params, persistence) {
+# The weights are the non-negative entries that sum to the persistence P, named by their position. A power-family
+# weight is alpha * kappa, taken from rugarch's persistence, so these cases have p = 1. The gjrGARCH weights use
+# pi = P(z < 0), which rugarch integrates into its persistence P = sum(alpha) + sum(beta) + pi sum(gamma); with
+# gamma_i fixed and alpha_i estimated they are alpha_i - max(0, -gamma_i) and max(0, -gamma_i) + pi gamma_i.
+interior_weights <- function(case, params, persistence, estimated) {
     alpha <- block(params, "alpha")
     beta <- block(params, "beta")
     if (case$model == "egarch") {
@@ -66,24 +89,30 @@ interior_weights <- function(case, params, persistence) {
     if (case$model == "gjrgarch") {
         gamma <- block(params, "gamma")
         below_zero <- (persistence - sum(alpha) - sum(beta)) / sum(gamma)
-        return(c((1 - below_zero) * alpha, beta, below_zero * (alpha + gamma)))
+        split <- names(alpha) %in% estimated & !(names(gamma) %in% estimated)
+        floor <- pmax(0, -gamma)
+        alpha_weight <- ifelse(split, alpha - floor, (1 - below_zero) * alpha)
+        gamma_weight <- ifelse(split, floor + below_zero * gamma, below_zero * (alpha + gamma))
+        return(c(setNames(alpha_weight, names(alpha)), beta, setNames(gamma_weight, names(gamma))))
     }
     if (case$model %in% c("aparch", "fgarch")) {
         stopifnot(case$p == 1)
-        return(c(alpha1_kappa1 = persistence - sum(beta), beta))
+        return(c(alpha1 = persistence - sum(beta), beta))
     }
     c(alpha, beta)
 }
 
-# Every weight > 1e-4 and P < 0.999 (iGARCH: P = 1 by construction); |eta1| and the apARCH |gamma| < 0.999;
-# csGARCH: rho - P > 1e-4 and phi > 1e-4.
-interior_failures <- function(case, params, persistence) {
-    weights <- interior_weights(case, params, persistence)
+# Only the estimated parameters are held to the rule. Every estimated weight > 1e-4 and P < 0.999 (iGARCH: P = 1
+# by construction); |eta1| and the apARCH |gamma| < 0.999; csGARCH: rho - P > 1e-4 and phi > 1e-4.
+interior_failures <- function(case, params, persistence, estimated) {
+    weights <- interior_weights(case, params, persistence, estimated)
+    weights <- weights[names(weights) %in% estimated]
     failures <- weights[weights <= 1e-4]
     if (case$model != "igarch" && persistence >= 0.999) {
         failures <- c(failures, persistence = persistence)
     }
     asymmetry <- c(block(params, "eta1"), block(params, "gamma"))
+    asymmetry <- asymmetry[names(asymmetry) %in% estimated]
     if (case$model %in% c("aparch", "fgarch")) {
         failures <- c(failures, asymmetry[abs(asymmetry) >= 0.999])
     }
@@ -98,11 +127,12 @@ interior_failures <- function(case, params, persistence) {
 # |ghlambda| < 10. A distribution parameter must also stay off rugarch's own bounds (its LB and UB columns).
 distribution_failures <- function(case, fit) {
     params <- coef(fit)
+    params <- params[names(params) %in% estimated_names(fit)]
     failures <- c()
-    if (case$dist %in% c("nig", "ghyp")) {
+    if (case$dist %in% c("nig", "ghyp") && "skew" %in% names(params)) {
         failures <- c(failures, params["skew"][abs(params[["skew"]]) >= 0.999])
     }
-    if (case$dist %in% c("sstd", "sged")) {
+    if (case$dist %in% c("sstd", "sged") && "skew" %in% names(params)) {
         failures <- c(failures, params["skew"][params[["skew"]] <= 0.05 || params[["skew"]] >= 20])
     }
     if ("shape" %in% names(params)) {
@@ -120,7 +150,8 @@ distribution_failures <- function(case, fit) {
 
 check_interior <- function(case, fit, persistence) {
     params <- coef(fit)
-    failures <- c(interior_failures(case, params, persistence), distribution_failures(case, fit))
+    failures <- c(interior_failures(case, params, persistence, estimated_names(fit)),
+                  distribution_failures(case, fit))
     if (length(failures) > 0) {
         stop(sprintf("rugarch estimate on case %s is on the boundary: %s", case$id,
                      paste(names(failures), signif(failures, 4), sep = " = ", collapse = ", ")))
@@ -137,8 +168,35 @@ hessian_step <- function(case) {
     1e-3
 }
 
+# The fixed point evaluated: infocriteria() of a uGARCHfilter counts no parameter. No standard error.
+filter_case <- function(case, spec, series) {
+    filtered <- ugarchfilter(spec, series[[case$series]])
+    params <- in_model_order(coef(filtered), filtered)
+    none <- as.list(setNames(rep(NA_real_, length(params)), names(params)))
+    criteria <- infocriteria(filtered)
+    list(
+        case = case$id,
+        series = case$series,
+        loglik = likelihood(filtered),
+        params = as.list(params),
+        se = none,
+        robust_se = none,
+        qml_robust_se = none,
+        persistence = persistence(filtered)[[1]],
+        sigma = as.numeric(sigma(filtered)),
+        aic = criteria["Akaike", 1],
+        bic = criteria["Bayes", 1],
+        hqic = criteria["Hannan-Quinn", 1],
+        sic = criteria["Shibata", 1]
+    )
+}
+
 fit_case <- function(case, series) {
-    fit <- ugarchfit(case_spec(case), series[[case$series]], solver = "hybrid",
+    spec <- case_spec(case)
+    if (is_evaluation(spec)) {
+        return(filter_case(case, spec, series))
+    }
+    fit <- ugarchfit(spec, series[[case$series]], solver = "hybrid",
                      numderiv.control = list(hess.d = hessian_step(case)))
     if (convergence(fit) != 0) {
         stop(sprintf("rugarch did not converge on case %s", case$id))
@@ -152,10 +210,10 @@ fit_case <- function(case, series) {
         case = case$id,
         series = case$series,
         loglik = likelihood(fit),
-        params = as.list(coef(fit)),
-        se = as.list(fit@fit$matcoef[, " Std. Error"]),
-        robust_se = as.list(fit@fit$robust.matcoef[, " Std. Error"]),
-        qml_robust_se = qml_robust_se(fit),
+        params = as.list(in_model_order(coef(fit), fit)),
+        se = as.list(in_model_order(fit@fit$matcoef[, " Std. Error"], fit)),
+        robust_se = as.list(in_model_order(fit@fit$robust.matcoef[, " Std. Error"], fit)),
+        qml_robust_se = in_model_order(qml_robust_se(fit), fit),
         persistence = persistence,
         sigma = as.numeric(sigma(fit)),
         aic = criteria["Akaike", 1],

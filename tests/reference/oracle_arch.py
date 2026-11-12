@@ -131,6 +131,14 @@ def interior_weights(model: str, params: dict[str, Any], pi: float) -> list[floa
 def check_supported(case: dict[str, Any]) -> None:
     if case["arma"] != [0, 0] or not case["include_mean"] or case["model"] not in VOLATILITIES:
         raise ValueError(f"case {case['id']}: the arch oracle covers s, gjr and eGARCH with a constant mean")
+    if case.get("variance_targeting", False):
+        raise ValueError(f"case {case['id']}: arch has no variance targeting")
+
+
+def check_evaluation_supported(case: dict[str, Any]) -> None:
+    """The fixed values are passed to arch as they are: no eGARCH omega centering, no skew-t conversion."""
+    if case["model"] == "egarch" or case["dist"] == "sstd":
+        raise ValueError(f"case {case['id']}: the arch evaluation covers sGARCH and gjrGARCH, symmetric shocks")
 
 
 def distribution_interior(params: dict[str, Any]) -> bool:
@@ -147,19 +155,53 @@ def check_interior(case: dict[str, Any], params: dict[str, Any], pi: float) -> N
         raise RuntimeError(f"arch estimate on case {case['id']} is on the boundary: {params}")
 
 
-def fit(case: dict[str, Any], values: NDArray[np.float64], cov_type: Literal["classic", "robust"]) -> Any:
+def case_model(case: dict[str, Any], values: NDArray[np.float64]) -> Any:
     dist = DISTRIBUTIONS[case["dist"]]
     vol, asymmetry = VOLATILITIES[case["model"]]
     o = asymmetry * case["p"]
-    model = arch_model(values, mean="Constant", vol=vol, p=case["p"], o=o, q=case["q"], dist=dist, rescale=False)
-    result = model.fit(disp="off", cov_type=cov_type)
+    return arch_model(values, mean="Constant", vol=vol, p=case["p"], o=o, q=case["q"], dist=dist, rescale=False)
+
+
+def fit(case: dict[str, Any], values: NDArray[np.float64], cov_type: Literal["classic", "robust"]) -> Any:
+    result = case_model(case, values).fit(disp="off", cov_type=cov_type)
     if result.convergence_flag != 0:
         raise RuntimeError(f"arch did not converge on case {case['id']}: {result.optimization_result.message}")
     return result
 
 
+def fix_case(case: dict[str, Any], values: NDArray[np.float64]) -> dict[str, Any]:
+    """Every parameter fixed: arch's fix() at the fixed point, with the backcast of its fit (the residuals at the
+    starting values). Its criteria count every parameter, VolEngine's (rugarch's ugarchfilter) none, so they are
+    left out; no standard error."""
+    check_evaluation_supported(case)
+    model = case_model(case, values)
+    names = [*model.parameter_names(), *model.volatility.parameter_names(), *model.distribution.parameter_names()]
+    renamed_names = [volengine_name(case["model"], name) for name in names]
+    if set(renamed_names) != set(case["fixed"]):
+        raise ValueError(f"case {case['id']}: the arch oracle evaluates only a case with every parameter fixed")
+    result = model.fix([case["fixed"][name] for name in renamed_names])
+    params = renamed(case["model"], result.params)
+    none = dict.fromkeys(params)
+    return {
+        "case": case["id"],
+        "series": case["series"],
+        "loglik": float(result.loglikelihood),
+        "params": params,
+        "se": none,
+        "robust_se": none,
+        "persistence": persistence(case["model"], params, below_zero(case["dist"], result.params)),
+        "sigma": [float(value) for value in result.conditional_volatility],
+        "aic": None,
+        "bic": None,
+        "hqic": None,
+        "sic": None,
+    }
+
+
 def fit_case(case: dict[str, Any], values: NDArray[np.float64]) -> dict[str, Any]:
     check_supported(case)
+    if case.get("fixed"):
+        return fix_case(case, values)
     classic = fit(case, values, "classic")
     robust = fit(case, values, "robust")
     if not np.array_equal(classic.params, robust.params):
