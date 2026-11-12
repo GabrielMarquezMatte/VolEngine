@@ -129,6 +129,7 @@ if(VE_BUILD_TESTS)
         tests/unit/garch/gjrgarch_test.cpp
         tests/unit/garch/power_garch_test.cpp
         tests/unit/garch/sgarch_test.cpp
+        tests/unit/garch/step_test.cpp
         tests/unit/linalg/least_squares_test.cpp
         tests/unit/mean/arma_test.cpp
         tests/unit/model/layout_test.cpp

@@ -25,8 +25,8 @@ struct EGarchParameters
 // A lag before t = 0 has z = 0 and, as in arch, which drops its term in |z| - sqrt(2/pi), |z| = sqrt(2/pi) for
 // every distribution.
 template <class T>
-T next_log_variance(std::span<const T> residuals, const EGarchParameters<T>& p, const T& log_presample,
-                    std::span<const T> log_sigma2, std::size_t t)
+VE_FORCE_INLINE T egarch_step(std::span<const T> residuals, const EGarchParameters<T>& p,
+                              const T& log_presample, std::span<const T> log_sigma2, std::size_t t)
 {
     using std::abs;
     using std::exp;
@@ -62,7 +62,7 @@ void egarch_variance(std::span<const T> residuals, const EGarchParameters<T>& p,
     std::fill(sigma2.begin(), sigma2.begin() + static_cast<std::ptrdiff_t>(held), log_presample);
     for (std::size_t t = held; t < sigma2.size(); ++t)
     {
-        sigma2[t] = next_log_variance<T>(residuals, p, log_presample, sigma2, t);
+        sigma2[t] = egarch_step<T>(residuals, p, log_presample, sigma2, t);
     }
     std::ranges::transform(sigma2, sigma2.begin(), [](const T& log_variance) { return exp(log_variance); });
 }

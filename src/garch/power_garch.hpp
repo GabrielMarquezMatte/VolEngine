@@ -90,8 +90,8 @@ T power_shock(const T& residual, const T& sigma_power, const PowerGarchParameter
 }
 
 template <class T>
-T next_power_variance(std::span<const T> residuals, const PowerGarchParameters<T>& p, const T& presample_power,
-                      std::span<const T> sigma_power, std::size_t t)
+VE_FORCE_INLINE T power_garch_step(std::span<const T> residuals, const PowerGarchParameters<T>& p,
+                                   const T& presample_power, std::span<const T> sigma_power, std::size_t t)
 {
     T variance = intercept_at<T>(p.omega, p.intercept_shift, t);
     for (std::size_t i = 1; i <= p.alpha.size(); ++i)
@@ -122,7 +122,7 @@ void power_garch_variance(std::span<const T> residuals, const PowerGarchParamete
     std::fill(sigma2.begin(), sigma2.begin() + static_cast<std::ptrdiff_t>(held), presample_power);
     for (std::size_t t = held; t < sigma2.size(); ++t)
     {
-        sigma2[t] = next_power_variance<T>(residuals, p, presample_power, sigma2, t);
+        sigma2[t] = power_garch_step<T>(residuals, p, presample_power, sigma2, t);
     }
     T exponent = 2.0 / p.power;
     std::ranges::transform(sigma2, sigma2.begin(),

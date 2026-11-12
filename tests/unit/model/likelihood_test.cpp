@@ -1033,6 +1033,117 @@ std::vector<double> grid_theta(std::span<const double> r, const Layout& layout)
     return drawn_theta(r, layout);
 }
 
+// r of 6 points, ARMA(1,1), one mean regressor, sGARCH(1,1)-norm and ARCH-in-mean, sample init: sigma2_t, m_t, d_t and
+// e_t one after the other from the rule, the presample from e0 (the residuals without the archm term).
+TEST(Likelihood, ArchInMeanHandCase)
+{
+    const double mu = 0.03;
+    const double phi = 0.4;
+    const double theta_ma = -0.3;
+    const double xi = 0.7;
+    const double delta = 0.5;
+    const double omega = 0.02;
+    const double alpha = 0.1;
+    const double beta = 0.8;
+    const std::vector<double> x{0.5, -1.0, 1.5, 0.2, -0.7, 0.9};
+    for (int power : {1, 2})
+    {
+        SCOPED_TRACE(::testing::Message() << "archm " << power);
+        Layout layout = ve::model::layout_of({.p = 1, .q = 1, .ar = 1, .ma = 1, .dist = Dist::Norm, .mxreg = 1,
+                                              .archm = power});
+        ASSERT_EQ(layout.count(), 8u);
+        std::vector<double> theta{mu, phi, theta_ma, xi, delta, omega, alpha, beta};
+        std::vector<double> residuals(6);
+        std::vector<double> sigma2(6);
+        double ll = loglik<double>(ve::model::Data{kHandSeries, {x, 1}}, theta, layout, VarInit::Sample,
+                                   {.residuals = residuals, .sigma2 = sigma2});
+        std::vector<double> e0(6);
+        double mean_square = 0.0;
+        for (std::size_t t = 0; t < 6; ++t)
+        {
+            double d0 = kHandSeries[t] - mu - delta * x[t];
+            double previous_d0 = t == 0 ? 0.0 : kHandSeries[t - 1] - mu - delta * x[t - 1];
+            e0[t] = t == 0 ? d0 : d0 - phi * previous_d0 - theta_ma * e0[t - 1];
+            mean_square += e0[t] * e0[t] / 6.0;
+        }
+        std::vector<double> d(6);
+        std::vector<double> e(6);
+        double expected = 0.0;
+        double variance = mean_square;
+        for (std::size_t t = 0; t < 6; ++t)
+        {
+            if (t > 0)
+            {
+                variance = omega + alpha * e[t - 1] * e[t - 1] + beta * variance;
+            }
+            double sigma_power = power == 1 ? std::sqrt(variance) : variance;
+            d[t] = kHandSeries[t] - (mu + delta * x[t] + xi * sigma_power);
+            e[t] = t == 0 ? d[t] : d[t] - phi * d[t - 1] - theta_ma * e[t - 1];
+            EXPECT_NEAR(sigma2[t], variance, 1e-14 * std::max(1.0, variance)) << "t = " << t;
+            EXPECT_NEAR(residuals[t], e[t], 1e-14) << "t = " << t;
+            expected += -0.5 * (std::log(2 * std::numbers::pi) + std::log(variance) + e[t] * e[t] / variance);
+        }
+        EXPECT_NEAR(ll, expected, 1e-14 * std::abs(expected));
+    }
+}
+
+// theta of the plain layout with the archm slot added, at xi.
+std::vector<double> with_archm(const Layout& plain, std::span<const double> theta, double xi)
+{
+    std::vector<double> result(theta.begin(), theta.end());
+    result.insert(result.begin() + static_cast<std::ptrdiff_t>(plain.archm_index()), xi);
+    return result;
+}
+
+TEST(Likelihood, ArchInMeanZeroIsPlain)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(11, 300);
+    for (Model model : {Model::SGarch, Model::IGarch, Model::EGarch, Model::GjrGarch, Model::ApArch, Model::CsGarch,
+                        Model::FGarchAllGarch})
+    {
+        for (ArmaOrders arma : {ArmaOrders{0, 0}, ArmaOrders{1, 1}})
+        {
+            for (VarInit var_init : {VarInit::Sample, VarInit::Backcast})
+            {
+                for (int power : {1, 2})
+                {
+                    SCOPED_TRACE(::testing::Message() << "model " << static_cast<int>(model) << ", arma "
+                                                    << arma.ar << arma.ma << ", var_init "
+                                                    << static_cast<int>(var_init) << ", archm " << power);
+                    Layout plain = ve::model::layout_of({.model = model, .ar = arma.ar, .ma = arma.ma});
+                    Layout archm = ve::model::layout_of({.model = model, .ar = arma.ar, .ma = arma.ma,
+                                                         .archm = power});
+                    std::vector<double> theta = drawn_theta(r, plain);
+                    std::vector<double> theta_archm = with_archm(plain, theta, 0.0);
+                    std::vector<double> residuals(r.size());
+                    std::vector<double> sigma2(r.size());
+                    std::vector<double> archm_residuals(r.size());
+                    std::vector<double> archm_sigma2(r.size());
+                    double expected = loglik<double>(r, theta, plain, var_init,
+                                                     {.residuals = residuals, .sigma2 = sigma2});
+                    double ll = loglik<double>(r, theta_archm, archm, var_init,
+                                               {.residuals = archm_residuals, .sigma2 = archm_sigma2});
+                    ASSERT_TRUE(std::isfinite(expected));
+                    EXPECT_EQ(ll, expected);
+                    EXPECT_EQ(archm_residuals, residuals);
+                    EXPECT_EQ(archm_sigma2, sigma2);
+                }
+            }
+        }
+    }
+}
+
+TEST(Likelihood, ArchInMeanNonPositiveVarianceIsInvalid)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(42, 200);
+    std::vector<double> v = variance_columns(r.size(), 1);
+    Layout layout = ve::model::layout_of({.vxreg = 1, .archm = 1});
+    std::vector<double> theta{0.04, 0.1, 0.02, 0.08, 0.85, -10.0};
+    double ll = 0.0;
+    EXPECT_NO_THROW(ll = loglik<double>(ve::model::Data{r, {}, {v, 1}}, theta, layout, VarInit::Sample, {}));
+    EXPECT_EQ(ll, -std::numeric_limits<double>::infinity());
+}
+
 std::string grid_name(const ::testing::TestParamInfo<GridCase>& info)
 {
     auto [model, orders, arma, dist, var_init, include_mean, targeting] = info.param;
@@ -1170,7 +1281,7 @@ INSTANTIATE_TEST_SUITE_P(Targeted, LikelihoodGrid,
                                             ::testing::Values(true), ::testing::Values(true)),
                          grid_name);
 
-using RegressorCase = std::tuple<Model, ArmaOrders, Dist, VarInit, int, int, bool>;
+using RegressorCase = std::tuple<Model, ArmaOrders, Dist, VarInit, int, int, bool, int>;
 
 class MeanRegressorGrid : public ::testing::TestWithParam<RegressorCase>
 {
@@ -1186,30 +1297,36 @@ protected:
 
     Layout layout_of_case() const
     {
-        auto [model, arma, dist, init, mxreg, vxreg, targeting] = GetParam();
+        auto [model, arma, dist, init, mxreg, vxreg, targeting, archm] = GetParam();
         return ve::model::layout_of({.model = model,
                                      .ar = arma.ar,
                                      .ma = arma.ma,
                                      .dist = dist,
                                      .variance_targeting = targeting,
                                      .mxreg = mxreg,
-                                     .vxreg = vxreg});
+                                     .vxreg = vxreg,
+                                     .archm = archm});
     }
 
-    // The point of the same grid without regressors, with the coefficients 0.3, -0.2 put in the mxreg block and
-    // 0.01 in the vxreg block.
+    // The point of the same grid without regressors, with 0.15 in the archm slot, the coefficients 0.3, -0.2 put in
+    // the mxreg block and 0.01 in the vxreg block.
     std::vector<double> theta_of_case() const
     {
         Layout plain = layout;
         plain.mxreg = 0;
         plain.vxreg = 0;
+        plain.archm = 0;
         std::vector<double> base = grid_theta(r, plain);
-        std::vector<double> result(base.begin(), base.begin() + static_cast<std::ptrdiff_t>(layout.mxreg_begin()));
+        std::vector<double> result(base.begin(), base.begin() + static_cast<std::ptrdiff_t>(plain.mxreg_begin()));
+        if (layout.has_archm())
+        {
+            result.push_back(0.15);
+        }
         for (int k = 0; k < layout.mxreg; ++k)
         {
             result.push_back(k == 0 ? 0.3 : -0.2);
         }
-        result.insert(result.end(), base.begin() + static_cast<std::ptrdiff_t>(layout.mxreg_begin()),
+        result.insert(result.end(), base.begin() + static_cast<std::ptrdiff_t>(plain.mxreg_begin()),
                       base.begin() + static_cast<std::ptrdiff_t>(plain.vxreg_begin()));
         result.insert(result.end(), static_cast<std::size_t>(layout.vxreg), 0.01);
         result.insert(result.end(), base.begin() + static_cast<std::ptrdiff_t>(plain.vxreg_begin()), base.end());
@@ -1273,12 +1390,12 @@ TEST_P(MeanRegressorGrid, DoubleAndDualAgreeOnValue)
 
 std::string regressor_name(const ::testing::TestParamInfo<RegressorCase>& info)
 {
-    auto [model, arma, dist, var_init, mxreg, vxreg, targeting] = info.param;
+    auto [model, arma, dist, var_init, mxreg, vxreg, targeting, archm] = info.param;
     std::string models[] = {"SGarch", "EGarch", "GjrGarch", "ApArch", "IGarch", "CsGarch"};
     std::string name = models[static_cast<int>(model)] + "Arma" + std::to_string(arma.ar) + std::to_string(arma.ma);
     name += dist == Dist::Norm ? "Norm" : "Std";
     name += var_init == VarInit::Sample ? "Sample" : "Backcast";
-    name += "Mxreg" + std::to_string(mxreg) + "Vxreg" + std::to_string(vxreg);
+    name += "Mxreg" + std::to_string(mxreg) + "Vxreg" + std::to_string(vxreg) + "Archm" + std::to_string(archm);
     return name + (targeting ? "Targeted" : "");
 }
 
@@ -1288,7 +1405,8 @@ INSTANTIATE_TEST_SUITE_P(Regressors, MeanRegressorGrid,
                                             ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1}),
                                             ::testing::Values(Dist::Norm, Dist::Std),
                                             ::testing::Values(VarInit::Sample, VarInit::Backcast),
-                                            ::testing::Values(2), ::testing::Values(0, 1), ::testing::Values(false)),
+                                            ::testing::Values(2), ::testing::Values(0, 1), ::testing::Values(false),
+                                            ::testing::Values(0)),
                          regressor_name);
 
 INSTANTIATE_TEST_SUITE_P(VarianceOnly, MeanRegressorGrid,
@@ -1297,7 +1415,8 @@ INSTANTIATE_TEST_SUITE_P(VarianceOnly, MeanRegressorGrid,
                                             ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1}),
                                             ::testing::Values(Dist::Norm, Dist::Std),
                                             ::testing::Values(VarInit::Sample, VarInit::Backcast),
-                                            ::testing::Values(0), ::testing::Values(1), ::testing::Values(false)),
+                                            ::testing::Values(0), ::testing::Values(1), ::testing::Values(false),
+                                            ::testing::Values(0)),
                          regressor_name);
 
 INSTANTIATE_TEST_SUITE_P(TargetedRegressors, MeanRegressorGrid,
@@ -1305,7 +1424,18 @@ INSTANTIATE_TEST_SUITE_P(TargetedRegressors, MeanRegressorGrid,
                                             ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1}),
                                             ::testing::Values(Dist::Norm, Dist::Std),
                                             ::testing::Values(VarInit::Sample, VarInit::Backcast),
-                                            ::testing::Values(0, 2), ::testing::Values(1), ::testing::Values(true)),
+                                            ::testing::Values(0, 2), ::testing::Values(1), ::testing::Values(true),
+                                            ::testing::Values(0)),
+                         regressor_name);
+
+INSTANTIATE_TEST_SUITE_P(ArchInMean, MeanRegressorGrid,
+                         ::testing::Combine(::testing::Values(Model::SGarch, Model::EGarch, Model::GjrGarch,
+                                                              Model::ApArch, Model::CsGarch),
+                                            ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1}),
+                                            ::testing::Values(Dist::Norm),
+                                            ::testing::Values(VarInit::Sample, VarInit::Backcast),
+                                            ::testing::Values(0, 2), ::testing::Values(0, 1),
+                                            ::testing::Values(false), ::testing::Values(1, 2)),
                          regressor_name);
 
 }

@@ -39,8 +39,8 @@ T gjr_shock(std::span<const T> residuals, const GjrGarchParameters<T>& p, const 
 }
 
 template <class T>
-T next_gjr_variance(std::span<const T> residuals, const GjrGarchParameters<T>& p, const Presample<T>& presample,
-                    std::span<const T> sigma2, std::size_t t)
+VE_FORCE_INLINE T gjrgarch_step(std::span<const T> residuals, const GjrGarchParameters<T>& p,
+                                const Presample<T>& presample, std::span<const T> sigma2, std::size_t t)
 {
     T variance = intercept_at<T>(p.omega, p.intercept_shift, t);
     for (std::size_t i = 1; i <= p.alpha.size(); ++i)
@@ -64,7 +64,7 @@ void gjrgarch_variance(std::span<const T> residuals, const GjrGarchParameters<T>
     std::fill(sigma2.begin(), sigma2.begin() + static_cast<std::ptrdiff_t>(held), presample.value);
     for (std::size_t t = held; t < sigma2.size(); ++t)
     {
-        sigma2[t] = next_gjr_variance<T>(residuals, p, presample, sigma2, t);
+        sigma2[t] = gjrgarch_step<T>(residuals, p, presample, sigma2, t);
     }
 }
 
