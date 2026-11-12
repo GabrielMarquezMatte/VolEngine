@@ -108,6 +108,61 @@ LogDensity<T> ged_log_density(const T& nu)
     return {Dist::Ged, log_constant, exp(log_lambda), nu};
 }
 
+namespace detail
+{
+
+template <class T>
+T normal_abs_moment(const T& power)
+{
+    using std::exp;
+    using std::lgamma;
+    T log_moment = 0.5 * power * std::numbers::ln2 + lgamma(0.5 * (power + 1.0));
+    return exp(log_moment) / std::sqrt(std::numbers::pi);
+}
+
+// log of (nu - 2)^(-b) Gamma(a + b) / Gamma(a), with a = nu / 2 and b = -power / 2. Its lgamma terms grow as
+// a log(a) while it tends to -b log(2), so for large a the difference is taken from the Stirling expansions:
+//   (a + b - 1/2) log1p(b / a) - b - b log(2) - b log1p(-1 / a) + S(a + b) - S(a).
+template <class T>
+T student_log_gamma_ratio(const T& nu, const T& power)
+{
+    using std::lgamma;
+    using std::log;
+    using std::log1p;
+    T a = nu / 2.0;
+    T b = -power / 2.0;
+    if (ad::value_of(a + b) < kStirlingThreshold)
+    {
+        return lgamma(a + b) - lgamma(a) - b * log(nu - 2.0);
+    }
+    T expansion = (a + b - 0.5) * log1p(b / a) - b - b * std::numbers::ln2 - b * log1p(-1.0 / a);
+    return expansion + (stirling_series(a + b) - stirling_series(a));
+}
+
+// (nu - 2)^(power / 2) Gamma((power + 1) / 2) Gamma((nu - power) / 2) / (sqrt(pi) Gamma(nu / 2)), for nu > power.
+template <class T>
+T student_abs_moment(const T& nu, const T& power)
+{
+    using std::exp;
+    using std::lgamma;
+    T log_moment = student_log_gamma_ratio(nu, power) + lgamma(0.5 * (power + 1.0));
+    return exp(log_moment) / std::sqrt(std::numbers::pi);
+}
+
+// lambda^power 2^(power / nu) Gamma((power + 1) / nu) / Gamma(1 / nu), with the lambda of ged_log_density,
+// taken through its logarithm.
+template <class T>
+T ged_abs_moment(const T& nu, const T& power)
+{
+    using std::exp;
+    using std::lgamma;
+    T log_lambda = ged_log_scale(nu);
+    T log_gamma_ratio = lgamma((power + 1.0) / nu) - lgamma(1.0 / nu);
+    return exp(power * log_lambda + (power / nu) * std::numbers::ln2 + log_gamma_ratio);
+}
+
+}
+
 // shape is read only for std and ged.
 template <class T>
 LogDensity<T> make_log_density(Dist dist, const T& shape)
