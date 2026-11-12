@@ -1,6 +1,7 @@
 #pragma once
 
 #include "model/layout.hpp"
+#include "model/parameter_map.hpp"
 
 #include <functional>
 #include <span>
@@ -21,10 +22,10 @@ struct StandardErrors
 using GradientFn = std::function<bool(std::span<const double>, std::span<double>)>;
 
 // theta is the natural-space estimate; scores is the T x k row-major per-observation score matrix at theta;
-// series_scale (> 0) is the standard deviation of r, the step scale for mu.
+// standardization gives the step scale of the Location entries (model::natural_scale).
 // hessian: sqrt(diag((-H)^-1)). robust: sqrt(diag(H^-1 (S^T S) H^-1)). Entries on the boundary
 // (model::on_boundary) leave H and S and get NaN, and the others come from the remaining block.
 StandardErrors standard_errors(const GradientFn& gradient, std::span<const double> theta,
                                std::span<const double> scores, const model::Layout& layout,
-                               double series_scale);
+                               const model::Standardization& standardization);
 }

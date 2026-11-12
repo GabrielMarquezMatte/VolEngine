@@ -479,6 +479,119 @@ inline std::vector<SkewedFit> skewed_fits()
             {.name = "sgarch11_nig_ghyp", .series = 3, .dist = Dist::Ghyp}};
 }
 
+// A series with mean regressors (x1, x2), a variance regressor v1 and ARCH-in-mean, written apart from the library:
+// r_t = mu + sum_k delta_k x_t,k + xi sigma_t^archm + d_t, with d_t = ar d_(t-1) + e_t, and the variance of
+// `variance` with its omega shifted by zeta v_t. Regressors: x1 = sin(t / 40), x2 ~ N(0, 1), v1 = |cos(t / 25)|.
+struct RegressorProcess
+{
+    const char* name;
+    VariantProcess variance;
+    double mu = 0.05;
+    double ar = 0.0;
+    std::vector<double> delta{};
+    double zeta = 0.0;
+    bool has_vxreg = false;
+    int archm = 0;
+    double xi = 0.0;
+};
+
+inline std::vector<RegressorProcess> regressor_processes()
+{
+    using ve::Dist;
+    using ve::Model;
+    return {
+        {.name = "arx_sgarch11_norm",
+         .variance = {.name = "", .model = Model::SGarch, .omega = 0.02, .alpha = 0.08, .beta = 0.9},
+         .mu = 0.05,
+         .ar = 0.3,
+         .delta = {0.3, -0.2}},
+        {.name = "sgarch11_vx_std",
+         .variance = {.name = "", .model = Model::SGarch, .omega = 0.01, .alpha = 0.08, .beta = 0.88,
+                      .dist = Dist::Std, .shape = 6.0},
+         .zeta = 0.05,
+         .has_vxreg = true},
+        {.name = "archm_gjrgarch11_norm",
+         .variance = {.name = "", .model = Model::GjrGarch, .omega = 0.02, .alpha = 0.03, .beta = 0.9,
+                      .gamma = 0.09},
+         .mu = 0.02,
+         .archm = 1,
+         .xi = 0.1},
+        {.name = "archm2_egarch11_std",
+         .variance = {.name = "", .model = Model::EGarch, .omega = -0.01, .alpha = -0.08, .beta = 0.97,
+                      .gamma = 0.15, .dist = Dist::Std, .shape = 6.0},
+         .mu = 0.02,
+         .archm = 2,
+         .xi = 0.05},
+    };
+}
+
+// Row-major count x columns matrices.
+struct RegressorSeries
+{
+    std::vector<double> r;
+    std::vector<double> x;
+    std::vector<double> v;
+};
+
+struct RegressorRow
+{
+    double x1;
+    double x2;
+    double v1;
+};
+
+inline RegressorRow regressor_row(double t, PortableShocks& shocks)
+{
+    return {std::sin(t / 40.0), shocks.normal(), std::abs(std::cos(t / 25.0))};
+}
+
+// Starts at sigma^2 = 1 and drops 1000 observations (t <= 0), whose regressors follow the same rule.
+inline RegressorSeries simulate_regressor_process(const RegressorProcess& process, std::uint64_t seed,
+                                                  std::size_t count)
+{
+    constexpr std::size_t kBurnIn = 1000;
+    const VariantProcess& base = process.variance;
+    const double mean_abs = expected_abs_shock(base.dist, base.skew, base.shape);
+    PortableShocks shocks(seed);
+    PortableShocks regressors(seed + 1000);
+    VariantState state;
+    double z = 0.0;
+    double deviation = 0.0;
+    RegressorSeries series;
+    for (std::size_t index = 0; index < kBurnIn + count; ++index)
+    {
+        const RegressorRow row = regressor_row(static_cast<double>(index) + 1.0 - static_cast<double>(kBurnIn),
+                                               regressors);
+        if (index > 0)
+        {
+            VariantProcess shifted = base;
+            shifted.omega += process.zeta * row.v1;
+            state = next_variant_state(shifted, state, z, mean_abs);
+        }
+        z = shocks.draw(base.dist, base.skew, base.shape);
+        deviation = process.ar * deviation + std::sqrt(state.sigma2) * z;
+        double mean = process.mu + process.xi * std::pow(state.sigma2, 0.5 * process.archm);
+        if (!process.delta.empty())
+        {
+            mean += process.delta[0] * row.x1 + process.delta[1] * row.x2;
+        }
+        if (index < kBurnIn)
+        {
+            continue;
+        }
+        series.r.push_back(mean + deviation);
+        if (!process.delta.empty())
+        {
+            series.x.insert(series.x.end(), {row.x1, row.x2});
+        }
+        if (process.has_vxreg)
+        {
+            series.v.push_back(row.v1);
+        }
+    }
+    return series;
+}
+
 // C-order count x n matrix whose column j is the series simulated with seed j + 1.
 inline std::vector<double> simulate_garch_matrix(std::size_t count, std::size_t n)
 {

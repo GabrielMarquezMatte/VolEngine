@@ -2,7 +2,9 @@
 
 #include "fit/fit.hpp"
 #include "model/layout.hpp"
+#include "model/data.hpp"
 #include "model/start_values.hpp"
+#include "model/parameter_map.hpp"
 #include "simulated_garch.hpp"
 
 #include <cmath>
@@ -15,20 +17,25 @@
 namespace
 {
 
-ve::fit::StandardErrors standard_errors_at(std::span<const double> r, const ve::Spec& spec,
+ve::fit::StandardErrors standard_errors_at(const ve::model::Data& data, const ve::Spec& spec,
                                            std::span<const double> theta)
 {
-    ve::fit::LikelihoodProblem problem{r, ve::model::layout_of(spec), ve::VarInit::Sample};
+    ve::fit::LikelihoodProblem problem{data, ve::model::layout_of(spec), ve::VarInit::Sample};
     std::size_t k = theta.size();
-    std::vector<double> residuals(r.size());
-    std::vector<double> sigma2(r.size());
-    std::vector<double> scores(r.size() * k);
+    std::vector<double> residuals(data.r.size());
+    std::vector<double> sigma2(data.r.size());
+    std::vector<double> scores(data.r.size() * k);
     double loglik = ve::fit::loglik_with_scores(problem, theta, {residuals, sigma2, scores});
     EXPECT_TRUE(std::isfinite(loglik));
     ve::fit::GradientFn gradient = [&problem](std::span<const double> point, std::span<double> grad)
     { return ve::fit::loglik_gradient(problem, point, grad); };
-    double series_scale = ve::model::standardization_of(r).scale;
-    return ve::fit::standard_errors(gradient, theta, scores, problem.layout, series_scale);
+    return ve::fit::standard_errors(gradient, theta, scores, problem.layout, ve::model::standardization_of(data));
+}
+
+ve::fit::StandardErrors standard_errors_at(std::span<const double> r, const ve::Spec& spec,
+                                           std::span<const double> theta)
+{
+    return standard_errors_at(ve::model::Data{r}, spec, theta);
 }
 
 void expect_nan_only_at(const ve::fit::StandardErrors& errors, std::size_t boundary, std::size_t k)
@@ -101,7 +108,7 @@ void expect_exact_quadratic_errors(const ve::model::Layout& layout, std::span<co
     {
         scores[t] = (t / k) % 2 == 0 ? 1.0 : -1.0;
     }
-    ve::fit::StandardErrors errors = ve::fit::standard_errors(gradient, center, scores, layout, 1.0);
+    ve::fit::StandardErrors errors = ve::fit::standard_errors(gradient, center, scores, layout, ve::model::Standardization{});
     for (std::size_t i = 0; i < k; ++i)
     {
         double sd = 0.1 * static_cast<double>(i + 1);
@@ -140,7 +147,7 @@ TEST(StandardErrors, InvalidEverywhereGivesNaN)
     std::vector<double> theta{0.05, 0.01, 0.08, 0.9};
     std::vector<double> scores(10 * theta.size(), 0.1);
     ve::fit::GradientFn never = [](std::span<const double>, std::span<double>) { return false; };
-    ve::fit::StandardErrors errors = ve::fit::standard_errors(never, theta, scores, layout, 1.0);
+    ve::fit::StandardErrors errors = ve::fit::standard_errors(never, theta, scores, layout, ve::model::Standardization{});
     for (std::size_t i = 0; i < theta.size(); ++i)
     {
         EXPECT_TRUE(std::isnan(errors.hessian[i]));
@@ -203,6 +210,41 @@ TEST(StandardErrors, DerivedOmegaGetsNaNOthersFinite)
     ASSERT_EQ(fitted.status, ve::FitStatus::Converged);
     expect_nan_only_at(standard_errors_at(r, spec, fitted.estimate), ve::model::layout_of(spec).omega(),
                        fitted.estimate.size());
+}
+
+// The step of a regressor coefficient is relative to s / s_x, so a column in other units gives the standard error
+// of the same fit in those units: delta / 1000 for X * 1000.
+TEST(StandardErrors, RegressorStepsFollowNaturalScale)
+{
+    const ve::testing::RegressorProcess process = ve::testing::regressor_processes()[0];
+    ve::testing::RegressorSeries series = ve::testing::simulate_regressor_process(process, 61, 3000);
+    ve::Spec spec;
+    spec.ar = 1;
+    spec.mxreg = 2;
+    ve::model::Data data{series.r, {series.x, 2}};
+    ve::FitResult fitted = ve::fit_one(data, spec, ve::FitConfig{});
+    ASSERT_EQ(fitted.status, ve::FitStatus::Converged);
+    ve::fit::StandardErrors base = standard_errors_at(data, spec, fitted.estimate);
+
+    std::vector<double> scaled_x = series.x;
+    for (double& value : scaled_x)
+    {
+        value *= 1000.0;
+    }
+    std::vector<double> scaled_theta = fitted.estimate;
+    ve::model::Layout layout = ve::model::layout_of(spec);
+    for (std::size_t k = 0; k < 2; ++k)
+    {
+        scaled_theta[layout.mxreg_begin() + k] /= 1000.0;
+    }
+    ve::fit::StandardErrors scaled = standard_errors_at(ve::model::Data{series.r, {scaled_x, 2}}, spec, scaled_theta);
+    for (std::size_t i = 0; i < fitted.estimate.size(); ++i)
+    {
+        bool regressor = i >= layout.mxreg_begin() && i < layout.mxreg_begin() + 2;
+        double factor = regressor ? 1e-3 : 1.0;
+        EXPECT_NEAR(scaled.hessian[i], base.hessian[i] * factor, 1e-4 * base.hessian[i] * factor) << fitted.names[i];
+        EXPECT_NEAR(scaled.robust[i], base.robust[i] * factor, 1e-4 * base.robust[i] * factor) << fitted.names[i];
+    }
 }
 
 TEST(StandardErrors, NothingEstimatedGivesAllNaN)

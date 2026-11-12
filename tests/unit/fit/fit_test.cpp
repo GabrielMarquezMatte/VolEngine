@@ -1369,4 +1369,211 @@ TEST(FitRoles, VarianceTargeting)
     EXPECT_NEAR(ve::bic(targeted, ve::IcScale::PerObs), expected_bic, 1e-14);
 }
 
+
+using ve::testing::RegressorProcess;
+using ve::testing::RegressorSeries;
+
+constexpr std::size_t kRegressorObservations = 3000;
+
+struct RegressorFit
+{
+    Spec spec;
+    std::vector<ve::ParameterValue> truth;
+};
+
+// The spec and the true parameters of ve::testing::regressor_processes()[index].
+RegressorFit regressor_fit(std::size_t index)
+{
+    Spec spec;
+    switch (index)
+    {
+        case 0:
+            spec.ar = 1;
+            spec.mxreg = 2;
+            return {spec,
+                    {{"mu", 0.05}, {"ar1", 0.3}, {"mxreg1", 0.3}, {"mxreg2", -0.2}, {"omega", 0.02},
+                     {"alpha1", 0.08}, {"beta1", 0.9}}};
+        case 1:
+            spec.vxreg = 1;
+            spec.dist = ve::Dist::Std;
+            return {spec,
+                    {{"mu", 0.05}, {"omega", 0.01}, {"alpha1", 0.08}, {"beta1", 0.88}, {"vxreg1", 0.05},
+                     {"shape", 6.0}}};
+        case 2:
+            spec.model = ve::Model::GjrGarch;
+            spec.archm = 1;
+            return {spec,
+                    {{"mu", 0.02}, {"archm", 0.1}, {"omega", 0.02}, {"alpha1", 0.03}, {"beta1", 0.9},
+                     {"gamma1", 0.09}}};
+    }
+    spec.model = ve::Model::EGarch;
+    spec.archm = 2;
+    spec.dist = ve::Dist::Std;
+    return {spec,
+            {{"mu", 0.02}, {"archm", 0.05}, {"omega", -0.01}, {"alpha1", -0.08}, {"beta1", 0.97},
+             {"gamma1", 0.15}, {"shape", 6.0}}};
+}
+
+const RegressorSeries& regressor_series(std::size_t index)
+{
+    static const std::vector<RegressorSeries> all = []
+    {
+        std::vector<RegressorSeries> series;
+        std::vector<RegressorProcess> processes = ve::testing::regressor_processes();
+        for (std::size_t i = 0; i < processes.size(); ++i)
+        {
+            series.push_back(ve::testing::simulate_regressor_process(processes[i], 61 + i, kRegressorObservations));
+        }
+        return series;
+    }();
+    return all[index];
+}
+
+ve::model::Data data_of(const RegressorSeries& series, const Spec& spec)
+{
+    return {series.r,
+            {series.x, static_cast<std::size_t>(spec.mxreg)},
+            {series.v, static_cast<std::size_t>(spec.vxreg)}};
+}
+
+bool is_regressor_coefficient(const std::string& name)
+{
+    return name.starts_with("mxreg") || name.starts_with("vxreg") || name == "archm";
+}
+
+TEST(FitRegressors, BeatsTrueParameters)
+{
+    for (std::size_t i = 0; i < 4; ++i)
+    {
+        RegressorFit setup = regressor_fit(i);
+        ve::model::Data data = data_of(regressor_series(i), setup.spec);
+        SCOPED_TRACE(ve::testing::regressor_processes()[i].name);
+        FitResult result = ve::fit_one(data, setup.spec, ve::FitConfig{});
+        ASSERT_EQ(result.status, FitStatus::Converged);
+        std::vector<double> theta = theta_of(result, setup.truth);
+        double at_truth = ve::model::loglik<double>(data, theta, ve::model::layout_of(setup.spec),
+                                                    ve::VarInit::Sample, {});
+        EXPECT_GE(result.loglik, at_truth - 1e-6 * std::abs(at_truth));
+        for (const ve::ParameterValue& entry : setup.truth)
+        {
+            double tolerance = entry.name.starts_with("vxreg") ? 0.02 : 0.05;
+            if (is_regressor_coefficient(entry.name))
+            {
+                EXPECT_NEAR(estimate_of(result, entry.name), entry.value, tolerance) << entry.name;
+            }
+        }
+    }
+}
+
+std::vector<double> scaled(std::span<const double> values, double factor)
+{
+    std::vector<double> out(values.begin(), values.end());
+    for (double& value : out)
+    {
+        value *= factor;
+    }
+    return out;
+}
+
+TEST(FitRegressors, UnitEquivariance)
+{
+    RegressorFit arx = regressor_fit(0);
+    const RegressorSeries& series = regressor_series(0);
+    FitResult base = ve::fit_one(data_of(series, arx.spec), arx.spec, ve::FitConfig{});
+    std::vector<double> r100 = scaled(series.r, 100.0);
+    std::vector<double> x1000 = scaled(series.x, 1000.0);
+    ve::model::Data changed{r100, {x1000, 2}};
+    FitResult other = ve::fit_one(changed, arx.spec, ve::FitConfig{});
+    ASSERT_EQ(base.status, FitStatus::Converged);
+    ASSERT_EQ(other.status, FitStatus::Converged);
+    for (const char* name : {"mxreg1", "mxreg2"})
+    {
+        double expected = estimate_of(base, name) * 100.0 / 1000.0;
+        EXPECT_NEAR(estimate_of(other, name), expected, 1e-4 * std::abs(expected)) << name;
+    }
+    double shift = static_cast<double>(kRegressorObservations) * std::log(100.0);
+    EXPECT_NEAR(other.loglik, base.loglik - shift, 1e-8 * std::abs(base.loglik - shift));
+
+    RegressorFit in_mean = regressor_fit(3);
+    const RegressorSeries& archm_series = regressor_series(3);
+    FitResult archm_base = ve::fit_one(archm_series.r, in_mean.spec, ve::FitConfig{});
+    std::vector<double> archm_r100 = scaled(archm_series.r, 100.0);
+    FitResult archm_other = ve::fit_one(archm_r100, in_mean.spec, ve::FitConfig{});
+    ASSERT_EQ(archm_base.status, FitStatus::Converged);
+    ASSERT_EQ(archm_other.status, FitStatus::Converged);
+    double xi = estimate_of(archm_base, "archm") / 100.0;
+    EXPECT_NEAR(estimate_of(archm_other, "archm"), xi, 1e-4 * std::abs(xi));
+}
+
+// Review Focus 1: a column equal to another one has no separate coefficient.
+TEST(FitRegressors, CollinearColumnFinite)
+{
+    RegressorFit arx = regressor_fit(0);
+    const RegressorSeries& series = regressor_series(0);
+    std::vector<double> twice;
+    for (std::size_t t = 0; t < series.r.size(); ++t)
+    {
+        twice.insert(twice.end(), {series.x[2 * t], series.x[2 * t]});
+    }
+    FitResult result = ve::fit_one(ve::model::Data{series.r, {twice, 2}}, arx.spec, ve::FitConfig{});
+    ASSERT_TRUE(result.status == FitStatus::Converged || result.status == FitStatus::MaxIter);
+    EXPECT_TRUE(std::isfinite(result.loglik));
+    for (std::size_t i = 0; i < result.estimate.size(); ++i)
+    {
+        EXPECT_TRUE(std::isfinite(result.estimate[i])) << result.names[i];
+        EXPECT_FALSE(std::isinf(result.se_hessian[i])) << result.names[i];
+        EXPECT_FALSE(std::isinf(result.se_robust[i])) << result.names[i];
+    }
+}
+
+// Review Focus 2: a start whose variance is not positive somewhere ends finite, without an exception.
+TEST(FitRegressors, NegativeVarianceRegion)
+{
+    RegressorFit vx = regressor_fit(1);
+    vx.spec.start = {{"vxreg1", -5.0}};
+    FitResult result = ve::fit_one(data_of(regressor_series(1), vx.spec), vx.spec, ve::FitConfig{});
+    EXPECT_NE(result.status, FitStatus::InsufficientData);
+    EXPECT_FALSE(std::isinf(result.loglik));
+    for (std::size_t i = 0; i < result.estimate.size(); ++i)
+    {
+        EXPECT_FALSE(std::isinf(result.estimate[i])) << result.names[i];
+    }
+    if (result.status == FitStatus::Converged || result.status == FitStatus::MaxIter)
+    {
+        EXPECT_TRUE(std::isfinite(result.loglik));
+    }
+}
+
+// With archm and variance targeting the target comes from the residuals without the archm term, net of the
+// variance regressors: the reported omega is the one the likelihood used, so the same point without targeting
+// has the same log-likelihood.
+TEST(FitRegressors, ReportedTargetedOmegaIsTheOneTheLikelihoodUsed)
+{
+    RegressorProcess process{.name = "archm_vx_sgarch11_norm",
+                             .variance = {.name = "", .model = ve::Model::SGarch, .omega = 0.02, .alpha = 0.08,
+                                          .beta = 0.9},
+                             .mu = 0.02,
+                             .zeta = 0.01,
+                             .has_vxreg = true,
+                             .archm = 1,
+                             .xi = 0.1};
+    RegressorSeries series = ve::testing::simulate_regressor_process(process, 71, kRegressorObservations);
+    Spec spec;
+    spec.archm = 1;
+    spec.vxreg = 1;
+    spec.variance_targeting = true;
+    ve::model::Data data = data_of(series, spec);
+    FitResult result = ve::fit_one(data, spec, ve::FitConfig{});
+    ASSERT_EQ(result.status, FitStatus::Converged);
+    ve::model::Layout layout = ve::model::layout_of(spec);
+    EXPECT_NE(estimate_of(result, "archm"), 0.0);
+
+    Spec free_spec = spec;
+    free_spec.variance_targeting = false;
+    double again = ve::model::loglik<double>(data, result.estimate, ve::model::layout_of(free_spec),
+                                             ve::VarInit::Sample, {});
+    EXPECT_NEAR(again, result.loglik, 1e-12 * std::abs(result.loglik));
+    EXPECT_EQ(result.estimate[layout.omega()], ve::model::targeted_omega_at(data, result.estimate, layout));
+}
+
 }

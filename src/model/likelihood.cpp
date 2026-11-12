@@ -814,6 +814,13 @@ template ad::Dual<32> targeted_omega<ad::Dual<32>>(std::span<const ad::Dual<32>>
 template ad::Dual<kMaxParameterCount> targeted_omega<ad::Dual<kMaxParameterCount>>(std::span<const ad::Dual<kMaxParameterCount>>, std::span<const ad::Dual<kMaxParameterCount>>,
                                                    const Layout&, const RegressorMatrix&);
 
+double targeted_omega_at(const Data& data, std::span<const double> theta, const Layout& layout)
+{
+    std::vector<double> e0(data.r.size());
+    mean_residuals<double>(data, theta, layout, e0);
+    return targeted_omega<double>(e0, theta, layout, data.variance);
+}
+
 template double loglik<double>(const Data&, std::span<const double>, const Layout&, VarInit,
                                const LoglikOutputs<double>&);
 template ad::Dual<8> loglik<ad::Dual<8>>(const Data&, std::span<const ad::Dual<8>>, const Layout&,

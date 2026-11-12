@@ -2,6 +2,7 @@
 
 #include "core/var_init.hpp"
 #include "fit/fit_result.hpp"
+#include "model/data.hpp"
 #include "model/layout.hpp"
 
 #include <span>
@@ -9,6 +10,10 @@
 namespace ve
 {
 
+// data.mean and data.variance have as many columns as the spec has mxreg and vxreg.
+FitResult fit_one(const model::Data& data, const Spec& spec, const FitConfig& config);
+
+// A series without regressors.
 FitResult fit_one(std::span<const double> r, const Spec& spec, const FitConfig& config);
 
 }
@@ -18,7 +23,7 @@ namespace ve::fit
 
 struct LikelihoodProblem
 {
-    std::span<const double> r;
+    model::Data data;
     model::Layout layout;
     VarInit var_init;
 };
@@ -27,7 +32,7 @@ struct LikelihoodProblem
 // theta is not valid or the log-likelihood or its gradient is not finite.
 bool loglik_gradient(const LikelihoodProblem& problem, std::span<const double> theta, std::span<double> grad);
 
-// residuals and sigma2 have the size of r; scores is the T x k row-major matrix of per-observation gradients.
+// residuals and sigma2 have the size of data.r; scores is the T x k row-major matrix of per-observation gradients.
 struct LoglikSeries
 {
     std::span<double> residuals;
