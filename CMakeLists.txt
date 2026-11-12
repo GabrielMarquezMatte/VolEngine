@@ -46,10 +46,21 @@ FetchContent_Declare(bs_thread_pool
     GIT_TAG v5.0.0
     SOURCE_SUBDIR header-only-no-cmake)
 FetchContent_MakeAvailable(bs_thread_pool)
+# Headers only, no Boost build: SOURCE_SUBDIR points at a directory without a CMakeLists.txt.
+FetchContent_Declare(boost_math
+    GIT_REPOSITORY https://github.com/boostorg/math
+    GIT_TAG boost-1.87.0
+    SOURCE_SUBDIR do-not-build)
+FetchContent_MakeAvailable(boost_math)
+
+add_library(ve_boost_math INTERFACE)
+target_include_directories(ve_boost_math SYSTEM INTERFACE ${boost_math_SOURCE_DIR}/include)
+target_compile_definitions(ve_boost_math INTERFACE BOOST_MATH_STANDALONE)
 
 add_library(volengine_core STATIC
     src/ad/special.cpp
     src/core/context.cpp
+    src/dist/bessel.cpp
     src/dist/moments.cpp
     src/fit/batch.cpp
     src/fit/cholesky.cpp
@@ -62,6 +73,7 @@ add_library(volengine_core STATIC
     src/model/start_values.cpp)
 set_target_properties(volengine_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(volengine_core PUBLIC src include)
+target_link_libraries(volengine_core PRIVATE ve_boost_math)
 target_include_directories(volengine_core SYSTEM PUBLIC ${bs_thread_pool_SOURCE_DIR}/include)
 target_compile_options(volengine_core PRIVATE ${VE_WARNING_FLAGS} ${VE_FLOAT_FLAGS})
 
@@ -104,6 +116,7 @@ if(VE_BUILD_TESTS)
         tests/unit/capi/fit_accessors_test.cpp
         tests/unit/capi/panel_test.cpp
         tests/unit/capi/spec_test.cpp
+        tests/unit/dist/bessel_test.cpp
         tests/unit/dist/densities_test.cpp
         tests/unit/dist/moments_test.cpp
         tests/unit/fit/criteria_test.cpp

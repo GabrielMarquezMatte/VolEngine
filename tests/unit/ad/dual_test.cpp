@@ -102,4 +102,22 @@ TEST(Dual, PowWithZeroBaseAndVariableExponentHasFiniteGradient)
     EXPECT_EQ(q.grad[1], 0.0);
 }
 
+TEST(Dual, HyperbolicFunctions)
+{
+    for (double v : {-2.0, 0.3, 1.7})
+    {
+        auto x = ve::ad::variable<2>(v, 1);
+        auto a = ve::ad::asinh(x);
+        auto s = ve::ad::sinh(x);
+        auto c = ve::ad::cosh(x);
+        EXPECT_EQ(a.value, std::asinh(v));
+        EXPECT_EQ(s.value, std::sinh(v));
+        EXPECT_EQ(c.value, std::cosh(v));
+        EXPECT_NEAR(a.grad[1], 1.0 / std::sqrt(1.0 + v * v), 1e-15);
+        EXPECT_NEAR(s.grad[1], std::cosh(v), 1e-15);
+        EXPECT_NEAR(c.grad[1], std::sinh(v), 1e-15);
+        EXPECT_EQ(a.grad[0], 0.0);
+    }
+}
+
 }

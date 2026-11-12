@@ -208,6 +208,25 @@ Dual<N> sqrt(const Dual<N>& x)
 }
 
 template <std::size_t N>
+Dual<N> sinh(const Dual<N>& x)
+{
+    return chain(x, std::sinh(x.value), std::cosh(x.value));
+}
+
+template <std::size_t N>
+Dual<N> cosh(const Dual<N>& x)
+{
+    return chain(x, std::cosh(x.value), std::sinh(x.value));
+}
+
+// hypot avoids the overflow of 1 + x^2 for large |x|.
+template <std::size_t N>
+Dual<N> asinh(const Dual<N>& x)
+{
+    return chain(x, std::asinh(x.value), 1.0 / std::hypot(1.0, x.value));
+}
+
+template <std::size_t N>
 Dual<N> abs(const Dual<N>& x)
 {
     double sign = (x.value > 0.0) - (x.value < 0.0);
