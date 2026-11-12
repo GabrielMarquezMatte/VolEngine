@@ -40,7 +40,7 @@ fit = ctx.fit(spec, returns)
 print(fit.coef("robust"))         # mu, ar1, ma1, omega, alpha1, alpha2, beta1, shape
 ```
 
-A skewed distribution adds a `skew` coefficient (and `ghlambda` for `ghyp`) after `shape`:
+A skewed distribution adds a `skew` coefficient before `shape` (and `ghlambda` after it for `ghyp`):
 
 ```python
 spec = ve.Spec(model="gjrgarch", dist="sstd")   # gjrGARCH(1,1) with skewed Student-t innovations

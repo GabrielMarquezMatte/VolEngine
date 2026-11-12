@@ -486,10 +486,14 @@ void append_orders(std::vector<ve::Spec>& grid, ve::Dist dist, int arma)
     }
 }
 
-std::vector<ve::Spec> tcc_grid()
+constexpr std::array<ve::Dist, 3> kSymmetricDists{ve::Dist::Norm, ve::Dist::Std, ve::Dist::Ged};
+constexpr std::array<ve::Dist, 8> kAllDists{ve::Dist::Norm, ve::Dist::Std,  ve::Dist::Ged, ve::Dist::Sstd,
+                                            ve::Dist::Sged, ve::Dist::Nig, ve::Dist::Ghyp, ve::Dist::Jsu};
+
+std::vector<ve::Spec> tcc_grid(std::span<const ve::Dist> dists = kSymmetricDists)
 {
     std::vector<ve::Spec> grid;
-    for (const ve::Dist dist : {ve::Dist::Norm, ve::Dist::Std, ve::Dist::Ged})
+    for (const ve::Dist dist : dists)
     {
         for (const int arma : {0, 1})
         {
@@ -509,12 +513,12 @@ constexpr std::array<const char*, kModelCount> kModelNames{
 using ModelCounts = std::array<StatusCounts, kModelCount>;
 
 // Every model over the orders, ARMA and distributions of the TCC grid.
-std::vector<ve::Spec> all_models_grid()
+std::vector<ve::Spec> all_models_grid(std::span<const ve::Dist> dists = kSymmetricDists)
 {
     std::vector<ve::Spec> grid;
     for (std::size_t model = 0; model < kModelCount; ++model)
     {
-        for (ve::Spec spec : tcc_grid())
+        for (ve::Spec spec : tcc_grid(dists))
         {
             spec.model = static_cast<ve::Model>(model);
             grid.push_back(spec);
@@ -608,28 +612,6 @@ constexpr std::array<const char*, kDistCount> kDistNames{"norm", "std", "ged", "
 
 using DistCounts = std::array<StatusCounts, kDistCount>;
 
-// Every model over the orders, ARMA and all eight distributions: 14 x 8 x 2 x 9 = 2016 specs.
-std::vector<ve::Spec> full_grid()
-{
-    std::vector<ve::Spec> grid;
-    for (std::size_t model = 0; model < kModelCount; ++model)
-    {
-        for (std::size_t dist = 0; dist < kDistCount; ++dist)
-        {
-            for (const int arma : {0, 1})
-            {
-                const std::size_t begin = grid.size();
-                append_orders(grid, static_cast<ve::Dist>(dist), arma);
-                for (std::size_t i = begin; i < grid.size(); ++i)
-                {
-                    grid[i].model = static_cast<ve::Model>(model);
-                }
-            }
-        }
-    }
-    return grid;
-}
-
 DistCounts counts_by_dist(const std::vector<ve::Spec>& specs, const std::vector<int32_t>& statuses)
 {
     DistCounts by_dist{};
@@ -678,7 +660,7 @@ void run_full_grid(benchmark::State& state, const ve::Spec& generator)
 {
     try
     {
-        const std::vector<ve::Spec> specs = full_grid();
+        const std::vector<ve::Spec> specs = all_models_grid(kAllDists);
         const std::vector<double> data =
             ve::bench::simulate_panel(ve::bench::simulated_model_for(generator), kObservations, kBatchSeries);
         BatchWorkload workload(specs, data, kBatchSeries, 0);
