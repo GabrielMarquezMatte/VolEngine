@@ -116,6 +116,48 @@ VE_API ve_status ve_spec_set_arma(ve_spec* s, int32_t m, int32_t n);
 /* dist in VE_DIST_NORM .. VE_DIST_JSU, else VE_INVALID_ARGUMENT and the spec is unchanged. */
 VE_API ve_status ve_spec_set_dist(ve_spec* s, int32_t dist);
 VE_API ve_status ve_spec_set_include_mean(ve_spec* s, int32_t include_mean); /* 0 or 1 */
+/* Parameter roles. Every parameter is estimated, fixed or derived. A fixed parameter (set_fixed) keeps
+   the given value, is not optimized, has NaN standard errors and does not count in the criteria. A
+   derived parameter is a function of the others that the model defines: the iGARCH beta_q and, under
+   variance targeting, omega. It has a name and a value, NaN standard errors and does not count in the
+   criteria. The criteria count the estimated parameters only (none when everything is fixed).
+   Names are those of ve_fit_param_name (rugarch's: mu, ar1, ma1, omega, alpha1, beta1, gamma1, eta11,
+   eta21, delta, skew, shape, ghlambda, ...). A name is in at most one of the fixed and start lists:
+   fixing a name removes its start value and the other way round; setting a name again replaces its
+   value. Names are resolved when the spec is used (ve_spec_validate, ve_fit_batch), not by the setters,
+   so the order of the setters does not matter. NULL or empty name, or a value that is NaN or infinite,
+   is VE_INVALID_ARGUMENT and leaves the spec unchanged.
+   Fixing the parameters together can leave no admissible point (sGARCH with alpha1 = 0.6 and beta1 = 0.5,
+   persistence >= 1): that fit ends VE_FIT_FAILED with NaN values, and the rest of the batch is
+   unaffected. A spec with no estimated parameter does not run the optimizer: the fit evaluates the
+   model at the fixed point (like rugarch's ugarchfilter) and is VE_FIT_CONVERGED when the
+   log-likelihood is finite, VE_FIT_FAILED when it is not, with NaN standard errors. */
+VE_API ve_status ve_spec_set_fixed(ve_spec* s, const char* name, double value);
+/* Replaces the default start value of the parameter. A start value for a derived parameter is
+   ignored, so all the estimates of a previous fit can be passed back as a warm start. When the
+   starting point leaves the model's domain, the fit ends VE_FIT_FAILED with NaN. The same name rules
+   as ve_spec_set_fixed apply. */
+VE_API ve_status ve_spec_set_start(ve_spec* s, const char* name, double value);
+/* Variance targeting, 0 or 1 (default 0); other values are VE_INVALID_ARGUMENT. omega becomes
+   derived and is computed inside the likelihood from the residuals e_t of the current mean parameters
+   over the whole sample (for any var_init), with P the persistence of the model:
+     sGARCH, gjrGARCH:    omega = mean(e_t^2) (1 - P), P = sum(alpha) + sum(beta) (+ pi sum(gamma) in
+                          gjrGARCH, pi = P(z < 0));
+     eGARCH:              omega = log(mean(e_t^2)) (1 - sum(beta));
+     apARCH, fGARCH:      omega = mean(|e_t|^delta) (1 - P), P = sum(alpha_i kappa_i) + sum(beta), with
+                          delta the (free or fixed) power and kappa_i the shock moment of the submodel.
+   The estimate of omega is that value at the estimates; its standard error is NaN. The standard errors
+   of the other parameters come from the likelihood in which omega is a function of them (as in
+   rugarch), not from the two-step covariance of Francq, Horvath and Zakoian (2011). */
+VE_API ve_status ve_spec_set_variance_targeting(ve_spec* s, int32_t on);
+/* VE_OK when the spec can be fitted, else VE_INVALID_ARGUMENT with the reason in ve_last_error().
+   Rejected: a fixed or start name the spec does not have (the message gives the name and the names
+   the spec has); fixing the iGARCH beta_q (derived); fixing omega under variance targeting (derived);
+   variance targeting in iGARCH (omega would be 0) or csGARCH (rugarch ignores it silently); a csGARCH
+   with eta21 (phi) fixed and some beta free (it needs sum(beta) >= phi, which the weight map cannot
+   express; fixing phi together with every beta is accepted). ve_fit_batch applies the same check to every
+   spec, before any fit, and prefixes the message with "spec <i>: ". */
+VE_API ve_status ve_spec_validate(const ve_spec* s);
 VE_API void ve_spec_free(ve_spec* s);
 
 VE_API ve_status ve_fit_options_create(ve_fit_options** out);
@@ -167,7 +209,8 @@ VE_API void ve_batch_free(ve_batch* b);
 
 /* fits_out has ve_batch_job_count elements. On success it receives one new handle per job; on any
    error every element is set to NULL and no handle is created. Missing specs, panel or jobs, a job
-   index out of range, or a NaN or infinite value in a used series is VE_INVALID_ARGUMENT. A fit that
+   index out of range, a spec that ve_spec_validate rejects (message prefixed "spec <i>: "), or a NaN
+   or infinite value in a used series is VE_INVALID_ARGUMENT. A fit that
    does not converge is not an error: see ve_fit_status. The fits own their data: they stay valid after
    the batch, panel, specs and ctx are freed. */
 VE_API ve_status ve_fit_batch(ve_context* ctx, const ve_batch* batch, ve_fit** fits_out);

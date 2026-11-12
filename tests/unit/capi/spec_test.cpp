@@ -145,6 +145,85 @@ TEST(CapiSpec, DistAndIncludeMeanValidation)
     ve_spec_free(spec);
 }
 
+TEST(CapiSpec, FixedAndStartSetters)
+{
+    ve_spec* spec = nullptr;
+    ASSERT_EQ(ve_spec_create(VE_MODEL_SGARCH, &spec), VE_OK);
+    for (const char* name : {static_cast<const char*>(nullptr), ""})
+    {
+        EXPECT_EQ(ve_spec_set_fixed(spec, name, 1.0), VE_INVALID_ARGUMENT);
+        EXPECT_EQ(ve_spec_set_start(spec, name, 1.0), VE_INVALID_ARGUMENT);
+        EXPECT_TRUE(error_mentions("name"));
+    }
+    for (const double bad : {std::nan(""), std::numeric_limits<double>::infinity()})
+    {
+        EXPECT_EQ(ve_spec_set_fixed(spec, "mu", bad), VE_INVALID_ARGUMENT);
+        EXPECT_EQ(ve_spec_set_start(spec, "mu", bad), VE_INVALID_ARGUMENT);
+        EXPECT_TRUE(error_mentions("value"));
+    }
+    EXPECT_TRUE(spec->spec.fixed.empty());
+    EXPECT_TRUE(spec->spec.start.empty());
+
+    ASSERT_EQ(ve_spec_set_start(spec, "alpha1", 0.1), VE_OK);
+    ASSERT_EQ(ve_spec_set_fixed(spec, "alpha1", 0.2), VE_OK);
+    EXPECT_TRUE(spec->spec.start.empty());
+    ASSERT_EQ(spec->spec.fixed.size(), 1u);
+    EXPECT_EQ(spec->spec.fixed[0].name, "alpha1");
+    EXPECT_EQ(spec->spec.fixed[0].value, 0.2);
+
+    ASSERT_EQ(ve_spec_set_fixed(spec, "alpha1", 0.3), VE_OK);
+    ASSERT_EQ(spec->spec.fixed.size(), 1u);
+    EXPECT_EQ(spec->spec.fixed[0].value, 0.3);
+
+    ASSERT_EQ(ve_spec_set_start(spec, "alpha1", 0.4), VE_OK);
+    EXPECT_TRUE(spec->spec.fixed.empty());
+    ASSERT_EQ(spec->spec.start.size(), 1u);
+    EXPECT_EQ(spec->spec.start[0].value, 0.4);
+
+    EXPECT_EQ(ve_spec_set_fixed(nullptr, "mu", 1.0), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_spec_set_start(nullptr, "mu", 1.0), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_spec_set_variance_targeting(nullptr, 1), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_spec_validate(nullptr), VE_INVALID_HANDLE);
+
+    EXPECT_EQ(ve_spec_set_variance_targeting(spec, 1), VE_OK);
+    EXPECT_TRUE(spec->spec.variance_targeting);
+    EXPECT_EQ(ve_spec_set_variance_targeting(spec, 2), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(error_mentions("variance_targeting"));
+    EXPECT_EQ(ve_spec_set_variance_targeting(spec, -1), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(spec->spec.variance_targeting);
+    EXPECT_EQ(ve_spec_set_variance_targeting(spec, 0), VE_OK);
+    EXPECT_FALSE(spec->spec.variance_targeting);
+    ve_spec_free(spec);
+}
+
+TEST(CapiSpec, ValidateReportsSpecProblems)
+{
+    ve_spec* spec = nullptr;
+    ASSERT_EQ(ve_spec_create(VE_MODEL_SGARCH, &spec), VE_OK);
+    EXPECT_EQ(ve_spec_validate(spec), VE_OK);
+    ASSERT_EQ(ve_spec_set_dist(spec, VE_DIST_STD), VE_OK);
+    ASSERT_EQ(ve_spec_set_fixed(spec, "shape", 5.0), VE_OK);
+    EXPECT_EQ(ve_spec_validate(spec), VE_OK);
+    ASSERT_EQ(ve_spec_set_dist(spec, VE_DIST_NORM), VE_OK);
+    EXPECT_EQ(ve_spec_validate(spec), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(error_mentions("shape"));
+    ve_spec_free(spec);
+
+    ASSERT_EQ(ve_spec_create(VE_MODEL_IGARCH, &spec), VE_OK);
+    ASSERT_EQ(ve_spec_set_variance_targeting(spec, 1), VE_OK);
+    EXPECT_EQ(ve_spec_validate(spec), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(error_mentions("variance targeting"));
+    ve_spec_free(spec);
+
+    ASSERT_EQ(ve_spec_create(VE_MODEL_SGARCH, &spec), VE_OK);
+    ASSERT_EQ(ve_spec_set_variance_targeting(spec, 1), VE_OK);
+    ASSERT_EQ(ve_spec_set_fixed(spec, "omega", 0.1), VE_OK);
+    EXPECT_EQ(ve_spec_validate(spec), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(error_mentions("derived"));
+    EXPECT_TRUE(error_mentions("omega"));
+    ve_spec_free(spec);
+}
+
 TEST(CapiOptions, DefaultsAndValidation)
 {
     ve_fit_options* options = nullptr;
