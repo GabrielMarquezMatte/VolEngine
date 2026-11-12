@@ -155,9 +155,88 @@ TEST(Layout, WidestFitsWidestDual)
     s.ar = s.ma = ve::kMaxOrder;
     s.dist = ve::Dist::Ghyp;
     auto l = ve::model::layout_of(s);
-    EXPECT_EQ(l.count(), ve::kMaxParameterCount);
     EXPECT_EQ(l.count(), 42u);
-    EXPECT_EQ(ve::model::parameter_names(l).size(), 42u);
+    s.archm = 1;
+    s.mxreg = s.vxreg = ve::kMaxRegressors;
+    l = ve::model::layout_of(s);
+    EXPECT_EQ(l.count(), ve::kMaxParameterCount);
+    EXPECT_EQ(l.count(), 59u);
+    EXPECT_EQ(ve::model::parameter_names(l).size(), 59u);
+}
+
+ve::Spec regressor_spec(Model model)
+{
+    ve::Spec s = spec_of(model);
+    s.ar = s.ma = 1;
+    s.archm = 1;
+    s.mxreg = 2;
+    s.vxreg = 1;
+    return s;
+}
+
+TEST(Layout, RegressorBlocksFollowRugarchOrder)
+{
+    ve::Spec s = regressor_spec(Model::SGarch);
+    s.dist = ve::Dist::Ghyp;
+    auto l = ve::model::layout_of(s);
+    EXPECT_EQ(ve::model::parameter_names(l),
+              (Names{"mu", "ar1", "ma1", "archm", "mxreg1", "mxreg2", "omega", "alpha1", "beta1", "vxreg1", "skew",
+                     "shape", "ghlambda"}));
+    EXPECT_TRUE(l.has_archm());
+    EXPECT_EQ(l.archm_index(), 3u);
+    EXPECT_EQ(l.mxreg_begin(), 4u);
+    EXPECT_EQ(l.omega(), 6u);
+    EXPECT_EQ(l.vxreg_begin(), 9u);
+    EXPECT_EQ(l.skew(), 10u);
+    EXPECT_EQ(l.count(), 13u);
+    auto ap = ve::model::parameter_names(ve::model::layout_of(regressor_spec(Model::ApArch)));
+    EXPECT_EQ(ap, (Names{"mu", "ar1", "ma1", "archm", "mxreg1", "mxreg2", "omega", "alpha1", "beta1", "gamma1",
+                         "delta", "vxreg1"}));
+    auto cs = ve::model::parameter_names(ve::model::layout_of(regressor_spec(Model::CsGarch)));
+    EXPECT_EQ(cs, (Names{"mu", "ar1", "ma1", "archm", "mxreg1", "mxreg2", "omega", "alpha1", "beta1", "eta11",
+                         "eta21", "vxreg1"}));
+}
+
+TEST(Layout, RegressorKinds)
+{
+    auto l = ve::model::layout_of(regressor_spec(Model::ApArch));
+    Names names = ve::model::parameter_names(l);
+    for (std::size_t i = 0; i < names.size(); ++i)
+    {
+        bool regressor = names[i] == "archm" || names[i].starts_with("mxreg") || names[i].starts_with("vxreg");
+        EXPECT_EQ(l.kind(i) == ParameterKind::Location, regressor || names[i] == "mu") << names[i];
+    }
+    EXPECT_EQ(l.kind(l.omega()), ParameterKind::Positive);
+}
+
+TEST(Layout, RegressorSpecProblems)
+{
+    ve::Spec s;
+    s.mxreg = 9;
+    EXPECT_NE(ve::model::spec_problem(s).value_or("").find("mxreg"), std::string::npos);
+    s = {};
+    s.vxreg = -1;
+    EXPECT_NE(ve::model::spec_problem(s).value_or("").find("vxreg"), std::string::npos);
+    s = {};
+    s.archm = 3;
+    EXPECT_NE(ve::model::spec_problem(s).value_or("").find("archm"), std::string::npos);
+    s = {};
+    s.mxreg = s.vxreg = ve::kMaxRegressors;
+    s.archm = 2;
+    EXPECT_FALSE(ve::model::spec_problem(s));
+}
+
+TEST(Layout, PlainSpecHasNoRegressorBlocks)
+{
+    for (int m = 0; m <= static_cast<int>(Model::FGarchAllGarch); ++m)
+    {
+        auto l = ve::model::layout_of(spec_of(static_cast<Model>(m), 2, 1));
+        EXPECT_FALSE(l.has_archm());
+        EXPECT_EQ(l.omega(), 1u);
+        EXPECT_EQ(l.mxreg_begin(), l.omega());
+        EXPECT_EQ(l.vxreg_begin(), l.skew());
+        EXPECT_EQ(l.skew(), l.power() + (l.free_power ? 1u : 0u));
+    }
 }
 
 TEST(Layout, DistributionBlocksFollowRugarchOrder)

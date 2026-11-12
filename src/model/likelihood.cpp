@@ -430,7 +430,7 @@ template ad::Dual<16> targeted_omega<ad::Dual<16>>(std::span<const ad::Dual<16>>
                                                    const Layout&);
 template ad::Dual<32> targeted_omega<ad::Dual<32>>(std::span<const ad::Dual<32>>, std::span<const ad::Dual<32>>,
                                                    const Layout&);
-template ad::Dual<42> targeted_omega<ad::Dual<42>>(std::span<const ad::Dual<42>>, std::span<const ad::Dual<42>>,
+template ad::Dual<kMaxParameterCount> targeted_omega<ad::Dual<kMaxParameterCount>>(std::span<const ad::Dual<kMaxParameterCount>>, std::span<const ad::Dual<kMaxParameterCount>>,
                                                    const Layout&);
 
 template double loglik<double>(std::span<const double>, std::span<const double>, const Layout&, VarInit,
@@ -441,6 +441,6 @@ template ad::Dual<16> loglik<ad::Dual<16>>(std::span<const double>, std::span<co
                                            const Layout&, VarInit, const LoglikOutputs<ad::Dual<16>>&);
 template ad::Dual<32> loglik<ad::Dual<32>>(std::span<const double>, std::span<const ad::Dual<32>>,
                                            const Layout&, VarInit, const LoglikOutputs<ad::Dual<32>>&);
-template ad::Dual<42> loglik<ad::Dual<42>>(std::span<const double>, std::span<const ad::Dual<42>>,
-                                           const Layout&, VarInit, const LoglikOutputs<ad::Dual<42>>&);
+template ad::Dual<kMaxParameterCount> loglik<ad::Dual<kMaxParameterCount>>(std::span<const double>, std::span<const ad::Dual<kMaxParameterCount>>,
+                                           const Layout&, VarInit, const LoglikOutputs<ad::Dual<kMaxParameterCount>>&);
 }

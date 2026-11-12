@@ -41,8 +41,9 @@ enum class Dist : int32_t
 };
 
 constexpr int kMaxOrder = 6;
-// mu, ar, ma, omega, alpha, beta, gamma, eta1, eta2, power, skew, shape and ghlambda of the widest layout.
-constexpr std::size_t kMaxParameterCount = 6 * kMaxOrder + 6;
+constexpr int kMaxRegressors = 8;
+// mu, ar, ma, archm, mxreg, omega, alpha, beta, gamma, eta1, eta2, power, vxreg, skew, shape and ghlambda of the widest layout.
+constexpr std::size_t kMaxParameterCount = 6 * kMaxOrder + 6 + 1 + 2 * kMaxRegressors;
 
 struct ParameterValue
 {
@@ -62,6 +63,10 @@ struct Spec
     std::vector<ParameterValue> fixed{};
     std::vector<ParameterValue> start{};
     bool variance_targeting = false;
+    int mxreg = 0;
+    int vxreg = 0;
+    // 0 off, 1 sigma, 2 sigma^2.
+    int archm = 0;
 };
 
 struct FitConfig

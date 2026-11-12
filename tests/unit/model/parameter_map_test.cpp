@@ -458,7 +458,7 @@ TEST(ParameterMap, AlwaysValidAllModels)
 
 TEST(ParameterMap, DualMatchesDoubleAllModels)
 {
-    using Dual42 = ve::ad::Dual<42>;
+    using DualMax = ve::ad::Dual<ve::kMaxParameterCount>;
     const Standardization standardization{0.02, 1.7};
     std::mt19937_64 engine(9);
     ve::testing::PortableNormal draw{1.0};
@@ -466,14 +466,14 @@ TEST(ParameterMap, DualMatchesDoubleAllModels)
     {
         std::vector<double> u(layout.count());
         std::ranges::generate(u, [&] { return draw(engine); });
-        std::vector<Dual42> seeds;
+        std::vector<DualMax> seeds;
         for (std::size_t i = 0; i < u.size(); ++i)
         {
-            seeds.push_back(ve::ad::variable<42>(u[i], i));
+            seeds.push_back(ve::ad::variable<ve::kMaxParameterCount>(u[i], i));
         }
-        std::vector<Dual42> dual_theta(u.size());
+        std::vector<DualMax> dual_theta(u.size());
         std::vector<double> theta(u.size());
-        to_natural<Dual42>(seeds, dual_theta, layout, standardization);
+        to_natural<DualMax>(seeds, dual_theta, layout, standardization);
         to_natural<double>(u, theta, layout, standardization);
         for (std::size_t i = 0; i < u.size(); ++i)
         {
@@ -977,7 +977,7 @@ std::vector<Layout> skewed_quadrature_layouts()
 
 TEST(ParameterMap, DualMatchesDoubleSkewed)
 {
-    using Dual42 = ve::ad::Dual<42>;
+    using DualMax = ve::ad::Dual<ve::kMaxParameterCount>;
     const Standardization standardization{0.02, 1.7};
     std::mt19937_64 engine(9);
     ve::testing::PortableNormal draw{1.0};
@@ -985,14 +985,14 @@ TEST(ParameterMap, DualMatchesDoubleSkewed)
     {
         std::vector<double> u(layout.count());
         std::ranges::generate(u, [&] { return draw(engine); });
-        std::vector<Dual42> seeds;
+        std::vector<DualMax> seeds;
         for (std::size_t i = 0; i < u.size(); ++i)
         {
-            seeds.push_back(ve::ad::variable<42>(u[i], i));
+            seeds.push_back(ve::ad::variable<ve::kMaxParameterCount>(u[i], i));
         }
-        std::vector<Dual42> dual_theta(u.size());
+        std::vector<DualMax> dual_theta(u.size());
         std::vector<double> theta(u.size());
-        to_natural<Dual42>(seeds, dual_theta, layout, standardization);
+        to_natural<DualMax>(seeds, dual_theta, layout, standardization);
         to_natural<double>(u, theta, layout, standardization);
         for (std::size_t i = 0; i < u.size(); ++i)
         {

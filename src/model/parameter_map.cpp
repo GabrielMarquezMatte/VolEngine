@@ -625,10 +625,10 @@ template void to_natural<ad::Dual<32>>(std::span<const ad::Dual<32>>, std::span<
                                  const Standardization&);
 template ad::Dual<32> shock_moment<ad::Dual<32>>(std::span<const ad::Dual<32>>, const Layout&, std::size_t);
 template ad::Dual<32> persistence<ad::Dual<32>>(std::span<const ad::Dual<32>>, const Layout&);
-template void to_natural<ad::Dual<42>>(std::span<const ad::Dual<42>>, std::span<ad::Dual<42>>, const Layout&,
+template void to_natural<ad::Dual<kMaxParameterCount>>(std::span<const ad::Dual<kMaxParameterCount>>, std::span<ad::Dual<kMaxParameterCount>>, const Layout&,
                                  const Standardization&);
-template ad::Dual<42> shock_moment<ad::Dual<42>>(std::span<const ad::Dual<42>>, const Layout&, std::size_t);
-template ad::Dual<42> persistence<ad::Dual<42>>(std::span<const ad::Dual<42>>, const Layout&);
+template ad::Dual<kMaxParameterCount> shock_moment<ad::Dual<kMaxParameterCount>>(std::span<const ad::Dual<kMaxParameterCount>>, const Layout&, std::size_t);
+template ad::Dual<kMaxParameterCount> persistence<ad::Dual<kMaxParameterCount>>(std::span<const ad::Dual<kMaxParameterCount>>, const Layout&);
 
 void to_unconstrained(std::span<const double> theta, std::span<double> u, const Layout& layout,
                       const Standardization& standardization)

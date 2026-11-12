@@ -82,7 +82,10 @@ Layout base_layout(const Spec& spec)
                   .eta2 = block_size(blocks.eta2, spec.p),
                   .free_power = blocks.free_power,
                   .fixed_power = blocks.fixed_power,
-                  .dist = spec.dist};
+                  .dist = spec.dist,
+                  .archm = spec.archm,
+                  .mxreg = spec.mxreg,
+                  .vxreg = spec.vxreg};
 }
 
 std::optional<std::size_t> index_of(const std::vector<std::string>& names, const std::string& name)
@@ -113,6 +116,23 @@ bool is_fixed_by_name(const Spec& spec, const std::string& name)
 {
     return std::any_of(spec.fixed.begin(), spec.fixed.end(),
                        [&](const ParameterValue& entry) { return entry.name == name; });
+}
+
+std::optional<std::string> regressor_problem(const Spec& spec)
+{
+    if (spec.mxreg < 0 || spec.mxreg > kMaxRegressors)
+    {
+        return "mxreg must be between 0 and " + std::to_string(kMaxRegressors);
+    }
+    if (spec.vxreg < 0 || spec.vxreg > kMaxRegressors)
+    {
+        return "vxreg must be between 0 and " + std::to_string(kMaxRegressors);
+    }
+    if (spec.archm < 0 || spec.archm > 2)
+    {
+        return "archm must be 0, 1 (sigma) or 2 (sigma^2)";
+    }
+    return std::nullopt;
 }
 
 std::optional<std::string> unknown_name_problem(const Spec& spec, const std::vector<std::string>& names)
@@ -194,9 +214,19 @@ std::size_t Layout::ma_begin() const
     return ar_begin() + static_cast<std::size_t>(ar);
 }
 
-std::size_t Layout::omega() const
+std::size_t Layout::archm_index() const
 {
     return ma_begin() + static_cast<std::size_t>(ma);
+}
+
+std::size_t Layout::mxreg_begin() const
+{
+    return archm_index() + (has_archm() ? 1 : 0);
+}
+
+std::size_t Layout::omega() const
+{
+    return mxreg_begin() + static_cast<std::size_t>(mxreg);
 }
 
 std::size_t Layout::alpha_begin() const
@@ -244,9 +274,14 @@ std::size_t Layout::power() const
     return eta2_begin() + static_cast<std::size_t>(eta2);
 }
 
-std::size_t Layout::skew() const
+std::size_t Layout::vxreg_begin() const
 {
     return power() + (free_power ? 1 : 0);
+}
+
+std::size_t Layout::skew() const
+{
+    return vxreg_begin() + static_cast<std::size_t>(vxreg);
 }
 
 std::size_t Layout::shape() const
@@ -358,6 +393,12 @@ ParameterKind Layout::kind(std::size_t index) const
     {
         return ParameterKind::Location;
     }
+    bool regressor = (has_archm() || mxreg > 0) && index >= archm_index() && index < omega();
+    bool variance_regressor = index >= vxreg_begin() && index < skew();
+    if (regressor || variance_regressor)
+    {
+        return ParameterKind::Location;
+    }
     if (index < omega())
     {
         return ParameterKind::Real;
@@ -427,8 +468,13 @@ Layout layout_of(const Spec& spec)
 
 std::optional<std::string> spec_problem(const Spec& spec)
 {
+    std::optional<std::string> problem = regressor_problem(spec);
+    if (problem)
+    {
+        return problem;
+    }
     std::vector<std::string> names = parameter_names(base_layout(spec));
-    std::optional<std::string> problem = unknown_name_problem(spec, names);
+    problem = unknown_name_problem(spec, names);
     if (!problem)
     {
         problem = derived_beta_problem(spec, names);
@@ -454,6 +500,11 @@ std::vector<std::string> parameter_names(const Layout& layout)
     }
     append_block(names, "ar", layout.ar);
     append_block(names, "ma", layout.ma);
+    if (layout.has_archm())
+    {
+        names.emplace_back("archm");
+    }
+    append_block(names, "mxreg", layout.mxreg);
     names.emplace_back("omega");
     append_block(names, "alpha", layout.arch);
     append_block(names, "beta", layout.garch);
@@ -464,6 +515,7 @@ std::vector<std::string> parameter_names(const Layout& layout)
     {
         names.emplace_back(layout.model == Model::ApArch ? "delta" : "lambda");
     }
+    append_block(names, "vxreg", layout.vxreg);
     if (layout.has_skew())
     {
         names.emplace_back("skew");
