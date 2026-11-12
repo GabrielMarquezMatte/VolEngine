@@ -193,3 +193,53 @@ TEST(StartValues, AreValidForEveryModelLayout)
 }
 
 }
+
+namespace
+{
+
+constexpr Dist kSkewedDists[] = {Dist::Sstd, Dist::Sged, Dist::Nig, Dist::Ghyp, Dist::Jsu};
+
+struct DistributionStart
+{
+    Dist dist;
+    double skew;
+    double shape;
+    double ghlambda;
+};
+
+TEST(StartValues, Distributions)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(3, 400);
+    std::vector<DistributionStart> starts{{Dist::Sstd, 1.0, 8.0, 0.0},
+                                          {Dist::Sged, 1.0, 2.0, 0.0},
+                                          {Dist::Nig, 0.0, 2.0, 0.0},
+                                          {Dist::Ghyp, 0.0, 2.0, -0.5},
+                                          {Dist::Jsu, 0.0, 2.0, 0.0}};
+    for (const DistributionStart& start : starts)
+    {
+        Layout layout = model_layout(Model::SGarch, start.dist);
+        std::vector<double> theta = start_values(r, layout);
+        EXPECT_NEAR(theta[layout.skew()], start.skew, 1e-15) << "dist " << static_cast<int>(start.dist);
+        EXPECT_NEAR(theta[layout.shape()], start.shape, 1e-15) << "dist " << static_cast<int>(start.dist);
+        if (layout.has_ghlambda())
+        {
+            EXPECT_NEAR(theta[layout.ghlambda()], start.ghlambda, 1e-15);
+        }
+    }
+    for (int model = 0; model < 14; ++model)
+    {
+        for (int order : {1, 2, 6})
+        {
+            for (Dist dist : kSkewedDists)
+            {
+                auto spec_model = static_cast<Model>(model);
+                Layout layout = ve::model::layout_of(
+                    {.model = spec_model, .p = order, .q = 7 - order, .ar = 2, .ma = 1, .dist = dist});
+                EXPECT_TRUE(is_valid(start_values(r, layout), layout))
+                    << "model " << model << ", p " << order << ", dist " << static_cast<int>(dist);
+            }
+        }
+    }
+}
+
+}

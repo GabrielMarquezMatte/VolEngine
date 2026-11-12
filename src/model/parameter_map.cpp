@@ -111,16 +111,109 @@ void persistence_to_natural(std::span<const T> u, std::span<T> weights)
     softmax_to_natural<T>(u.subspan(1), persistence, weights);
 }
 
+bool is_fernandez_steel(Dist dist)
+{
+    return dist == Dist::Sstd || dist == Dist::Sged;
+}
+
+bool is_hyperbolic(Dist dist)
+{
+    return dist == Dist::Nig || dist == Dist::Ghyp;
+}
+
+bool is_student(Dist dist)
+{
+    return dist == Dist::Std || dist == Dist::Sstd;
+}
+
+// sstd, sged: xi = exp(x); nig, ghyp: rho = 2 logistic(x) - 1; jsu: nu = x.
+template <class T>
+T skew_to_natural(const T& x, Dist dist)
+{
+    using std::exp;
+    if (is_fernandez_steel(dist))
+    {
+        return exp(x);
+    }
+    if (is_hyperbolic(dist))
+    {
+        return 2.0 * logistic(x) - 1.0;
+    }
+    return x;
+}
+
+double skew_to_unconstrained(double skew, Dist dist)
+{
+    if (is_fernandez_steel(dist))
+    {
+        return std::log(skew);
+    }
+    if (is_hyperbolic(dist))
+    {
+        return log_ratio(1.0 + skew, 1.0 - skew);
+    }
+    return skew;
+}
+
 template <class T>
 T shape_to_natural(const T& x, Dist dist)
 {
     using std::exp;
-    return dist == Dist::Std ? 2.0 + exp(x) : exp(x);
+    if (is_student(dist))
+    {
+        return 2.0 + exp(x);
+    }
+    return exp(x);
 }
 
 double shape_to_unconstrained(double shape, Dist dist)
 {
-    return std::log(dist == Dist::Std ? shape - 2.0 : shape);
+    if (is_student(dist))
+    {
+        return std::log(shape - 2.0);
+    }
+    return std::log(shape);
+}
+
+// ghlambda is unconstrained in both spaces.
+template <class T>
+void distribution_to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout)
+{
+    if (layout.has_skew())
+    {
+        theta[layout.skew()] = skew_to_natural(u[layout.skew()], layout.dist);
+    }
+    if (layout.has_shape())
+    {
+        theta[layout.shape()] = shape_to_natural(u[layout.shape()], layout.dist);
+    }
+    if (layout.has_ghlambda())
+    {
+        theta[layout.ghlambda()] = u[layout.ghlambda()];
+    }
+}
+
+void distribution_to_unconstrained(std::span<const double> theta, std::span<double> u, const Layout& layout)
+{
+    if (layout.has_skew())
+    {
+        u[layout.skew()] = skew_to_unconstrained(theta[layout.skew()], layout.dist);
+    }
+    if (layout.has_shape())
+    {
+        u[layout.shape()] = shape_to_unconstrained(theta[layout.shape()], layout.dist);
+    }
+    if (layout.has_ghlambda())
+    {
+        u[layout.ghlambda()] = theta[layout.ghlambda()];
+    }
+}
+
+// pi = P(z < 0) splits the gjrGARCH alpha_i + gamma_i between the negative and the positive shocks.
+template <class T>
+T probability_below_zero_of(std::span<const T> theta, const Layout& layout)
+{
+    return dist::probability_below_zero(layout.dist, shape_parameters_of(theta, layout));
 }
 
 // eGARCH alpha and gamma are unconstrained in both spaces.
@@ -150,15 +243,13 @@ void mean_to_natural(std::span<const T> u, std::span<T> theta, const Layout& lay
               theta.begin() + static_cast<std::ptrdiff_t>(layout.ar_begin()));
 }
 
-// shape, eta1 or the apARCH gamma, eta2 and the free power: everything kappa reads.
+// The distribution parameters, eta1 or the apARCH gamma, eta2 and the free power: everything kappa and pi
+// read.
 template <class T>
 void shock_parameters_to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout)
 {
     using std::exp;
-    if (layout.has_shape())
-    {
-        theta[layout.shape()] = shape_to_natural(u[layout.shape()], layout.dist);
-    }
+    distribution_to_natural<T>(u, theta, layout);
     std::size_t asymmetry = layout.asymmetry_begin();
     for (std::size_t i = asymmetry; i < asymmetry + layout.asymmetry_count(); ++i)
     {
@@ -188,7 +279,24 @@ void igarch_weights_to_natural(std::span<const T> u, std::span<T> theta, const L
     theta[layout.derived()] = derived;
 }
 
-// The weights of gjrGARCH are (alpha / 2, beta, (alpha + gamma) / 2); of apARCH and fGARCH (alpha kappa, beta).
+// From the weights ((1 - pi) alpha, pi (alpha + gamma)) in the alpha and gamma positions. The symmetric
+// densities have pi = 0.5 exactly, where both divisions are exact doublings: alpha = 2 w_alpha and
+// gamma = 2 w_gamma - 2 w_alpha = 2 (w_gamma - w_alpha), bit for bit.
+template <class T>
+void gjr_weights_to_natural(std::span<T> theta, const Layout& layout)
+{
+    T below = probability_below_zero_of<T>(theta, layout);
+    T above = 1.0 - below;
+    for (std::size_t i = 0; i < count_of(layout.arch); ++i)
+    {
+        T alpha = theta[layout.alpha_begin() + i] / above;
+        theta[layout.gamma_begin() + i] = theta[layout.gamma_begin() + i] / below - alpha;
+        theta[layout.alpha_begin() + i] = alpha;
+    }
+}
+
+// The weights of gjrGARCH are ((1 - pi) alpha, beta, pi (alpha + gamma)); of apARCH and fGARCH
+// (alpha kappa, beta).
 template <class T>
 void weights_to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout)
 {
@@ -199,12 +307,9 @@ void weights_to_natural(std::span<const T> u, std::span<T> theta, const Layout& 
     }
     WeightBlock block = weight_block(layout);
     persistence_to_natural<T>(u.subspan(block.begin, block.count), theta.subspan(block.begin, block.count));
-    for (std::size_t i = 0; i < count_of(layout.arch) && layout.model == Model::GjrGarch; ++i)
+    if (layout.model == Model::GjrGarch)
     {
-        T half_alpha = theta[layout.alpha_begin() + i];
-        T half_sum = theta[layout.gamma_begin() + i];
-        theta[layout.alpha_begin() + i] = 2.0 * half_alpha;
-        theta[layout.gamma_begin() + i] = 2.0 * (half_sum - half_alpha);
+        gjr_weights_to_natural<T>(theta, layout);
     }
     for (std::size_t i = 0; i < count_of(layout.arch) && layout.is_power_family(); ++i)
     {
@@ -248,11 +353,16 @@ Weights natural_weights(std::span<const double> theta, const Layout& layout)
     Weights weights{};
     std::copy_n(theta.begin() + static_cast<std::ptrdiff_t>(block.begin), block.count, weights.begin());
     std::size_t p = count_of(layout.arch);
+    double below = 0.5;
+    if (layout.model == Model::GjrGarch)
+    {
+        below = probability_below_zero_of<double>(theta, layout);
+    }
     for (std::size_t i = 0; i < p && layout.model == Model::GjrGarch; ++i)
     {
         double alpha = theta[layout.alpha_begin() + i];
-        weights[i] = 0.5 * alpha;
-        weights[block.count - p + i] = 0.5 * (alpha + theta[layout.gamma_begin() + i]);
+        weights[i] = (1.0 - below) * alpha;
+        weights[block.count - p + i] = below * (alpha + theta[layout.gamma_begin() + i]);
     }
     for (std::size_t i = 0; i < p && layout.is_power_family(); ++i)
     {
@@ -269,10 +379,7 @@ double persistence_of(std::span<const double> theta, const Layout& layout)
 
 void shock_parameters_to_unconstrained(std::span<const double> theta, std::span<double> u, const Layout& layout)
 {
-    if (layout.has_shape())
-    {
-        u[layout.shape()] = shape_to_unconstrained(theta[layout.shape()], layout.dist);
-    }
+    distribution_to_unconstrained(theta, u, layout);
     std::size_t asymmetry = layout.asymmetry_begin();
     for (std::size_t i = asymmetry; i < asymmetry + layout.asymmetry_count(); ++i)
     {
@@ -341,7 +448,7 @@ double omega_to_unconstrained(std::span<const double> theta, const Layout& layou
 
 bool shock_parameters_valid(std::span<const double> theta, const Layout& layout)
 {
-    if (layout.has_shape() && !dist::in_domain(layout.dist, theta[layout.shape()]))
+    if (!dist::in_domain(layout.dist, shape_parameters_of(theta, layout)))
     {
         return false;
     }
@@ -371,6 +478,17 @@ bool weights_valid(std::span<const double> theta, const Layout& layout)
     return sum < kPersistenceCeiling;
 }
 
+// gjrGARCH reads alpha_i back as w / (1 - pi) and gamma_i as w / pi - alpha_i.
+bool split_valid(std::span<const double> theta, const Layout& layout)
+{
+    if (layout.model != Model::GjrGarch)
+    {
+        return true;
+    }
+    double below = probability_below_zero_of<double>(theta, layout);
+    return below > 0.0 && below < 1.0;
+}
+
 bool csgarch_valid(std::span<const double> theta, const Layout& layout)
 {
     double persistence = persistence_of(theta, layout);
@@ -383,6 +501,21 @@ bool csgarch_valid(std::span<const double> theta, const Layout& layout)
 bool in_block(std::size_t index, std::size_t begin, std::size_t count)
 {
     return index >= begin && index < begin + count;
+}
+
+// The std likelihood tends to the normal one as 1/nu -> 0, its boundary. There its curvature in nu falls as
+// nu^-4 and its cross terms as nu^-2, below what differences of the gradient resolve, and noise in the shape
+// row and column alone can make the whole Hessian indefinite. sstd, nig, ghyp and jsu have their limit at
+// 1/shape -> 0 as well, and there the ghyp ghlambda is no longer identified.
+bool distribution_on_boundary(const Layout& layout, std::span<const double> theta, std::size_t index)
+{
+    Dist dist = layout.dist;
+    if (layout.has_skew() && index == layout.skew())
+    {
+        return is_hyperbolic(dist) && std::abs(theta[index]) > 1.0 - kBoundary;
+    }
+    bool shape_limit = is_student(dist) || is_hyperbolic(dist) || dist == Dist::Jsu;
+    return shape_limit && 1.0 / theta[layout.shape()] < kBoundary;
 }
 
 }
@@ -468,7 +601,7 @@ bool is_valid(std::span<const double> theta, const Layout& layout)
     {
         return false;
     }
-    if (!shock_parameters_valid(theta, layout))
+    if (!shock_parameters_valid(theta, layout) || !split_valid(theta, layout))
     {
         return false;
     }
@@ -483,9 +616,6 @@ bool is_valid(std::span<const double> theta, const Layout& layout)
     return layout.model != Model::CsGarch || csgarch_valid(theta, layout);
 }
 
-// The std likelihood tends to the normal one as 1/nu -> 0, its boundary. There its curvature in nu falls as
-// nu^-4 and its cross terms as nu^-2, below what differences of the gradient resolve, and noise in the shape
-// row and column alone can make the whole Hessian indefinite.
 bool on_boundary(const Layout& layout, std::span<const double> theta, std::size_t index)
 {
     double value = theta[index];
@@ -493,9 +623,9 @@ bool on_boundary(const Layout& layout, std::span<const double> theta, std::size_
     {
         return true;
     }
-    if (layout.has_shape() && index == layout.shape())
+    if (index >= layout.skew())
     {
-        return layout.dist == Dist::Std && 1.0 / value < kBoundary;
+        return distribution_on_boundary(layout, theta, index);
     }
     if (layout.model == Model::CsGarch && index == layout.eta1_begin())
     {

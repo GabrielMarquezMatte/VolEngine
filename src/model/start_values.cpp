@@ -15,8 +15,11 @@ namespace
 constexpr double kInitialArch = 0.05;
 constexpr double kInitialGarch = 0.90;
 constexpr double kInitialOmegaShare = 1.0 - (kInitialArch + kInitialGarch);
-constexpr double kInitialStdShape = 8.0;
+constexpr double kInitialStudentShape = 8.0;
 constexpr double kInitialGedShape = 2.0;
+constexpr double kInitialHyperbolicShape = 2.0;
+constexpr double kInitialJohnsonShape = 2.0;
+constexpr double kInitialGhLambda = -0.5;
 constexpr double kInitialPower = 2.0;
 constexpr double kInitialRho = 0.98;
 constexpr double kInitialPhi = 0.03;
@@ -55,6 +58,49 @@ VarianceStart variance_start(Model model)
             return {kInitialOmegaShare, kInitialArch, 0.0};
     }
     return {kInitialOmegaShare, kInitialArch, 0.0};
+}
+
+// The symmetric member of each family (skew xi = 1, rho = 0 or nu = 0); nig and ghyp start with the kurtosis
+// of a t with 8 degrees of freedom.
+dist::ShapeParameters<double> distribution_start(Dist dist)
+{
+    switch (dist)
+    {
+        case Dist::Std:
+            return {.shape = kInitialStudentShape};
+        case Dist::Ged:
+            return {.shape = kInitialGedShape};
+        case Dist::Sstd:
+            return {.skew = 1.0, .shape = kInitialStudentShape};
+        case Dist::Sged:
+            return {.skew = 1.0, .shape = kInitialGedShape};
+        case Dist::Nig:
+            return {.skew = 0.0, .shape = kInitialHyperbolicShape};
+        case Dist::Ghyp:
+            return {.skew = 0.0, .shape = kInitialHyperbolicShape, .ghlambda = kInitialGhLambda};
+        case Dist::Jsu:
+            return {.skew = 0.0, .shape = kInitialJohnsonShape};
+        case Dist::Norm:
+            break;
+    }
+    return {};
+}
+
+void set_distribution_start(std::vector<double>& theta, const Layout& layout)
+{
+    dist::ShapeParameters<double> start = distribution_start(layout.dist);
+    if (layout.has_skew())
+    {
+        theta[layout.skew()] = start.skew;
+    }
+    if (layout.has_shape())
+    {
+        theta[layout.shape()] = start.shape;
+    }
+    if (layout.has_ghlambda())
+    {
+        theta[layout.ghlambda()] = start.ghlambda;
+    }
 }
 
 double sample_variance(std::span<const double> r, double mean)
@@ -132,10 +178,7 @@ std::vector<double> start_values(std::span<const double> r, const Layout& layout
         theta[layout.eta1_begin()] = kInitialRho;
         theta[layout.eta2_begin()] = kInitialPhi;
     }
-    if (layout.has_shape())
-    {
-        theta[layout.shape()] = layout.dist == Dist::Std ? kInitialStdShape : kInitialGedShape;
-    }
+    set_distribution_start(theta, layout);
     if (layout.is_power_family())
     {
         scale_power_alpha(theta, layout);

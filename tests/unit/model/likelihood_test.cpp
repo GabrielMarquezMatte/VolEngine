@@ -551,31 +551,9 @@ std::vector<double> drawn_theta(std::span<const double> r, const Layout& layout)
     return theta;
 }
 
-// Hand-chosen interior distribution parameters, skew, shape, ghlambda in the order of the layout.
-std::vector<double> distribution_parameters(Dist dist)
-{
-    for (const SkewedCase& c : skewed_cases())
-    {
-        if (c.dist == dist)
-        {
-            return c.parameters;
-        }
-    }
-    return {};
-}
-
 std::vector<double> grid_theta(std::span<const double> r, const Layout& layout)
 {
-    std::vector<double> extra = distribution_parameters(layout.dist);
-    if (!extra.empty())
-    {
-        Layout base = layout;
-        base.dist = Dist::Norm;
-        std::vector<double> theta = grid_theta(r, base);
-        theta.insert(theta.end(), extra.begin(), extra.end());
-        return theta;
-    }
-    if (layout.model == Model::SGarch)
+    if (layout.model == Model::SGarch && !layout.has_skew())
     {
         return interior_theta(layout);
     }
