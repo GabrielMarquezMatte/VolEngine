@@ -1169,4 +1169,191 @@ TEST(SimulatedShocks, SkewedShocksAreStandardized)
     }
 }
 
+constexpr std::size_t kRoleObservations = 3000;
+
+SimulatedModel sgarch11_std6()
+{
+    SimulatedModel model;
+    model.dist = ve::Dist::Std;
+    model.shape = 6.0;
+    return model;
+}
+
+const std::vector<double>& std_series()
+{
+    static const std::vector<double> series =
+        ve::testing::simulate_arma_garch(sgarch11_std6(), 41, kRoleObservations);
+    return series;
+}
+
+Spec std_spec()
+{
+    return generic_spec(1, 1, ve::Dist::Std);
+}
+
+std::vector<ve::ParameterValue> true_std_parameters()
+{
+    return {{"mu", 0.05}, {"omega", 0.01}, {"alpha1", 0.08}, {"beta1", 0.9}, {"shape", 6.0}};
+}
+
+double loglik_at(std::span<const double> r, const Spec& spec, const std::vector<double>& theta)
+{
+    ve::model::Layout layout = ve::model::layout_of(spec);
+    return ve::model::loglik<double>(r, theta, layout, ve::VarInit::Sample, {});
+}
+
+std::vector<double> theta_of(const FitResult& result, const std::vector<ve::ParameterValue>& values)
+{
+    std::vector<double> theta(result.names.size(), 0.0);
+    for (const ve::ParameterValue& entry : values)
+    {
+        theta[index_of(result, entry.name)] = entry.value;
+    }
+    return theta;
+}
+
+void expect_finite_unless(const FitResult& result, const std::string& name)
+{
+    for (std::size_t i = 0; i < result.names.size(); ++i)
+    {
+        if (result.names[i] == name)
+        {
+            EXPECT_TRUE(std::isnan(result.se_hessian[i])) << name;
+            EXPECT_TRUE(std::isnan(result.se_robust[i])) << name;
+            continue;
+        }
+        EXPECT_TRUE(std::isfinite(result.se_hessian[i])) << result.names[i];
+        EXPECT_TRUE(std::isfinite(result.se_robust[i])) << result.names[i];
+    }
+}
+
+TEST(FitRoles, FixedShapeRecoversTheRest)
+{
+    Spec spec = std_spec();
+    spec.fixed = {{"shape", 6.0}};
+    FitResult result = ve::fit_one(std_series(), spec, ve::FitConfig{});
+    ASSERT_EQ(result.status, FitStatus::Converged);
+    EXPECT_EQ(estimate_of(result, "shape"), 6.0);
+    expect_finite_unless(result, "shape");
+    double at_truth = loglik_at(std_series(), spec, theta_of(result, true_std_parameters()));
+    EXPECT_GE(result.loglik, at_truth - 1e-6 * std::abs(at_truth));
+}
+
+TEST(FitRoles, FixedWeightFits)
+{
+    std::vector<double> normal_series = ve::testing::simulate_arma_garch(SimulatedModel{}, 42, kRoleObservations);
+    Spec normal = generic_spec(1, 1, ve::Dist::Norm);
+    normal.fixed = {{"alpha1", 0.08}};
+    FitResult first = ve::fit_one(normal_series, normal, ve::FitConfig{});
+    ASSERT_EQ(first.status, FitStatus::Converged);
+    EXPECT_EQ(estimate_of(first, "alpha1"), 0.08);
+    EXPECT_LT(estimate_of(first, "alpha1") + estimate_of(first, "beta1"), 1.0);
+
+    std::vector<double> skewed_series =
+        ve::testing::simulate_variant(ve::testing::skewed_processes()[0], 43, kRoleObservations);
+    Spec gjr = generic_spec(1, 1, ve::Dist::Sstd);
+    gjr.model = ve::Model::GjrGarch;
+    gjr.fixed = {{"gamma1", 0.09}};
+    FitResult second = ve::fit_one(skewed_series, gjr, ve::FitConfig{});
+    ASSERT_EQ(second.status, FitStatus::Converged);
+    EXPECT_EQ(estimate_of(second, "gamma1"), 0.09);
+}
+
+TEST(FitRoles, InvalidFixedFails)
+{
+    Spec spec;
+    spec.fixed = {{"alpha1", 0.6}, {"beta1", 0.5}};
+    FitResult result;
+    ASSERT_NO_THROW(result = fit_simulated(spec));
+    EXPECT_EQ(result.status, FitStatus::Failed);
+    EXPECT_TRUE(all_nan(result.estimate));
+}
+
+TEST(FitRoles, AllFixedEvaluates)
+{
+    Spec spec = std_spec();
+    spec.fixed = true_std_parameters();
+    FitResult result = ve::fit_one(std_series(), spec, ve::FitConfig{});
+    ASSERT_EQ(result.status, FitStatus::Converged);
+    std::vector<double> theta = theta_of(result, true_std_parameters());
+    EXPECT_EQ(result.estimate, theta);
+
+    std::size_t count = std_series().size();
+    std::vector<double> residuals(count);
+    std::vector<double> sigma2(count);
+    ve::model::Layout layout = ve::model::layout_of(spec);
+    double expected = ve::model::loglik<double>(std_series(), theta, layout, ve::VarInit::Sample,
+                                                {.residuals = residuals, .sigma2 = sigma2});
+    EXPECT_NEAR(result.loglik, expected, 1e-14 * std::abs(expected));
+    ASSERT_EQ(result.sigma.size(), count);
+    for (std::size_t t = 0; t < count; ++t)
+    {
+        EXPECT_EQ(result.sigma[t], std::sqrt(sigma2[t]));
+    }
+    EXPECT_TRUE(all_nan(result.se_hessian));
+    EXPECT_TRUE(all_nan(result.se_robust));
+    double per_observation = -2.0 * result.loglik / static_cast<double>(count);
+    EXPECT_NEAR(ve::aic(result, ve::IcScale::PerObs), per_observation, 1e-14);
+}
+
+void expect_warm_start_matches(const std::vector<double>& r, const Spec& spec)
+{
+    FitResult first = ve::fit_one(r, spec, ve::FitConfig{});
+    ASSERT_EQ(first.status, FitStatus::Converged);
+    Spec warm = spec;
+    for (std::size_t i = 0; i < first.names.size(); ++i)
+    {
+        warm.start.push_back({first.names[i], first.estimate[i]});
+    }
+    FitResult second = ve::fit_one(r, warm, ve::FitConfig{});
+    ASSERT_EQ(second.status, FitStatus::Converged);
+    ve::model::Layout layout = ve::model::layout_of(spec);
+    for (std::size_t i = 0; i < first.estimate.size(); ++i)
+    {
+        if (!layout.is_estimated(i))
+        {
+            continue;
+        }
+        double tolerance = 1e-6 * std::max(1.0, std::abs(first.estimate[i]));
+        EXPECT_NEAR(second.estimate[i], first.estimate[i], tolerance) << first.names[i];
+    }
+}
+
+TEST(FitRoles, WarmStartReachesTheSameEstimateIGarch)
+{
+    std::vector<double> r = ve::testing::simulate_variant(ve::testing::variant_processes()[3], 44, kRoleObservations);
+    Spec spec = generic_spec(1, 1, ve::Dist::Norm);
+    spec.model = ve::Model::IGarch;
+    expect_warm_start_matches(r, spec);
+}
+
+TEST(FitRoles, WarmStartReachesTheSameEstimateVarianceTargeting)
+{
+    Spec spec = std_spec();
+    spec.variance_targeting = true;
+    expect_warm_start_matches(std_series(), spec);
+}
+
+TEST(FitRoles, VarianceTargeting)
+{
+    Spec spec = std_spec();
+    spec.variance_targeting = true;
+    FitResult targeted = ve::fit_one(std_series(), spec, ve::FitConfig{});
+    ASSERT_EQ(targeted.status, FitStatus::Converged);
+    ve::model::Layout layout = ve::model::layout_of(spec);
+    double omega = ve::model::targeted_omega<double>(targeted.residuals, targeted.estimate, layout);
+    EXPECT_NEAR(targeted.estimate[layout.omega()], omega, 1e-15);
+    EXPECT_TRUE(std::isnan(targeted.se_hessian[layout.omega()]));
+    EXPECT_TRUE(std::isnan(targeted.se_robust[layout.omega()]));
+    expect_finite_unless(targeted, "omega");
+
+    FitResult free = ve::fit_one(std_series(), std_spec(), ve::FitConfig{});
+    ASSERT_EQ(free.status, FitStatus::Converged);
+    EXPECT_LE(targeted.loglik, free.loglik + 1e-9 * std::abs(free.loglik));
+
+    double count = static_cast<double>(targeted.nobs);
+    double expected_bic = (-2.0 * targeted.loglik + 4.0 * std::log(count)) / count;
+    EXPECT_NEAR(ve::bic(targeted, ve::IcScale::PerObs), expected_bic, 1e-14);
+}
+
 }

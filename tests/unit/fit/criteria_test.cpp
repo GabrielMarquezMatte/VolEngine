@@ -49,4 +49,22 @@ TEST(Criteria, NonFiniteLoglikGivesNaN)
     EXPECT_TRUE(std::isnan(ve::sic(result, IcScale::Total)));
 }
 
+TEST(Criteria, CountEstimatedOnly)
+{
+    double n = 200.0;
+    ve::FitResult fixed = synthetic_result(-100.0, 5, 200);
+    fixed.spec.dist = ve::Dist::Std;
+    fixed.spec.fixed = {{"shape", 6.0}};
+    EXPECT_NEAR(ve::aic(fixed, IcScale::PerObs), (200.0 + 8.0) / n, 1e-14);
+
+    ve::FitResult targeted = synthetic_result(-100.0, 5, 200);
+    targeted.spec.dist = ve::Dist::Std;
+    targeted.spec.variance_targeting = true;
+    EXPECT_NEAR(ve::bic(targeted, IcScale::PerObs), (200.0 + 4.0 * std::log(200.0)) / n, 1e-14);
+
+    ve::FitResult none = synthetic_result(-100.0, 4, 200);
+    none.spec.fixed = {{"mu", 0.0}, {"omega", 0.1}, {"alpha1", 0.1}, {"beta1", 0.8}};
+    EXPECT_NEAR(ve::aic(none, IcScale::PerObs), 200.0 / n, 1e-14);
+}
+
 }

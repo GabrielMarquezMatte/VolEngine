@@ -170,4 +170,53 @@ TEST(StandardErrors, SkewedFinite)
     }
 }
 
+TEST(StandardErrors, LeavesOutNonEstimated)
+{
+    std::vector<double> r = ve::testing::simulate_arma_garch(ve::testing::SimulatedModel{}, 42, 3000);
+    ve::Spec reduced;
+    reduced.include_mean = false;
+    ve::FitResult fitted = ve::fit_one(r, reduced, ve::FitConfig{});
+    ASSERT_EQ(fitted.status, ve::FitStatus::Converged);
+    ve::fit::StandardErrors expected = standard_errors_at(r, reduced, fitted.estimate);
+
+    ve::Spec fixed;
+    fixed.fixed = {{"mu", 0.0}};
+    std::vector<double> theta{0.0};
+    theta.insert(theta.end(), fitted.estimate.begin(), fitted.estimate.end());
+    ve::fit::StandardErrors errors = standard_errors_at(r, fixed, theta);
+    ASSERT_EQ(errors.hessian.size(), theta.size());
+    EXPECT_TRUE(std::isnan(errors.hessian[0]));
+    EXPECT_TRUE(std::isnan(errors.robust[0]));
+    for (std::size_t i = 0; i < expected.hessian.size(); ++i)
+    {
+        EXPECT_NEAR(errors.hessian[i + 1], expected.hessian[i], 1e-9 * expected.hessian[i]) << i;
+        EXPECT_NEAR(errors.robust[i + 1], expected.robust[i], 1e-9 * expected.robust[i]) << i;
+    }
+}
+
+TEST(StandardErrors, DerivedOmegaGetsNaNOthersFinite)
+{
+    std::vector<double> r = ve::testing::simulate_arma_garch(ve::testing::SimulatedModel{}, 42, 3000);
+    ve::Spec spec;
+    spec.variance_targeting = true;
+    ve::FitResult fitted = ve::fit_one(r, spec, ve::FitConfig{});
+    ASSERT_EQ(fitted.status, ve::FitStatus::Converged);
+    expect_nan_only_at(standard_errors_at(r, spec, fitted.estimate), ve::model::layout_of(spec).omega(),
+                       fitted.estimate.size());
+}
+
+TEST(StandardErrors, NothingEstimatedGivesAllNaN)
+{
+    std::vector<double> r = ve::testing::simulate_arma_garch(ve::testing::SimulatedModel{}, 42, 3000);
+    ve::Spec spec;
+    spec.fixed = {{"mu", 0.05}, {"omega", 0.01}, {"alpha1", 0.08}, {"beta1", 0.9}};
+    ve::fit::StandardErrors errors = standard_errors_at(r, spec, std::vector<double>{0.05, 0.01, 0.08, 0.9});
+    ASSERT_EQ(errors.hessian.size(), 4u);
+    for (std::size_t i = 0; i < 4; ++i)
+    {
+        EXPECT_TRUE(std::isnan(errors.hessian[i]));
+        EXPECT_TRUE(std::isnan(errors.robust[i]));
+    }
+}
+
 }
