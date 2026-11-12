@@ -288,4 +288,101 @@ TEST(Layout, FixedPowers)
     }
 }
 
+
+ve::Spec role_spec(Model model, int p, int q, ve::Dist dist = ve::Dist::Norm)
+{
+    ve::Spec spec;
+    spec.model = model;
+    spec.p = p;
+    spec.q = q;
+    spec.dist = dist;
+    return spec;
+}
+
+bool mentions(const std::optional<std::string>& problem, const std::string& text)
+{
+    return problem.has_value() && problem->find(text) != std::string::npos;
+}
+
+TEST(Layout, ResolvesFixedAndStartByName)
+{
+    auto spec = role_spec(Model::SGarch, 1, 1, ve::Dist::Std);
+    spec.fixed = {{"shape", 5.0}};
+    spec.start = {{"alpha1", 0.1}};
+    auto l = ve::model::layout_of(spec);
+    EXPECT_TRUE(l.is_fixed(l.shape()));
+    EXPECT_EQ(l.given[l.shape()], 5.0);
+    EXPECT_TRUE(l.is_started(l.alpha_begin()));
+    EXPECT_EQ(l.given[l.alpha_begin()], 0.1);
+    EXPECT_FALSE(l.is_started(l.shape()));
+    EXPECT_EQ(l.estimated_count(), 4u);
+}
+
+TEST(Layout, DerivedRoles)
+{
+    auto igarch = ve::model::layout_of(role_spec(Model::IGarch, 1, 2));
+    EXPECT_TRUE(igarch.is_derived(igarch.derived()));
+    EXPECT_FALSE(igarch.is_estimated(igarch.derived()));
+
+    auto spec = role_spec(Model::SGarch, 1, 1);
+    spec.variance_targeting = true;
+    auto l = ve::model::layout_of(spec);
+    EXPECT_TRUE(l.is_derived(l.omega()));
+    EXPECT_EQ(l.estimated_count(), l.count() - 1);
+
+    spec.start = {{"omega", 0.1}};
+    l = ve::model::layout_of(spec);
+    EXPECT_FALSE(l.is_started(l.omega()));
+}
+
+TEST(Layout, SpecProblems)
+{
+    auto unknown = role_spec(Model::SGarch, 1, 1);
+    unknown.fixed = {{"shape", 5.0}};
+    EXPECT_TRUE(mentions(ve::model::spec_problem(unknown), "shape"));
+    EXPECT_TRUE(mentions(ve::model::spec_problem(unknown), "mu omega alpha1 beta1"));
+
+    auto unknown_start = role_spec(Model::SGarch, 1, 1);
+    unknown_start.start = {{"beta2", 0.1}};
+    EXPECT_TRUE(mentions(ve::model::spec_problem(unknown_start), "beta2"));
+
+    auto igarch = role_spec(Model::IGarch, 1, 1);
+    igarch.fixed = {{"beta1", 0.9}};
+    EXPECT_TRUE(mentions(ve::model::spec_problem(igarch), "derived"));
+    EXPECT_TRUE(mentions(ve::model::spec_problem(igarch), "beta1"));
+
+    auto omega = role_spec(Model::SGarch, 1, 1);
+    omega.variance_targeting = true;
+    omega.fixed = {{"omega", 0.1}};
+    EXPECT_TRUE(mentions(ve::model::spec_problem(omega), "derived"));
+    EXPECT_TRUE(mentions(ve::model::spec_problem(omega), "omega"));
+
+    for (Model model : {Model::IGarch, Model::CsGarch})
+    {
+        auto targeted = role_spec(model, 1, 1);
+        targeted.variance_targeting = true;
+        EXPECT_TRUE(mentions(ve::model::spec_problem(targeted), "variance targeting"));
+    }
+
+    auto phi = role_spec(Model::CsGarch, 1, 1);
+    phi.fixed = {{"eta21", 0.03}};
+    EXPECT_TRUE(mentions(ve::model::spec_problem(phi), "eta21"));
+    phi.fixed.push_back({"beta1", 0.9});
+    EXPECT_FALSE(ve::model::spec_problem(phi).has_value());
+
+    EXPECT_FALSE(ve::model::spec_problem(role_spec(Model::SGarch, 1, 1)).has_value());
+}
+
+TEST(Layout, PlainSpecUnchanged)
+{
+    for (int model = 0; model <= static_cast<int>(Model::FGarchAllGarch); ++model)
+    {
+        auto l = ve::model::layout_of(role_spec(static_cast<Model>(model), 2, 2, ve::Dist::Sged));
+        EXPECT_TRUE(l.fixed.none());
+        EXPECT_TRUE(l.started.none());
+        EXPECT_FALSE(l.variance_targeting);
+        EXPECT_EQ(l.estimated_count(), l.count() - (l.has_derived() ? 1 : 0));
+    }
+}
+
 }

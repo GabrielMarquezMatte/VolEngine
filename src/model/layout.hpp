@@ -3,7 +3,10 @@
 #include "core/spec.hpp"
 #include "dist/densities.hpp"
 
+#include <array>
+#include <bitset>
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -33,6 +36,11 @@ struct Layout
     bool free_power = false;
     double fixed_power = 2.0;
     Dist dist;
+    std::bitset<kMaxParameterCount> fixed{};
+    std::bitset<kMaxParameterCount> started{};
+    // The fixed value or the user's start value; 0 elsewhere.
+    std::array<double, kMaxParameterCount> given{};
+    bool variance_targeting = false;
 
     std::size_t mu() const { return 0; }
     std::size_t ar_begin() const;
@@ -60,6 +68,10 @@ struct Layout
     std::size_t derived() const;
     std::size_t estimated_count() const;
     ParameterKind kind(std::size_t index) const;
+    bool is_fixed(std::size_t index) const;
+    bool is_started(std::size_t index) const;
+    bool is_derived(std::size_t index) const;
+    bool is_estimated(std::size_t index) const;
 };
 
 template <class T>
@@ -93,5 +105,6 @@ dist::ShapeParameters<T> shape_parameters_of(std::span<const T> theta, const Lay
 
 Layout layout_of(const Spec& spec);
 std::vector<std::string> parameter_names(const Layout& layout);
+std::optional<std::string> spec_problem(const Spec& spec);
 
 }
