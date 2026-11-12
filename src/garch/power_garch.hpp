@@ -27,6 +27,7 @@ struct PowerGarchParameters
     std::span<const T> moments;
     double abs_smoothing = 0.0;
     bool free_power = true;
+    std::span<const T> intercept_shift{};
 };
 
 // x^exponent. Under a fixed power of 1 or 2 the recursion meets only the exponents 1/2, 1 and 2, which are taken
@@ -92,7 +93,7 @@ template <class T>
 T next_power_variance(std::span<const T> residuals, const PowerGarchParameters<T>& p, const T& presample_power,
                       std::span<const T> sigma_power, std::size_t t)
 {
-    T variance = p.omega;
+    T variance = intercept_at<T>(p.omega, p.intercept_shift, t);
     for (std::size_t i = 1; i <= p.alpha.size(); ++i)
     {
         if (i > t)

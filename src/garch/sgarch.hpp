@@ -15,13 +15,14 @@ struct SGarchParameters
     T omega;
     std::span<const T> alpha;
     std::span<const T> beta;
+    std::span<const T> intercept_shift{};
 };
 
 template <class T>
 T next_variance(std::span<const T> residuals, const SGarchParameters<T>& p, const Presample<T>& presample,
                 std::span<const T> sigma2, std::size_t t)
 {
-    T variance = p.omega;
+    T variance = intercept_at<T>(p.omega, p.intercept_shift, t);
     for (std::size_t i = 1; i <= p.alpha.size(); ++i)
     {
         variance = variance + p.alpha[i - 1] * lagged_square(residuals, t, i, presample.value);

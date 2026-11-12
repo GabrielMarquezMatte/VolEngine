@@ -2,6 +2,7 @@
 
 #include "ad/dual.hpp"
 
+#include <limits>
 #include <gtest/gtest.h>
 #include <vector>
 
@@ -57,6 +58,20 @@ TEST(SGarch, DualRecursionCarriesTheGradient)
     EXPECT_NEAR(sigma2[1].grad[0], 1.0 + 0.8, 1e-15);
     EXPECT_NEAR(sigma2[1].grad[1], 0.01 + 0.8 * 0.2, 1e-15);
     EXPECT_NEAR(sigma2[1].grad[2], sigma2[0].value + 0.8 * 0.2, 1e-15);
+}
+
+TEST(SGarch, InterceptShiftEntersEveryStepButTheHeldOnes)
+{
+    std::vector<double> residuals{0.1, -0.2, 0.3};
+    std::vector<double> alpha{0.1};
+    std::vector<double> beta{0.8};
+    std::vector<double> shift{std::numeric_limits<double>::quiet_NaN(), 0.03, -0.02};
+    std::vector<double> sigma2(3);
+    double mean_square = 0.14 / 3.0;
+    ve::garch::sgarch_variance<double>(residuals, {0.1, alpha, beta, shift}, {mean_square, 1}, sigma2);
+    EXPECT_EQ(sigma2[0], mean_square);
+    EXPECT_NEAR(sigma2[1], 0.1 + 0.03 + 0.1 * 0.01 + 0.8 * mean_square, 1e-15);
+    EXPECT_NEAR(sigma2[2], 0.1 - 0.02 + 0.1 * 0.04 + 0.8 * sigma2[1], 1e-15);
 }
 
 }
