@@ -4,6 +4,7 @@
 #include "model/parameter_map.hpp"
 #include "simulated_garch.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <gtest/gtest.h>
@@ -240,6 +241,135 @@ TEST(StartValues, Distributions)
             }
         }
     }
+}
+
+}
+
+namespace
+{
+
+using ve::Spec;
+using ve::model::layout_of;
+using ve::model::to_unconstrained;
+
+constexpr double kCeiling = 1.0 - 1e-8;
+
+std::vector<double> start_of(const Spec& spec)
+{
+    return start_values(sample().r, layout_of(spec));
+}
+
+TEST(StartValues, PlainSpecsUnchangedByTheFixedPath)
+{
+    Sample s = sample();
+    Layout plain = layout_of({.model = Model::SGarch, .p = 1, .q = 1, .dist = Dist::Std});
+    std::vector<double> theta = start_values(s.r, plain);
+    EXPECT_EQ(theta[plain.alpha_begin()], 0.05);
+    EXPECT_EQ(theta[plain.beta_begin()], 0.9);
+    EXPECT_EQ(theta[plain.shape()], 8.0);
+    Layout cs = layout_of({.model = Model::CsGarch, .p = 2, .q = 6});
+    theta = start_values(s.r, cs);
+    EXPECT_EQ(theta[cs.eta1_begin()], 0.98);
+    EXPECT_EQ(theta[cs.eta2_begin()], 0.03);
+}
+
+TEST(StartValues, UserStartAndFixedReplaceDefaults)
+{
+    Sample s = sample();
+    Spec spec{.model = Model::SGarch,
+              .dist = Dist::Std,
+              .fixed = {{"mu", 0.0}},
+              .start = {{"beta1", 0.8}, {"shape", 5.0}}};
+    Layout layout = layout_of(spec);
+    std::vector<double> theta = start_values(s.r, layout);
+    EXPECT_EQ(theta[layout.mu()], 0.0);
+    EXPECT_NEAR(theta[layout.omega()], 0.05 * s.variance, 1e-15);
+    EXPECT_EQ(theta[layout.alpha_begin()], 0.05);
+    EXPECT_EQ(theta[layout.beta_begin()], 0.8);
+    EXPECT_EQ(theta[layout.shape()], 5.0);
+    Layout ap = layout_of({.model = Model::ApArch, .dist = Dist::Ged, .fixed = {{"delta", 1.5}}});
+    theta = start_values(s.r, ap);
+    double kappa = ve::model::shock_moment<double>(theta, ap, 0);
+    EXPECT_EQ(theta[ap.power()], 1.5);
+    EXPECT_NEAR(theta[ap.alpha_begin()], 0.05 / kappa, 1e-15);
+    EXPECT_NEAR(theta[ap.omega()], 0.05 * std::pow(s.variance, 0.75), 1e-15);
+}
+
+TEST(StartValues, DefaultWeightsRescaleIntoBudget)
+{
+    Layout fixed = layout_of({.model = Model::SGarch, .fixed = {{"alpha1", 0.3}}});
+    std::vector<double> theta = start_of({.model = Model::SGarch, .fixed = {{"alpha1", 0.3}}});
+    double scale = std::min(1.0, 0.95 * (kCeiling - 0.3) / 0.9);
+    EXPECT_NEAR(theta[fixed.beta_begin()], 0.9 * scale, 1e-15);
+    EXPECT_TRUE(is_valid(theta, fixed));
+    theta = start_of({.model = Model::SGarch, .start = {{"alpha1", 0.03}}});
+    EXPECT_EQ(theta[fixed.beta_begin()], 0.9);
+}
+
+TEST(StartValues, IGarchFixedAlphaLeavesADerivedBeta)
+{
+    Spec spec{.model = Model::IGarch, .p = 1, .q = 2, .fixed = {{"alpha1", 0.95}}};
+    Layout layout = layout_of(spec);
+    std::vector<double> theta = start_of(spec);
+    double scale = 0.95 * 0.05 / 0.45;
+    EXPECT_NEAR(theta[layout.beta_begin()], 0.45 * scale, 1e-15);
+    EXPECT_GE(theta[layout.beta_begin() + 1], 0.0);
+    EXPECT_NEAR(theta[layout.beta_begin() + 1], 1.0 - 0.95 - theta[layout.beta_begin()], 1e-15);
+    EXPECT_TRUE(is_valid(theta, layout));
+}
+
+TEST(StartValues, GjrFixedGammaRaisesTheDefaultAlpha)
+{
+    Spec spec{.model = Model::GjrGarch, .fixed = {{"gamma1", -0.05}}};
+    Layout layout = layout_of(spec);
+    std::vector<double> theta = start_of(spec);
+    double gamma_term = 0.05 - 0.5 * 0.05;
+    double scale = std::min(1.0, 0.95 * (kCeiling - gamma_term) / (0.03 + 0.9));
+    EXPECT_NEAR(theta[layout.alpha_begin()], 0.05 + 0.03 * scale, 1e-15);
+    EXPECT_EQ(theta[layout.gamma_begin()], -0.05);
+    EXPECT_TRUE(is_valid(theta, layout));
+}
+
+TEST(StartValues, CsGarchRescalesBelowRhoAndKeepsPhiInReach)
+{
+    Spec spec{.model = Model::CsGarch, .fixed = {{"alpha1", 0.9}}};
+    Layout layout = layout_of(spec);
+    std::vector<double> theta = start_of(spec);
+    EXPECT_NEAR(theta[layout.beta_begin()], 0.9 * 0.95 * (0.98 - 0.9) / 0.9, 1e-15);
+    EXPECT_EQ(theta[layout.eta2_begin()], std::min(0.03, 0.5 * theta[layout.beta_begin()]));
+    EXPECT_TRUE(is_valid(theta, layout));
+    spec = {.model = Model::CsGarch, .fixed = {{"alpha1", 0.97}}};
+    theta = start_of(spec);
+    EXPECT_LT(theta[layout.eta2_begin()], 0.03);
+    EXPECT_TRUE(is_valid(theta, layout_of(spec)));
+}
+
+TEST(StartValues, InvalidCombinationStaysInvalid)
+{
+    Spec both{.model = Model::SGarch, .fixed = {{"alpha1", 0.6}, {"beta1", 0.5}}};
+    EXPECT_FALSE(is_valid(start_of(both), layout_of(both)));
+    Spec over{.model = Model::SGarch, .fixed = {{"alpha1", 1.2}}};
+    EXPECT_FALSE(is_valid(start_of(over), layout_of(over)));
+}
+
+TEST(StartValues, WarmStartFromEstimate)
+{
+    Spec igarch{.model = Model::IGarch};
+    Layout layout = layout_of(igarch);
+    igarch.start = {{"mu", 0.01}, {"omega", 0.002}, {"alpha1", 0.12}, {"beta1", 0.88}};
+    std::vector<double> theta = start_of(igarch);
+    EXPECT_EQ(theta[layout.mu()], 0.01);
+    EXPECT_EQ(theta[layout.omega()], 0.002);
+    EXPECT_EQ(theta[layout.alpha_begin()], 0.12);
+    EXPECT_NEAR(theta[layout.beta_begin()], 1.0 - 0.12, 1e-15);
+    EXPECT_TRUE(is_valid(theta, layout));
+    Spec tiny{.model = Model::SGarch, .start = {{"alpha1", 1e-12}}};
+    Layout plain = layout_of(tiny);
+    theta = start_of(tiny);
+    EXPECT_TRUE(is_valid(theta, plain));
+    std::vector<double> u(plain.count());
+    to_unconstrained(theta, u, plain, {});
+    EXPECT_TRUE(std::ranges::all_of(u, [](double value) { return std::isfinite(value); }));
 }
 
 }

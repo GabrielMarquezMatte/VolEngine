@@ -1,5 +1,7 @@
 #include "model/start_values.hpp"
 
+#include "model/weight_terms.hpp"
+
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -23,6 +25,7 @@ constexpr double kInitialGhLambda = -0.5;
 constexpr double kInitialPower = 2.0;
 constexpr double kInitialRho = 0.98;
 constexpr double kInitialPhi = 0.03;
+constexpr double kRescaleMargin = 0.95;
 
 // omega is a share of var(r), of log var(r) in eGARCH, or of var(r)^(power / 2) in apARCH and fGARCH; alpha
 // and gamma are totals split evenly over the p lags.
@@ -146,6 +149,190 @@ double omega_start(const Layout& layout, double variance, double power)
     return variance * share;
 }
 
+bool has_user_value(const Layout& layout, std::size_t index)
+{
+    return layout.is_fixed(index) || layout.is_started(index);
+}
+
+enum class Part
+{
+    Weights,
+    Omega,
+    Rest
+};
+
+Part part_of(const Layout& layout, std::size_t index)
+{
+    WeightBlock block = weight_block(layout);
+    if (index == layout.omega())
+    {
+        return Part::Omega;
+    }
+    if (index >= block.begin && index < block.begin + block.count)
+    {
+        return Part::Weights;
+    }
+    return Part::Rest;
+}
+
+void apply_user_values(std::vector<double>& theta, const Layout& layout, Part part)
+{
+    for (std::size_t index = 0; index < theta.size(); ++index)
+    {
+        if (has_user_value(layout, index) && part_of(layout, index) == part)
+        {
+            theta[index] = layout.given[index];
+        }
+    }
+}
+
+bool weights_have_user_value(const Layout& layout)
+{
+    WeightBlock block = weight_block(layout);
+    for (std::size_t index = block.begin; index < block.begin + block.count; ++index)
+    {
+        if (has_user_value(layout, index))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+// A fixed gamma_i < 0 asks alpha_i >= -gamma_i, so a default alpha_i starts above that.
+void raise_default_gjr_alpha(std::vector<double>& theta, const Layout& layout)
+{
+    if (layout.model != Model::GjrGarch)
+    {
+        return;
+    }
+    for (std::size_t i = 0; i < static_cast<std::size_t>(layout.arch); ++i)
+    {
+        std::size_t alpha = layout.alpha_begin() + i;
+        std::size_t gamma = layout.gamma_begin() + i;
+        if (layout.is_fixed(gamma) && !has_user_value(layout, alpha))
+        {
+            theta[alpha] += std::max(0.0, -theta[gamma]);
+        }
+    }
+}
+
+// The csGARCH terms must stay below the start rho, whether it is fixed, given or the default.
+double start_ceiling(const std::vector<double>& theta, const Layout& layout)
+{
+    if (layout.model == Model::CsGarch)
+    {
+        return theta[layout.eta1_begin()];
+    }
+    return weight_ceiling(layout);
+}
+
+enum class Role
+{
+    Fixed,
+    Started,
+    Derived,
+    Standard
+};
+
+Role role_of(const Layout& layout, std::size_t index)
+{
+    if (layout.is_fixed(index))
+    {
+        return Role::Fixed;
+    }
+    if (layout.is_started(index))
+    {
+        return Role::Started;
+    }
+    if (layout.is_derived(index))
+    {
+        return Role::Derived;
+    }
+    return Role::Standard;
+}
+
+double sum_of_role(const WeightTerms& terms, const Layout& layout, Role role)
+{
+    std::size_t begin = weight_block(layout).begin;
+    double sum = 0.0;
+    for (std::size_t j = 0; j < terms.count; ++j)
+    {
+        if (role_of(layout, begin + j) == role)
+        {
+            sum += terms.terms[j];
+        }
+    }
+    return sum;
+}
+
+// The standard terms are scaled by s = min(1, 0.95 (c - F - U) / D), F, U and D being the sums of the fixed,
+// user-started and standard terms; nothing changes when D = 0 or c - F - U <= 0 (the start is then invalid).
+void rescale_standard_weights(std::vector<double>& theta, const Layout& layout)
+{
+    WeightTerms terms = weight_terms(theta, layout);
+    double room = start_ceiling(theta, layout) - sum_of_role(terms, layout, Role::Fixed) -
+                  sum_of_role(terms, layout, Role::Started);
+    double standard = sum_of_role(terms, layout, Role::Standard);
+    if (!(standard > 0.0 && room > 0.0))
+    {
+        return;
+    }
+    double scale = std::min(1.0, kRescaleMargin * room / standard);
+    if (scale == 1.0)
+    {
+        return;
+    }
+    std::size_t begin = weight_block(layout).begin;
+    for (std::size_t j = 0; j < terms.count; ++j)
+    {
+        if (role_of(layout, begin + j) == Role::Standard)
+        {
+            terms.terms[j] *= scale;
+        }
+    }
+    std::vector<double> rescaled = theta;
+    natural_from_terms(terms, rescaled, layout);
+    for (std::size_t j = 0; j < terms.count; ++j)
+    {
+        if (role_of(layout, begin + j) == Role::Standard)
+        {
+            theta[begin + j] = rescaled[begin + j];
+        }
+    }
+}
+
+void set_weights(std::vector<double>& theta, const Layout& layout)
+{
+    if (layout.is_power_family())
+    {
+        scale_power_alpha(theta, layout);
+    }
+    if (!weights_have_user_value(layout))
+    {
+        return;
+    }
+    apply_user_values(theta, layout, Part::Weights);
+    raise_default_gjr_alpha(theta, layout);
+    rescale_standard_weights(theta, layout);
+    if (layout.model == Model::IGarch)
+    {
+        write_derived_weight<double>(theta, layout);
+    }
+}
+
+// phi <= sum(beta) keeps the default start inside the domain when the betas are small.
+void set_default_phi(std::vector<double>& theta, const Layout& layout)
+{
+    if (layout.model != Model::CsGarch || has_user_value(layout, layout.eta2_begin()))
+    {
+        return;
+    }
+    auto betas = theta.begin() + static_cast<std::ptrdiff_t>(layout.beta_begin());
+    double beta_sum = std::accumulate(betas, betas + layout.garch, 0.0);
+    theta[layout.eta2_begin()] = std::min(kInitialPhi, 0.5 * beta_sum);
+}
+
 }
 
 Standardization standardization_of(std::span<const double> r)
@@ -167,23 +354,20 @@ std::vector<double> start_values(std::span<const double> r, const Layout& layout
     fill_block(theta, layout.alpha_begin(), layout.arch, start.alpha / layout.arch);
     fill_block(theta, layout.beta_begin(), layout.garch, kInitialGarch / layout.garch);
     fill_block(theta, layout.gamma_begin(), layout.gamma, start.gamma / layout.arch);
-    double power = layout.fixed_power;
     if (layout.free_power)
     {
-        power = kInitialPower;
-        theta[layout.power()] = power;
+        theta[layout.power()] = kInitialPower;
     }
     if (layout.model == Model::CsGarch)
     {
         theta[layout.eta1_begin()] = kInitialRho;
-        theta[layout.eta2_begin()] = kInitialPhi;
     }
     set_distribution_start(theta, layout);
-    if (layout.is_power_family())
-    {
-        scale_power_alpha(theta, layout);
-    }
-    theta[layout.omega()] = omega_start(layout, sample_variance(r, mean), power);
+    apply_user_values(theta, layout, Part::Rest);
+    set_weights(theta, layout);
+    set_default_phi(theta, layout);
+    theta[layout.omega()] = omega_start(layout, sample_variance(r, mean), power_of<double>(theta, layout));
+    apply_user_values(theta, layout, Part::Omega);
     return theta;
 }
 
