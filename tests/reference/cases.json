@@ -71,5 +71,8 @@
   {"id": "gjrgarch11_sstd/fgarch_allgarch11_sstd", "series": "gjrgarch11_sstd", "model": "fgarch", "submodel": "allgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "sstd", "oracles": ["rugarch"]},
   {"id": "gjrgarch11_sstd/fgarch_allgarch11_jsu", "series": "gjrgarch11_sstd", "model": "fgarch", "submodel": "allgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "jsu", "oracles": ["rugarch"]},
   {"id": "gjrgarch11_sstd/sgarch11_sstd", "series": "gjrgarch11_sstd", "model": "sgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "sstd", "oracles": ["arch"]},
-  {"id": "gjrgarch11_sstd/egarch11_sstd", "series": "gjrgarch11_sstd", "model": "egarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "sstd", "oracles": ["arch"]}
+  {"id": "gjrgarch11_sstd/egarch11_sstd", "series": "gjrgarch11_sstd", "model": "egarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "sstd", "oracles": ["arch"]},
+  {"id": "aparch11_sged/fgarch_allgarch11_sstd", "series": "aparch11_sged", "model": "fgarch", "submodel": "allgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "sstd", "oracles": ["rugarch"]},
+  {"id": "aparch11_sged/fgarch_allgarch11_jsu", "series": "aparch11_sged", "model": "fgarch", "submodel": "allgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "jsu", "oracles": ["rugarch"]},
+  {"id": "egarch11_jsu/fgarch_allgarch11_sstd", "series": "egarch11_jsu", "model": "fgarch", "submodel": "allgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "sstd", "oracles": ["rugarch"]}
 ]

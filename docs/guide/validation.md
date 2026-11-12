@@ -99,6 +99,8 @@ is compared with. Every case has a mean (`include_mean = true`). The id is `<ser
 | eGARCH(1,1)-sstd, -sged, -nig, -ghyp, -jsu | `egarch11_jsu` | yes | no |
 | sGARCH(1,1)-sstd, -sged, -nig, -ghyp, -jsu | `sgarch11_nig`, `sgarch11_ghyp` | yes | no |
 | fGARCH-ALLGARCH(1,1)-sstd, -jsu | `gjrgarch11_sstd` | yes | no |
+| fGARCH-ALLGARCH(1,1)-sstd, -jsu (known divergences) | `aparch11_sged` | yes | no |
+| fGARCH-ALLGARCH(1,1)-sstd (known divergence) | `egarch11_jsu` | yes | no |
 
 ARMA is validated against `rugarch` only: `arch` has no MA term, and its AR mean drops the first m
 observations from the likelihood instead of keeping them. Of the variants, `arch` has gjrGARCH (`GARCH` with
@@ -112,8 +114,8 @@ validated against `rugarch` only.
 
 Each case runs on the series simulated with its variance orders (a variant, with its own model). Every oracle
 estimate must be interior; the oracle scripts stop otherwise and the test checks it again. The rule is stated on
-the weights, the non-negative entries that sum to the persistence P (α and β; β alone in eGARCH; ½α, β and
-½(α + γ) in gjrGARCH; ακ and β in apARCH and fGARCH): every weight > 1e-4, P < 0.999 (not for iGARCH, where
+the weights, the non-negative entries that sum to the persistence P (α and β; β alone in eGARCH; (1 − π)α, β
+and π(α + γ) in gjrGARCH, with π = P(z < 0), ½ for norm, std and ged; ακ and β in apARCH and fGARCH): every weight > 1e-4, P < 0.999 (not for iGARCH, where
 P = 1), |η₁| and the apARCH |γ| < 0.999, and in csGARCH ρ − P > 1e-4 and φ > 1e-4.
 Three choices follow from that rule or from an identification problem, all observed with `rugarch` 1.5-6:
 
@@ -159,23 +161,33 @@ GARCH, GJR and EGARCH with `SkewStudent` on `gjrgarch11_sstd`. The interior rule
 |ρ| < 0.999 (nig, ghyp), ξ ∈ (0.05, 20) (sstd, sged), 1/shape > 1e-4 and |ghlambda| < 10; `oracle_rugarch.R`
 also rejects a distribution parameter on `rugarch`'s own bounds (sstd shape [2.01, 60], sged [0.1, 60], nig
 [0.01, 25], ghyp [0.25, 25] and ghlambda [−6, 6], jsu shape [0.1, 10]), where its estimate is not an optimum.
-Three planned cases moved:
+One planned case moved, and two planned cases are kept as known divergences with passing replacements:
 
 - **apARCH-ghyp moves to `egarch11_jsu`.** On `aparch11_sged` `rugarch` stops at its lower bound for the ghyp
   shape, ζ = 0.25; VolEngine, which has no such bound, goes on to ζ̂ = 1.3e-4 (λ̂ = 2.03) with ℓ 0.18 higher. On
   `gjrgarch11_sstd` the estimate is interior but `rugarch` stops short in the flat ghlambda direction (VolEngine's
   ℓ 8.2e-5 higher, ghlambda 7.6e-3 away, relative). On `egarch11_jsu` (ζ̂ = 1.79, λ̂ = −1.67, δ̂ = 1.22) it agrees
   within the tolerances.
-- **fGARCH-ALLGARCH-sstd and -jsu move to `gjrgarch11_sstd`.** On `aparch11_sged` the fit runs to the edge of
-  the η₁ domain: `rugarch` ends at η₁ = 0.9957 (sstd) and 0.9983 (jsu), interior by the rule but within 2e-4 of
-  it, and VolEngine at η₁ = 0.9928 and 0.9959 with ℓ 4.6e-3 and 6.2e-3 below `rugarch`'s, failing the one-sided
-  test. The likelihood is not the cause: at `rugarch`'s estimates VolEngine's ℓ equals `rugarch`'s to 1e-16
-  (relative), and VolEngine started there stays there. Along that ridge (η₁ → 1, with η₂ and λ ≈ 1.0 compensating)
-  the mean log-likelihood changes by 1.5e-6 per observation between the two points, and VolEngine's line search
-  stops at the first. On `egarch11_jsu` (λ̂ ≈ 1.1–1.2) the ALLGARCH-sstd likelihood has two local optima,
-  η₂ = −0.128 (`rugarch`) and η₂ = −0.044 (VolEngine, ℓ 0.046 lower; the jsu fit sits there in both
-  programs). On `gjrgarch11_sstd` (η̂₁ = 0.60, η̂₂ = −0.14 and −0.15, λ̂ = 1.41 and 1.42) both distributions
-  agree within the tolerances, with η₂ shifted under a skewed shock as planned.
+- **Known divergence (VolEngine optimizer): fGARCH-ALLGARCH-sstd and -jsu on `aparch11_sged`, and
+  ALLGARCH-sstd on `egarch11_jsu`.** On these three cases VolEngine reports `CONVERGED` at a point whose ℓ is below
+  `rugarch`'s by more than the one-sided tolerance (1e-6·|ℓ|, 2.9e-3 to 3.7e-3 here): by 4.6e-3
+  (`aparch11_sged/fgarch_allgarch11_sstd`), 6.2e-3 (`aparch11_sged/fgarch_allgarch11_jsu`) and 4.6e-2
+  (`egarch11_jsu/fgarch_allgarch11_sstd`). Both programs compute the same likelihood: at `rugarch`'s estimates
+  VolEngine's ℓ equals `rugarch`'s to 1e-16 (relative), and VolEngine started there stays there. The failure is
+  VolEngine's stop. On `aparch11_sged` the fits run along a ridge to the edge of the η₁ domain (η₁ → 1, with η₂
+  and λ ≈ 1.0 compensating): `rugarch` ends at η₁ = 0.9957 (sstd) and 0.9983 (jsu), interior by the rule, and
+  VolEngine at η₁ = 0.9928 and 0.9959, 1.5e-6 per observation lower in mean ℓ. There the largest component of
+  the unconstrained gradient of the mean negative ℓ is 1e-7 to 3e-7, above `tol`·max(1, |f|) = 1.3e-7 but within
+  √tol·max(1, |f|) = 4e-4. A step decreases f by less than ftol·max(1, |f|), so the √tol acceptance of a flat
+  or failed line search in `src/optim/lbfgs.hpp` (`gradient_nearly_small`) ends the fit `CONVERGED`. Neither
+  tol = 1e-9 nor ftol = 0 moves the end point. On `egarch11_jsu` (λ̂ ≈ 1.1–1.2) the ALLGARCH-sstd likelihood
+  has a second local optimum: `rugarch` ends at η₂ = −0.128, VolEngine at η₂ = −0.044 (the point where both
+  programs put the jsu fit), with an unconstrained gradient of 1.5e-6 there. `test_oracles.py` keeps the three
+  cases with their `rugarch` fixtures and marks the comparison `xfail(strict=True)` (`KNOWN_DIVERGENCES`); their
+  interior check runs and passes. A fix to the optimizer turns them into unexpected passes, which fail until the
+  marker is removed. The follow-up is item 4 of "Pendente na máquina de benchmark" in the plan-2c plan.
+  As passing replacements, ALLGARCH-sstd and -jsu also run on `gjrgarch11_sstd` (η̂₁ = 0.60, η̂₂ = −0.14 and −0.15,
+  λ̂ = 1.41 and 1.42), where both agree within the tolerances, with η₂ shifted under a skewed shock as planned.
 
 ## Oracle versions
 
@@ -205,7 +217,7 @@ before, the committed data and results were kept: only `grid_2c.csv` and the new
 
 | VolEngine call | `rugarch` | `arch` |
 |----------------|-----------|--------|
-| `ctx.fit(ve.Spec(model, p=p, q=q, arma=(m, n), dist=d, submodel=s), y, options=ve.FitOptions(var_init=..., tol=1e-7))` | `ugarchfit(ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(p, q)), mean.model = list(armaOrder = c(m, n), include.mean = TRUE), distribution.model = d), y, solver = "hybrid", numderiv.control = list(hess.d = 1e-3))`; `model` `"sGARCH"`, `"eGARCH"`, `"gjrGARCH"`, `"apARCH"`, `"iGARCH"`, `"csGARCH"`, or `"fGARCH"` with `submodel = toupper(s)` | `arch_model(y, mean="Constant", vol="GARCH", p=p, q=q, dist=..., rescale=False).fit(disp="off")`, `dist` `"normal"`, `"t"`, `"ged"` or `"skewt"` (sstd); gjrGARCH `vol="GARCH", o=p`, eGARCH `vol="EGARCH", o=p` |
+| `ctx.fit(ve.Spec(model, p=p, q=q, arma=(m, n), dist=d, submodel=s), y, options=ve.FitOptions(var_init=..., tol=1e-7))` | `ugarchfit(ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(p, q)), mean.model = list(armaOrder = c(m, n), include.mean = TRUE), distribution.model = d), y, solver = "hybrid", numderiv.control = list(hess.d = 1e-3))` (`hess.d = 1e-4` for sged); `model` `"sGARCH"`, `"eGARCH"`, `"gjrGARCH"`, `"apARCH"`, `"iGARCH"`, `"csGARCH"`, or `"fGARCH"` with `submodel = toupper(s)` | `arch_model(y, mean="Constant", vol="GARCH", p=p, q=q, dist=..., rescale=False).fit(disp="off")`, `dist` `"normal"`, `"t"`, `"ged"` or `"skewt"` (sstd); gjrGARCH `vol="GARCH", o=p`, eGARCH `vol="EGARCH", o=p` |
 | `var_init` | `"sample"` | `"backcast"` |
 | `fit.loglik` | `likelihood(fit)` | `.loglikelihood` |
 | `fit.coef().estimate` | `coef(fit)` | `.params` (`alpha[i]` → `alphai`, `gamma[i]` → `gammai`, `beta[j]` → `betaj`, `nu` and `eta` → `shape`, `lambda` → `skew` = √((1 + λ)/(1 − λ)); eGARCH: see [`arch`](#arch-ve_varinit_backcast)) |
@@ -214,8 +226,8 @@ before, the committed data and results were kept: only `grid_2c.csv` and the new
 | `fit.sigma` | `sigma(fit)` | `.conditional_volatility` |
 | `fit.aic/bic/hqic/sic(per_obs=...)` | `infocriteria(fit)`, `per_obs=True` | `.aic`, `.bic`, `per_obs=False` |
 
-Two numerical settings differ from the defaults, one on each side; both are explained in
-[Numerical settings](#numerical-settings).
+Two numerical settings differ from the defaults, one on each side: `rugarch`'s Hessian step (`hess.d = 1e-3`,
+1e-4 for sged) and VolEngine's `tol = 1e-7`. Both are explained in [Numerical settings](#numerical-settings).
 
 ## Conventions
 
@@ -319,7 +331,10 @@ threshold of the existing flat-decrease rule) now ends `CONVERGED` instead of `F
 the search has reached the resolution of the likelihood. With the smoothing, TGARCH on the scaled series of the
 scale-invariance test (`backcast`, ×100) ended `FAILED` at the optimum of the unscaled fit (ℓ and estimates equal
 to 8 digits). No oracle case depends on it: the oracle suite passes 125/125 with the line-search-failure-to-`CONVERGED` rule
-disabled, and only the C++ TGARCH scale-invariance test relies on it.
+disabled, and only the C++ TGARCH scale-invariance test relies on it. Re-checked in plan 2c with the skewed cases:
+with that rule disabled every `test_matches_oracle` case still passes (91 passed), and the three known divergences
+(see [Case selection](#case-selection)) still fail. The √tol acceptance after a flat decrease, which stays,
+is enough to stop them.
 
 ### `rugarch`, the skewed distributions
 
@@ -449,7 +464,8 @@ default). `rugarch`'s is not monotone in the step: on `sgarch11_ghyp/sgarch11_sg
 0.0176, 0.0184, 0.0167 and 0.0109 at `hess.d` = 1e-2, 1e-3, 1e-4 and 1e-5 (VolEngine 0.0165), so below 1e-4 its
 rounding error takes over. `oracle_rugarch.R` therefore uses `hess.d = 1e-4` for sged only: the worst sged
 differences become 2.2e-2 (Hessian SE) and 4.5e-2 (QML robust SE), both μ on `sgarch11_nig/sgarch11_sged`, the one
-sged case that agreed better at 1e-3 (1.1e-2 and 2.4e-2). The margin is thin: these standard errors measure the
+sged case that agreed better at 1e-3 (1.1e-2 and 2.4e-2). The value 1e-4 was chosen against these fixtures, and
+another machine or R version may need it re-tuned. The margin is thin: these standard errors measure the
 oracle's numerical differentiation more than the likelihood. The other distributions keep `hess.d = 1e-3`; the
 plan-1/2a/2b fixtures are unchanged.
 
@@ -496,7 +512,8 @@ remaining block. Below 1e8 the shape stays in H, with a standard error that grow
 ## Tolerances
 
 Fixed in plan 1 before any comparison and unchanged for the grid, the variants and the skewed distributions; none was loosened. "Observed" is the worst
-value over all cases of that oracle.
+value over all cases of that oracle, except the three known divergences (see
+[Case selection](#case-selection)), which fail the one-sided ℓ test and are marked `xfail`.
 
 | Quantity | Tolerance | Why | Observed, `rugarch` | Observed, `arch` |
 |----------|-----------|-----|---------------------|------------------|
@@ -611,6 +628,15 @@ Skewed distributions:
 | `sgarch11_ghyp/sgarch11_jsu` | +1.2e-7 | 4.9e-5 | — | 1.4e-4 | 2.5e-4 | 5.5e-2 | 1.4e-5 | 8.3e-11 |
 | `gjrgarch11_sstd/fgarch_allgarch11_sstd` | +7.3e-6 | 7.0e-4 | — | 2.2e-2 | 4.3e-2 | 1.2e-1 | 1.6e-4 | 4.9e-9 |
 | `gjrgarch11_sstd/fgarch_allgarch11_jsu` | +8.8e-7 | 5.6e-4 | — | 7.5e-3 | 1.5e-2 | 1.4e-1 | 9.5e-5 | 5.9e-10 |
+
+Known divergences (VolEngine optimizer, `xfail` in the test; see [Case selection](#case-selection)), left out of the
+"Observed" column of [Tolerances](#tolerances):
+
+| Case | ℓ_VE − ℓ_oracle | Max param rel | Small abs | Max SE rel | Max QML robust SE rel | Max NW robust SE rel (not compared) | Max σ rel | Max criteria abs |
+|------|-----------------|---------------|-----------|------------|-----------------------|-------------------------------------|-----------|------------------|
+| `aparch11_sged/fgarch_allgarch11_sstd` | -4.6e-3 | 2.0e-2 | — | 1.5e-1 | 2.8e-1 | 3.0e-1 | 5.5e-3 | 3.1e-6 |
+| `aparch11_sged/fgarch_allgarch11_jsu` | -6.2e-3 | 1.9e-2 | — | 4.2e-1 | 8.6e-1 | 9.3e-1 | 5.4e-3 | 4.1e-6 |
+| `egarch11_jsu/fgarch_allgarch11_sstd` | -4.6e-2 | 6.6e-1 | — | 6.9e-1 | 1.3 | 1.2 | 3.4e-2 | 3.1e-5 |
 
 ### `arch`
 
