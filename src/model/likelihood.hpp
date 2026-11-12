@@ -37,8 +37,8 @@ T loglik(std::span<const double> r, std::span<const T> theta, const Layout& layo
 
 // omega under variance targeting, from the residuals of the mean at theta: m (1 - P) with m the mean of e^2, or
 // of |e|^power in apARCH and fGARCH, and P = persistence(theta); eGARCH: log(mean e^2) (1 - P). theta[omega] is
-// not read. With variance regressors (variance.columns > 0), minus sum_k zeta_k mean_t v_t,k. Instantiated as
-// loglik.
+// not read. variance has layout.vxreg columns (none, the default, without variance regressors); with variance
+// regressors, minus sum_k zeta_k mean_t v_t,k. Instantiated as loglik.
 template <class T>
 T targeted_omega(std::span<const T> residuals, std::span<const T> theta, const Layout& layout,
                  const RegressorMatrix& variance = {});

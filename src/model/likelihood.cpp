@@ -753,6 +753,7 @@ template <class T>
 T targeted_omega(std::span<const T> residuals, std::span<const T> theta, const Layout& layout,
                  const RegressorMatrix& variance)
 {
+    assert(variance.columns == static_cast<std::size_t>(layout.vxreg));
     if (variance.columns == 0)
     {
         return variance_target<T>(residuals, theta, layout);
