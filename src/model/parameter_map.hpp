@@ -3,18 +3,29 @@
 #include "ad/dual.hpp"
 #include "model/layout.hpp"
 
+#include <array>
 #include <cstddef>
 #include <span>
 
 namespace ve::model
 {
 
+constexpr std::array<double, kMaxRegressors> unit_scales()
+{
+    std::array<double, kMaxRegressors> scales{};
+    scales.fill(1.0);
+    return scales;
+}
+
 // Location and scale of the series, so that the unconstrained problem does not depend on its units.
-// scale must be > 0.
+// scale must be > 0. The regressor scales are the standard deviations s_x,k and s_v,k of the columns, 1 where
+// there is no column or it is constant.
 struct Standardization
 {
     double location = 0.0;
     double scale = 1.0;
+    std::array<double, kMaxRegressors> mean_regressor_scale = unit_scales();
+    std::array<double, kMaxRegressors> variance_regressor_scale = unit_scales();
 };
 
 // Both spaces follow the Layout order, and each unconstrained entry sits at the position of the natural one it
@@ -29,6 +40,8 @@ struct Standardization
 //   apARCH, fGARCH: (alpha_i kappa_i, beta), with kappa_i the shock_moment;
 //   iGARCH: (alpha, beta) = softmax(w, 0) without v, its p + q - 1 logits first; the derived beta_q position of u
 //   is unused, and theta[derived] = 1 - the other weights.
+// archm = u (p = 1) or u / s (p = 2); mxreg_k = u s / s_x,k; vxreg_k = u S / s_v,k, with S = s^2 (sGARCH, iGARCH,
+// gjrGARCH, csGARCH), 1 (eGARCH) or s^delta (apARCH, fGARCH; the natural delta); see regressor_map.hpp.
 // eta1 and the apARCH gamma: 2 logistic(x) - 1; eta2 unchanged; free delta or lambda: exp(x).
 // omega = s^2 exp(u), or s^power exp(u) in apARCH and fGARCH, or u + (1 - sum beta) log(s^2) in eGARCH.
 // csGARCH: rho = P + (1 - 1e-8 - P) logistic(x_rho), phi = sum(beta) logistic(x_phi).
@@ -46,6 +59,11 @@ void to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout,
 // weights give finite values. u is 0 at the fixed and derived entries.
 void to_unconstrained(std::span<const double> theta, std::span<double> u, const Layout& layout,
                       const Standardization& standardization);
+
+// The scale of the Hessian step of a Location entry: s for mu, and for archm, mxreg_k and vxreg_k the factor
+// that takes u to the natural value. theta is natural.
+double natural_scale(const Layout& layout, const Standardization& standardization, std::span<const double> theta,
+                     std::size_t index);
 
 // All entries finite; skew, shape and ghlambda in their domain; |eta1|, |apARCH gamma| < 1; delta,
 // lambda > 0; omega > 0 (but in eGARCH); weights >= 0 with P < 1 - 1e-8 (iGARCH: alpha, beta_{<q} >= 0

@@ -2,7 +2,9 @@
 
 #include "dist/densities.hpp"
 #include "dist/moments.hpp"
+#include "model/data.hpp"
 #include "model/likelihood.hpp"
+#include "model/start_values.hpp"
 #include "model/weight_terms.hpp"
 #include "simulated_garch.hpp"
 
@@ -1455,6 +1457,184 @@ TEST(ParameterMap, VarianceTargetingIgnoresOmega)
     to_unconstrained(std::vector<double>{kNaN, 0.05, 0.9}, u, layout, Standardization{});
     EXPECT_EQ(u[0], 0.0);
     EXPECT_TRUE(std::isfinite(u[1]) && std::isfinite(u[2]));
+}
+
+
+// archm 0.3, mxreg 0.5 and -0.2, vxreg 0.01 on top of the model interior.
+Layout regressor_layout(Model model, int archm, int mxreg, int vxreg)
+{
+    return ve::model::layout_of({.model = model, .dist = Dist::Norm, .mxreg = mxreg, .vxreg = vxreg, .archm = archm});
+}
+
+std::vector<double> regressor_interior_theta(const Layout& layout)
+{
+    std::vector<double> theta = model_interior_theta(layout);
+    if (layout.has_archm())
+    {
+        theta[layout.archm_index()] = 0.3;
+    }
+    for (std::size_t k = 0; k < static_cast<std::size_t>(layout.mxreg); ++k)
+    {
+        theta[layout.mxreg_begin() + k] = k == 0 ? 0.5 : -0.2;
+    }
+    for (std::size_t k = 0; k < static_cast<std::size_t>(layout.vxreg); ++k)
+    {
+        theta[layout.vxreg_begin() + k] = 0.01;
+    }
+    return theta;
+}
+
+Standardization regressor_standardization(double factor, double regressor_factor)
+{
+    Standardization standardization{0.03 * factor, 0.7 * factor};
+    standardization.mean_regressor_scale = {1.3 * regressor_factor, 0.4 * regressor_factor, 1.0, 1.0,
+                                            1.0,                    1.0,                    1.0, 1.0};
+    standardization.variance_regressor_scale = {2.1 * regressor_factor, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+    return standardization;
+}
+
+TEST(ParameterMap, RegressorRoundTrip)
+{
+    const Standardization standardization = regressor_standardization(1.0, 1.0);
+    for (Model model : kAllModels)
+    {
+        for (int archm : {0, 1, 2})
+        {
+            for (int mxreg : {0, 2})
+            {
+                for (int vxreg : {0, 1})
+                {
+                    Layout layout = regressor_layout(model, archm, mxreg, vxreg);
+                    SCOPED_TRACE(name_of(layout) + ", archm " + std::to_string(archm) + ", mxreg " +
+                                 std::to_string(mxreg) + ", vxreg " + std::to_string(vxreg));
+                    std::vector<double> theta = regressor_interior_theta(layout);
+                    ASSERT_TRUE(is_valid(theta, layout));
+                    std::vector<double> u(theta.size());
+                    std::vector<double> back(theta.size());
+                    to_unconstrained(theta, u, layout, standardization);
+                    to_natural<double>(u, back, layout, standardization);
+                    for (std::size_t i = 0; i < theta.size(); ++i)
+                    {
+                        EXPECT_NEAR(back[i], theta[i], 1e-12 * std::max(1.0, std::abs(theta[i]))) << "parameter " << i;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The scale S of the variance intercept for a series scale s.
+double intercept_scale_of(const Layout& layout, double scale, double power)
+{
+    if (layout.model == Model::EGarch)
+    {
+        return 1.0;
+    }
+    return layout.is_power_family() ? std::pow(scale, power) : scale * scale;
+}
+
+// r x 100 and X, V x 1000: theta scaled by 100/1000 (mxreg), 1 (archm p = 1) or 1/100 (p = 2) and S/1000 (vxreg)
+// gives the same u.
+TEST(ParameterMap, RegressorScalesMakeMapUnitFree)
+{
+    const Standardization base = regressor_standardization(1.0, 1.0);
+    const Standardization scaled = regressor_standardization(100.0, 1000.0);
+    for (Model model : kAllModels)
+    {
+        for (int archm : {0, 1, 2})
+        {
+            Layout layout = regressor_layout(model, archm, 2, 1);
+            SCOPED_TRACE(name_of(layout) + ", archm " + std::to_string(archm));
+            std::vector<double> theta = regressor_interior_theta(layout);
+            double power = power_of<double>(theta, layout);
+            std::vector<double> units = theta;
+            if (archm > 0)
+            {
+                units[layout.archm_index()] *= archm == 1 ? 1.0 : 0.01;
+            }
+            for (std::size_t k = 0; k < 2; ++k)
+            {
+                units[layout.mxreg_begin() + k] *= 100.0 / 1000.0;
+            }
+            double ratio = intercept_scale_of(layout, 100.0, power) / intercept_scale_of(layout, 1.0, power);
+            units[layout.vxreg_begin()] *= ratio / 1000.0;
+            std::vector<double> u(theta.size());
+            std::vector<double> u_scaled(theta.size());
+            to_unconstrained(theta, u, layout, base);
+            to_unconstrained(units, u_scaled, layout, scaled);
+            std::vector<std::size_t> indices{layout.mxreg_begin(), layout.mxreg_begin() + 1, layout.vxreg_begin()};
+            if (archm > 0)
+            {
+                indices.push_back(layout.archm_index());
+            }
+            for (std::size_t i : indices)
+            {
+                EXPECT_NEAR(u_scaled[i], u[i], 1e-12 * std::max(1.0, std::abs(u[i]))) << "parameter " << i;
+            }
+        }
+    }
+}
+
+TEST(ParameterMap, NaturalScaleOfEachLocation)
+{
+    Layout layout = regressor_layout(Model::ApArch, 2, 2, 1);
+    std::vector<double> theta = regressor_interior_theta(layout);
+    const Standardization standardization = regressor_standardization(1.0, 1.0);
+    double s = standardization.scale;
+    EXPECT_EQ(ve::model::natural_scale(layout, standardization, theta, layout.mu()), s);
+    EXPECT_EQ(ve::model::natural_scale(layout, standardization, theta, layout.archm_index()), 1.0 / s);
+    EXPECT_EQ(ve::model::natural_scale(layout, standardization, theta, layout.mxreg_begin() + 1), s / 0.4);
+    double expected = std::pow(s, power_of<double>(theta, layout)) / 2.1;
+    EXPECT_NEAR(ve::model::natural_scale(layout, standardization, theta, layout.vxreg_begin()), expected, 1e-15);
+    layout.archm = 1;
+    EXPECT_EQ(ve::model::natural_scale(layout, standardization, theta, layout.archm_index()), 1.0);
+}
+
+TEST(ParameterMap, FixedRegressorsKeepTheirValue)
+{
+    Layout layout = ve::model::layout_of(
+        {.fixed = {{"mxreg1", 0.7}, {"vxreg1", -0.02}}, .mxreg = 2, .vxreg = 1, .archm = 2});
+    const Standardization standardization = regressor_standardization(1.0, 1.0);
+    std::vector<double> u(layout.count(), 0.4);
+    std::vector<double> theta(layout.count());
+    to_natural<double>(u, theta, layout, standardization);
+    EXPECT_EQ(theta[layout.mxreg_begin()], 0.7);
+    EXPECT_EQ(theta[layout.vxreg_begin()], -0.02);
+    EXPECT_NEAR(theta[layout.mxreg_begin() + 1], 0.4 * 0.7 / 0.4, 1e-15);
+    EXPECT_NEAR(theta[layout.archm_index()], 0.4 / 0.7, 1e-15);
+    std::vector<double> back(layout.count());
+    to_unconstrained(theta, back, layout, standardization);
+    EXPECT_EQ(back[layout.mxreg_begin()], 0.0);
+    EXPECT_EQ(back[layout.vxreg_begin()], 0.0);
+    EXPECT_NEAR(back[layout.mxreg_begin() + 1], 0.4, 1e-14);
+}
+
+TEST(ParameterMap, ConstantColumnScaleIsOne)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(4, 50);
+    std::vector<double> x(r.size() * 2);
+    for (std::size_t t = 0; t < r.size(); ++t)
+    {
+        x[2 * t] = 1.0;
+        x[2 * t + 1] = 0.1;
+    }
+    Standardization constant = ve::model::standardization_of(ve::model::Data{r, {x, 2}, {x, 2}});
+    for (std::size_t k = 0; k < 2; ++k)
+    {
+        EXPECT_EQ(constant.mean_regressor_scale[k], 1.0);
+        EXPECT_EQ(constant.variance_regressor_scale[k], 1.0);
+    }
+    EXPECT_EQ(constant.mean_regressor_scale[2], 1.0);
+    for (std::size_t t = 0; t < r.size(); ++t)
+    {
+        x[2 * t + 1] = static_cast<double>(t % 2);
+    }
+    Standardization varying = ve::model::standardization_of(ve::model::Data{r, {x, 2}});
+    EXPECT_EQ(varying.mean_regressor_scale[1], 0.5);
+    EXPECT_EQ(varying.variance_regressor_scale[0], 1.0);
+    Standardization plain = ve::model::standardization_of(r);
+    EXPECT_EQ(plain.location, varying.location);
+    EXPECT_EQ(plain.scale, varying.scale);
 }
 
 }

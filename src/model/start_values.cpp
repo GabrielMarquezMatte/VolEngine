@@ -1,5 +1,6 @@
 #include "model/start_values.hpp"
 
+#include "linalg/least_squares.hpp"
 #include "model/weight_terms.hpp"
 
 #include <algorithm>
@@ -338,16 +339,114 @@ void set_default_phi(std::vector<double>& theta, const Layout& layout)
     theta[layout.eta2_begin()] = std::min(kInitialPhi, 0.5 * beta_sum);
 }
 
+// The columns of the least squares of the mean: the constant (with a mean) and the mxreg that are not fixed.
+std::vector<std::size_t> free_mean_columns(const Layout& layout)
+{
+    std::vector<std::size_t> columns;
+    if (layout.include_mean)
+    {
+        columns.push_back(layout.mu());
+    }
+    for (std::size_t k = 0; k < static_cast<std::size_t>(layout.mxreg); ++k)
+    {
+        if (!layout.is_fixed(layout.mxreg_begin() + k))
+        {
+            columns.push_back(layout.mxreg_begin() + k);
+        }
+    }
+    return columns;
+}
+
+double mean_column_value(const Data& data, const Layout& layout, std::size_t t, std::size_t index)
+{
+    if (layout.include_mean && index == layout.mu())
+    {
+        return 1.0;
+    }
+    return data.mean.at(t, index - layout.mxreg_begin());
+}
+
+// mu and the free mxreg from the least squares of r minus the fixed mxreg terms on the free columns.
+void set_mean_start(std::vector<double>& theta, const Data& data, const Layout& layout)
+{
+    std::vector<std::size_t> columns = free_mean_columns(layout);
+    if (layout.mxreg == 0 || columns.empty())
+    {
+        return;
+    }
+    std::vector<double> y(data.r.begin(), data.r.end());
+    std::vector<double> a;
+    a.reserve(y.size() * columns.size());
+    for (std::size_t t = 0; t < y.size(); ++t)
+    {
+        for (std::size_t k = 0; k < static_cast<std::size_t>(layout.mxreg); ++k)
+        {
+            std::size_t index = layout.mxreg_begin() + k;
+            y[t] -= layout.is_fixed(index) ? layout.given[index] * data.mean.at(t, k) : 0.0;
+        }
+        for (std::size_t index : columns)
+        {
+            a.push_back(mean_column_value(data, layout, t, index));
+        }
+    }
+    std::vector<double> b = linalg::least_squares(a, columns.size(), y);
+    for (std::size_t c = 0; c < columns.size(); ++c)
+    {
+        theta[columns[c]] = b[c];
+    }
+}
+
+// The population standard deviation of column k, 1 when the column is constant.
+double column_scale(const RegressorMatrix& matrix, std::size_t k, std::size_t rows)
+{
+    double sum = 0.0;
+    bool constant = true;
+    for (std::size_t t = 0; t < rows; ++t)
+    {
+        sum += matrix.at(t, k);
+        constant = constant && matrix.at(t, k) == matrix.at(0, k);
+    }
+    double mean = sum / static_cast<double>(rows);
+    double squares = 0.0;
+    for (std::size_t t = 0; t < rows; ++t)
+    {
+        squares += (matrix.at(t, k) - mean) * (matrix.at(t, k) - mean);
+    }
+    return constant ? 1.0 : std::sqrt(squares / static_cast<double>(rows));
+}
+
+void fill_column_scales(const RegressorMatrix& matrix, std::size_t rows, std::span<double> scales)
+{
+    for (std::size_t k = 0; k < matrix.columns; ++k)
+    {
+        scales[k] = column_scale(matrix, k, rows);
+    }
+}
+
+}
+
+Standardization standardization_of(const Data& data)
+{
+    double mean = sample_mean(data.r);
+    Standardization standardization{mean, std::sqrt(sample_variance(data.r, mean))};
+    fill_column_scales(data.mean, data.r.size(), standardization.mean_regressor_scale);
+    fill_column_scales(data.variance, data.r.size(), standardization.variance_regressor_scale);
+    return standardization;
 }
 
 Standardization standardization_of(std::span<const double> r)
 {
-    double mean = sample_mean(r);
-    return {mean, std::sqrt(sample_variance(r, mean))};
+    return standardization_of(Data{r});
 }
 
 std::vector<double> start_values(std::span<const double> r, const Layout& layout)
 {
+    return start_values(Data{r}, layout);
+}
+
+std::vector<double> start_values(const Data& data, const Layout& layout)
+{
+    std::span<const double> r = data.r;
     assert(!r.empty());
     double mean = sample_mean(r);
     std::vector<double> theta(layout.count(), 0.0);
@@ -355,6 +454,7 @@ std::vector<double> start_values(std::span<const double> r, const Layout& layout
     {
         theta[layout.mu()] = mean;
     }
+    set_mean_start(theta, data, layout);
     VarianceStart start = variance_start(layout.model);
     fill_block(theta, layout.alpha_begin(), layout.arch, start.alpha / layout.arch);
     fill_block(theta, layout.beta_begin(), layout.garch, kInitialGarch / layout.garch);

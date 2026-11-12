@@ -1,5 +1,6 @@
 #pragma once
 
+#include "model/data.hpp"
 #include "model/layout.hpp"
 #include "model/parameter_map.hpp"
 
@@ -25,10 +26,14 @@ namespace ve::model
 // weight block has a fixed or started parameter, the default weights are scaled by s = min(1, 0.95 (c - F - U) / D)
 // into the persistence left (weight_terms.hpp; c is the start rho in csGARCH), a default gjrGARCH alpha_i beside a
 // fixed gamma_i starts at max(0, -gamma_i) + 0.03 / p, and the iGARCH beta_q is 1 - the other weights.
-// r must not be empty.
+// With mean regressors, mu and the mxreg coefficients are the least squares of r on [1 (with a mean), X] (the
+// minimum norm one when the columns are collinear), the fixed mxreg_j taken out of r first; archm and vxreg
+// start at 0. data.r must not be empty.
+std::vector<double> start_values(const Data& data, const Layout& layout);
 std::vector<double> start_values(std::span<const double> r, const Layout& layout);
 
-// Mean and population standard deviation of r.
+// Mean and population standard deviation of r, and of each regressor column, with 1 for a constant column.
+Standardization standardization_of(const Data& data);
 Standardization standardization_of(std::span<const double> r);
 
 }
