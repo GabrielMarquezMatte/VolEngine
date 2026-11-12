@@ -344,6 +344,24 @@ TEST(StartValues, CsGarchRescalesBelowRhoAndKeepsPhiInReach)
     EXPECT_TRUE(is_valid(theta, layout_of(spec)));
 }
 
+void expect_rescaled_under_given_rho(const Spec& spec)
+{
+    Layout layout = layout_of(spec);
+    std::vector<double> theta = start_of(spec);
+    double scale = std::min(1.0, 0.95 * 0.9 / 0.95);
+    EXPECT_EQ(theta[layout.eta1_begin()], 0.9);
+    EXPECT_NEAR(theta[layout.alpha_begin()], 0.05 * scale, 1e-15);
+    EXPECT_NEAR(theta[layout.beta_begin()], 0.9 * scale, 1e-15);
+    EXPECT_EQ(theta[layout.eta2_begin()], std::min(0.03, 0.5 * theta[layout.beta_begin()]));
+    EXPECT_TRUE(is_valid(theta, layout));
+}
+
+TEST(StartValues, CsGarchRescalesDefaultWeightsUnderAGivenRho)
+{
+    expect_rescaled_under_given_rho({.model = Model::CsGarch, .fixed = {{"eta11", 0.9}}});
+    expect_rescaled_under_given_rho({.model = Model::CsGarch, .start = {{"eta11", 0.9}}});
+}
+
 TEST(StartValues, InvalidCombinationStaysInvalid)
 {
     Spec both{.model = Model::SGarch, .fixed = {{"alpha1", 0.6}, {"beta1", 0.5}}};
