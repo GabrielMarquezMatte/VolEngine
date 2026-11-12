@@ -6,9 +6,9 @@ behind a decision (measurements, rejected approaches); that lives in `docs/`, an
 [STYLEGUIDE.md](STYLEGUIDE.md#comments) says why.
 
 This document describes what exists today: ARMA(m,n)-GARCH(p,q) log-likelihoods for sGARCH, eGARCH, gjrGARCH,
-apARCH, iGARCH, csGARCH and fGARCH (eight submodels) with normal, Student-t, GED and skewed innovations, fixed parameters, start values and variance targeting, a
-template over the scalar type so that automatic differentiation gives their gradients; and, on top of them, those
-models fitted in batches behind a C API and a Python package.
+apARCH, iGARCH, csGARCH and fGARCH (eight submodels) with normal, Student-t, GED and skewed innovations, fixed parameters, start values and variance
+targeting, a template over the scalar type so that automatic differentiation gives their gradients; and, on top of
+them, those models fitted in batches behind a C API and a Python package.
 
 ## Layers
 

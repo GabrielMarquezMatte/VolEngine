@@ -21,7 +21,9 @@ library whose ABI version differs).
   `rugarch`. Each parameter is estimated, fixed or derived (the iGARCH `beta_q`, and `omega` under variance
   targeting); fixed and derived ones have NaN standard errors and do not count in the criteria. A spec with every
   parameter fixed is evaluated at that point without the optimizer. Incompatible specs are
-  `VE_INVALID_ARGUMENT`. C API: `ve_spec_set_fixed`, `ve_spec_set_start`, `ve_spec_set_variance_targeting` and
+  `VE_INVALID_ARGUMENT`: variance targeting in iGARCH and csGARCH (`rugarch` ignores it in csGARCH and gives
+  `omega = 0` in iGARCH; here both are errors on purpose), fixing a derived parameter, and a csGARCH with `eta21`
+  fixed and a `beta` free. C API: `ve_spec_set_fixed`, `ve_spec_set_start`, `ve_spec_set_variance_targeting` and
   `ve_spec_validate`. Python: `Spec(fixed=, start=, variance_targeting=)`. Validated against `rugarch` and `arch`
   ([docs/guide/validation.md](docs/guide/validation.md)).
 - Skewed innovations: skewed Student-t (`sstd`), skewed GED (`sged`), normal inverse Gaussian (`nig`),
