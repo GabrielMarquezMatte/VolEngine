@@ -261,10 +261,16 @@ Onde `rugarch`, `rmgarch` e `arch` divergem, a convenção é uma opção com pa
 - Normalização dos critérios de informação (o `rugarch` divide por n; o `arch` não).
 - Tipo de erro-padrão (os dois são sempre calculados; a opção decide o que os wrappers mostram por padrão, se
   aplicável).
-- Parametrização do sstd e de outras distribuições assimétricas.
-
 Padrão (decisão do Claude): seguir o `rugarch`/`rmgarch`, que é o que o autor usava no TCC. A convenção do `arch`
 fica disponível como opção.
+
+Exceção: a parametrização do sstd **não** tem opção do `arch` (decisão do usuário, 2026-11-11). O skew-t de Hansen
+do `arch` (`SkewStudent`, parâmetros `eta` e `lambda`) é a mesma família da sstd de Fernandez–Steel do `rugarch`,
+só reparametrizada: ξ = √((1 + λ)/(1 − λ)), ν = η, com a mesma log-verossimilhança (o plano 2c, Task 9, confirmou
+contra o `arch` 8.0.0 em sGARCH, gjrGARCH e eGARCH). Uma opção duplicaria o mapa de parâmetros e a validação para
+um resultado que o usuário obtém com uma conta. A conversão, e o erro-padrão pelo delta method,
+dξ/dλ = 1/(ξ(1 − λ)²), ficam documentados no header C, na docstring do Python e em `docs/guide/validation.md`. As
+outras assimétricas (sged, nig, ghyp, jsu) não existem no `arch` e seguem só o `rugarch`.
 
 ## 10. Dependências
 

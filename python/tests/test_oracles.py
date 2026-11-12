@@ -11,8 +11,9 @@ from numpy.typing import NDArray
 import volengine as ve
 
 REFERENCE = Path(__file__).resolve().parents[2] / "tests" / "reference"
-DATA_FILES = ("sgarch11_norm.csv", "grid.csv", "grid_2b.csv")
+DATA_FILES = ("sgarch11_norm.csv", "grid.csv", "grid_2b.csv", "grid_2c.csv")
 CRITERIA = ("aic", "bic", "hqic", "sic")
+SYMMETRIC = ("norm", "std", "ged")
 # Tighter than the default gradient tolerance; docs/guide/validation.md says why.
 FIT_TOL = 1e-7
 
@@ -162,6 +163,17 @@ def block(params: dict[str, float], name: str) -> list[float]:
     return [value for key, value in params.items() if key.rstrip("0123456789") == name]
 
 
+def below_zero(case: dict[str, Any], params: dict[str, float], persistence: float) -> float:
+    """P(z < 0): 0.5 for the symmetric distributions; for the skewed ones, read back from the oracle's gjrGARCH
+    persistence P = sum(alpha) + sum(beta) + pi sum(gamma), which integrates it."""
+    if case["dist"] in SYMMETRIC:
+        return 0.5
+    alpha, beta, gamma = block(params, "alpha"), block(params, "beta"), block(params, "gamma")
+    pi = (persistence - sum(alpha) - sum(beta)) / sum(gamma)
+    assert 0.0 < pi < 1.0
+    return pi
+
+
 def interior_weights(case: dict[str, Any], params: dict[str, float], persistence: float) -> list[float]:
     """The non-negative entries that sum to the persistence P; a power-family weight is alpha kappa = P - beta."""
     alpha, beta, gamma = block(params, "alpha"), block(params, "beta"), block(params, "gamma")
@@ -169,7 +181,8 @@ def interior_weights(case: dict[str, Any], params: dict[str, float], persistence
     if case["model"] == "egarch":
         return beta
     if case["model"] == "gjrgarch":
-        return [a / 2 for a in alpha] + beta + [(a + g) / 2 for a, g in zip(alpha, gamma, strict=True)]
+        pi = below_zero(case, params, persistence)
+        return [(1 - pi) * a for a in alpha] + beta + [pi * (a + g) for a, g in zip(alpha, gamma, strict=True)]
     if case["model"] in ("aparch", "fgarch"):
         assert case["p"] == 1
         return [persistence - sum(beta), *beta]
@@ -192,3 +205,16 @@ def test_fixture_estimates_are_interior(oracle, case):
     if case["model"] == "csgarch":
         assert params["eta11"] - persistence > 1e-4
         assert params["eta21"] > 1e-4
+    assert_distribution_interior(case, params)
+
+
+def assert_distribution_interior(case: dict[str, Any], params: dict[str, float]) -> None:
+    """|rho| < 0.999 (nig, ghyp), xi in (0.05, 20) (sstd, sged), 1 / shape > 1e-4 and |ghlambda| < 10."""
+    if case["dist"] in ("nig", "ghyp"):
+        assert abs(params["skew"]) < 0.999
+    if case["dist"] in ("sstd", "sged"):
+        assert 0.05 < params["skew"] < 20.0
+    if "shape" in params:
+        assert 1.0 / params["shape"] > 1e-4
+    if "ghlambda" in params:
+        assert abs(params["ghlambda"]) < 10.0

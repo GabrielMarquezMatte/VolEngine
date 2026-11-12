@@ -8,7 +8,7 @@ suppressPackageStartupMessages({
 
 reference <- file.path("tests", "reference")
 cases_path <- file.path(reference, "cases.json")
-data_paths <- file.path(reference, "data", c("sgarch11_norm.csv", "grid.csv", "grid_2b.csv"))
+data_paths <- file.path(reference, "data", c("sgarch11_norm.csv", "grid.csv", "grid_2b.csv", "grid_2c.csv"))
 fixture_path <- file.path(reference, "fixtures", "rugarch.json")
 
 load_series <- function(paths) {
@@ -55,7 +55,8 @@ block <- function(params, name) {
 }
 
 # The weights are the non-negative entries that sum to the persistence P. A power-family weight is alpha * kappa,
-# taken from rugarch's persistence, so these cases have p = 1.
+# taken from rugarch's persistence, so these cases have p = 1. The gjrGARCH weights use pi = P(z < 0), which
+# rugarch integrates into its persistence P = sum(alpha) + sum(beta) + pi sum(gamma).
 interior_weights <- function(case, params, persistence) {
     alpha <- block(params, "alpha")
     beta <- block(params, "beta")
@@ -63,7 +64,9 @@ interior_weights <- function(case, params, persistence) {
         return(beta)
     }
     if (case$model == "gjrgarch") {
-        return(c(alpha / 2, beta, (alpha + block(params, "gamma")) / 2))
+        gamma <- block(params, "gamma")
+        below_zero <- (persistence - sum(alpha) - sum(beta)) / sum(gamma)
+        return(c((1 - below_zero) * alpha, beta, below_zero * (alpha + gamma)))
     }
     if (case$model %in% c("aparch", "fgarch")) {
         stopifnot(case$p == 1)
@@ -91,8 +94,33 @@ interior_failures <- function(case, params, persistence) {
     failures
 }
 
-check_interior <- function(case, params, persistence) {
-    failures <- interior_failures(case, params, persistence)
+# The skewed distributions: |rho| < 0.999 (nig, ghyp), xi in (0.05, 20) (sstd, sged), 1 / shape > 1e-4 and
+# |ghlambda| < 10. A distribution parameter must also stay off rugarch's own bounds (its LB and UB columns).
+distribution_failures <- function(case, fit) {
+    params <- coef(fit)
+    failures <- c()
+    if (case$dist %in% c("nig", "ghyp")) {
+        failures <- c(failures, params["skew"][abs(params[["skew"]]) >= 0.999])
+    }
+    if (case$dist %in% c("sstd", "sged")) {
+        failures <- c(failures, params["skew"][params[["skew"]] <= 0.05 || params[["skew"]] >= 20])
+    }
+    if ("shape" %in% names(params)) {
+        failures <- c(failures, params["shape"][1 / params[["shape"]] <= 1e-4])
+    }
+    if ("ghlambda" %in% names(params)) {
+        failures <- c(failures, params["ghlambda"][abs(params[["ghlambda"]]) >= 10])
+    }
+    names_dist <- intersect(c("skew", "shape", "ghlambda"), names(params))
+    bounds <- fit@model$pars[names_dist, c("LB", "UB"), drop = FALSE]
+    on_bound <- abs(params[names_dist] - bounds[, "LB"]) <= 1e-6 * pmax(1, abs(bounds[, "LB"])) |
+        abs(params[names_dist] - bounds[, "UB"]) <= 1e-6 * pmax(1, abs(bounds[, "UB"]))
+    c(failures, params[names_dist][on_bound])
+}
+
+check_interior <- function(case, fit, persistence) {
+    params <- coef(fit)
+    failures <- c(interior_failures(case, params, persistence), distribution_failures(case, fit))
     if (length(failures) > 0) {
         stop(sprintf("rugarch estimate on case %s is on the boundary: %s", case$id,
                      paste(names(failures), signif(failures, 4), sep = " = ", collapse = ", ")))
@@ -101,16 +129,23 @@ check_interior <- function(case, params, persistence) {
 
 # rugarch's default Hessian is Richardson-extrapolated from a first step of 10% of each parameter (hess.d = 0.1),
 # which is biased where the likelihood is ill-conditioned (two GARCH lags) or not smooth (ged with shape < 2).
-# A first step of 0.1% removes that bias.
+# A first step of 0.1% removes that bias. sged, fitted with shape < 2 at a kink that is not at z = 0, needs 0.01%.
+hessian_step <- function(case) {
+    if (case$dist == "sged") {
+        return(1e-4)
+    }
+    1e-3
+}
+
 fit_case <- function(case, series) {
     fit <- ugarchfit(case_spec(case), series[[case$series]], solver = "hybrid",
-                     numderiv.control = list(hess.d = 1e-3))
+                     numderiv.control = list(hess.d = hessian_step(case)))
     if (convergence(fit) != 0) {
         stop(sprintf("rugarch did not converge on case %s", case$id))
     }
     # csGARCH reports (transitory, permanent) persistence; P is the transitory one, alpha + beta.
     persistence <- persistence(fit)[[1]]
-    check_interior(case, coef(fit), persistence)
+    check_interior(case, fit, persistence)
     # infocriteria() rows: Akaike, Bayes, Shibata, Hannan-Quinn, all per observation.
     criteria <- infocriteria(fit)
     list(
