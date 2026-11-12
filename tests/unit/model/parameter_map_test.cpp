@@ -27,6 +27,12 @@ using ve::model::Standardization;
 using ve::model::to_natural;
 using ve::model::to_unconstrained;
 
+// Bit for bit, where two NaN agree: a point outside the computable domain maps to NaN in both.
+bool same_value(double a, double b)
+{
+    return (std::isnan(a) && std::isnan(b)) || a == b;
+}
+
 struct Orders
 {
     int arch;
@@ -142,7 +148,7 @@ TEST(ParameterMap, RoundTripAllShapes)
 TEST(ParameterMap, AlwaysValid)
 {
     std::mt19937_64 engine(5);
-    std::normal_distribution<double> draw(0.0, 3.0);
+    ve::testing::PortableNormal draw{3.0};
     for (const GridCase& c : grid())
     {
         Layout layout = grid_layout(c);
@@ -184,7 +190,7 @@ TEST(ParameterMap, DualMatchesDouble)
     using Dual32 = ve::ad::Dual<32>;
     const Standardization standardization{0.02, 1.7};
     std::mt19937_64 engine(9);
-    std::normal_distribution<double> draw(0.0, 2.0);
+    ve::testing::PortableNormal draw{2.0};
     for (const GridCase& c : grid())
     {
         Layout layout = grid_layout(c);
@@ -201,7 +207,7 @@ TEST(ParameterMap, DualMatchesDouble)
         to_natural<double>(u, theta, layout, standardization);
         for (std::size_t i = 0; i < u.size(); ++i)
         {
-            ASSERT_EQ(ve::ad::value_of(dual_theta[i]), theta[i]) << "parameter " << i;
+            ASSERT_TRUE(same_value(ve::ad::value_of(dual_theta[i]), theta[i])) << "parameter " << i;
         }
     }
 }
@@ -433,7 +439,7 @@ bool moment_out_of_range(const Layout& layout, std::span<const double> theta)
 TEST(ParameterMap, AlwaysValidAllModels)
 {
     std::mt19937_64 engine(5);
-    std::normal_distribution<double> draw(0.0, 3.0);
+    ve::testing::PortableNormal draw{3.0};
     for (const Layout& layout : model_layouts())
     {
         std::vector<double> u(layout.count());
@@ -453,7 +459,7 @@ TEST(ParameterMap, DualMatchesDoubleAllModels)
     using Dual42 = ve::ad::Dual<42>;
     const Standardization standardization{0.02, 1.7};
     std::mt19937_64 engine(9);
-    std::normal_distribution<double> draw(0.0, 1.0);
+    ve::testing::PortableNormal draw{1.0};
     for (const Layout& layout : model_layouts())
     {
         std::vector<double> u(layout.count());
@@ -469,7 +475,8 @@ TEST(ParameterMap, DualMatchesDoubleAllModels)
         to_natural<double>(u, theta, layout, standardization);
         for (std::size_t i = 0; i < u.size(); ++i)
         {
-            ASSERT_EQ(ve::ad::value_of(dual_theta[i]), theta[i]) << name_of(layout) << ", parameter " << i;
+            ASSERT_TRUE(same_value(ve::ad::value_of(dual_theta[i]), theta[i]))
+                << name_of(layout) << ", parameter " << i;
         }
     }
 }
@@ -492,7 +499,7 @@ TEST(ParameterMap, EGarchOmegaShiftsWithScale)
 TEST(ParameterMap, IGarchWeightsSumToOne)
 {
     std::mt19937_64 engine(7);
-    std::normal_distribution<double> draw(0.0, 2.0);
+    ve::testing::PortableNormal draw{2.0};
     for (Orders orders : {Orders{1, 1}, Orders{2, 3}, Orders{6, 6}})
     {
         Layout layout = ve::model::layout_of({.model = Model::IGarch, .p = orders.arch, .q = orders.garch});
@@ -518,7 +525,7 @@ TEST(ParameterMap, IGarchWeightsSumToOne)
 TEST(ParameterMap, PowerAlphaCarriesMoment)
 {
     std::mt19937_64 engine(3);
-    std::normal_distribution<double> draw(0.0, 1.0);
+    ve::testing::PortableNormal draw{1.0};
     for (Model model : {Model::ApArch, Model::FGarchAllGarch})
     {
         for (Dist dist : {Dist::Norm, Dist::Std, Dist::Ged})
@@ -527,6 +534,11 @@ TEST(ParameterMap, PowerAlphaCarriesMoment)
             std::vector<double> u(layout.count());
             std::vector<double> theta(layout.count());
             std::ranges::generate(u, [&] { return draw(engine); });
+            if (dist == Dist::Std)
+            {
+                // A std shape at or below the power has no moment; nu = 2 + lambda keeps it above.
+                u[layout.shape()] = u[layout.power()];
+            }
             to_natural<double>(u, theta, layout, Standardization{});
             double persistence = theta[layout.beta_begin()] + theta[layout.beta_begin() + 1];
             for (std::size_t i = 0; i < 2; ++i)
@@ -541,7 +553,7 @@ TEST(ParameterMap, PowerAlphaCarriesMoment)
 TEST(ParameterMap, CsGarchOrdering)
 {
     std::mt19937_64 engine(11);
-    std::normal_distribution<double> draw(0.0, 3.0);
+    ve::testing::PortableNormal draw{3.0};
     Layout layout = ve::model::layout_of({.model = Model::CsGarch, .p = 2, .q = 2, .dist = Dist::Std});
     std::vector<double> u(layout.count());
     std::vector<double> theta(layout.count());
@@ -838,7 +850,7 @@ bool outside_computable_domain(const Layout& layout, std::span<const double> the
 // likelihood must not be finite.
 int exempt_draws(const Layout& layout, std::mt19937_64& engine, int trials, std::span<const double> r)
 {
-    std::normal_distribution<double> draw(0.0, 3.0);
+    ve::testing::PortableNormal draw{3.0};
     std::vector<double> u(layout.count());
     std::vector<double> theta(layout.count());
     int exempt = 0;
@@ -886,7 +898,7 @@ TEST(ParameterMap, GjrPersistenceUsesProbabilityBelowZero)
 {
     Layout layout = ve::model::layout_of({.model = Model::GjrGarch, .p = 2, .q = 2, .dist = Dist::Sstd});
     std::mt19937_64 engine(3);
-    std::normal_distribution<double> draw(0.0, 1.0);
+    ve::testing::PortableNormal draw{1.0};
     std::vector<double> u(layout.count());
     std::ranges::generate(u, [&] { return draw(engine); });
     u[layout.skew()] = std::log(0.7);
@@ -943,7 +955,7 @@ TEST(ParameterMap, GjrProbabilityNearOneIsNotComputable)
     ASSERT_GT(pi, 1.0 - 1e-8);
     EXPECT_FALSE(is_valid(theta, layout));
     EXPECT_TRUE(std::isnan(theta[layout.alpha_begin()]));
-    EXPECT_FALSE(std::isfinite(ve::model::loglik<double>(ve::testing::simulate_portable_garch_series(3, 200), theta,
+    EXPECT_FALSE(std::isfinite(ve::model::loglik<double>(ve::testing::simulate_garch_series(3, 200), theta,
                                                          layout, ve::VarInit::Sample, {})));
 }
 
@@ -966,7 +978,7 @@ TEST(ParameterMap, DualMatchesDoubleSkewed)
     using Dual42 = ve::ad::Dual<42>;
     const Standardization standardization{0.02, 1.7};
     std::mt19937_64 engine(9);
-    std::normal_distribution<double> draw(0.0, 1.0);
+    ve::testing::PortableNormal draw{1.0};
     for (const Layout& layout : skewed_quadrature_layouts())
     {
         std::vector<double> u(layout.count());
@@ -982,7 +994,8 @@ TEST(ParameterMap, DualMatchesDoubleSkewed)
         to_natural<double>(u, theta, layout, standardization);
         for (std::size_t i = 0; i < u.size(); ++i)
         {
-            ASSERT_EQ(ve::ad::value_of(dual_theta[i]), theta[i]) << name_of(layout) << ", parameter " << i;
+            ASSERT_TRUE(same_value(ve::ad::value_of(dual_theta[i]), theta[i]))
+                << name_of(layout) << ", parameter " << i;
         }
     }
 }
@@ -1024,7 +1037,7 @@ void expect_jacobian_matches(const Layout& layout, std::span<const double> u)
 TEST(ParameterMap, DualJacobianMatchesFiniteDifferencesSkewed)
 {
     std::mt19937_64 engine(17);
-    std::normal_distribution<double> draw(0.0, 0.5);
+    ve::testing::PortableNormal draw{0.5};
     for (const Layout& layout : skewed_quadrature_layouts())
     {
         std::vector<double> u(layout.count());

@@ -104,7 +104,7 @@ TEST(Likelihood, PlanOneHandCaseStillHolds)
 // Computed once by the analytic sGARCH(1,1)-normal likelihood this template replaced.
 TEST(Likelihood, MatchesPlanOneSimulatedValues)
 {
-    std::vector<double> r = ve::testing::simulate_portable_garch_series(42, 500);
+    std::vector<double> r = ve::testing::simulate_garch_series(42, 500);
     std::vector<double> theta{0.05, 0.01, 0.08, 0.9};
     double sample = loglik_at(r, theta, kSGarch11Norm, VarInit::Sample);
     double backcast = loglik_at(r, theta, kSGarch11Norm, VarInit::Backcast);
@@ -628,7 +628,7 @@ std::vector<double> interior_theta(const Layout& layout)
 std::vector<double> drawn_theta(std::span<const double> r, const Layout& layout)
 {
     std::mt19937_64 engine(13);
-    std::normal_distribution<double> draw(0.0, 1.0);
+    ve::testing::PortableNormal draw{1.0};
     ve::model::Standardization standardization = ve::model::standardization_of(r);
     std::vector<double> u(layout.count());
     ve::model::to_unconstrained(ve::model::start_values(r, layout), u, layout, standardization);
