@@ -1,4 +1,5 @@
 #include "model/likelihood.hpp"
+#include "model/likelihood_terms.hpp"
 
 #include "model/start_values.hpp"
 #include "simulated_garch.hpp"
@@ -451,7 +452,8 @@ TEST(Likelihood, SkewedHandCase)
     }
 }
 
-// zeta this small with order 40 overflows K_40 to +inf, so the terms are inf - inf or inf; neither is a likelihood.
+// zeta this small with order 40 overflows K_40 to +inf, so the terms are NaN (inf - inf), which is not a
+// likelihood.
 TEST(Likelihood, NonFiniteTermIsInvalid)
 {
     std::vector<double> r = ve::testing::simulate_garch_series(42, 50);
@@ -467,6 +469,30 @@ TEST(Likelihood, NonFiniteTermIsInvalid)
         Dual<8> dual = loglik<Dual<8>>(r, seeds, layout, var_init, {});
         EXPECT_EQ(dual.value, -std::numeric_limits<double>::infinity());
     }
+}
+
+// Review Focus 2: a sum that is +inf, from a +inf term or from finite terms that overflow, is never an
+// improvement.
+template <class T>
+void expect_infinite_sum_invalid()
+{
+    std::vector<T> residuals{T{0.1}, T{-0.2}, T{0.3}};
+    std::vector<T> sigma2{T{1.0}, T{1.0}, T{1.0}};
+    std::vector<T> terms(3);
+    auto huge = [](const T&, const T&) { return T{std::numeric_limits<double>::max()}; };
+    auto infinite = [](const T&, const T&) { return T{std::numeric_limits<double>::infinity()}; };
+    double invalid = -std::numeric_limits<double>::infinity();
+    T overflowed = ve::model::sum_of_terms<T>(residuals, sigma2, huge, std::span<T>(terms));
+    EXPECT_EQ(ve::ad::value_of(overflowed), invalid);
+    EXPECT_EQ(ve::ad::value_of(terms[2]), std::numeric_limits<double>::max());
+    T infinite_sum = ve::model::sum_of_terms<T>(residuals, sigma2, infinite, std::span<T>{});
+    EXPECT_EQ(ve::ad::value_of(infinite_sum), invalid);
+}
+
+TEST(Likelihood, InfiniteSumIsInvalid)
+{
+    expect_infinite_sum_invalid<double>();
+    expect_infinite_sum_invalid<Dual<8>>();
 }
 
 TEST(Likelihood, SkewedDomainGivesNonFinite)

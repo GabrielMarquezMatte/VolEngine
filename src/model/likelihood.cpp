@@ -8,6 +8,7 @@
 #include "garch/power_garch.hpp"
 #include "garch/sgarch.hpp"
 #include "mean/arma.hpp"
+#include "model/likelihood_terms.hpp"
 #include "model/parameter_map.hpp"
 
 #include <algorithm>
@@ -15,7 +16,6 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
-#include <limits>
 #include <variant>
 #include <vector>
 
@@ -28,8 +28,6 @@ namespace
 // arch backcast: exponentially weighted mean of the first min(75, T) squared residuals, decay 0.94.
 constexpr std::size_t kBackcastWindow = 75;
 constexpr double kBackcastDecay = 0.94;
-
-constexpr double kInvalid = -std::numeric_limits<double>::infinity();
 
 double sample_mean(std::span<const double> r)
 {
@@ -296,41 +294,6 @@ dist::ShapeParameters<double> value_of(const dist::ShapeParameters<T>& parameter
     return {ad::value_of(parameters.skew), ad::value_of(parameters.shape), ad::value_of(parameters.ghlambda)};
 }
 
-template <class T>
-bool is_valid_variance(const T& sigma2)
-{
-    double value = ad::value_of(sigma2);
-    return std::isfinite(value) && value > 0.0;
-}
-
-// log_density_of(e, sigma2) is log f(e / sqrt(sigma2)).
-template <class T, class LogDensityOf>
-T sum_of_terms(std::span<const T> residuals, std::span<const T> sigma2, LogDensityOf log_density_of,
-               std::span<T> terms)
-{
-    using std::log;
-    T total{0.0};
-    for (std::size_t t = 0; t < residuals.size(); ++t)
-    {
-        if (!is_valid_variance(sigma2[t]))
-        {
-            total = T{kInvalid};
-            return total;
-        }
-        T term = log_density_of(residuals[t], sigma2[t]) - 0.5 * log(sigma2[t]);
-        if (!terms.empty())
-        {
-            terms[t] = term;
-        }
-        total = total + term;
-    }
-    if (!std::isfinite(ad::value_of(total)))
-    {
-        total = T{kInvalid};
-    }
-    return total;
-}
-
 // norm and std read z^2 = e^2 / sigma2, which needs neither sqrt nor a second division.
 template <class T>
 T sum_of_alternative(std::span<const T> residuals, std::span<const T> sigma2, const dist::LogDensity<T>& density,
@@ -362,7 +325,7 @@ T sum_of_alternative(std::span<const T> residuals, std::span<const T> sigma2, co
         case Dist::Jsu:
             break;
     }
-    return T{kInvalid};
+    return T{kInvalidLoglik};
 }
 
 // The skewed, hyperbolic and Johnson densities read z = e / sqrt(sigma2).
@@ -378,8 +341,8 @@ T sum_of_alternative(std::span<const T> residuals, std::span<const T> sigma2, co
 }
 
 template <class T>
-T sum_of_terms(std::span<const T> residuals, std::span<const T> sigma2, const dist::Density<T>& density,
-               std::span<T> terms)
+T sum_of_density_terms(std::span<const T> residuals, std::span<const T> sigma2,
+                       const dist::Density<T>& density, std::span<T> terms)
 {
     return std::visit([&](const auto& alternative)
                       { return sum_of_alternative<T>(residuals, sigma2, alternative, terms); }, density);
@@ -398,7 +361,7 @@ T loglik(std::span<const double> r, std::span<const T> theta, const Layout& layo
     dist::ShapeParameters<T> shape = shape_parameters_of(theta, layout);
     if (!dist::in_domain(layout.dist, value_of(shape)))
     {
-        return T{kInvalid};
+        return T{kInvalidLoglik};
     }
     std::vector<T> residual_storage;
     std::vector<T> variance_storage;
@@ -408,9 +371,9 @@ T loglik(std::span<const double> r, std::span<const T> theta, const Layout& layo
     garch::Presample<T> initial = presample<T>(r, residuals, theta, layout, var_init);
     if (!fill_variance<T>(residuals, theta, layout, initial, sigma2))
     {
-        return T{kInvalid};
+        return T{kInvalidLoglik};
     }
-    return sum_of_terms<T>(residuals, sigma2, dist::make_density(layout.dist, shape), out.terms);
+    return sum_of_density_terms<T>(residuals, sigma2, dist::make_density(layout.dist, shape), out.terms);
 }
 
 template double loglik<double>(std::span<const double>, std::span<const double>, const Layout&, VarInit,
