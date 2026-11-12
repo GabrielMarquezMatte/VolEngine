@@ -2,6 +2,7 @@
 
 #include "dist/densities.hpp"
 #include "dist/moments.hpp"
+#include "model/weight_terms.hpp"
 
 #include <algorithm>
 #include <array>
@@ -16,14 +17,6 @@ namespace ve::model
 
 namespace
 {
-
-constexpr double kPersistenceCeiling = 1.0 - 1e-8;
-constexpr double kBoundary = 1e-8;
-constexpr double kInfinity = std::numeric_limits<double>::infinity();
-// gjrGARCH: 2 p + q.
-constexpr std::size_t kMaxWeightCount = 3 * kMaxOrder;
-
-using Weights = std::array<double, kMaxWeightCount>;
 
 template <class T>
 T logistic(const T& x)
@@ -41,32 +34,6 @@ double log_ratio(double numerator, double denominator)
 {
     constexpr double kFloor = std::numeric_limits<double>::min();
     return std::log(std::max(numerator, kFloor)) - std::log(std::max(denominator, kFloor));
-}
-
-std::size_t count_of(int order)
-{
-    return static_cast<std::size_t>(order);
-}
-
-struct WeightBlock
-{
-    std::size_t begin;
-    std::size_t count;
-};
-
-WeightBlock weight_block(const Layout& layout)
-{
-    std::size_t p = count_of(layout.arch);
-    std::size_t q = count_of(layout.garch);
-    if (layout.model == Model::EGarch)
-    {
-        return {layout.beta_begin(), q};
-    }
-    if (layout.model == Model::GjrGarch)
-    {
-        return {layout.alpha_begin(), 2 * p + q};
-    }
-    return {layout.alpha_begin(), p + q};
 }
 
 template <class T>
@@ -205,21 +172,6 @@ void distribution_to_unconstrained(std::span<const double> theta, std::span<doub
     }
 }
 
-// pi = P(z < 0) splits the gjrGARCH alpha_i + gamma_i between the negative and the positive shocks. alpha_i is
-// read back as w / (1 - pi) and gamma_i as w / pi - alpha_i, which lose every digit as pi nears 0 or 1, so a pi
-// within kBoundary of either end is not computable: it comes back NaN.
-template <class T>
-T probability_below_zero_of(std::span<const T> theta, const Layout& layout)
-{
-    T below = dist::probability_below_zero(layout.dist, shape_parameters_of(theta, layout));
-    double value = ad::value_of(below);
-    if (!(value >= kBoundary && value <= 1.0 - kBoundary))
-    {
-        below = T{std::numeric_limits<double>::quiet_NaN()};
-    }
-    return below;
-}
-
 // eGARCH alpha and gamma are unconstrained in both spaces.
 template <class T>
 void copy_egarch_reals(std::span<const T> source, std::span<T> target, const Layout& layout)
@@ -275,12 +227,7 @@ void igarch_weights_to_natural(std::span<const T> u, std::span<T> theta, const L
 {
     WeightBlock block = weight_block(layout);
     softmax_to_natural<T>(u.subspan(block.begin, block.count - 1), T{1.0}, theta.subspan(block.begin, block.count));
-    T derived{1.0};
-    for (const T& weight : std::span<const T>(theta).subspan(block.begin, block.count - 1))
-    {
-        derived = derived - weight;
-    }
-    theta[layout.derived()] = derived;
+    write_derived_weight<T>(theta, layout);
 }
 
 // From the weights ((1 - pi) alpha, pi (alpha + gamma)) in the alpha and gamma positions. The symmetric
@@ -299,11 +246,78 @@ void gjr_weights_to_natural(std::span<T> theta, const Layout& layout)
     }
 }
 
+// Whether the weights share a budget below the ceiling of the plain map: some weight is fixed, or the csGARCH
+// rho that caps them is.
+bool weights_need_budget(const Layout& layout)
+{
+    WeightBlock block = weight_block(layout);
+    for (std::size_t index = block.begin; index < block.begin + block.count; ++index)
+    {
+        if (layout.is_fixed(index))
+        {
+            return true;
+        }
+    }
+    return layout.model == Model::CsGarch && layout.is_fixed(layout.eta1_begin());
+}
+
+// The free terms, in the order of the free positions: logistic(v) budget softmax(w, 0), with v the u of the first
+// free position and w those of the others; iGARCH: budget softmax(w, 0) over the free positions and the derived
+// beta_q, with w all the free u.
+template <class T>
+WeightArray<T> shared_terms(std::span<const T> u, const FreePositions& free, const T& budget, const Layout& layout)
+{
+    WeightArray<T> terms{};
+    if (!(ad::value_of(budget) > 0.0))
+    {
+        terms.fill(T{std::numeric_limits<double>::quiet_NaN()});
+        return terms;
+    }
+    WeightArray<T> gathered{};
+    for (std::size_t m = 0; m < free.count; ++m)
+    {
+        gathered[m] = u[free.index[m]];
+    }
+    std::span<const T> draws = std::span<const T>(gathered).first(free.count);
+    if (layout.model == Model::IGarch)
+    {
+        softmax_to_natural<T>(draws, budget, std::span<T>(terms).first(free.count + 1));
+        return terms;
+    }
+    if (free.count > 0)
+    {
+        softmax_to_natural<T>(draws.subspan(1), logistic(draws[0]) * budget, std::span<T>(terms).first(free.count));
+    }
+    return terms;
+}
+
+template <class T>
+void budget_weights_to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout)
+{
+    FreePositions free = free_positions(layout);
+    T below = below_zero_of<T>(theta, layout);
+    T budget = budget_of<T>(theta, layout, below);
+    WeightArray<T> terms = shared_terms<T>(u, free, budget, layout);
+    for (std::size_t m = 0; m < free.count; ++m)
+    {
+        theta[free.index[m]] = natural_at<T>(theta, layout, free.index[m], terms[m], below);
+    }
+    if (layout.model == Model::IGarch)
+    {
+        write_derived_weight<T>(theta, layout);
+    }
+}
+
 // The weights of gjrGARCH are ((1 - pi) alpha, beta, pi (alpha + gamma)); of apARCH and fGARCH
 // (alpha kappa, beta).
 template <class T>
 void weights_to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout)
 {
+    if (weights_need_budget(layout))
+    {
+        budget_weights_to_natural<T>(u, theta, layout);
+        return;
+    }
     if (layout.model == Model::IGarch)
     {
         igarch_weights_to_natural<T>(u, theta, layout);
@@ -328,9 +342,15 @@ void csgarch_to_natural(std::span<const T> u, std::span<T> theta, const Layout& 
     std::span<const T> natural = theta;
     T persistence = sum_of(natural.subspan(layout.alpha_begin(), count_of(layout.arch + layout.garch)));
     T beta_sum = sum_of(natural.subspan(layout.beta_begin(), count_of(layout.garch)));
-    theta[layout.eta1_begin()] =
-        persistence + (kPersistenceCeiling - persistence) * logistic(u[layout.eta1_begin()]);
-    theta[layout.eta2_begin()] = beta_sum * logistic(u[layout.eta2_begin()]);
+    if (layout.is_estimated(layout.eta1_begin()))
+    {
+        theta[layout.eta1_begin()] =
+            persistence + (kPersistenceCeiling - persistence) * logistic(u[layout.eta1_begin()]);
+    }
+    if (layout.is_estimated(layout.eta2_begin()))
+    {
+        theta[layout.eta2_begin()] = beta_sum * logistic(u[layout.eta2_begin()]);
+    }
 }
 
 template <class T>
@@ -348,49 +368,6 @@ T omega_to_natural(std::span<const T> u, std::span<const T> theta, const Layout&
         return exp(power_of(theta, layout) * std::log(scale)) * exp(x);
     }
     return (scale * scale) * exp(x);
-}
-
-// value where 0 < value < upper, NaN otherwise. alpha_i is read back as w / kappa_i, so a kappa outside its
-// range gives NaN weights.
-double nan_unless(double value, double upper)
-{
-    if (value > 0.0 && value < upper)
-    {
-        return value;
-    }
-    return std::numeric_limits<double>::quiet_NaN();
-}
-
-// The natural weights of theta (see to_natural), in double.
-Weights natural_weights(std::span<const double> theta, const Layout& layout)
-{
-    WeightBlock block = weight_block(layout);
-    Weights weights{};
-    std::copy_n(theta.begin() + static_cast<std::ptrdiff_t>(block.begin), block.count, weights.begin());
-    std::size_t p = count_of(layout.arch);
-    double below = 0.5;
-    if (layout.model == Model::GjrGarch)
-    {
-        below = probability_below_zero_of<double>(theta, layout);
-    }
-    for (std::size_t i = 0; i < p && layout.model == Model::GjrGarch; ++i)
-    {
-        double alpha = theta[layout.alpha_begin() + i];
-        weights[i] = (1.0 - below) * alpha;
-        weights[block.count - p + i] = below * (alpha + theta[layout.gamma_begin() + i]);
-    }
-    for (std::size_t i = 0; i < p && layout.is_power_family(); ++i)
-    {
-        double moment = nan_unless(shock_moment<double>(theta, layout, i), kInfinity);
-        weights[i] = theta[layout.alpha_begin() + i] * moment;
-    }
-    return weights;
-}
-
-double persistence_of(std::span<const double> theta, const Layout& layout)
-{
-    Weights weights = natural_weights(theta, layout);
-    return sum_of(std::span<const double>(weights).first(weight_block(layout).count));
 }
 
 void shock_parameters_to_unconstrained(std::span<const double> theta, std::span<double> u, const Layout& layout)
@@ -412,11 +389,48 @@ void shock_parameters_to_unconstrained(std::span<const double> theta, std::span<
     }
 }
 
-// iGARCH: the reference weight is the derived beta_q, recomputed rather than read, and its u is unused.
+// The inverse of budget_weights_to_natural.
+void budget_weights_to_unconstrained(std::span<const double> theta, std::span<double> u, const Layout& layout)
+{
+    FreePositions free = free_positions(layout);
+    double below = below_zero_of<double>(theta, layout);
+    double budget = budget_of<double>(theta, layout, below);
+    WeightArray<double> gathered{};
+    for (std::size_t m = 0; m < free.count; ++m)
+    {
+        gathered[m] = term_at<double>(theta, layout, free.index[m], below);
+    }
+    std::span<const double> terms = std::span<const double>(gathered).first(free.count);
+    double shared = sum_of(terms);
+    if (layout.model == Model::IGarch)
+    {
+        for (std::size_t m = 0; m < free.count; ++m)
+        {
+            u[free.index[m]] = log_ratio(terms[m], budget - shared);
+        }
+        return;
+    }
+    if (free.count == 0)
+    {
+        return;
+    }
+    u[free.index[0]] = log_ratio(shared, budget - shared);
+    for (std::size_t m = 1; m < free.count; ++m)
+    {
+        u[free.index[m]] = log_ratio(terms[m - 1], terms[free.count - 1]);
+    }
+}
+
+// iGARCH: the reference weight is the derived beta_q, recomputed rather than read.
 void weights_to_unconstrained(std::span<const double> theta, std::span<double> u, const Layout& layout)
 {
+    if (weights_need_budget(layout))
+    {
+        budget_weights_to_unconstrained(theta, u, layout);
+        return;
+    }
     WeightBlock block = weight_block(layout);
-    Weights natural = natural_weights(theta, layout);
+    WeightArray<double> natural = terms_of<double>(theta, layout);
     std::span<const double> weights = std::span<const double>(natural).first(block.count);
     std::span<double> logits = u.subspan(block.begin + 1, block.count - 1);
     double reference = weights[block.count - 1];
@@ -424,7 +438,6 @@ void weights_to_unconstrained(std::span<const double> theta, std::span<double> u
     {
         logits = u.subspan(block.begin, block.count - 1);
         reference = 1.0 - sum_of(weights.first(block.count - 1));
-        u[layout.derived()] = 0.0;
     }
     if (layout.model != Model::IGarch)
     {
@@ -439,7 +452,7 @@ void weights_to_unconstrained(std::span<const double> theta, std::span<double> u
 
 void csgarch_to_unconstrained(std::span<const double> theta, std::span<double> u, const Layout& layout)
 {
-    double persistence = persistence_of(theta, layout);
+    double persistence = model::persistence<double>(theta, layout);
     double beta_sum = sum_of(theta.subspan(layout.beta_begin(), count_of(layout.garch)));
     double rho = theta[layout.eta1_begin()];
     double phi = theta[layout.eta2_begin()];
@@ -474,10 +487,10 @@ bool shock_parameters_valid(std::span<const double> theta, const Layout& layout)
 }
 
 // A kappa that is not a positive finite double, or a gjrGARCH pi outside (0, 1), gives NaN weights (see
-// nan_unless), which fail here.
+// weight_terms.hpp), which fail here.
 bool weights_valid(std::span<const double> theta, const Layout& layout)
 {
-    Weights natural = natural_weights(theta, layout);
+    WeightArray<double> natural = terms_of<double>(theta, layout);
     std::span<const double> weights = std::span<const double>(natural).first(weight_block(layout).count);
     if (layout.model == Model::IGarch)
     {
@@ -497,11 +510,35 @@ bool weights_valid(std::span<const double> theta, const Layout& layout)
 
 bool csgarch_valid(std::span<const double> theta, const Layout& layout)
 {
-    double persistence = persistence_of(theta, layout);
+    double persistence = model::persistence<double>(theta, layout);
     double beta_sum = sum_of(theta.subspan(layout.beta_begin(), count_of(layout.garch)));
     double rho = theta[layout.eta1_begin()];
     double phi = theta[layout.eta2_begin()];
     return persistence < rho && rho < kPersistenceCeiling && phi >= 0.0 && phi <= beta_sum;
+}
+
+template <class T>
+void write_fixed(std::span<T> theta, const Layout& layout)
+{
+    for (std::size_t index = 0; index < theta.size(); ++index)
+    {
+        if (layout.is_fixed(index))
+        {
+            theta[index] = T{layout.given[index]};
+        }
+    }
+}
+
+bool finite_but_derived(std::span<const double> theta, const Layout& layout)
+{
+    for (std::size_t index = 0; index < theta.size(); ++index)
+    {
+        if (!layout.is_derived(index) && !std::isfinite(theta[index]))
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool in_block(std::size_t index, std::size_t begin, std::size_t count)
@@ -553,29 +590,45 @@ void to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout,
     mean_to_natural<T>(u, theta, layout, standardization);
     copy_egarch_reals<T>(u, theta, layout);
     shock_parameters_to_natural<T>(u, theta, layout);
+    write_fixed<T>(theta, layout);
     weights_to_natural<T>(u, theta, layout);
     if (layout.model == Model::CsGarch)
     {
         csgarch_to_natural<T>(u, theta, layout);
     }
-    theta[layout.omega()] = omega_to_natural<T>(u, theta, layout, standardization.scale);
+    if (layout.is_estimated(layout.omega()))
+    {
+        theta[layout.omega()] = omega_to_natural<T>(u, theta, layout, standardization.scale);
+    }
+}
+
+template <class T>
+T persistence(std::span<const T> theta, const Layout& layout)
+{
+    WeightArray<T> terms = terms_of<T>(theta, layout);
+    return sum_of(std::span<const T>(terms).first(weight_block(layout).count));
 }
 
 template void to_natural<double>(std::span<const double>, std::span<double>, const Layout&,
                                  const Standardization&);
 template double shock_moment<double>(std::span<const double>, const Layout&, std::size_t);
+template double persistence<double>(std::span<const double>, const Layout&);
 template void to_natural<ad::Dual<8>>(std::span<const ad::Dual<8>>, std::span<ad::Dual<8>>, const Layout&,
                                  const Standardization&);
 template ad::Dual<8> shock_moment<ad::Dual<8>>(std::span<const ad::Dual<8>>, const Layout&, std::size_t);
+template ad::Dual<8> persistence<ad::Dual<8>>(std::span<const ad::Dual<8>>, const Layout&);
 template void to_natural<ad::Dual<16>>(std::span<const ad::Dual<16>>, std::span<ad::Dual<16>>, const Layout&,
                                  const Standardization&);
 template ad::Dual<16> shock_moment<ad::Dual<16>>(std::span<const ad::Dual<16>>, const Layout&, std::size_t);
+template ad::Dual<16> persistence<ad::Dual<16>>(std::span<const ad::Dual<16>>, const Layout&);
 template void to_natural<ad::Dual<32>>(std::span<const ad::Dual<32>>, std::span<ad::Dual<32>>, const Layout&,
                                  const Standardization&);
 template ad::Dual<32> shock_moment<ad::Dual<32>>(std::span<const ad::Dual<32>>, const Layout&, std::size_t);
+template ad::Dual<32> persistence<ad::Dual<32>>(std::span<const ad::Dual<32>>, const Layout&);
 template void to_natural<ad::Dual<42>>(std::span<const ad::Dual<42>>, std::span<ad::Dual<42>>, const Layout&,
                                  const Standardization&);
 template ad::Dual<42> shock_moment<ad::Dual<42>>(std::span<const ad::Dual<42>>, const Layout&, std::size_t);
+template ad::Dual<42> persistence<ad::Dual<42>>(std::span<const ad::Dual<42>>, const Layout&);
 
 void to_unconstrained(std::span<const double> theta, std::span<double> u, const Layout& layout,
                       const Standardization& standardization)
@@ -598,12 +651,44 @@ void to_unconstrained(std::span<const double> theta, std::span<double> u, const 
     {
         csgarch_to_unconstrained(theta, u, layout);
     }
+    for (std::size_t index = 0; index < u.size(); ++index)
+    {
+        if (!layout.is_estimated(index))
+        {
+            u[index] = 0.0;
+        }
+    }
+}
+
+WeightTerms weight_terms(std::span<const double> theta, const Layout& layout)
+{
+    return WeightTerms{.terms = terms_of<double>(theta, layout),
+                       .count = weight_block(layout).count,
+                       .ceiling = weight_ceiling(layout)};
+}
+
+void natural_from_terms(const WeightTerms& terms, std::span<double> theta, const Layout& layout)
+{
+    WeightBlock block = weight_block(layout);
+    double below = below_zero_of<double>(theta, layout);
+    for (std::size_t j = 0; j < block.count; ++j)
+    {
+        std::size_t index = block.begin + j;
+        if (layout.is_estimated(index))
+        {
+            theta[index] = natural_at<double>(theta, layout, index, terms.terms[j], below);
+        }
+    }
+    if (layout.model == Model::IGarch)
+    {
+        write_derived_weight<double>(theta, layout);
+    }
 }
 
 bool is_valid(std::span<const double> theta, const Layout& layout)
 {
     assert(theta.size() == layout.count());
-    if (!std::ranges::all_of(theta, [](double value) { return std::isfinite(value); }))
+    if (!finite_but_derived(theta, layout))
     {
         return false;
     }
@@ -611,7 +696,8 @@ bool is_valid(std::span<const double> theta, const Layout& layout)
     {
         return false;
     }
-    if (layout.model != Model::EGarch && !(theta[layout.omega()] > 0.0))
+    bool positive_omega = layout.model != Model::EGarch && !layout.is_derived(layout.omega());
+    if (positive_omega && !(theta[layout.omega()] > 0.0))
     {
         return false;
     }
@@ -635,7 +721,7 @@ bool on_boundary(const Layout& layout, std::span<const double> theta, std::size_
     }
     if (layout.model == Model::CsGarch && index == layout.eta1_begin())
     {
-        return value - persistence_of(theta, layout) < kBoundary;
+        return value - persistence<double>(theta, layout) < kBoundary;
     }
     if (layout.model == Model::GjrGarch && in_block(index, layout.gamma_begin(), count_of(layout.gamma)))
     {
@@ -644,6 +730,11 @@ bool on_boundary(const Layout& layout, std::span<const double> theta, std::size_
     if (in_block(index, layout.asymmetry_begin(), layout.asymmetry_count()))
     {
         return std::abs(value) > 1.0 - kBoundary;
+    }
+    std::size_t i = index - layout.alpha_begin();
+    if (in_block(index, layout.alpha_begin(), count_of(layout.arch)) && alpha_carries_gamma(layout, i))
+    {
+        return value - negative_part(theta[layout.gamma_begin() + i]) < kBoundary;
     }
     return layout.kind(index) == ParameterKind::Weight && value < kBoundary;
 }
