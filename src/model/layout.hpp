@@ -41,10 +41,16 @@ struct Layout
     // The fixed value or the user's start value; 0 elsewhere.
     std::array<double, kMaxParameterCount> given{};
     bool variance_targeting = false;
+    int archm = 0;
+    int mxreg = 0;
+    int vxreg = 0;
 
     std::size_t mu() const { return 0; }
     std::size_t ar_begin() const;
     std::size_t ma_begin() const;
+    bool has_archm() const { return archm != 0; }
+    std::size_t archm_index() const;
+    std::size_t mxreg_begin() const;
     std::size_t omega() const;
     std::size_t alpha_begin() const;
     std::size_t beta_begin() const;
@@ -52,6 +58,7 @@ struct Layout
     std::size_t eta1_begin() const;
     std::size_t eta2_begin() const;
     std::size_t power() const;
+    std::size_t vxreg_begin() const;
     bool has_skew() const;
     std::size_t skew() const;
     bool has_shape() const;

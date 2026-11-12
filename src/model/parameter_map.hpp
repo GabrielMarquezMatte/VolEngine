@@ -37,7 +37,7 @@ struct Standardization
 // weight_terms.hpp: the fixed terms sum to F, B = c - F, and the free terms are logistic(v) B softmax(w, 0) over
 // the free positions in order, v at the first, the last the reference (iGARCH: B softmax(w, 0) without v, the
 // derived beta_q the reference). B <= 0 gives NaN free weights.
-// Instantiated only for T = double, ad::Dual<8>, ad::Dual<16>, ad::Dual<32> and ad::Dual<42>.
+// Instantiated only for T = double, ad::Dual<8>, ad::Dual<16>, ad::Dual<32> and ad::Dual<kMaxParameterCount>.
 template <class T>
 void to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout,
                 const Standardization& standardization);

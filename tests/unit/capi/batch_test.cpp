@@ -144,8 +144,8 @@ struct SpecShape
 constexpr std::size_t kShortT = 600;
 constexpr int kShortMaxIter = 30;
 
-// Three buckets: 4 (sGARCH with norm), 8 (gjrGARCH with sstd, 7 parameters) and 42 (the widest layout:
-// ALLGARCH ARMA(6,6)-(6,6) with ghyp).
+// Three buckets: 4 (sGARCH with norm), 8 (gjrGARCH with sstd, 7 parameters) and the widest Dual bucket, 59 (ALLGARCH
+// ARMA(6,6)-(6,6) with ghyp, 42 parameters).
 constexpr SpecShape kShapes[] = {{VE_MODEL_SGARCH, 1, 1, 0, 0, VE_DIST_NORM},
     {VE_MODEL_GJRGARCH, 1, 1, 0, 0, VE_DIST_SSTD},
     {VE_MODEL_FGARCH_ALLGARCH, 6, 6, 6, 6, VE_DIST_GHYP}};
