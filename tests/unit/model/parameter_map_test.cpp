@@ -254,7 +254,7 @@ namespace
 using ve::Model;
 using ve::model::on_boundary;
 using ve::model::power_of;
-using ve::model::shape_of;
+using ve::model::shape_parameters_of;
 using ve::model::shock_moment;
 using Indices = std::vector<std::size_t>;
 
@@ -370,7 +370,7 @@ TEST(ParameterMap, RoundTripAllModels)
 // log E(|z| - eta1 z)^power of a ged, from its closed form.
 double ged_log_moment(const Layout& layout, std::span<const double> theta, std::size_t i)
 {
-    double nu = shape_of(theta, layout);
+    double nu = shape_parameters_of(theta, layout).shape;
     double power = power_of(theta, layout);
     double eta1 = 0.0;
     if (layout.asymmetry_count() > 0)
@@ -411,7 +411,7 @@ bool moment_out_of_range(const Layout& layout, std::span<const double> theta)
     {
         return false;
     }
-    if (layout.dist == Dist::Std && shape_of(theta, layout) <= power_of(theta, layout))
+    if (layout.dist == Dist::Std && shape_parameters_of(theta, layout).shape <= power_of(theta, layout))
     {
         return true;
     }
@@ -445,7 +445,7 @@ TEST(ParameterMap, AlwaysValidAllModels)
 
 TEST(ParameterMap, DualMatchesDoubleAllModels)
 {
-    using Dual40 = ve::ad::Dual<40>;
+    using Dual42 = ve::ad::Dual<42>;
     const Standardization standardization{0.02, 1.7};
     std::mt19937_64 engine(9);
     std::normal_distribution<double> draw(0.0, 1.0);
@@ -453,14 +453,14 @@ TEST(ParameterMap, DualMatchesDoubleAllModels)
     {
         std::vector<double> u(layout.count());
         std::ranges::generate(u, [&] { return draw(engine); });
-        std::vector<Dual40> seeds;
+        std::vector<Dual42> seeds;
         for (std::size_t i = 0; i < u.size(); ++i)
         {
-            seeds.push_back(ve::ad::variable<40>(u[i], i));
+            seeds.push_back(ve::ad::variable<42>(u[i], i));
         }
-        std::vector<Dual40> dual_theta(u.size());
+        std::vector<Dual42> dual_theta(u.size());
         std::vector<double> theta(u.size());
-        to_natural<Dual40>(seeds, dual_theta, layout, standardization);
+        to_natural<Dual42>(seeds, dual_theta, layout, standardization);
         to_natural<double>(u, theta, layout, standardization);
         for (std::size_t i = 0; i < u.size(); ++i)
         {

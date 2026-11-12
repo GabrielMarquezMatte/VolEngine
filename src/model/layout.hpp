@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/spec.hpp"
+#include "dist/densities.hpp"
 
 #include <cstddef>
 #include <span>
@@ -43,8 +44,12 @@ struct Layout
     std::size_t eta1_begin() const;
     std::size_t eta2_begin() const;
     std::size_t power() const;
+    bool has_skew() const;
+    std::size_t skew() const;
     bool has_shape() const;
     std::size_t shape() const;
+    bool has_ghlambda() const;
+    std::size_t ghlambda() const;
     std::size_t count() const;
     bool has_derived() const;
     // apARCH and the fGARCH submodels: the recursion in sigma^power.
@@ -67,15 +72,23 @@ T power_of(std::span<const T> theta, const Layout& layout)
     return theta[layout.power()];
 }
 
-// 0 when the distribution has no shape.
 template <class T>
-T shape_of(std::span<const T> theta, const Layout& layout)
+dist::ShapeParameters<T> shape_parameters_of(std::span<const T> theta, const Layout& layout)
 {
-    if (!layout.has_shape())
+    dist::ShapeParameters<T> parameters;
+    if (layout.has_skew())
     {
-        return T{0.0};
+        parameters.skew = theta[layout.skew()];
     }
-    return theta[layout.shape()];
+    if (layout.has_shape())
+    {
+        parameters.shape = theta[layout.shape()];
+    }
+    if (layout.has_ghlambda())
+    {
+        parameters.ghlambda = theta[layout.ghlambda()];
+    }
+    return parameters;
 }
 
 Layout layout_of(const Spec& spec);

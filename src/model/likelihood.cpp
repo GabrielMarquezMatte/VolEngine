@@ -91,7 +91,7 @@ garch::EGarchParameters<T> egarch_parameters(std::span<const T> theta, const Lay
 {
     garch::SGarchParameters<T> s = sgarch_parameters(theta, layout);
     return {s.omega, s.alpha, s.beta, block(theta, layout.gamma_begin(), layout.gamma),
-            dist::abs_moment(layout.dist, shape_of(theta, layout), T{1.0})};
+            dist::abs_moment(layout.dist, shape_parameters_of(theta, layout).shape, T{1.0})};
 }
 
 template <class T>
@@ -344,6 +344,12 @@ T sum_of_terms(std::span<const T> residuals, std::span<const T> sigma2, const di
                                    [&density](const T& e, const T& variance)
                                    { return dist::ged_log_density_at(density, abs(e) / sqrt(variance)); },
                                    terms);
+        case Dist::Sstd:
+        case Dist::Sged:
+        case Dist::Nig:
+        case Dist::Ghyp:
+        case Dist::Jsu:
+            break;
     }
     return T{kInvalid};
 }
@@ -358,7 +364,7 @@ T loglik(std::span<const double> r, std::span<const T> theta, const Layout& layo
     assert(out.terms.empty() || out.terms.size() == r.size());
     assert(out.residuals.empty() || out.residuals.size() == r.size());
     assert(out.sigma2.empty() || out.sigma2.size() == r.size());
-    T shape = shape_of(theta, layout);
+    T shape = shape_parameters_of(theta, layout).shape;
     if (!dist::in_domain(layout.dist, ad::value_of(shape)))
     {
         return T{kInvalid};
@@ -384,6 +390,6 @@ template ad::Dual<16> loglik<ad::Dual<16>>(std::span<const double>, std::span<co
                                            const Layout&, VarInit, const LoglikOutputs<ad::Dual<16>>&);
 template ad::Dual<32> loglik<ad::Dual<32>>(std::span<const double>, std::span<const ad::Dual<32>>,
                                            const Layout&, VarInit, const LoglikOutputs<ad::Dual<32>>&);
-template ad::Dual<40> loglik<ad::Dual<40>>(std::span<const double>, std::span<const ad::Dual<40>>,
-                                           const Layout&, VarInit, const LoglikOutputs<ad::Dual<40>>&);
+template ad::Dual<42> loglik<ad::Dual<42>>(std::span<const double>, std::span<const ad::Dual<42>>,
+                                           const Layout&, VarInit, const LoglikOutputs<ad::Dual<42>>&);
 }

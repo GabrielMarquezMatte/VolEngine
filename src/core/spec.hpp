@@ -30,12 +30,17 @@ enum class Dist : int32_t
 {
     Norm = 0,
     Std = 1,
-    Ged = 2
+    Ged = 2,
+    Sstd = 3,
+    Sged = 4,
+    Nig = 5,
+    Ghyp = 6,
+    Jsu = 7
 };
 
 constexpr int kMaxOrder = 6;
-// mu, ar, ma, omega, alpha, beta, gamma, eta1, eta2, power and shape of the widest layout.
-constexpr std::size_t kMaxParameterCount = 6 * kMaxOrder + 4;
+// mu, ar, ma, omega, alpha, beta, gamma, eta1, eta2, power, skew, shape and ghlambda of the widest layout.
+constexpr std::size_t kMaxParameterCount = 6 * kMaxOrder + 6;
 
 struct Spec
 {
