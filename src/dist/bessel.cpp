@@ -16,8 +16,9 @@ namespace
 // Boost's K underflows to zero from about x = 708; the asymptotic series is accurate to rounding well before that.
 constexpr double kAsymptoticFrom = 700.0;
 // Boost rounds the order to an int through its default policy, which throws for NaN and for |order| beyond int
-// range; K_order(x) is +inf for any x below the asymptotic start long before that.
-constexpr double kMaxBoostOrder = 1e9;
+// range, and both its recurrence and ours run once per unit of order; K_order(x < 700) overflows long before 1e5.
+constexpr double kMaxBoostOrder = 1e5;
+constexpr double kRescaleAbove = 1e100;
 constexpr int kMaxTerms = 30;
 constexpr double kTermTolerance = 1e-17;
 
@@ -28,39 +29,66 @@ using IgnoreErrors = policies::policy<policies::overflow_error<policies::ignore_
                                       policies::domain_error<policies::ignore_error>,
                                       policies::evaluation_error<policies::ignore_error>>;
 
-double asymptotic_log_k(double order, double x)
+// log(e^x K_order(x)) by the Hankel series, for 0 <= order < 2 and x >= kAsymptoticFrom, where it converges to
+// rounding within a handful of terms; beyond |order| ~ 130 it diverges at x = 700.
+double hankel_scaled_log_k(double order, double x)
 {
     double four_order_squared = 4.0 * order * order;
     double term = 1.0;
     double sum = 0.0;
-    for (int k = 1; k <= kMaxTerms; ++k)
+    for (int k = 1; k <= kMaxTerms && std::fabs(term) >= kTermTolerance; ++k)
     {
         double odd = 2.0 * k - 1.0;
         term *= (four_order_squared - odd * odd) / (8.0 * k * x);
         sum += term;
-        if (std::fabs(term) < kTermTolerance)
+    }
+    return 0.5 * std::log(std::numbers::pi / (2.0 * x)) + std::log1p(sum);
+}
+
+// log K_order(x) for order >= 0 and x >= kAsymptoticFrom: the series gives K_frac and K_(frac+1), and the forward
+// recurrence K_(v+1) = K_(v-1) + 2v/x K_v, stable for K, climbs to the order. Boost cannot serve here: its K
+// underflows for log K < -745, which large orders reach already at x = 900.
+double scaled_recurrence_log_k(double order, double x)
+{
+    double fraction = order - std::floor(order);
+    int steps = static_cast<int>(order - fraction);
+    if (steps == 0)
+    {
+        return hankel_scaled_log_k(fraction, x) - x;
+    }
+    double below = std::exp(hankel_scaled_log_k(fraction, x));
+    double above = std::exp(hankel_scaled_log_k(fraction + 1.0, x));
+    double log_scale = 0.0;
+    for (int n = 1; n < steps; ++n)
+    {
+        double next = below + 2.0 * (fraction + n) / x * above;
+        below = above;
+        above = next;
+        if (above > kRescaleAbove)
         {
-            break;
+            below /= above;
+            log_scale += std::log(above);
+            above = 1.0;
         }
     }
-    return 0.5 * std::log(std::numbers::pi / (2.0 * x)) - x + std::log1p(sum);
+    return log_scale + std::log(above) - x;
 }
 
 }
 
 double log_bessel_k(double order, double x)
 {
-    if (x >= kAsymptoticFrom)
+    if (std::isnan(x) || x < 0.0 || std::isnan(order))
     {
-        return asymptotic_log_k(order, x);
-    }
-    if (std::isnan(order))
-    {
-        return order;
+        return std::numeric_limits<double>::quiet_NaN();
     }
     if (std::fabs(order) >= kMaxBoostOrder)
     {
         return std::numeric_limits<double>::infinity();
+    }
+    if (x >= kAsymptoticFrom)
+    {
+        return scaled_recurrence_log_k(std::fabs(order), x);
     }
     return std::log(boost::math::cyl_bessel_k(std::fabs(order), x, IgnoreErrors()));
 }

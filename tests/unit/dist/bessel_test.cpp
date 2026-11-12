@@ -50,6 +50,37 @@ TEST(Bessel, AsymptoticJoinsBoost)
     }
 }
 
+TEST(Bessel, LargeOrdersAboveTheSeriesStartMatchScipy)
+{
+    struct Reference
+    {
+        double order;
+        double x;
+        double expected;
+    };
+    // log(scipy.special.kve(order, x)) - x
+    const Reference references[] = {
+        {150.0, 700.0, -687.0503734075295}, {200.0, 700.0, -674.6878578440724}, {300.0, 700.0, -639.7401042737811},
+        {150.0, 900.0, -890.711083541808},  {200.0, 900.0, -881.0554829819462}, {300.0, 900.0, -853.650108907324}};
+    for (const Reference& r : references)
+    {
+        expect_relative(log_bessel_k(r.order, r.x), r.expected, 1e-12);
+    }
+    double jump = log_bessel_k(200.0, 700.0 + 1e-6) - log_bessel_k(200.0, 700.0 - 1e-6);
+    EXPECT_NEAR(jump, 2e-6 * log_bessel_k(200.0, ve::ad::variable<1>(700.0, 0)).grad[0], 1e-11);
+}
+
+TEST(Bessel, OrderDerivativeMatchesClosedFormAtHalf)
+{
+    // d log K_v / dv at v = 1/2 is e^(2x) E1(2x); references from scipy.special.exp1.
+    const std::array<std::array<double, 2>, 2> references = {{{0.2, 1.0478280084560063}, {3.0, 0.1452676292338869}}};
+    for (const auto& [x, expected] : references)
+    {
+        auto value = log_bessel_k(ve::ad::variable<2>(0.5, 0), ve::ad::variable<2>(x, 1));
+        expect_relative(value.grad[0], expected, 1e-8);
+    }
+}
+
 TEST(Bessel, DerivativesMatchFiniteDifferences)
 {
     for (double order : {-1.0, 0.3, 2.5})
@@ -79,11 +110,14 @@ TEST(Bessel, NeverThrows)
     constexpr double kInf = std::numeric_limits<double>::infinity();
     double results[] = {log_bessel_k(50.0, 1e-300), log_bessel_k(300.0, 1e-5), log_bessel_k(0.0, 0.0),
                         log_bessel_k(1.0, -1.0),    log_bessel_k(kNan, 1.0),   log_bessel_k(kInf, 1.0),
-                        log_bessel_k(1e300, 1.0),   log_bessel_k(1.0, kNan),   log_bessel_k(kNan, 800.0)};
+                        log_bessel_k(1e300, 1.0),   log_bessel_k(1.0, kNan),   log_bessel_k(kNan, 800.0),
+                        log_bessel_k(1e300, kNan), log_bessel_k(1e300, -1.0)};
     for (double result : results)
     {
         EXPECT_TRUE(std::isnan(result) || result == std::numeric_limits<double>::infinity()) << result;
     }
+    EXPECT_TRUE(std::isnan(log_bessel_k(1e300, kNan)));
+    EXPECT_TRUE(std::isnan(log_bessel_k(1e300, -1.0)));
     EXPECT_NO_THROW(log_bessel_k(ve::ad::variable<2>(300.0, 0), ve::ad::variable<2>(1e-5, 1)));
 }
 

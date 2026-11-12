@@ -50,6 +50,7 @@ FetchContent_MakeAvailable(bs_thread_pool)
 FetchContent_Declare(boost_math
     GIT_REPOSITORY https://github.com/boostorg/math
     GIT_TAG boost-1.87.0
+    GIT_SHALLOW TRUE
     SOURCE_SUBDIR do-not-build)
 FetchContent_MakeAvailable(boost_math)
 
