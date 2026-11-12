@@ -132,6 +132,7 @@ if(VE_BUILD_TESTS)
         tests/unit/garch/step_test.cpp
         tests/unit/linalg/least_squares_test.cpp
         tests/unit/mean/arma_test.cpp
+        tests/unit/mean/fractional_test.cpp
         tests/unit/model/layout_test.cpp
         tests/unit/model/likelihood_test.cpp
         tests/unit/model/parameter_map_test.cpp

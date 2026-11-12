@@ -1144,6 +1144,102 @@ TEST(Likelihood, ArchInMeanNonPositiveVarianceIsInvalid)
     EXPECT_EQ(ll, -std::numeric_limits<double>::infinity());
 }
 
+// y_t = sum_{k=0}^{t} pi_k e_{t-k}, pi_0 = 1, pi_k = pi_{k-1} (k - 1 - d) / k.
+std::vector<double> fractionally_differenced(std::span<const double> e, double d)
+{
+    std::vector<double> pi(e.size());
+    pi[0] = 1.0;
+    for (std::size_t k = 1; k < pi.size(); ++k)
+    {
+        pi[k] = pi[k - 1] * (static_cast<double>(k) - 1.0 - d) / static_cast<double>(k);
+    }
+    std::vector<double> y(e.size());
+    for (std::size_t t = 0; t < e.size(); ++t)
+    {
+        for (std::size_t k = 0; k <= t; ++k)
+        {
+            y[t] += pi[k] * e[t - k];
+        }
+    }
+    return y;
+}
+
+// r of 6 points, ARMA(1,0), sGARCH(1,1)-norm, ARFIMA d = 0.3, sample init: e by the mean rule, y by the fractional
+// difference, one held variance at the mean of y^2.
+TEST(Likelihood, ArfimaHandCase)
+{
+    const double mu = 0.03;
+    const double phi = 0.4;
+    const double d = 0.3;
+    const double omega = 0.02;
+    const double alpha = 0.1;
+    const double beta = 0.8;
+    Layout layout = ve::model::layout_of({.p = 1, .q = 1, .ar = 1, .dist = Dist::Norm, .arfima = true});
+    ASSERT_EQ(layout.count(), 6u);
+    std::vector<double> theta{mu, phi, d, omega, alpha, beta};
+    std::vector<double> residuals(6);
+    std::vector<double> sigma2(6);
+    double ll = loglik<double>(kHandSeries, theta, layout, VarInit::Sample, {.residuals = residuals, .sigma2 = sigma2});
+    std::vector<double> e(6);
+    for (std::size_t t = 0; t < 6; ++t)
+    {
+        e[t] = t == 0 ? kHandSeries[t] - mu : kHandSeries[t] - mu - phi * (kHandSeries[t - 1] - mu);
+    }
+    std::vector<double> y = fractionally_differenced(e, d);
+    double expected = 0.0;
+    double variance = mean_square_of(y);
+    for (std::size_t t = 0; t < 6; ++t)
+    {
+        if (t > 0)
+        {
+            variance = omega + alpha * y[t - 1] * y[t - 1] + beta * variance;
+        }
+        EXPECT_NEAR(residuals[t], y[t], 1e-14) << "t = " << t;
+        EXPECT_NEAR(sigma2[t], variance, 1e-14 * std::max(1.0, variance)) << "t = " << t;
+        expected += -0.5 * (std::log(2 * std::numbers::pi) + std::log(variance) + y[t] * y[t] / variance);
+    }
+    EXPECT_NEAR(ll, expected, 1e-14 * std::abs(expected));
+}
+
+TEST(Likelihood, ArfimaZeroIsPlain)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(11, 300);
+    std::vector<double> x = regressor_columns(r.size(), 2);
+    ve::model::Data data{r, {x, 2}};
+    for (Model model : {Model::SGarch, Model::EGarch, Model::ApArch, Model::CsGarch})
+    {
+        for (VarInit var_init : {VarInit::Sample, VarInit::Backcast})
+        {
+            SCOPED_TRACE(::testing::Message() << "model " << static_cast<int>(model) << ", var_init "
+                                            << static_cast<int>(var_init));
+            Layout plain = ve::model::layout_of({.model = model, .ar = 1, .ma = 1, .mxreg = 2});
+            Layout arfima = ve::model::layout_of({.model = model, .ar = 1, .ma = 1, .mxreg = 2, .arfima = true});
+            std::vector<double> theta = drawn_theta(r, ve::model::layout_of({.model = model, .ar = 1, .ma = 1}));
+            theta.insert(theta.begin() + static_cast<std::ptrdiff_t>(plain.mxreg_begin()), {0.3, -0.2});
+            std::vector<double> theta_arfima = theta;
+            theta_arfima.insert(theta_arfima.begin() + static_cast<std::ptrdiff_t>(arfima.arfima_index()), 0.0);
+            std::vector<double> residuals(r.size());
+            std::vector<double> arfima_residuals(r.size());
+            double expected = loglik<double>(data, theta, plain, var_init, {.residuals = residuals});
+            double ll = loglik<double>(data, theta_arfima, arfima, var_init, {.residuals = arfima_residuals});
+            ASSERT_TRUE(std::isfinite(expected));
+            EXPECT_EQ(ll, expected);
+            EXPECT_EQ(arfima_residuals, residuals);
+        }
+    }
+}
+
+TEST(Likelihood, ArfimaTargetsDifferencedResiduals)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(11, 300);
+    Layout layout = ve::model::layout_of({.ar = 1, .variance_targeting = true, .arfima = true});
+    std::vector<double> theta{0.04, 0.2, 0.3, 1234.0, 0.08, 0.85};
+    std::vector<double> residuals(r.size());
+    loglik<double>(r, theta, layout, VarInit::Sample, {.residuals = residuals});
+    double omega = mean_square_of(residuals) * (1.0 - 0.08 - 0.85);
+    EXPECT_NEAR(ve::model::targeted_omega_at(ve::model::Data{r}, theta, layout), omega, 1e-15 * omega);
+}
+
 std::string grid_name(const ::testing::TestParamInfo<GridCase>& info)
 {
     auto [model, orders, arma, dist, var_init, include_mean, targeting] = info.param;
@@ -1281,7 +1377,7 @@ INSTANTIATE_TEST_SUITE_P(Targeted, LikelihoodGrid,
                                             ::testing::Values(true), ::testing::Values(true)),
                          grid_name);
 
-using RegressorCase = std::tuple<Model, ArmaOrders, Dist, VarInit, int, int, bool, int>;
+using RegressorCase = std::tuple<Model, ArmaOrders, Dist, VarInit, int, int, bool, int, bool>;
 
 class MeanRegressorGrid : public ::testing::TestWithParam<RegressorCase>
 {
@@ -1297,7 +1393,7 @@ protected:
 
     Layout layout_of_case() const
     {
-        auto [model, arma, dist, init, mxreg, vxreg, targeting, archm] = GetParam();
+        auto [model, arma, dist, init, mxreg, vxreg, targeting, archm, arfima] = GetParam();
         return ve::model::layout_of({.model = model,
                                      .ar = arma.ar,
                                      .ma = arma.ma,
@@ -1305,10 +1401,11 @@ protected:
                                      .variance_targeting = targeting,
                                      .mxreg = mxreg,
                                      .vxreg = vxreg,
-                                     .archm = archm});
+                                     .archm = archm,
+                                     .arfima = arfima});
     }
 
-    // The point of the same grid without regressors, with 0.15 in the archm slot, the coefficients 0.3, -0.2 put in
+    // The point of the same grid without regressors, with 0.3 in the arfima slot, 0.15 in the archm slot, the coefficients 0.3, -0.2 put in
     // the mxreg block and 0.01 in the vxreg block.
     std::vector<double> theta_of_case() const
     {
@@ -1316,8 +1413,13 @@ protected:
         plain.mxreg = 0;
         plain.vxreg = 0;
         plain.archm = 0;
+        plain.arfima = false;
         std::vector<double> base = grid_theta(r, plain);
         std::vector<double> result(base.begin(), base.begin() + static_cast<std::ptrdiff_t>(plain.mxreg_begin()));
+        if (layout.has_arfima())
+        {
+            result.push_back(0.3);
+        }
         if (layout.has_archm())
         {
             result.push_back(0.15);
@@ -1390,13 +1492,13 @@ TEST_P(MeanRegressorGrid, DoubleAndDualAgreeOnValue)
 
 std::string regressor_name(const ::testing::TestParamInfo<RegressorCase>& info)
 {
-    auto [model, arma, dist, var_init, mxreg, vxreg, targeting, archm] = info.param;
+    auto [model, arma, dist, var_init, mxreg, vxreg, targeting, archm, arfima] = info.param;
     std::string models[] = {"SGarch", "EGarch", "GjrGarch", "ApArch", "IGarch", "CsGarch"};
     std::string name = models[static_cast<int>(model)] + "Arma" + std::to_string(arma.ar) + std::to_string(arma.ma);
     name += dist == Dist::Norm ? "Norm" : "Std";
     name += var_init == VarInit::Sample ? "Sample" : "Backcast";
     name += "Mxreg" + std::to_string(mxreg) + "Vxreg" + std::to_string(vxreg) + "Archm" + std::to_string(archm);
-    return name + (targeting ? "Targeted" : "");
+    return name + (targeting ? "Targeted" : "") + (arfima ? "Arfima" : "");
 }
 
 INSTANTIATE_TEST_SUITE_P(Regressors, MeanRegressorGrid,
@@ -1406,7 +1508,7 @@ INSTANTIATE_TEST_SUITE_P(Regressors, MeanRegressorGrid,
                                             ::testing::Values(Dist::Norm, Dist::Std),
                                             ::testing::Values(VarInit::Sample, VarInit::Backcast),
                                             ::testing::Values(2), ::testing::Values(0, 1), ::testing::Values(false),
-                                            ::testing::Values(0)),
+                                            ::testing::Values(0), ::testing::Values(false)),
                          regressor_name);
 
 INSTANTIATE_TEST_SUITE_P(VarianceOnly, MeanRegressorGrid,
@@ -1416,7 +1518,7 @@ INSTANTIATE_TEST_SUITE_P(VarianceOnly, MeanRegressorGrid,
                                             ::testing::Values(Dist::Norm, Dist::Std),
                                             ::testing::Values(VarInit::Sample, VarInit::Backcast),
                                             ::testing::Values(0), ::testing::Values(1), ::testing::Values(false),
-                                            ::testing::Values(0)),
+                                            ::testing::Values(0), ::testing::Values(false)),
                          regressor_name);
 
 INSTANTIATE_TEST_SUITE_P(TargetedRegressors, MeanRegressorGrid,
@@ -1425,7 +1527,7 @@ INSTANTIATE_TEST_SUITE_P(TargetedRegressors, MeanRegressorGrid,
                                             ::testing::Values(Dist::Norm, Dist::Std),
                                             ::testing::Values(VarInit::Sample, VarInit::Backcast),
                                             ::testing::Values(0, 2), ::testing::Values(1), ::testing::Values(true),
-                                            ::testing::Values(0)),
+                                            ::testing::Values(0), ::testing::Values(false)),
                          regressor_name);
 
 INSTANTIATE_TEST_SUITE_P(ArchInMean, MeanRegressorGrid,
@@ -1435,7 +1537,18 @@ INSTANTIATE_TEST_SUITE_P(ArchInMean, MeanRegressorGrid,
                                             ::testing::Values(Dist::Norm),
                                             ::testing::Values(VarInit::Sample, VarInit::Backcast),
                                             ::testing::Values(0, 2), ::testing::Values(0, 1),
-                                            ::testing::Values(false), ::testing::Values(1, 2)),
+                                            ::testing::Values(false), ::testing::Values(1, 2),
+                                            ::testing::Values(false)),
+                         regressor_name);
+
+INSTANTIATE_TEST_SUITE_P(Arfima, MeanRegressorGrid,
+                         ::testing::Combine(::testing::Values(Model::SGarch, Model::EGarch, Model::ApArch,
+                                                              Model::CsGarch),
+                                            ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1}),
+                                            ::testing::Values(Dist::Norm),
+                                            ::testing::Values(VarInit::Sample, VarInit::Backcast),
+                                            ::testing::Values(0, 2), ::testing::Values(0), ::testing::Values(false),
+                                            ::testing::Values(0), ::testing::Values(true)),
                          regressor_name);
 
 }
