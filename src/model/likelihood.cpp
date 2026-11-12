@@ -812,8 +812,9 @@ template ad::Dual<16> targeted_omega<ad::Dual<16>>(std::span<const ad::Dual<16>>
                                                    const Layout&, const RegressorMatrix&);
 template ad::Dual<32> targeted_omega<ad::Dual<32>>(std::span<const ad::Dual<32>>, std::span<const ad::Dual<32>>,
                                                    const Layout&, const RegressorMatrix&);
-template ad::Dual<kMaxParameterCount> targeted_omega<ad::Dual<kMaxParameterCount>>(std::span<const ad::Dual<kMaxParameterCount>>, std::span<const ad::Dual<kMaxParameterCount>>,
-                                                   const Layout&, const RegressorMatrix&);
+using DualMax = ad::Dual<kMaxParameterCount>;
+template DualMax targeted_omega<DualMax>(std::span<const DualMax>, std::span<const DualMax>, const Layout&,
+                                         const RegressorMatrix&);
 
 double targeted_omega_at(const Data& data, std::span<const double> theta, const Layout& layout)
 {
@@ -830,6 +831,6 @@ template ad::Dual<16> loglik<ad::Dual<16>>(const Data&, std::span<const ad::Dual
                                            const Layout&, VarInit, const LoglikOutputs<ad::Dual<16>>&);
 template ad::Dual<32> loglik<ad::Dual<32>>(const Data&, std::span<const ad::Dual<32>>,
                                            const Layout&, VarInit, const LoglikOutputs<ad::Dual<32>>&);
-template ad::Dual<kMaxParameterCount> loglik<ad::Dual<kMaxParameterCount>>(const Data&, std::span<const ad::Dual<kMaxParameterCount>>,
-                                           const Layout&, VarInit, const LoglikOutputs<ad::Dual<kMaxParameterCount>>&);
+template DualMax loglik<DualMax>(const Data&, std::span<const DualMax>, const Layout&, VarInit,
+                                 const LoglikOutputs<DualMax>&);
 }

@@ -42,7 +42,8 @@ enum class Dist : int32_t
 
 constexpr int kMaxOrder = 6;
 constexpr int kMaxRegressors = 8;
-// mu, ar, ma, archm, mxreg, omega, alpha, beta, gamma, eta1, eta2, power, vxreg, skew, shape and ghlambda of the widest layout.
+// mu, ar, ma, archm, mxreg, omega, alpha, beta, gamma, eta1, eta2, power, vxreg, skew, shape and ghlambda of the
+// widest layout.
 constexpr std::size_t kMaxParameterCount = 6 * kMaxOrder + 6 + 1 + 2 * kMaxRegressors;
 
 struct ParameterValue

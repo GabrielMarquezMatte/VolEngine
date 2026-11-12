@@ -108,7 +108,8 @@ void expect_exact_quadratic_errors(const ve::model::Layout& layout, std::span<co
     {
         scores[t] = (t / k) % 2 == 0 ? 1.0 : -1.0;
     }
-    ve::fit::StandardErrors errors = ve::fit::standard_errors(gradient, center, scores, layout, ve::model::Standardization{});
+    ve::fit::StandardErrors errors =
+        ve::fit::standard_errors(gradient, center, scores, layout, ve::model::Standardization{});
     for (std::size_t i = 0; i < k; ++i)
     {
         double sd = 0.1 * static_cast<double>(i + 1);
@@ -147,7 +148,8 @@ TEST(StandardErrors, InvalidEverywhereGivesNaN)
     std::vector<double> theta{0.05, 0.01, 0.08, 0.9};
     std::vector<double> scores(10 * theta.size(), 0.1);
     ve::fit::GradientFn never = [](std::span<const double>, std::span<double>) { return false; };
-    ve::fit::StandardErrors errors = ve::fit::standard_errors(never, theta, scores, layout, ve::model::Standardization{});
+    ve::fit::StandardErrors errors =
+        ve::fit::standard_errors(never, theta, scores, layout, ve::model::Standardization{});
     for (std::size_t i = 0; i < theta.size(); ++i)
     {
         EXPECT_TRUE(std::isnan(errors.hessian[i]));

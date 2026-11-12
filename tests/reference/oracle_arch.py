@@ -24,7 +24,11 @@ ArchDist = Literal["normal", "t", "ged", "skewt"]
 ArchVol = Literal["GARCH", "EGARCH"]
 DISTRIBUTIONS: dict[str, ArchDist] = {"norm": "normal", "std": "t", "ged": "ged", "sstd": "skewt"}
 # arch's volatility process and its number of asymmetry terms per ARCH term (arch's order o is that times p).
-VOLATILITIES: dict[str, tuple[ArchVol, int]] = {"sgarch": ("GARCH", 0), "gjrgarch": ("GARCH", 1), "egarch": ("EGARCH", 1)}
+VOLATILITIES: dict[str, tuple[ArchVol, int]] = {
+    "sgarch": ("GARCH", 0),
+    "gjrgarch": ("GARCH", 1),
+    "egarch": ("EGARCH", 1),
+}
 # arch names the terms "alpha[1]", "gamma[1]", "beta[1]", the t shape "nu" and the skew-t (Hansen) shape "eta"
 # and skewness "lambda"; VolEngine uses rugarch's names.
 LAG = re.compile(r"^(alpha|gamma|beta)\[(\d+)\]$")
