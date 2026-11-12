@@ -2,7 +2,8 @@
 
 VolEngine's ARMA(m,n)-sGARCH(p,q) and its GARCH variants (eGARCH, gjrGARCH, apARCH, iGARCH, csGARCH and the
 eight fGARCH submodels) with normal, Student-t (`std`) and GED (`ged`) innovations, and with the skewed
-distributions (`sstd`, `sged`, `nig`, `ghyp`, `jsu`), are validated against two independent oracles: [`rugarch`](https://cran.r-project.org/package=rugarch) (R) for the default
+distributions (`sstd`, `sged`, `nig`, `ghyp`, `jsu`), and with fixed parameters and variance targeting, are
+validated against two independent oracles: [`rugarch`](https://cran.r-project.org/package=rugarch) (R) for the default
 conventions and [`arch`](https://pypi.org/project/arch/) (Python) for the `arch` options. The test is
 `python/tests/test_oracles.py`; it reads committed fixtures, so it needs neither R nor `arch`. How the data and
 fixtures are produced is described in [`tests/reference/README.md`](../../tests/reference/README.md).
@@ -101,6 +102,20 @@ is compared with. Every case has a mean (`include_mean = true`). The id is `<ser
 | fGARCH-ALLGARCH(1,1)-sstd, -jsu | `gjrgarch11_sstd` | yes | no |
 | fGARCH-ALLGARCH(1,1)-sstd, -jsu (known divergences) | `aparch11_sged` | yes | no |
 | fGARCH-ALLGARCH(1,1)-sstd (known divergence) | `egarch11_jsu` | yes | no |
+| sGARCH(1,1)-std, `shape` fixed at 5 | `sgarch21_std` | yes | no |
+| ARMA(1,1)-sGARCH(1,1)-ged, `mu` fixed at 0 | `arma11_sgarch11_ged` | yes | no |
+| sGARCH(1,1)-norm, `alpha1` fixed at 0.08 | `sgarch21_std` | yes | no |
+| gjrGARCH(1,1)-norm, `gamma1` fixed at 0.1 | `gjrgarch11_norm` | yes | no |
+| gjrGARCH(1,1)-sstd, `alpha1` fixed at 0.03 | `gjrgarch11_sstd` | yes | no |
+| apARCH(1,1)-ged, `delta` fixed at 1.5 | `aparch11_ged` | yes | no |
+| eGARCH(1,1)-std, `beta1` fixed at 0.95 | `egarch11_std` | yes | no |
+| csGARCH(1,1)-std, `eta11` (ρ) fixed at 0.99 | `csgarch11_std` | yes | no |
+| iGARCH(1,1)-norm, `alpha1` fixed at 0.1 | `igarch11_norm` | yes | no |
+| sGARCH(1,1)-std, eGARCH(1,1)-std, gjrGARCH(1,1)-sstd, apARCH(1,1)-ged, variance targeting | `sgarch21_std`, `egarch11_std`, `gjrgarch11_sstd`, `aparch11_ged` | yes | no |
+| fGARCH-ALLGARCH(1,1)-std, variance targeting | `egarch11_std` | yes | no |
+| fGARCH-ALLGARCH(1,1)-norm, variance targeting (known divergence) | `fgarch_allgarch11_norm` | yes | no |
+| sGARCH(1,1)-std, every parameter fixed (μ 0.05, ω 0.02, α₁ 0.08, β₁ 0.9, ν 6) | `sgarch21_std` | yes | yes |
+| gjrGARCH(1,1)-sstd, every parameter fixed (μ 0.05, ω 0.01, α₁ 0.03, β₁ 0.9, γ₁ 0.09, ξ 0.85, ν 6) | `gjrgarch11_sstd` | yes | no |
 
 ARMA is validated against `rugarch` only: `arch` has no MA term, and its AR mean drops the first m
 observations from the likelihood instead of keeping them. Of the variants, `arch` has gjrGARCH (`GARCH` with
@@ -108,7 +123,10 @@ observations from the likelihood instead of keeping them. Of the variants, `arch
 [`arch`](#arch-ve_varinit_backcast)), so apARCH, like iGARCH, csGARCH and fGARCH, is validated against `rugarch`
 only; their `VE_VARINIT_BACKCAST` recursions are the natural extension of the `arch` rule, without an oracle.
 Of the skewed distributions `arch` has only the skew-t (`SkewStudent`, the sstd); sged, nig, ghyp and jsu are
-validated against `rugarch` only.
+validated against `rugarch` only. Fixed parameters and variance targeting are validated against `rugarch`
+(`fixed.pars`, `variance.targeting = TRUE`); `arch` has neither, and evaluates only the fully fixed sGARCH-std, with
+`fix()`. A case with every parameter fixed is an *evaluation*: no optimizer on either side, and the test compares
+ℓ, σₜ and the criteria (k = 0).
 
 ### Case selection
 
@@ -147,7 +165,7 @@ they would measure something other than the likelihood:
   at every observation: `rugarch`'s Hessian SE of μ is 3e-5 (0.012 elsewhere) and VolEngine's line search fails
   at a point 0.02–0.71 below `rugarch`'s ℓ. The likelihood itself agrees: at `rugarch`'s estimates VolEngine's ℓ
   equals `rugarch`'s to 1e-13 on all three. On `arma11_sgarch11_ged` (δ̂ = 1.27–1.34) the three cases agree within
-  the tolerances. `aparch11_ged` stays in the data, without a case.
+  the tolerances. `aparch11_ged` stayed in the data without a case until plan 2d (below).
 - **csGARCH-norm moves to `gjrgarch11_norm`.** On `csgarch11_std` VolEngine's estimate (ρ = 0.9931, φ = 0.023)
   has ℓ 0.52 above `rugarch`'s (ρ = 0.9981, φ = 0.036) and satisfies `rugarch`'s constraints (ρ > P, φ ≤ β); at
   `rugarch`'s estimate the two likelihoods agree to 1e-13, so `rugarch`'s solver stopped short. On
@@ -189,6 +207,25 @@ One planned case moved, and two planned cases are kept as known divergences with
   As passing replacements, ALLGARCH-sstd and -jsu also run on `gjrgarch11_sstd` (η̂₁ = 0.60, η̂₂ = −0.14 and −0.15,
   λ̂ = 1.41 and 1.42), where both agree within the tolerances, with η₂ shifted under a skewed shock as planned.
 
+For fixed parameters and variance targeting (plan 2d; `rugarch` 1.5-6, `arch` 8.0.0) the interior rule holds only
+the estimated parameters (`rugarch`'s `ipars[, "Estimate"]`): a weight in a fixed or derived position, a fixed η₁
+or apARCH γ and a fixed distribution parameter are not checked, and evaluation cases are not checked at all. In the
+gjrGARCH case with γ₁ fixed and α₁ estimated the α weight is α₁ − max(0, −γ₁), the plan-2d weight term. Every
+planned case is interior. The two on `aparch11_ged` hold: with δ fixed at 1.5, or estimated under variance
+targeting (δ̂ = 1.68), the δ < 1 cusp in μ that moved the apARCH cases away does not arise, and both agree within
+the tolerances. One planned case is kept as a known divergence, with a passing replacement:
+
+- **Known divergence (oracle quadrature): fGARCH-ALLGARCH-norm with variance targeting on
+  `fgarch_allgarch11_norm`.** VolEngine's ℓ is 7.7e-5 above `rugarch`'s and every quantity is within the
+  tolerances but η₁, 1.07e-3 (relative) from `rugarch`'s (η̂₁ = 0.041 with standard error 0.13: barely
+  identified). The two programs compute different likelihoods: `rugarch`'s κ is 2.0e-6 off (see
+  [Fixed parameters and variance targeting](#rugarch-and-arch-fixed-parameters-and-variance-targeting)), so its
+  ω, and with it its ℓ, its optimum and its σₜ, move. At `rugarch`'s estimates VolEngine's ω differs from
+  `rugarch`'s by 5.2e-6 and equals m_λ(1 − P) with an accurately integrated κ to 6e-12. The case stays with its
+  fixture and the comparison is `xfail(strict=True)` (`KNOWN_DIVERGENCES`, reason `QUADRATURE`); its interior check
+  runs and passes. As a passing replacement, ALLGARCH-std with variance targeting runs on `egarch11_std`, where
+  `rugarch`'s κ is 2.1e-9 off (η̂₁ = 0.32, η̂₂ = 0.25, λ̂ = 1.59, ν̂ = 6.5), and agrees within the tolerances.
+
 ## Oracle versions
 
 | Oracle | Version | Environment |
@@ -213,6 +250,16 @@ committed one (estimates up to 0.43 apart, relative); every other earlier case k
 ends at a slightly different point). The `arch` results come back bit-identical (robust standard errors to 2.2e-10). As
 before, the committed data and results were kept: only `grid_2c.csv` and the new cases were added.
 
+The plan-2d cases (fixed parameters, variance targeting) were produced with the same versions on the plan-2b
+machine (Intel Core i7-1365U), without new data. Regenerating there changes earlier results: the 44 plan-1/2a/2b
+`rugarch` results keep estimates, ℓ, σₜ and criteria bit-identical, with standard errors to 7.7e-9 (relative); 25
+of the 30 plan-2c `rugarch` results change only robust standard errors, to 8.0e-12; five plan-2c fits end at
+slightly different points (`aparch11_sged/aparch11_sged`, `egarch11_jsu/egarch11_jsu`,
+`gjrgarch11_sstd/fgarch_allgarch11_sstd` and `-jsu`, `aparch11_sged/fgarch_allgarch11_jsu`: ℓ to 4.1e-10,
+estimates to 7.3e-4, σₜ to 2.2e-4, standard errors to 3.3e-2 and QML robust standard errors to 6.4e-2); three `arch`
+results change their robust standard errors, to 1.9e-9. The committed results were kept: only the new cases were
+added to both fixtures.
+
 ## What is compared
 
 | VolEngine call | `rugarch` | `arch` |
@@ -225,6 +272,8 @@ before, the committed data and results were kept: only `grid_2c.csv` and the new
 | `fit.coef("robust").std_error` | QML sandwich from `fit@fit$hessian` and `fit@fit$scores` (see below) | `.std_err` with `cov_type="robust"` |
 | `fit.sigma` | `sigma(fit)` | `.conditional_volatility` |
 | `fit.aic/bic/hqic/sic(per_obs=...)` | `infocriteria(fit)`, `per_obs=True` | `.aic`, `.bic`, `per_obs=False` |
+| `ve.Spec(..., fixed={name: value}, variance_targeting=True)` | `ugarchspec(..., fixed.pars = list(name = value))`, `variance.model = list(..., variance.targeting = TRUE)` | — |
+| Every parameter fixed (`fit.loglik`, `fit.sigma`, criteria) | `ugarchfilter(spec, y)`: `likelihood`, `sigma`, `infocriteria` (k = 0) | `arch_model(...).fix(params)`: `.loglikelihood`, `.conditional_volatility` |
 
 Two numerical settings differ from the defaults, one on each side: `rugarch`'s Hessian step (`hess.d = 1e-3`,
 1e-4 for sged) and VolEngine's `tol = 1e-7`. Both are explained in [Numerical settings](#numerical-settings).
@@ -372,6 +421,62 @@ persistence, with its own π and κ, agrees with `rugarch`'s `persistence()` to 
   quadrature in VolEngine, with the η₂ shift (ALLGARCH-sstd and -jsu, η̂₂ = −0.14 and −0.15); `rugarch`'s
   persistence ακ + β agrees with VolEngine's to 8.7e-9 on the seven apARCH and ALLGARCH cases.
 
+### `rugarch` and `arch`, fixed parameters and variance targeting
+
+Read: the `ugarchspec`, `ugarchfit` and `ugarchfilter` manuals; the `rugarch` vignette ("Introduction to the rugarch
+package", section 2.2, equations (10), (17), (24) and (29)); `.makefitmodel`, `.sgarchLLH`, `.egarchLLH`,
+`.gjrgarchLLH`, `.aparchLLH`, `.fgarchLLH`, `fgarchKappa` and the `infocriteria` methods, printed from the installed
+package; `ARCHModel.fix` and `ARCHModelFixedResult` in `arch/univariate/base.py`. Every convention below held: no
+core change was needed.
+
+- **Criteria count the estimated parameters only.** `infocriteria` of a `uGARCHfit` takes
+  k = `sum(ipars[, "Estimate"])`, which leaves out the fixed parameters, the variance-targeting ω (`Include` 1,
+  `Estimate` 0) and the iGARCH β_q; of a `uGARCHfilter`, k = 0. That is VolEngine's `estimated_count()`. A k off by
+  one moves a per-observation criterion by 2/3000 = 6.7e-4; observed: 1.2e-12 at most on the fixed and
+  variance-targeting cases, 2.2e-16 on the evaluations.
+- **Standard errors with fixed parameters** (`fixed.se = 0`, the default): the numerical Hessian of −ℓ over the
+  estimated parameters only, the fixed ones held (`.makefitmodel` differentiates at `ipars[estidx, 1]`), the
+  reduced Hessian VolEngine uses. Fixed and derived entries have NA standard errors. Observed: within 9.9e-4
+  (Hessian) and 2.0e-3 (QML robust) on the nine fixed cases. With a fixed parameter `rugarch`'s
+  `robust.se.coef` takes no Newey-West lag (`nlag = 0`), so its `robust_se` is then a QML sandwich; the test compares
+  `qml_robust_se` in every case.
+- **Variance-targeting ω.** At every likelihood evaluation `rugarch` computes ω from the residuals at the current
+  mean parameters, over the whole sample (`rec.init = "all"`): m₂(1 − P) in sGARCH and gjrGARCH (m₂ the mean of ε²,
+  P = Σα + Σβ + πΣγ), log(m₂)·max(1 − Σβ, 0.001) in eGARCH, mean(|ε|^δ)(1 − P) in apARCH and mean(|ε|^λ)(1 − P) in
+  fGARCH (P = Σαᵢκᵢ + Σβ), less a `vxreg` term VolEngine does not have yet. These are the vignette's equations
+  (10), (17), (24) and (29), and the `ugarchspec` manual's "1 minus the persistence multiplied by the unconditional
+  variance". Variance targeting is due to Engle and Mezrich: the `ugarchspec` manual cites their 1996 paper ("GARCH
+  for groups", *Risk* 9(8), 36–40), the vignette their 1995 one ("Grappling with GARCH", *Risk* 8(9), 112–117).
+  VolEngine's `targeted_omega` (`src/model/likelihood.cpp`) has the same formulas. With every other parameter
+  fixed at `rugarch`'s variance-targeting estimates, VolEngine's ω equals `rugarch`'s to 8.9e-16 (sGARCH),
+  6.7e-15 (eGARCH), 4.3e-13 (gjrGARCH-sstd, π by quadrature on both sides), 5.8e-9 (apARCH-ged) and 5.2e-9
+  (ALLGARCH-std), and ℓ to 5.5e-11 or better (relative). The last two gaps are `rugarch`'s κ quadrature (below).
+- **eGARCH floor.** `rugarch` floors 1 − Σβ at 0.001 in the eGARCH ω; the vignette's equation (17) has no floor,
+  and neither has VolEngine. They agree for Σβ ≤ 0.999, which covers the interior region (β̂ = 0.977 on
+  `egarch11_std/egarch11_std_vt`, so the floor does not act). VolEngine does not adopt it: above Σβ = 0.999 it makes
+  ω flat in β, a kink in the likelihood that the exact gradient would cross, and ω no longer targets m₂.
+- **κ quadrature.** `rugarch` integrates the fGARCH and apARCH κ with `integrate()` at its default tolerance over
+  (−∞, ∞), across the kink of the integrand at z = η₂. Without variance targeting κ enters only the reported
+  persistence; with it, κ enters ω and the likelihood. At the ALLGARCH-norm variance-targeting estimate
+  (`fgarch_allgarch11_norm`) `rugarch`'s κ is 2.0e-6 above the integral split at η₂ with `rel.tol = 1e-13`, so its
+  ω is 5.2e-6 off and its ℓ 7.7e-5 below VolEngine's at the same point; VolEngine, whose κ is accurate, ends at a
+  slightly different optimum (see the known divergence in [Case selection](#case-selection)).
+- **Standard errors under variance targeting**, on both sides: the reduced Hessian (and QML sandwich) of the
+  likelihood in which ω is a function of the other parameters, the mean parameters included through m₂; ω has NA
+  (NaN) standard errors. Observed: within 7.8e-3 (Hessian) and 1.6e-2 (QML robust). These are not the asymptotic
+  covariance of the two-step variance-targeting estimator of Francq, Horváth and Zakoïan (2011, "Merits and
+  drawbacks of variance targeting in GARCH models", *Journal of Financial Econometrics* 9(4), 619–656), which
+  counts the first-step estimation of the sample variance. Neither oracle reports it, and VolEngine does not
+  either (outside plan 2d's scope).
+- **Order.** `coef()` lists fixed parameters in place but appends the variance-targeting ω; `oracle_rugarch.R`
+  puts it back by `rugarch`'s parameter table, which is VolEngine's order.
+- **Every parameter fixed.** `ugarchfilter` with the default `rec.init = "all"` evaluates the same likelihood: ℓ
+  agrees to 2.2e-16 and σₜ to 4.4e-16 (relative) on both evaluation cases. `arch`'s `fix()` computes the backcast
+  as its fit does, from the residuals at its starting values (the sample mean), not at the fixed μ: the
+  `VE_VARINIT_BACKCAST` rule, and ℓ agrees to 1.8e-15, σₜ to 1.1e-16. `arch`'s fixed-result AIC and BIC count every
+  parameter (`num_params = len(params)`) where VolEngine, like `ugarchfilter`, counts none, so the `arch` evaluation
+  fixture carries no criteria.
+
 ### `arch` (`VE_VARINIT_BACKCAST`)
 
 Read: `arch/univariate/base.py` (`ARCHModel.fit`, `ARCHModel.compute_param_cov`, `ARCHModel._loglikelihood`),
@@ -518,9 +623,11 @@ remaining block. Below 1e8 the shape stays in H, with a standard error that grow
 
 ## Tolerances
 
-Fixed in plan 1 before any comparison and unchanged for the grid, the variants and the skewed distributions; none was loosened. "Observed" is the worst
-value over all cases of that oracle, except the three known divergences (see
-[Case selection](#case-selection)), which fail the one-sided ℓ test and are marked `xfail`.
+Fixed in plan 1 before any comparison and unchanged for the grid, the variants, the skewed distributions and the
+fixed-parameter and variance-targeting cases; none was loosened. "Observed" is the worst value over all estimated
+cases of that oracle, except the four known divergences (see [Case selection](#case-selection)), which are marked
+`xfail`. The plan-2d cases do not move any of them. The evaluation cases (every parameter fixed) are held to the last
+row instead, and to the criteria row.
 
 | Quantity | Tolerance | Why | Observed, `rugarch` | Observed, `arch` |
 |----------|-----------|-----|---------------------|------------------|
@@ -531,6 +638,7 @@ value over all cases of that oracle, except the three known divergences (see
 | Robust SE | relative 5e-2 | Same, plus the oracle's numerical scores | 4.5e-2 (QML sandwich) | 3.5e-3 |
 | σₜ | maximum relative 1e-3 | Follows the parameter tolerance through the recursion | 1.6e-4 | 3.0e-5 |
 | Criteria | absolute 1e-6 on the oracle's scale | Deterministic functions of ℓ, n and k | 4.9e-9 (per observation) | 7.6e-7 (totals) |
+| ℓ and σₜ, evaluation cases | relative 1e-9 (σₜ: maximum) | The same computation on both sides, no optimizer | ℓ 2.2e-16, σₜ 4.4e-16 | ℓ 1.8e-15, σₜ 1.1e-16 |
 
 The shape parameter is held to the same tolerances as the others. Its worst differences are 5.2e-5
 (estimate), 1.3e-4 (Hessian SE) and 1.9e-4 (QML robust SE) against `rugarch`, and 1.2e-4, 2.8e-4 and 5.8e-4
@@ -636,14 +744,45 @@ Skewed distributions:
 | `gjrgarch11_sstd/fgarch_allgarch11_sstd` | +7.3e-6 | 7.0e-4 | — | 2.2e-2 | 4.3e-2 | 1.2e-1 | 1.6e-4 | 4.9e-9 |
 | `gjrgarch11_sstd/fgarch_allgarch11_jsu` | +8.8e-7 | 5.6e-4 | — | 7.5e-3 | 1.5e-2 | 1.4e-1 | 9.5e-5 | 5.9e-10 |
 
-Known divergences (VolEngine optimizer, `xfail` in the test; see [Case selection](#case-selection)), left out of the
-"Observed" column of [Tolerances](#tolerances):
+Fixed parameters and variance targeting (plan 2d). `rugarch`'s `robust_se` is a QML sandwich in the fixed cases
+(`nlag = 0`) and Newey-West in the variance-targeting ones; neither is compared, so the column is left out. Fixed
+parameters are equal by construction and have no standard error; the derived ω under variance targeting is
+compared like an estimate (it is the "Small abs" entry of the eGARCH and gjrGARCH-sstd rows).
+
+| Case | ℓ_VE − ℓ_oracle | Max param rel | Small abs | Max SE rel | Max QML robust SE rel | Max σ rel | Max criteria abs |
+|------|-----------------|---------------|-----------|------------|-----------------------|-----------|------------------|
+| `sgarch21_std/sgarch11_std_fixshape` | -8.9e-10 | 1.1e-5 | — | 7.9e-6 | 1.5e-5 | 2.7e-6 | 5.9e-13 |
+| `arma11_sgarch11_ged/arma11_sgarch11_ged_fixmu` | +1.8e-9 | 1.3e-5 | — | 9.9e-4 | 2.0e-3 | 2.8e-6 | 1.2e-12 |
+| `sgarch21_std/sgarch11_norm_fixalpha` | +2.5e-10 | 1.2e-6 | 1.3e-8 | 8.3e-6 | 1.5e-5 | 5.6e-7 | 1.6e-13 |
+| `gjrgarch11_norm/gjrgarch11_norm_fixgamma` | -2.2e-10 | 3.6e-6 | — | 6.1e-5 | 1.2e-4 | 9.5e-7 | 1.5e-13 |
+| `gjrgarch11_sstd/gjrgarch11_sstd_fixalpha` | +2.2e-8 | 2.2e-5 | 3.7e-7 | 2.7e-5 | 4.9e-5 | 7.6e-6 | 1.5e-11 |
+| `aparch11_ged/aparch11_ged_fixdelta` | +7.3e-8 | 1.7e-5 | — | 4.2e-5 | 9.8e-5 | 4.0e-6 | 4.9e-11 |
+| `egarch11_std/egarch11_std_fixbeta` | +1.3e-7 | 1.4e-4 | — | 1.7e-4 | 3.4e-4 | 2.3e-5 | 8.4e-11 |
+| `csgarch11_std/csgarch11_std_fixrho` | +3.7e-8 | 9.3e-5 | 3.2e-7 | 1.2e-4 | 1.6e-4 | 9.5e-6 | 2.4e-11 |
+| `igarch11_norm/igarch11_norm_fixalpha` | -3.7e-11 | 6.8e-6 | — | 2.7e-8 | 5.1e-8 | 2.6e-7 | 2.5e-14 |
+| `sgarch21_std/sgarch11_std_vt` | +4.6e-8 | 2.6e-5 | — | 8.9e-5 | 1.2e-4 | 1.4e-6 | 3.0e-11 |
+| `egarch11_std/egarch11_std_vt` | +2.1e-8 | 1.7e-5 | 5.9e-8 | 3.6e-4 | 7.2e-4 | 8.2e-6 | 1.4e-11 |
+| `gjrgarch11_sstd/gjrgarch11_sstd_vt` | +5.4e-9 | 1.7e-5 | 8.1e-8 | 1.3e-4 | 2.5e-4 | 3.5e-6 | 3.6e-12 |
+| `aparch11_ged/aparch11_ged_vt` | +1.7e-7 | 1.8e-5 | — | 5.8e-5 | 1.1e-4 | 5.4e-6 | 1.1e-10 |
+| `egarch11_std/fgarch_allgarch11_std_vt` | +7.2e-8 | 2.8e-4 | — | 7.8e-3 | 1.6e-2 | 1.9e-5 | 4.8e-11 |
+
+Evaluation cases (every parameter fixed; estimates equal by construction, standard errors NaN and NA):
+
+| Case | ℓ rel | Max σ rel | Max criteria abs |
+|------|-------|-----------|------------------|
+| `sgarch21_std/sgarch11_std_allfixed` | 2.2e-16 | 4.4e-16 | 2.2e-16 |
+| `gjrgarch11_sstd/gjrgarch11_sstd_allfixed` | 0 | 2.2e-16 | 0 |
+
+Known divergences (`xfail` in the test; see [Case selection](#case-selection)), left out of the
+"Observed" column of [Tolerances](#tolerances): the first three are VolEngine's optimizer, the last `rugarch`'s κ
+quadrature under variance targeting:
 
 | Case | ℓ_VE − ℓ_oracle | Max param rel | Small abs | Max SE rel | Max QML robust SE rel | Max NW robust SE rel (not compared) | Max σ rel | Max criteria abs |
 |------|-----------------|---------------|-----------|------------|-----------------------|-------------------------------------|-----------|------------------|
 | `aparch11_sged/fgarch_allgarch11_sstd` | -4.6e-3 | 2.0e-2 | — | 1.5e-1 | 2.8e-1 | 3.0e-1 | 5.5e-3 | 3.1e-6 |
 | `aparch11_sged/fgarch_allgarch11_jsu` | -6.2e-3 | 1.9e-2 | — | 4.2e-1 | 8.6e-1 | 9.3e-1 | 5.4e-3 | 4.1e-6 |
 | `egarch11_jsu/fgarch_allgarch11_sstd` | -4.6e-2 | 6.6e-1 | — | 6.9e-1 | 1.3 | 1.2 | 3.4e-2 | 3.1e-5 |
+| `fgarch_allgarch11_norm/fgarch_allgarch11_norm_vt` | +7.7e-5 | 1.1e-3 | — | 4.3e-3 | 9.6e-3 | 5.3e-2 | 1.6e-5 | 5.2e-8 |
 
 ### `arch`
 
@@ -674,6 +813,12 @@ Skewed distributions (sstd as `SkewStudent`, ξ converted from λ):
 | `gjrgarch11_sstd/gjrgarch11_sstd` | +1.1e-7 | 4.6e-5 | 2.5e-7 | 5.2e-5 | 1.7e-4 | 1.7e-5 | 2.1e-7 |
 | `gjrgarch11_sstd/sgarch11_sstd` | +1.8e-7 | 2.7e-5 | 7.0e-7 | 1.7e-4 | 5.2e-4 | 1.5e-5 | 3.6e-7 |
 | `gjrgarch11_sstd/egarch11_sstd` | +1.3e-8 | 2.6e-5 | — | 1.3e-4 | 4.4e-4 | 8.5e-6 | 2.5e-8 |
+
+Evaluation case (every parameter fixed, `fix()`; `arch`'s criteria count every parameter and are not compared):
+
+| Case | ℓ_VE − ℓ_oracle | ℓ rel | Max σ rel |
+|------|-----------------|-------|-----------|
+| `sgarch21_std/sgarch11_std_allfixed` | +3.0e-12 | 1.8e-15 | 1.1e-16 |
 
 ## Regenerating
 

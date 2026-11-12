@@ -83,13 +83,30 @@ def case_spec(case: dict[str, Any]) -> ve.Spec:
         dist=case["dist"],
         include_mean=case["include_mean"],
         submodel=case.get("submodel"),
+        fixed=case.get("fixed", {}),
+        variance_targeting=case.get("variance_targeting", False),
     )
 
 
+def not_estimated(case: dict[str, Any]) -> set[str]:
+    """The fixed parameters and the derived ones: the iGARCH beta_q and omega under variance targeting."""
+    names = set(case.get("fixed", {}))
+    if case["model"] == "igarch":
+        names.add(f"beta{case['q']}")
+    if case.get("variance_targeting", False):
+        names.add("omega")
+    return names
+
+
+def is_evaluation(case: dict[str, Any], result: dict[str, Any]) -> bool:
+    """Every parameter fixed: the oracle evaluates the model at that point (ugarchfilter, arch's fix())."""
+    return set(case.get("fixed", {})) == set(result["params"])
+
+
 def derived_mask(case: dict[str, Any], names: tuple[str, ...]) -> NDArray[np.bool_]:
-    """The iGARCH beta_q is derived, not estimated: its standard error is NaN in VolEngine and NA in rugarch."""
-    derived = f"beta{case['q']}"
-    return np.array([case["model"] == "igarch" and name == derived for name in names])
+    """Fixed and derived parameters are not estimated: their standard error is NaN in VolEngine and NA in
+    rugarch."""
+    return np.array([name in not_estimated(case) for name in names])
 
 
 def assert_params(
@@ -127,26 +144,27 @@ def assert_criteria(fit: ve.Fit, result: dict[str, Any], per_obs: bool) -> None:
 
 ORACLE_CASES = [(ORACLES[name], case) for name in ORACLES for case in oracle_cases(name)]
 ORACLE_CASE_IDS = [f"{oracle.name}-{case['id']}" for oracle, case in ORACLE_CASES]
-# VolEngine reports Converged below the oracle's log-likelihood: docs/guide/validation.md, "Case selection",
-# known divergence (VolEngine optimizer). strict, so that a fix has to remove the entry.
+OPTIMIZER = "VolEngine optimizer stops below the oracle's loglik (validation.md, known divergence)"
+QUADRATURE = "rugarch's fGARCH kappa quadrature enters its variance-targeting omega (validation.md, known divergence)"
+# docs/guide/validation.md, "Case selection", known divergences. strict, so that a fix has to remove the entry.
+# OPTIMIZER: VolEngine reports Converged below the oracle's log-likelihood. QUADRATURE: rugarch integrates the
+# fGARCH kappa with integrate()'s default tolerance; under variance targeting that error moves its likelihood.
 KNOWN_DIVERGENCES = {
-    "rugarch-aparch11_sged/fgarch_allgarch11_sstd",
-    "rugarch-aparch11_sged/fgarch_allgarch11_jsu",
-    "rugarch-egarch11_jsu/fgarch_allgarch11_sstd",
+    "rugarch-aparch11_sged/fgarch_allgarch11_sstd": OPTIMIZER,
+    "rugarch-aparch11_sged/fgarch_allgarch11_jsu": OPTIMIZER,
+    "rugarch-egarch11_jsu/fgarch_allgarch11_sstd": OPTIMIZER,
+    "rugarch-fgarch_allgarch11_norm/fgarch_allgarch11_norm_vt": QUADRATURE,
 }
-DIVERGENCE = pytest.mark.xfail(
-    strict=True, reason="VolEngine optimizer stops below the oracle's loglik (validation.md, known divergence)"
-)
 
 
 def comparison_params() -> list[Any]:
     """ORACLE_CASES with the known divergences expected to fail the comparison."""
-    assert KNOWN_DIVERGENCES <= set(ORACLE_CASE_IDS)
+    assert set(KNOWN_DIVERGENCES) <= set(ORACLE_CASE_IDS)
     params = []
     for (oracle, case), case_id in zip(ORACLE_CASES, ORACLE_CASE_IDS, strict=True):
         marks = []
         if case_id in KNOWN_DIVERGENCES:
-            marks.append(DIVERGENCE)
+            marks.append(pytest.mark.xfail(strict=True, reason=KNOWN_DIVERGENCES[case_id]))
         params.append(pytest.param(oracle, case, id=case_id, marks=marks))
     return params
 
@@ -158,12 +176,8 @@ def test_fixture_covers_its_cases(oracle):
     assert [result["case"] for result in load_fixture(oracle)["results"]] == expected
 
 
-# Its apARCH cases moved to another series: docs/guide/validation.md, "Case selection".
-UNUSED_SERIES = {"aparch11_ged"}
-
-
 def test_cases_name_known_series():
-    assert {case["series"] for case in load_cases()} == set(load_series()) - UNUSED_SERIES
+    assert {case["series"] for case in load_cases()} == set(load_series())
 
 
 @pytest.mark.parametrize(("oracle", "case"), comparison_params())
@@ -172,6 +186,9 @@ def test_matches_oracle(ctx, oracle, case):
     fit = ctx.fit(case_spec(case), load_series()[case["series"]], options=fit_options(oracle))
     assert fit.status == "converged"
     assert fit.names == tuple(result["params"]) == tuple(result["se"]) == tuple(result[oracle.robust_key])
+    if is_evaluation(case, result):
+        assert_evaluation(fit, result, oracle.per_obs)
+        return
     assert fit.loglik >= result["loglik"] - 1e-6 * abs(result["loglik"])
     assert fit.loglik == pytest.approx(result["loglik"], rel=1e-4)
     assert_params(fit.coef().estimate, result["params"], rel=1e-3, abs_small=1e-5)
@@ -179,6 +196,15 @@ def test_matches_oracle(ctx, oracle, case):
     assert fit.sigma.shape == (len(result["sigma"]),)
     assert np.max(np.abs(fit.sigma / np.array(result["sigma"]) - 1.0)) <= 1e-3
     assert_criteria(fit, result, oracle.per_obs)
+
+
+def assert_evaluation(fit: ve.Fit, result: dict[str, Any], per_obs: bool) -> None:
+    """The same computation on both sides, without an optimizer: loglik and sigma to 1e-9 (relative)."""
+    assert np.array_equal(fit.coef().estimate, np.array(list(result["params"].values())))
+    assert np.isnan(fit.coef("hessian").std_error).all() and np.isnan(fit.coef("robust").std_error).all()
+    assert fit.loglik == pytest.approx(result["loglik"], rel=1e-9)
+    assert np.max(np.abs(fit.sigma / np.array(result["sigma"]) - 1.0)) <= 1e-9
+    assert_criteria(fit, result, per_obs)
 
 
 def block(params: dict[str, float], name: str) -> list[float]:
@@ -196,45 +222,69 @@ def below_zero(case: dict[str, Any], params: dict[str, float], persistence: floa
     return pi
 
 
-def interior_weights(case: dict[str, Any], params: dict[str, float], persistence: float) -> list[float]:
-    """The non-negative entries that sum to the persistence P; a power-family weight is alpha kappa = P - beta."""
-    alpha, beta, gamma = block(params, "alpha"), block(params, "beta"), block(params, "gamma")
+def named(params: dict[str, float], name: str) -> dict[str, float]:
+    return {key: value for key, value in params.items() if key.rstrip("0123456789") == name}
+
+
+def interior_weights(case: dict[str, Any], params: dict[str, float], persistence: float) -> dict[str, float]:
+    """The non-negative entries that sum to the persistence P, by position; a power-family weight is
+    alpha kappa = P - beta. In gjrGARCH with gamma_i fixed and alpha_i estimated they are alpha_i - max(0, -gamma_i)
+    and max(0, -gamma_i) + pi gamma_i."""
+    alpha, beta, gamma = named(params, "alpha"), named(params, "beta"), named(params, "gamma")
     assert (len(alpha), len(beta)) == (case["p"], case["q"])
     if case["model"] == "egarch":
         return beta
     if case["model"] == "gjrgarch":
         pi = below_zero(case, params, persistence)
-        return [(1 - pi) * a for a in alpha] + beta + [pi * (a + g) for a, g in zip(alpha, gamma, strict=True)]
+        weights: dict[str, float] = {}
+        for (a_name, a), (g_name, g) in zip(alpha.items(), gamma.items(), strict=True):
+            if g_name in not_estimated(case) and a_name not in not_estimated(case):
+                weights |= {a_name: a - max(0.0, -g), g_name: max(0.0, -g) + pi * g}
+                continue
+            weights |= {a_name: (1 - pi) * a, g_name: pi * (a + g)}
+        return weights | beta
     if case["model"] in ("aparch", "fgarch"):
         assert case["p"] == 1
-        return [persistence - sum(beta), *beta]
-    return alpha + beta
+        return {"alpha1": persistence - sum(beta.values())} | beta
+    return alpha | beta
 
 
-@pytest.mark.parametrize(("oracle", "case"), ORACLE_CASES, ids=ORACLE_CASE_IDS)
+ESTIMATED_CASES = [
+    (oracle, case)
+    for oracle, case in ORACLE_CASES
+    if not is_evaluation(case, oracle_result(oracle.name, case["id"]))
+]
+
+
+@pytest.mark.parametrize(
+    ("oracle", "case"), ESTIMATED_CASES, ids=[f"{oracle.name}-{case['id']}" for oracle, case in ESTIMATED_CASES]
+)
 def test_fixture_estimates_are_interior(oracle, case):
+    """The rule holds the estimated parameters only."""
     result = oracle_result(oracle.name, case["id"])
     params, persistence = result["params"], result["persistence"]
     weights = interior_weights(case, params, persistence)
-    assert min(weights) > 1e-4
+    assert all(value > 1e-4 for name, value in weights.items() if name not in not_estimated(case))
     if case["model"] not in ("igarch", "aparch", "fgarch"):
         # rugarch integrates P(z < 0) for the gjrGARCH gamma numerically.
-        assert sum(weights) == pytest.approx(persistence, abs=1e-9)
+        assert sum(weights.values()) == pytest.approx(persistence, abs=1e-9)
     if case["model"] != "igarch":
         assert persistence < 0.999
     if case["model"] in ("aparch", "fgarch"):
-        assert all(abs(value) < 0.999 for value in block(params, "eta1") + block(params, "gamma"))
+        asymmetry = named(params, "eta1") | named(params, "gamma")
+        assert all(abs(value) < 0.999 for name, value in asymmetry.items() if name not in not_estimated(case))
     if case["model"] == "csgarch":
         assert params["eta11"] - persistence > 1e-4
         assert params["eta21"] > 1e-4
-    assert_distribution_interior(case, params)
+    estimated = {name: value for name, value in params.items() if name not in not_estimated(case)}
+    assert_distribution_interior(case, estimated)
 
 
 def assert_distribution_interior(case: dict[str, Any], params: dict[str, float]) -> None:
     """|rho| < 0.999 (nig, ghyp), xi in (0.05, 20) (sstd, sged), 1 / shape > 1e-4 and |ghlambda| < 10."""
-    if case["dist"] in ("nig", "ghyp"):
+    if case["dist"] in ("nig", "ghyp") and "skew" in params:
         assert abs(params["skew"]) < 0.999
-    if case["dist"] in ("sstd", "sged"):
+    if case["dist"] in ("sstd", "sged") and "skew" in params:
         assert 0.05 < params["skew"] < 20.0
     if "shape" in params:
         assert 1.0 / params["shape"] > 1e-4

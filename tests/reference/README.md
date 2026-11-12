@@ -28,7 +28,7 @@ them needs neither R nor `arch`. Series names are unique across the data files.
 ```
 {"id": str, "series": str, "model": str, "submodel": str (fgarch only), "p": int, "q": int, "arma": [m, n],
  "include_mean": bool, "dist": "norm" | "std" | "ged" | "sstd" | "sged" | "nig" | "ghyp" | "jsu",
- "oracles": ["rugarch", "arch"]}
+ "fixed": {name: float} (optional), "variance_targeting": bool (optional), "oracles": ["rugarch", "arch"]}
 ```
 
 `model` and `submodel` are the names of VolEngine's Python `Spec` (`"sgarch"`, `"egarch"`, `"gjrgarch"`,
@@ -36,7 +36,12 @@ them needs neither R nor `arch`. Series names are unique across the data files.
 translate them: `rugarch`'s `model = "sGARCH"`, `"eGARCH"`, ... and `submodel = "ALLGARCH"`, ...; `arch`'s
 `vol = "GARCH"` (with `o = p` for gjrGARCH) or `"EGARCH"`. `arch` covers sGARCH, gjrGARCH and eGARCH only. `p` is
 the ARCH order (α terms) and `q` the GARCH order (β terms), as in VolEngine's `Spec` and `arch`, and as
-`rugarch`'s `garchOrder = c(p, q)`. The id is `<series>/<model>`.
+`rugarch`'s `garchOrder = c(p, q)`. The id is `<series>/<model>`. `fixed` maps parameter names (`rugarch`'s, as
+below) to values held during the fit, VolEngine's `Spec(fixed=...)` and `rugarch`'s `fixed.pars`;
+`variance_targeting` is VolEngine's `Spec(variance_targeting=True)` and `rugarch`'s `variance.targeting = TRUE`.
+A case with every parameter in `fixed` is an *evaluation*: nothing is estimated, `oracle_rugarch.R` runs
+`ugarchfilter` and `oracle_arch.py` runs `fix()` at the fixed point. `arch` has no variance targeting and takes
+only evaluation cases among those with `fixed`.
 
 ## Fixture format
 
@@ -63,6 +68,11 @@ scale: per observation for `rugarch`, totals for `arch` (which reports no HQIC o
 `qml_robust_se` is the QML sandwich (VolEngine's robust definition) rebuilt from `rugarch`'s own Hessian and
 per-observation scores.
 
+A fixed or derived parameter (fixed, the iGARCH `beta_q`, the variance-targeting `omega`) appears in `params` with
+its value and a `null` standard error; `oracle_rugarch.R` puts `rugarch`'s variance-targeting `omega`, which
+`coef()` appends last, back in its place. An evaluation case has every standard error `null`; its criteria are
+`rugarch`'s `infocriteria()` of the filter (k = 0) and `null` for `arch`, whose `fix()` counts every parameter.
+
 ## Regenerating
 
 Requirements, needed only to regenerate:
@@ -87,12 +97,14 @@ for iGARCH, where P = 1), |η₁| or the apARCH |γ| ≥ 0.999, in csGARCH ρ �
 distribution |ρ| ≥ 0.999 (nig, ghyp), ξ ∉ (0.05, 20) (sstd, sged), 1/shape ≤ 1e-4 or |ghlambda| ≥ 10.
 `oracle_rugarch.R` also stops on a distribution parameter at `rugarch`'s own bounds (for example the ghyp shape at
 0.25). It shrinks `rugarch`'s numerical Hessian step (`hess.d = 1e-3`, and 1e-4 for sged);
-`docs/guide/validation.md` explains why. After regenerating, record the oracle versions and
-the observed differences there.
+`docs/guide/validation.md` explains why. The interior rule holds only the estimated parameters: a weight in a
+fixed or derived position, a fixed |η₁| or γ and a fixed distribution parameter are not checked, and evaluation
+cases are not checked at all. After regenerating, record the oracle versions and the observed differences there.
 
 Regenerating on another machine can change the last digits: on the plan-2b machine `generate_data.py` rewrites
 `grid.csv` at the last digit of some entries, and the plan-1/2a fixture results come back with the same estimates,
 ℓ, σ and criteria but standard errors that differ in the ninth digit. The committed plan-1/2a data and results
 were therefore kept as they are; only the new series and cases were added (see `docs/guide/validation.md`). The
-same holds for the plan-2b data and results, regenerated on the plan-2c machine. sged's `hess.d = 1e-4` was chosen
+same holds for the plan-2b data and results, regenerated on the plan-2c machine, and for every earlier result,
+regenerated for plan 2d on the plan-2b machine. sged's `hess.d = 1e-4` was chosen
 against the committed fixtures and may need re-tuning on another machine or R version.
