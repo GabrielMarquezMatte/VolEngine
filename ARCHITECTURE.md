@@ -6,9 +6,9 @@ behind a decision (measurements, rejected approaches); that lives in `docs/`, an
 [STYLEGUIDE.md](STYLEGUIDE.md#comments) says why.
 
 This document describes what exists today: ARMA(m,n)-GARCH(p,q) log-likelihoods for sGARCH, eGARCH, gjrGARCH,
-apARCH, iGARCH, csGARCH and fGARCH (eight submodels) with normal, Student-t and GED innovations, a template over
-the scalar type so that automatic differentiation gives their gradients; and, on top of them, those models
-fitted in batches behind a C API and a Python package.
+apARCH, iGARCH, csGARCH and fGARCH (eight submodels) with normal, Student-t, GED and skewed innovations, fixed parameters, start values and variance targeting, a
+template over the scalar type so that automatic differentiation gives their gradients; and, on top of them, those
+models fitted in batches behind a C API and a Python package.
 
 ## Layers
 
@@ -44,7 +44,7 @@ like any other wrapper would be.
 | `src/capi/error.hpp`, `error.cpp` | Thread-local `ve_last_error()`, `set_error`, and `guard`, the one place exceptions are caught |
 | `src/capi/context_api.cpp`, `spec_api.cpp`, `panel_api.cpp`, `batch_api.cpp`, `fit_api.cpp`, `version_api.cpp` | The `extern "C"` functions, one file per handle family |
 | `src/core/context.hpp`, `context.cpp` | `ve::Context`: the thread pool and thread count |
-| `src/core/spec.hpp` | `ve::Spec` (model, order, distribution, mean) and `ve::FitConfig` (iterations, tolerance, variance initialization): copyable values |
+| `src/core/spec.hpp` | `ve::Spec` (model, order, distribution, mean, fixed and start values, variance targeting) and `ve::FitConfig` (iterations, tolerance, variance initialization): copyable values |
 | `src/core/panel.hpp` | `ve::PanelView`: a borrowed pointer, T, N, element strides and optional per-series start and length |
 | `src/core/var_init.hpp` | The variance initialization enum (`Sample`, `Backcast`) |
 | `src/ad/dual.hpp`, `special.hpp`, `special.cpp` | `ve::ad::Dual<N>`: forward-mode dual numbers and their elementary functions; `digamma` |
@@ -56,11 +56,12 @@ like any other wrapper would be.
 | `src/dist/symmetric.hpp`, `skewed.hpp`, `hyperbolic.hpp`, `johnson.hpp` | The families of the variant: norm, std and ged; sstd and sged (Fernandez-Steel); nig and ghyp; jsu. Templates over the scalar type |
 | `src/dist/bessel.hpp`, `bessel.cpp` | `log_bessel_k` and its derivatives. Boost.Math is included only in `bessel.cpp`, so no other file sees it |
 | `src/dist/moments.hpp`, `moments.cpp` | Expected absolute shock, P(z < 0) and the fGARCH news moments (Gauss-Legendre quadrature for the shifted and the asymmetric ones) |
-| `src/model/layout.hpp`, `layout.cpp` | `Layout`: parameter blocks (gamma, eta1, eta2, power), offsets, count, `ParameterKind` of each parameter and rugarch names of a `Spec` |
-| `src/model/likelihood.hpp`, `likelihood.cpp` | `loglik<T>`: the log-likelihood with its per-observation terms, residuals and variances, and the backcast; dispatches by model to the recursion; instantiated for `double` and `Dual<8>`, `Dual<16>`, `Dual<32>`, `Dual<42>` |
+| `src/model/layout.hpp`, `layout.cpp` | `Layout`: parameter blocks (gamma, eta1, eta2, power), offsets, count, `ParameterKind` of each parameter, rugarch names of a `Spec`, and the role of each parameter (estimated, fixed or derived; `estimated_count`) |
+| `src/model/likelihood.hpp`, `likelihood.cpp` | `loglik<T>`: the log-likelihood (under variance targeting it computes omega from the current residuals, so the AD carries the dependence) with its per-observation terms, residuals and variances, and the backcast; dispatches by model to the recursion; instantiated for `double` and `Dual<8>`, `Dual<16>`, `Dual<32>`, `Dual<42>` |
+| `src/model/weight_terms.hpp` | The weight block seen as terms that sum to the persistence: fixed terms are constants and the free ones share the remaining budget (logistic and softmax) |
 | `src/model/parameter_map.*`, `start_values.*` | Layout-driven map between the unconstrained and natural parameter spaces, a template over the scalar type; validity check, start values, and `on_boundary` (parameters left out of the standard-error blocks) |
 | `src/optim/lbfgs.hpp` (+ `curvature_memory.hpp`, `line_search.hpp`, `vector_math.hpp`) | L-BFGS minimizer, a template over the objective |
-| `src/fit/fit.hpp`, `fit.cpp` | `fit_one`: one series, one spec |
+| `src/fit/fit.hpp`, `fit.cpp` | `fit_one`: one series, one spec; with no estimated parameter it evaluates the model at the fixed point and skips the optimizer |
 | `src/fit/standard_errors.*`, `cholesky.*` | Hessian and robust standard errors; Cholesky solves, no explicit inverse |
 | `src/fit/criteria.*` | Log-likelihood, AIC, BIC, HQIC, SIC |
 | `src/fit/batch.hpp`, `batch.cpp` | `check_batch` and `run_batch`: jobs on the thread pool |
