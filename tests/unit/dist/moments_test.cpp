@@ -11,6 +11,7 @@
 #include <initializer_list>
 #include <limits>
 #include <numbers>
+#include <string>
 
 namespace
 {
@@ -18,6 +19,7 @@ namespace
 using ve::Dist;
 using ve::dist::abs_moment;
 using ve::dist::asymmetric_moment;
+using ve::dist::probability_below_zero;
 using ve::dist::shifted_moment;
 
 struct DistCase
@@ -57,40 +59,41 @@ double reference_asymmetric_moment(DistCase c, double eta1, double power)
 
 TEST(Moments, AbsMomentClosedForms)
 {
-    EXPECT_NEAR(abs_moment(Dist::Norm, 0.0, 1.0), std::sqrt(2.0 / std::numbers::pi), 1e-15);
-    EXPECT_NEAR(abs_moment(Dist::Norm, 0.0, 2.0), 1.0, 1e-14);
-    EXPECT_NEAR(abs_moment(Dist::Norm, 0.0, 4.0), 3.0, 1e-13);
-    EXPECT_NEAR(abs_moment(Dist::Std, 6.0, 2.0), 1.0, 1e-12);
-    EXPECT_NEAR(abs_moment(Dist::Std, 6.0, 4.0), 6.0, 1e-12);
+    EXPECT_NEAR(abs_moment(Dist::Norm, {}, 1.0), std::sqrt(2.0 / std::numbers::pi), 1e-15);
+    EXPECT_NEAR(abs_moment(Dist::Norm, {}, 2.0), 1.0, 1e-14);
+    EXPECT_NEAR(abs_moment(Dist::Norm, {}, 4.0), 3.0, 1e-13);
+    EXPECT_NEAR(abs_moment(Dist::Std, {.shape = 6.0}, 2.0), 1.0, 1e-12);
+    EXPECT_NEAR(abs_moment(Dist::Std, {.shape = 6.0}, 4.0), 6.0, 1e-12);
     for (double power : {0.5, 1.0, 1.7})
     {
-        EXPECT_NEAR(abs_moment(Dist::Ged, 2.0, power), abs_moment(Dist::Norm, 0.0, power), 1e-14) << power;
+        EXPECT_NEAR(abs_moment(Dist::Ged, {.shape = 2.0}, power), abs_moment(Dist::Norm, {}, power), 1e-14)
+            << power;
     }
     for (double nu : {0.8, 1.5})
     {
-        EXPECT_NEAR(abs_moment(Dist::Ged, nu, 2.0), 1.0, 1e-12) << nu;
+        EXPECT_NEAR(abs_moment(Dist::Ged, {.shape = nu}, 2.0), 1.0, 1e-12) << nu;
     }
 }
 
 // The fit reaches nu far past 1e6 on normal data, where lgamma(nu / 2) is far larger than the moment.
 TEST(Moments, StdMomentApproachesNormalForLargeShape)
 {
-    expect_relative(abs_moment(Dist::Std, 30.0, 4.0), 3.0 * 28.0 / 26.0, 1e-12);
+    expect_relative(abs_moment(Dist::Std, {.shape = 30.0}, 4.0), 3.0 * 28.0 / 26.0, 1e-12);
     for (double nu : {30.0, 1e6, 1e15, 1e300})
     {
-        expect_relative(abs_moment(Dist::Std, nu, 2.0), 1.0, 1e-12);
+        expect_relative(abs_moment(Dist::Std, {.shape = nu}, 2.0), 1.0, 1e-12);
     }
-    expect_relative(abs_moment(Dist::Std, 1e15, 1.5), abs_moment(Dist::Norm, 0.0, 1.5), 1e-12);
+    expect_relative(abs_moment(Dist::Std, {.shape = 1e15}, 1.5), abs_moment(Dist::Norm, {}, 1.5), 1e-12);
 }
 
 TEST(Moments, StdMomentInfiniteAtOrAbovePower)
 {
     double infinity = std::numeric_limits<double>::infinity();
-    EXPECT_EQ(abs_moment(Dist::Std, 3.0, 3.0), infinity);
-    EXPECT_EQ(abs_moment(Dist::Std, 2.5, 2.7), infinity);
-    EXPECT_EQ(asymmetric_moment(Dist::Std, 2.5, 0.3, 2.7), infinity);
-    EXPECT_EQ(shifted_moment(Dist::Std, 2.5, 0.3, 0.2, 2.7), infinity);
-    EXPECT_TRUE(std::isfinite(abs_moment(Dist::Std, 3.1, 3.0)));
+    EXPECT_EQ(abs_moment(Dist::Std, {.shape = 3.0}, 3.0), infinity);
+    EXPECT_EQ(abs_moment(Dist::Std, {.shape = 2.5}, 2.7), infinity);
+    EXPECT_EQ(asymmetric_moment(Dist::Std, {.shape = 2.5}, 0.3, 2.7), infinity);
+    EXPECT_EQ(shifted_moment(Dist::Std, {.shape = 2.5}, 0.3, 0.2, 2.7), infinity);
+    EXPECT_TRUE(std::isfinite(abs_moment(Dist::Std, {.shape = 3.1}, 3.0)));
 }
 
 TEST(Moments, AsymmetricMatchesQuadrature)
@@ -102,7 +105,7 @@ TEST(Moments, AsymmetricMatchesQuadrature)
             for (double power : {0.8, 1.5, 2.0})
             {
                 double expected = reference_asymmetric_moment(c, eta1, power);
-                expect_relative(asymmetric_moment(c.dist, c.shape, eta1, power), expected, 1e-6);
+                expect_relative(asymmetric_moment(c.dist, {.shape = c.shape}, eta1, power), expected, 1e-6);
             }
         }
     }
@@ -118,8 +121,9 @@ TEST(Moments, ShiftedReducesToKnownForms)
         {
             for (double power : {1.0, 1.5, 2.0})
             {
-                double expected = asymmetric_moment(c.dist, c.shape, eta1, power);
-                expect_relative(shifted_moment(c.dist, c.shape, eta1, 0.0, power), expected, 1e-10);
+                double expected = asymmetric_moment(c.dist, {.shape = c.shape}, eta1, power);
+                double shifted = shifted_moment(c.dist, {.shape = c.shape}, eta1, 0.0, power);
+                expect_relative(shifted, expected, 1e-10);
             }
         }
     }
@@ -127,13 +131,14 @@ TEST(Moments, ShiftedReducesToKnownForms)
     {
         for (double shift : {-0.5, 0.3, 1.2})
         {
-            expect_relative(shifted_moment(c.dist, c.shape, 0.0, shift, 2.0), 1.0 + shift * shift, 1e-8);
+            double shifted = shifted_moment(c.dist, {.shape = c.shape}, 0.0, shift, 2.0);
+            expect_relative(shifted, 1.0 + shift * shift, 1e-8);
         }
     }
     for (double shift : {-0.7, 0.2})
     {
         double expected = shift * (2.0 * normal_cdf(shift) - 1.0) + 2.0 * normal_pdf(shift);
-        expect_relative(shifted_moment(Dist::Norm, 0.0, 0.0, shift, 1.0), expected, 1e-10);
+        expect_relative(shifted_moment(Dist::Norm, {}, 0.0, shift, 1.0), expected, 1e-10);
     }
 }
 
@@ -147,8 +152,8 @@ TEST(Moments, StdHeavyTailMomentMatchesClosedForm)
         auto [nu, power] = nu_power;
         for (double eta1 : {0.0, 0.2})
         {
-            double expected = asymmetric_moment(Dist::Std, nu, eta1, power);
-            EXPECT_NEAR(shifted_moment(Dist::Std, nu, eta1, 0.0, power), expected, 1e-8 * expected)
+            double expected = asymmetric_moment(Dist::Std, {.shape = nu}, eta1, power);
+            EXPECT_NEAR(shifted_moment(Dist::Std, {.shape = nu}, eta1, 0.0, power), expected, 1e-8 * expected)
                 << "nu " << nu << ", power " << power << ", eta1 " << eta1;
         }
     }
@@ -157,8 +162,8 @@ TEST(Moments, StdHeavyTailMomentMatchesClosedForm)
 template <class T>
 std::array<T, 3> all_moments(Dist dist, const std::array<T, 4>& x)
 {
-    return {abs_moment(dist, x[0], x[3]), asymmetric_moment(dist, x[0], x[1], x[3]),
-            shifted_moment(dist, x[0], x[1], x[2], x[3])};
+    return {abs_moment(dist, {.shape = x[0]}, x[3]), asymmetric_moment(dist, {.shape = x[0]}, x[1], x[3]),
+            shifted_moment(dist, {.shape = x[0]}, x[1], x[2], x[3])};
 }
 
 double central_difference(DistCase c, std::array<double, 4> x, std::size_t i, std::size_t moment)
@@ -182,7 +187,7 @@ double expected_derivative(DistCase c, const std::array<double, 4>& x, std::size
         return central_difference(c, x, i, moment);
     }
     double asymmetry = std::pow(1.0 + x[1], x[3]) - std::pow(1.0 - x[1], x[3]);
-    return 0.5 * x[3] * asymmetry * abs_moment(c.dist, c.shape, x[3] - 1.0);
+    return 0.5 * x[3] * asymmetry * abs_moment(c.dist, {.shape = c.shape}, x[3] - 1.0);
 }
 
 void expect_gradients_match(DistCase c, const std::array<double, 4>& x)
@@ -208,7 +213,7 @@ void expect_gradients_match(DistCase c, const std::array<double, 4>& x)
 
 TEST(Moments, StdShiftedMomentSplitsAtTheCusp)
 {
-    expect_relative(shifted_moment(Dist::Std, 4.5, 0.3, 0.5, 1.5), 1.26984189752, 1e-9);
+    expect_relative(shifted_moment(Dist::Std, {.shape = 4.5}, 0.3, 0.5, 1.5), 1.26984189752, 1e-9);
 }
 
 TEST(Moments, DerivativesMatchFiniteDifferences)
@@ -218,6 +223,203 @@ TEST(Moments, DerivativesMatchFiniteDifferences)
     {
         expect_gradients_match(c, {c.shape, 0.3, 0.4, 1.5});
         expect_gradients_match(c, {c.shape, 0.3, 0.0, 0.8});
+    }
+}
+
+// The values of plan 2b, bit for bit: the Density variant and the kink split leave norm, std and ged
+// unchanged.
+TEST(Moments, SymmetricUnchanged)
+{
+    EXPECT_EQ(shifted_moment(Dist::Std, {.shape = 4.5}, 0.3, 0.5, 1.5), 0x1.45145bccd1599p+0);
+    EXPECT_EQ(shifted_moment(Dist::Ged, {.shape = 1.5}, -0.4, -0.3, 0.8), 0x1.c345836c0c961p-1);
+    EXPECT_EQ(shifted_moment(Dist::Norm, {}, 0.2, 0.0, 1.5), 0x1.bef6589a7740bp-1);
+    EXPECT_EQ(abs_moment(Dist::Std, {.shape = 6.0}, 1.3), 0x1.8f33133cba259p-1);
+    EXPECT_EQ(asymmetric_moment(Dist::Ged, {.shape = 1.2}, 0.3, 1.7), 0x1.d73cc4872552fp-1);
+    using Number = ve::ad::Dual<8>;
+    Number moment = shifted_moment(Dist::Std, {.shape = ve::ad::variable<8>(6.0, 0)},
+                                   ve::ad::variable<8>(0.3, 1), ve::ad::variable<8>(0.4, 2),
+                                   ve::ad::variable<8>(1.5, 3));
+    EXPECT_EQ(moment.value, 0x1.2cf79e0107bcp+0);
+    std::array<double, 4> gradient = {0x1.6497c15daa294p-7, 0x1.d8cce45356801p-1, 0x1.1de1d413c16bdp+0,
+                                      0x1.4ffa5edf97d1fp-1};
+    for (std::size_t i = 0; i < gradient.size(); ++i)
+    {
+        EXPECT_EQ(moment.grad[i], gradient[i]) << i;
+    }
+    for (Dist dist : {Dist::Norm, Dist::Std, Dist::Ged})
+    {
+        EXPECT_EQ(probability_below_zero(dist, ve::dist::ShapeParameters<double>{.shape = 5.0}), 0.5);
+    }
+}
+
+struct SkewedCase
+{
+    Dist dist;
+    ve::dist::ShapeParameters<double> parameters;
+    bool negative_skew;
+};
+
+// The cases of the Densities tests.
+const std::array<SkewedCase, 10> kSkewedCases = {
+    SkewedCase{Dist::Sstd, {0.7, 5.0, 0.0}, true},  SkewedCase{Dist::Sstd, {1.4, 12.0, 0.0}, false},
+    SkewedCase{Dist::Sged, {0.8, 1.2, 0.0}, true},  SkewedCase{Dist::Sged, {1.3, 2.5, 0.0}, false},
+    SkewedCase{Dist::Nig, {-0.5, 0.8, 0.0}, true},  SkewedCase{Dist::Nig, {0.4, 3.0, 0.0}, false},
+    SkewedCase{Dist::Ghyp, {-0.3, 1.5, 1.0}, true}, SkewedCase{Dist::Ghyp, {0.6, 0.7, -2.5}, false},
+    SkewedCase{Dist::Jsu, {-0.8, 1.5, 0.0}, true},  SkewedCase{Dist::Jsu, {0.6, 3.0, 0.0}, false}};
+
+std::string case_label(const SkewedCase& c)
+{
+    return "dist " + std::to_string(static_cast<int>(c.dist)) + " (" + std::to_string(c.parameters.skew) +
+           ", " + std::to_string(c.parameters.shape) + ", " + std::to_string(c.parameters.ghlambda) + ")";
+}
+
+double reference_shock_moment(const SkewedCase& c, double eta1, double power)
+{
+    ve::dist::Density<double> density = ve::dist::make_density(c.dist, c.parameters);
+    auto integrand = [&](double z)
+    { return std::pow(std::abs(z) - eta1 * z, power) * std::exp(ve::dist::log_density(density, z)); };
+    return ve::testing::reference_integral(integrand, ve::dist::density_kink(density), 0.0);
+}
+
+double reference_probability_below_zero(const SkewedCase& c)
+{
+    ve::dist::Density<double> density = ve::dist::make_density(c.dist, c.parameters);
+    auto below = [&](double z)
+    {
+        if (z >= 0.0)
+        {
+            return 0.0;
+        }
+        return std::exp(ve::dist::log_density(density, z));
+    };
+    return ve::testing::reference_integral(below, ve::dist::density_kink(density), 0.0);
+}
+
+// E(z - c)^2 = 1 + c^2 holds for any standardized density.
+void expect_moments_match_reference(const SkewedCase& c)
+{
+    expect_relative(abs_moment(c.dist, c.parameters, 2.0), 1.0, 1e-10);
+    expect_relative(shifted_moment(c.dist, c.parameters, 0.0, 0.3, 2.0), 1.09, 1e-8);
+    for (double power : {0.8, 1.0, 1.5, 2.0})
+    {
+        for (double eta1 : {-0.5, 0.0, 0.7})
+        {
+            double expected = reference_shock_moment(c, eta1, power);
+            EXPECT_NEAR(asymmetric_moment(c.dist, c.parameters, eta1, power) / expected, 1.0, 1e-6)
+                << case_label(c) << ", power " << power << ", eta1 " << eta1;
+            if (eta1 == 0.0)
+            {
+                EXPECT_NEAR(abs_moment(c.dist, c.parameters, power) / expected, 1.0, 1e-6)
+                    << case_label(c) << ", power " << power;
+            }
+        }
+    }
+}
+
+TEST(Moments, SkewedMatchReferenceQuadrature)
+{
+    for (const SkewedCase& c : kSkewedCases)
+    {
+        expect_moments_match_reference(c);
+    }
+}
+
+// A negative skew (xi < 1, rho < 0, jsu nu < 0) puts less than half the mass below the mean 0.
+TEST(Moments, ProbabilityBelowZero)
+{
+    for (const SkewedCase& c : kSkewedCases)
+    {
+        double probability = probability_below_zero(c.dist, c.parameters);
+        EXPECT_NEAR(probability, reference_probability_below_zero(c), 1e-9) << case_label(c);
+        EXPECT_EQ(probability < 0.5, c.negative_skew) << case_label(c);
+        EXPECT_GT(probability, 0.0) << case_label(c);
+        EXPECT_LT(probability, 1.0) << case_label(c);
+    }
+    for (Dist dist : {Dist::Sstd, Dist::Sged})
+    {
+        for (double skew : {0.05, 20.0})
+        {
+            ve::dist::ShapeParameters<double> parameters{skew, 5.0, 0.0};
+            double probability = probability_below_zero(dist, parameters);
+            double abs_mean = abs_moment(dist, parameters, 1.0);
+            double kappa = asymmetric_moment(dist, parameters, 0.3, 1.5);
+            EXPECT_GT(probability, 0.0) << skew;
+            EXPECT_LT(probability, 1.0) << skew;
+            EXPECT_TRUE(std::isfinite(abs_mean) && abs_mean > 0.0) << skew;
+            EXPECT_TRUE(std::isfinite(kappa) && kappa > 0.0) << skew;
+        }
+    }
+}
+
+// The tail of the sstd is the tail of the t.
+TEST(Moments, SkewedStudentInfiniteAtOrAbovePower)
+{
+    double infinity = std::numeric_limits<double>::infinity();
+    ve::dist::ShapeParameters<double> parameters{0.8, 2.5, 0.0};
+    EXPECT_EQ(abs_moment(Dist::Sstd, parameters, 2.7), infinity);
+    EXPECT_EQ(asymmetric_moment(Dist::Sstd, parameters, 0.3, 2.7), infinity);
+    EXPECT_EQ(shifted_moment(Dist::Sstd, parameters, 0.3, 0.2, 2.7), infinity);
+    EXPECT_EQ(abs_moment(Dist::Sstd, parameters, 2.5), infinity);
+    EXPECT_TRUE(std::isfinite(abs_moment(Dist::Sstd, parameters, 2.4)));
+}
+
+// x = (skew, shape, ghlambda, eta1, eta2, power).
+template <class T>
+std::array<T, 4> skewed_functions(Dist dist, const std::array<T, 6>& x)
+{
+    ve::dist::ShapeParameters<T> parameters{x[0], x[1], x[2]};
+    return {abs_moment(dist, parameters, x[5]), asymmetric_moment(dist, parameters, x[3], x[5]),
+            shifted_moment(dist, parameters, x[3], x[4], x[5]), probability_below_zero(dist, parameters)};
+}
+
+double skewed_central_difference(Dist dist, std::array<double, 6> x, std::size_t i, std::size_t function)
+{
+    double step = 1e-6 * std::max(1.0, std::abs(x[i]));
+    double center = x[i];
+    x[i] = center + step;
+    double plus = skewed_functions(dist, x)[function];
+    x[i] = center - step;
+    double minus = skewed_functions(dist, x)[function];
+    return (plus - minus) / (2.0 * step);
+}
+
+void expect_skewed_gradients_match(Dist dist, const std::array<double, 6>& x)
+{
+    using Number = ve::ad::Dual<8>;
+    std::array<Number, 6> seeded{};
+    for (std::size_t i = 0; i < x.size(); ++i)
+    {
+        seeded[i] = ve::ad::variable<8>(x[i], i);
+    }
+    std::array<Number, 4> values = skewed_functions(dist, seeded);
+    for (std::size_t function = 0; function < values.size(); ++function)
+    {
+        for (std::size_t i = 0; i < x.size(); ++i)
+        {
+            double gradient = values[function].grad[i];
+            double expected = skewed_central_difference(dist, x, i, function);
+            EXPECT_NEAR(gradient, expected, 1e-6 * std::max(1.0, std::abs(gradient)))
+                << "dist " << static_cast<int>(dist) << ", eta2 " << x[4] << ", function " << function
+                << ", variable " << i;
+        }
+    }
+}
+
+struct DerivativeCase
+{
+    Dist dist;
+    ve::dist::ShapeParameters<double> parameters;
+};
+
+TEST(Moments, SkewedDerivativesMatchFiniteDifferences)
+{
+    for (DerivativeCase c :
+         {DerivativeCase{Dist::Sstd, {0.8, 6.0, 0.0}}, DerivativeCase{Dist::Nig, {-0.4, 1.2, 0.0}},
+          DerivativeCase{Dist::Ghyp, {0.3, 2.0, 1.5}}, DerivativeCase{Dist::Jsu, {0.5, 2.0, 0.0}}})
+    {
+        const ve::dist::ShapeParameters<double>& p = c.parameters;
+        expect_skewed_gradients_match(c.dist, {p.skew, p.shape, p.ghlambda, 0.3, 0.4, 1.5});
+        expect_skewed_gradients_match(c.dist, {p.skew, p.shape, p.ghlambda, -0.2, -0.3, 0.8});
     }
 }
 

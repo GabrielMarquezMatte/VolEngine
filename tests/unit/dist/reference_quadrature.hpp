@@ -2,6 +2,7 @@
 
 #include "dist/densities.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -115,6 +116,26 @@ RawMoments reference_moments(const Function& density, double kink)
     graded_moments(density, kink, kTrapezoidBound, moments);
     tail_moments(density, moments);
     return moments;
+}
+
+// int integrand(z) dz over the real line, split at two points where it is not smooth: the graded rule runs
+// out of each point, and the two meet halfway between them.
+template <class Function>
+double reference_integral(const Function& integrand, double first, double second)
+{
+    double low = std::min(first, second);
+    double high = std::max(first, second);
+    RawMoments moments{};
+    graded_moments(integrand, low, -kTrapezoidBound, moments);
+    graded_moments(integrand, high, kTrapezoidBound, moments);
+    tail_moments(integrand, moments);
+    if (high > low)
+    {
+        double middle = 0.5 * (low + high);
+        graded_moments(integrand, low, middle, moments);
+        graded_moments(integrand, high, middle, moments);
+    }
+    return moments[0];
 }
 
 }
