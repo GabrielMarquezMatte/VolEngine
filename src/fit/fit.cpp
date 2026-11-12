@@ -76,7 +76,7 @@ public:
 
     NegativeMeanLoglik(const fit::LikelihoodProblem& problem, const model::Standardization& standardization)
         : problem_(problem), standardization_(standardization), u_(problem.layout.count()), theta_(u_.size()),
-          residuals_(problem.r.size()), sigma2_(problem.r.size())
+          residuals_(problem.data.r.size()), sigma2_(problem.data.r.size())
     {
     }
 
@@ -84,14 +84,14 @@ public:
     {
         seed<N>(u, u_);
         model::to_natural<Number>(u_, theta_, problem_.layout, standardization_);
-        Number loglik = model::loglik<Number>(problem_.r, theta_, problem_.layout, problem_.var_init,
+        Number loglik = model::loglik<Number>(problem_.data, theta_, problem_.layout, problem_.var_init,
                                               {.residuals = residuals_, .sigma2 = sigma2_});
         if (!std::isfinite(loglik.value))
         {
             std::ranges::fill(grad, 0.0);
             return kInfinity;
         }
-        double count = static_cast<double>(problem_.r.size());
+        double count = static_cast<double>(problem_.data.r.size());
         for (std::size_t i = 0; i < grad.size(); ++i)
         {
             grad[i] = -loglik.grad[i] / count;
@@ -130,8 +130,8 @@ public:
     using Number = ad::Dual<N>;
 
     explicit LoglikGradient(const fit::LikelihoodProblem& problem)
-        : problem_(problem), seeds_(problem.layout.count()), residuals_(problem.r.size()),
-          sigma2_(problem.r.size())
+        : problem_(problem), seeds_(problem.layout.count()), residuals_(problem.data.r.size()),
+          sigma2_(problem.data.r.size())
     {
     }
 
@@ -142,7 +142,7 @@ public:
             return false;
         }
         seed<N>(theta, seeds_);
-        Number loglik = model::loglik<Number>(problem_.r, seeds_, problem_.layout, problem_.var_init,
+        Number loglik = model::loglik<Number>(problem_.data, seeds_, problem_.layout, problem_.var_init,
                                               {.residuals = residuals_, .sigma2 = sigma2_});
         std::copy_n(loglik.grad.begin(), theta.size(), grad.begin());
         return std::isfinite(loglik.value) && all_finite(grad);
@@ -160,7 +160,7 @@ double loglik_with_scores_with(const fit::LikelihoodProblem& problem, std::span<
                                const fit::LoglikSeries& out)
 {
     using Number = ad::Dual<N>;
-    std::size_t count = problem.r.size();
+    std::size_t count = problem.data.r.size();
     std::size_t k = theta.size();
     std::vector<Number> seeds(k);
     std::vector<Number> terms(count);
@@ -168,7 +168,7 @@ double loglik_with_scores_with(const fit::LikelihoodProblem& problem, std::span<
     std::vector<Number> sigma2(count);
     seed<N>(theta, seeds);
     Number loglik =
-        model::loglik<Number>(problem.r, seeds, problem.layout, problem.var_init, {terms, residuals, sigma2});
+        model::loglik<Number>(problem.data, seeds, problem.layout, problem.var_init, {terms, residuals, sigma2});
     for (std::size_t t = 0; t < count; ++t)
     {
         out.residuals[t] = residuals[t].value;
@@ -238,9 +238,10 @@ void fill_series(FitResult& result, std::span<const double> r, std::vector<doubl
     result.residuals = std::move(residuals);
 }
 
-bool fill_at_estimate(FitResult& result, const fit::LikelihoodProblem& problem, double series_scale)
+bool fill_at_estimate(FitResult& result, const fit::LikelihoodProblem& problem,
+                      const model::Standardization& standardization)
 {
-    std::span<const double> r = problem.r;
+    std::span<const double> r = problem.data.r;
     std::vector<double> residuals(r.size());
     std::vector<double> sigma2(r.size());
     std::vector<double> scores(r.size() * result.estimate.size());
@@ -254,7 +255,7 @@ bool fill_at_estimate(FitResult& result, const fit::LikelihoodProblem& problem, 
     if (problem.layout.variance_targeting)
     {
         result.estimate[problem.layout.omega()] =
-            model::targeted_omega<double>(result.residuals, result.estimate, problem.layout);
+            model::targeted_omega_at(problem.data, result.estimate, problem.layout);
     }
     fit::StandardErrors errors = with_dual_width(
         problem.layout.count(),
@@ -263,7 +264,7 @@ bool fill_at_estimate(FitResult& result, const fit::LikelihoodProblem& problem, 
             LoglikGradient<N> loglik_gradient(problem);
             fit::GradientFn gradient = [&loglik_gradient](std::span<const double> theta, std::span<double> grad)
             { return loglik_gradient(theta, grad); };
-            return fit::standard_errors(gradient, result.estimate, scores, problem.layout, series_scale);
+            return fit::standard_errors(gradient, result.estimate, scores, problem.layout, standardization);
         });
     result.se_hessian = std::move(errors.hessian);
     result.se_robust = std::move(errors.robust);
@@ -297,25 +298,25 @@ optim::Stop estimate_parameters(const fit::LikelihoodProblem& problem,
 
 // Fills `result`, which arrives as empty_result, and returns its status. On every status other than a
 // finished optimization the estimate stays NaN.
-FitStatus estimate(std::span<const double> r, FitResult& result)
+FitStatus estimate(const model::Data& data, FitResult& result)
 {
-    fit::LikelihoodProblem problem{r, model::layout_of(result.spec), result.config.var_init};
-    if (has_insufficient_data(r, result.spec, problem.layout))
+    fit::LikelihoodProblem problem{data, model::layout_of(result.spec), result.config.var_init};
+    if (has_insufficient_data(data.r, result.spec, problem.layout))
     {
         return FitStatus::InsufficientData;
     }
-    std::vector<double> theta = model::start_values(r, problem.layout);
-    if (!has_valid_start(r, theta, problem.layout))
+    std::vector<double> theta = model::start_values(data, problem.layout);
+    if (!has_valid_start(data.r, theta, problem.layout))
     {
         return FitStatus::Failed;
     }
-    model::Standardization standardization = model::standardization_of(r);
+    model::Standardization standardization = model::standardization_of(data);
     optim::Stop stop = estimate_parameters(problem, standardization, std::move(theta), result);
     if (stop == optim::Stop::NonFinite)
     {
         return FitStatus::Failed;
     }
-    if (!fill_at_estimate(result, problem, standardization.scale))
+    if (!fill_at_estimate(result, problem, standardization))
     {
         std::ranges::fill(result.estimate, kNaN);
         return FitStatus::Failed;
@@ -325,11 +326,16 @@ FitStatus estimate(std::span<const double> r, FitResult& result)
 
 }
 
+FitResult fit_one(const model::Data& data, const Spec& spec, const FitConfig& config)
+{
+    FitResult result = empty_result(spec, config, data.r.size(), FitStatus::Failed);
+    result.status = estimate(data, result);
+    return result;
+}
+
 FitResult fit_one(std::span<const double> r, const Spec& spec, const FitConfig& config)
 {
-    FitResult result = empty_result(spec, config, r.size(), FitStatus::Failed);
-    result.status = estimate(r, result);
-    return result;
+    return fit_one(model::Data{r}, spec, config);
 }
 
 }
@@ -348,8 +354,8 @@ double loglik_with_scores(const LikelihoodProblem& problem, std::span<const doub
                           const LoglikSeries& out)
 {
     std::size_t k = problem.layout.count();
-    assert(theta.size() == k && out.scores.size() == problem.r.size() * k);
-    assert(out.residuals.size() == problem.r.size() && out.sigma2.size() == problem.r.size());
+    assert(theta.size() == k && out.scores.size() == problem.data.r.size() * k);
+    assert(out.residuals.size() == problem.data.r.size() && out.sigma2.size() == problem.data.r.size());
     return with_dual_width(k,
                            [&]<std::size_t N>()
                            {

@@ -43,4 +43,8 @@ template <class T>
 T targeted_omega(std::span<const T> residuals, std::span<const T> theta, const Layout& layout,
                  const RegressorMatrix& variance = {});
 
+// targeted_omega<double> from the residuals the likelihood itself targets: those of the mean without the
+// ARCH-in-mean term (the e^0 of the presample), with the variance regressors of data. theta[omega] is not read.
+double targeted_omega_at(const Data& data, std::span<const double> theta, const Layout& layout);
+
 }

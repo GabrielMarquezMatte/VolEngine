@@ -27,7 +27,7 @@ struct Problem
 {
     const GradientFn& gradient;
     const model::Layout& layout;
-    double series_scale;
+    const model::Standardization& standardization;
 };
 
 bool gradient_at(const Problem& problem, std::span<const double> theta, std::span<double> grad)
@@ -60,7 +60,7 @@ bool difference_column(const Problem& problem, std::span<const double> theta, st
     return true;
 }
 
-// Steps proportional to each parameter's own scale keep the Hessian equivariant to the units of r. Parameters
+// Steps proportional to each parameter's own scale keep the Hessian equivariant to the units of r and X. Parameters
 // that may sit at ~0 get an absolute floor.
 double initial_step(const Problem& problem, std::span<const double> theta, std::size_t index)
 {
@@ -68,7 +68,9 @@ double initial_step(const Problem& problem, std::span<const double> theta, std::
     switch (problem.layout.kind(index))
     {
         case model::ParameterKind::Location:
-            return kRelativeStep * std::max(std::abs(value), problem.series_scale);
+            return kRelativeStep *
+                   std::max(std::abs(value),
+                            model::natural_scale(problem.layout, problem.standardization, theta, index));
         case model::ParameterKind::Real:
             return kRelativeStep * std::max(std::abs(value), kRealStepFloor);
         case model::ParameterKind::Positive:
@@ -228,10 +230,10 @@ StandardErrors from_hessian(const Matrix& hessian, const Matrix& middle, std::si
 
 StandardErrors standard_errors(const GradientFn& gradient, std::span<const double> theta,
                                std::span<const double> scores, const model::Layout& layout,
-                               double series_scale)
+                               const model::Standardization& standardization)
 {
     std::size_t k = theta.size();
-    Problem problem{gradient, layout, series_scale};
+    Problem problem{gradient, layout, standardization};
     Indices interior = interior_indices(layout, theta);
     std::optional<Matrix> hessian = numerical_hessian(problem, theta, interior);
     StandardErrors errors = unavailable(k);
