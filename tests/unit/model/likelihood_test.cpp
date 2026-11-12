@@ -682,7 +682,10 @@ protected:
 
 // Richardson extrapolation of central differences at step and 2 step, accurate to O(step^4). A small omega curves
 // the likelihood enough to put one central difference past the tolerance; a smaller step meets the rounding noise
-// of the likelihood, and a larger one crosses the kinks of |z - eta2| in the power-1 models.
+// of the likelihood, and a larger one crosses the kinks of |z - eta2| in the power-1 models. The ghyp lambda
+// enters only as a Bessel order, where log K is smooth but the rounding of Boost's K, which computes in double
+// where long double is double (Apple Silicon, MSVC), reaches 1e-6 of the gradient at that step: it takes the
+// step of 1e-3 that the engine takes.
 TEST_P(LikelihoodGrid, GradientMatchesFiniteDifferences)
 {
     std::vector<Dual<32>> seeds = seeded<32>(theta);
@@ -690,7 +693,8 @@ TEST_P(LikelihoodGrid, GradientMatchesFiniteDifferences)
     ASSERT_TRUE(std::isfinite(ll.value));
     for (std::size_t i = 0; i < theta.size(); ++i)
     {
-        double step = 3e-6 * std::max(1.0, std::abs(theta[i]));
+        bool bessel_order = layout.has_ghlambda() && i == layout.ghlambda();
+        double step = (bessel_order ? 1e-3 : 3e-6) * std::max(1.0, std::abs(theta[i]));
         double fine = central_difference(i, step);
         double coarse = central_difference(i, 2.0 * step);
         double extrapolated = (4.0 * fine - coarse) / 3.0;
