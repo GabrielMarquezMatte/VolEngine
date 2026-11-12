@@ -25,6 +25,8 @@ constexpr double kInitialJohnsonShape = 2.0;
 constexpr double kInitialGhLambda = -0.5;
 constexpr double kInitialPower = 2.0;
 constexpr double kInitialRho = 0.98;
+// rugarch starts at a Hurst estimate less 0.5 (.absHmom); a fixed point inside (1e-8, 0.5) is enough here.
+constexpr double kInitialArfima = 0.25;
 constexpr double kInitialPhi = 0.03;
 constexpr double kRescaleMargin = 0.95;
 
@@ -467,6 +469,10 @@ std::vector<double> start_values(const Data& data, const Layout& layout)
         theta[layout.mu()] = mean;
     }
     set_mean_start(theta, data, layout);
+    if (layout.has_arfima())
+    {
+        theta[layout.arfima_index()] = kInitialArfima;
+    }
     VarianceStart start = variance_start(layout.model);
     fill_block(theta, layout.alpha_begin(), layout.arch, start.alpha / layout.arch);
     fill_block(theta, layout.beta_begin(), layout.garch, kInitialGarch / layout.garch);

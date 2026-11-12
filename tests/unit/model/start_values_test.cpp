@@ -478,4 +478,20 @@ TEST(StartValues, FixedRegressorLeavesTheLeastSquaresToTheOthers)
     EXPECT_TRUE(is_valid(theta, layout));
 }
 
+TEST(StartValues, ArfimaStart)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(9, 150);
+    Layout layout = ve::model::layout_of({.ar = 1, .arfima = true});
+    std::vector<double> theta = start_values(r, layout);
+    EXPECT_EQ(theta[layout.arfima_index()], 0.25);
+    EXPECT_TRUE(is_valid(theta, layout));
+    std::vector<double> plain = start_values(r, ve::model::layout_of({.ar = 1}));
+    theta.erase(theta.begin() + static_cast<std::ptrdiff_t>(layout.arfima_index()));
+    EXPECT_EQ(theta, plain);
+    Layout started = ve::model::layout_of({.ar = 1, .start = {{"arfima", 0.1}}, .arfima = true});
+    EXPECT_EQ(start_values(r, started)[started.arfima_index()], 0.1);
+    Layout fixed = ve::model::layout_of({.ar = 1, .fixed = {{"arfima", 0.2}}, .arfima = true});
+    EXPECT_EQ(start_values(r, fixed)[fixed.arfima_index()], 0.2);
+}
+
 }

@@ -31,6 +31,10 @@ T logistic(const T& x)
     return exponential / (1.0 + exponential);
 }
 
+// rugarch bounds the ARFIMA d to [1e-8, 0.5]; the map reaches the open interval.
+constexpr double kArfimaFloor = 1e-8;
+constexpr double kArfimaCeiling = 0.5;
+
 double log_ratio(double numerator, double denominator)
 {
     constexpr double kFloor = std::numeric_limits<double>::min();
@@ -196,8 +200,13 @@ void mean_to_natural(std::span<const T> u, std::span<T> theta, const Layout& lay
         theta[layout.mu()] = standardization.location + standardization.scale * u[layout.mu()];
     }
     std::copy(u.begin() + static_cast<std::ptrdiff_t>(layout.ar_begin()),
-              u.begin() + static_cast<std::ptrdiff_t>(layout.archm_index()),
+              u.begin() + static_cast<std::ptrdiff_t>(layout.arfima_index()),
               theta.begin() + static_cast<std::ptrdiff_t>(layout.ar_begin()));
+    if (layout.has_arfima())
+    {
+        std::size_t index = layout.arfima_index();
+        theta[index] = kArfimaFloor + (kArfimaCeiling - kArfimaFloor) * logistic(u[index]);
+    }
 }
 
 // Needs the natural power, so it follows write_fixed.
@@ -553,6 +562,11 @@ bool weights_valid(std::span<const double> theta, const Layout& layout)
     return sum < kPersistenceCeiling;
 }
 
+bool arfima_valid(double d)
+{
+    return d > kArfimaFloor && d < kArfimaCeiling;
+}
+
 bool csgarch_valid(std::span<const double> theta, const Layout& layout)
 {
     double persistence = model::persistence<double>(theta, layout);
@@ -694,8 +708,13 @@ void to_unconstrained(std::span<const double> theta, std::span<double> u, const 
         u[layout.mu()] = (mu - standardization.location) / scale;
     }
     std::copy(theta.begin() + static_cast<std::ptrdiff_t>(layout.ar_begin()),
-              theta.begin() + static_cast<std::ptrdiff_t>(layout.archm_index()),
+              theta.begin() + static_cast<std::ptrdiff_t>(layout.arfima_index()),
               u.begin() + static_cast<std::ptrdiff_t>(layout.ar_begin()));
+    if (layout.has_arfima())
+    {
+        double d = theta[layout.arfima_index()];
+        u[layout.arfima_index()] = log_ratio(d - kArfimaFloor, kArfimaCeiling - d);
+    }
     regressors_to_unconstrained(theta, u, layout, standardization);
     u[layout.omega()] = omega_to_unconstrained(theta, layout, scale);
     copy_egarch_reals<double>(theta, u, layout);
@@ -761,6 +780,10 @@ bool is_valid(std::span<const double> theta, const Layout& layout)
     {
         return false;
     }
+    if (layout.has_arfima() && !arfima_valid(theta[layout.arfima_index()]))
+    {
+        return false;
+    }
     bool positive_omega = layout.model != Model::EGarch && !layout.is_derived(layout.omega());
     if (positive_omega && !(theta[layout.omega()] > 0.0))
     {
@@ -779,6 +802,10 @@ bool on_boundary(const Layout& layout, std::span<const double> theta, std::size_
     if (layout.has_derived() && index == layout.derived())
     {
         return true;
+    }
+    if (layout.has_arfima() && index == layout.arfima_index())
+    {
+        return value - kArfimaFloor < kBoundary || kArfimaCeiling - value < kBoundary;
     }
     if (index >= layout.skew())
     {
