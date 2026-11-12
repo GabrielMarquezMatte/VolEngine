@@ -17,6 +17,19 @@ library whose ABI version differs).
 
 ### Added
 
+- Skewed innovations: skewed Student-t (`sstd`), skewed GED (`sged`), normal inverse Gaussian (`nig`),
+  generalized hyperbolic (`ghyp`) and Johnson SU (`jsu`), for every model and ARMA mean. C API: `VE_DIST_SSTD`,
+  `VE_DIST_SGED`, `VE_DIST_NIG`, `VE_DIST_GHYP` and `VE_DIST_JSU`, values 3 to 7. Python: `Spec(dist=)` with the
+  new names; the coefficient table gains `skew` and, for `ghyp`, `ghlambda`.
+- Dependency on the headers of Boost.Math (BSL-1.0, fetched by CMake), used only in `src/dist/bessel.cpp`.
+- `ad::Dual<42>`: the widest layout now holds 42 parameters (fGARCH-ALLGARCH, ARMA(6,6), orders (6,6), `ghyp`);
+  the `Dual` buckets are 8, 16, 32 and 42.
+- Validation of the skewed distributions against `rugarch` and `arch`. Three ALLGARCH cases with an asymmetric
+  shock stay visible as strict xfails in the oracle suite (`KNOWN_DIVERGENCES`): the optimizer stops at a point
+  with a lower log-likelihood than `rugarch`'s ([docs/guide/validation.md](docs/guide/validation.md)).
+- Benchmarks for the skewed distributions (`BM_Loglik`, `BM_FitOne`, `BM_LogBesselK`, `BM_TccGridFull`) and an
+  `sGARCH(1,1)` `sstd` row against `arch`; they are not measured yet
+  ([docs/performance/benchmarks.md](docs/performance/benchmarks.md)).
 - GARCH variants next to sGARCH: eGARCH, gjrGARCH, apARCH, iGARCH, csGARCH and fGARCH with its eight submodels
   (garch, tgarch, avgarch, ngarch, nagarch, aparch, gjrgarch, allgarch), each with the three distributions and
   an ARMA mean. C API: `VE_MODEL_*` constants 0 to 13. Python: `Spec(model=, submodel=)`.

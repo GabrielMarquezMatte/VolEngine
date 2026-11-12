@@ -1,3 +1,4 @@
+#include "dist/bessel.hpp"
 #include "fit/fit.hpp"
 #include "model/layout.hpp"
 #include "model/likelihood.hpp"
@@ -89,6 +90,20 @@ std::vector<NamedSpec> variant_specs()
     };
 }
 
+// The skewed series of the unit tests, each fitted under its own distribution; the ghyp case fits the nig
+// series, since the C++ helper does not simulate ghyp.
+std::vector<NamedSpec> skewed_specs()
+{
+    std::vector<NamedSpec> specs;
+    for (const ve::testing::SkewedFit& fit : ve::testing::skewed_fits())
+    {
+        const ve::testing::VariantProcess process = ve::testing::skewed_processes()[fit.series];
+        const std::string name = fit.dist == ve::Dist::Ghyp ? "sgarch11_ghyp" : fit.name;
+        specs.push_back({name, variant_spec(process.model, fit.dist), process});
+    }
+    return specs;
+}
+
 const std::vector<NamedSpec>& named_specs()
 {
     static const std::vector<NamedSpec> specs = [] {
@@ -101,6 +116,10 @@ const std::vector<NamedSpec>& named_specs()
         for (NamedSpec& variant : variant_specs())
         {
             all.push_back(std::move(variant));
+        }
+        for (NamedSpec& skewed : skewed_specs())
+        {
+            all.push_back(std::move(skewed));
         }
         return all;
     }();
@@ -139,9 +158,17 @@ void apply_process(std::vector<double>& theta, const ve::model::Layout& layout,
     {
         theta[layout.power()] = process.power;
     }
+    if (layout.has_skew())
+    {
+        theta[layout.skew()] = process.skew;
+    }
     if (layout.has_shape())
     {
         theta[layout.shape()] = process.shape;
+    }
+    if (layout.has_ghlambda())
+    {
+        theta[layout.ghlambda()] = -0.5;
     }
 }
 
@@ -576,6 +603,181 @@ void run_all_models(benchmark::State& state, const ve::Spec& generator)
     }
 }
 
+constexpr std::size_t kDistCount = 8;
+constexpr std::array<const char*, kDistCount> kDistNames{"norm", "std", "ged", "sstd", "sged", "nig", "ghyp", "jsu"};
+
+using DistCounts = std::array<StatusCounts, kDistCount>;
+
+// Every model over the orders, ARMA and all eight distributions: 14 x 8 x 2 x 9 = 2016 specs.
+std::vector<ve::Spec> full_grid()
+{
+    std::vector<ve::Spec> grid;
+    for (std::size_t model = 0; model < kModelCount; ++model)
+    {
+        for (std::size_t dist = 0; dist < kDistCount; ++dist)
+        {
+            for (const int arma : {0, 1})
+            {
+                const std::size_t begin = grid.size();
+                append_orders(grid, static_cast<ve::Dist>(dist), arma);
+                for (std::size_t i = begin; i < grid.size(); ++i)
+                {
+                    grid[i].model = static_cast<ve::Model>(model);
+                }
+            }
+        }
+    }
+    return grid;
+}
+
+DistCounts counts_by_dist(const std::vector<ve::Spec>& specs, const std::vector<int32_t>& statuses)
+{
+    DistCounts by_dist{};
+    const std::size_t per_spec = statuses.size() / specs.size();
+    for (std::size_t job = 0; job < statuses.size(); ++job)
+    {
+        by_dist[static_cast<std::size_t>(specs[job / per_spec].dist)].add(statuses[job]);
+    }
+    return by_dist;
+}
+
+std::string dists_over_limit(const DistCounts& by_dist)
+{
+    std::string over;
+    for (std::size_t dist = 0; dist < kDistCount; ++dist)
+    {
+        const StatusCounts& counts = by_dist[dist];
+        const std::size_t fits = counts.converged + counts.max_iter + counts.other;
+        if (static_cast<double>(counts.other) > kMaxFailureShare * static_cast<double>(fits))
+        {
+            over += std::string(over.empty() ? "" : ", ") + kDistNames[dist];
+        }
+    }
+    return over;
+}
+
+void report_dists(benchmark::State& state, const DistCounts& by_dist)
+{
+    StatusCounts total;
+    for (std::size_t dist = 0; dist < kDistCount; ++dist)
+    {
+        const StatusCounts& counts = by_dist[dist];
+        const std::string name = kDistNames[dist];
+        state.counters[name + "_ok"] = static_cast<double>(counts.converged + counts.max_iter);
+        state.counters[name + "_other"] = static_cast<double>(counts.other);
+        total.converged += counts.converged;
+        total.max_iter += counts.max_iter;
+        total.other += counts.other;
+    }
+    report_status(state, total);
+}
+
+// The whole univariate TCC workload in one call: 2016 specs x 20 series = 40320 fits. Fails loudly if a
+// distribution has more than 5% of its fits outside CONVERGED and MAX_ITER.
+void run_full_grid(benchmark::State& state, const ve::Spec& generator)
+{
+    try
+    {
+        const std::vector<ve::Spec> specs = full_grid();
+        const std::vector<double> data =
+            ve::bench::simulate_panel(ve::bench::simulated_model_for(generator), kObservations, kBatchSeries);
+        BatchWorkload workload(specs, data, kBatchSeries, 0);
+        if (workload.jobs() == 0)
+        {
+            state.SkipWithError("the grid produced no jobs");
+            return;
+        }
+        DistCounts by_dist{};
+        for (auto _ : state)
+        {
+            by_dist = counts_by_dist(specs, workload.run_statuses());
+        }
+        const std::string over = dists_over_limit(by_dist);
+        if (!over.empty())
+        {
+            state.SkipWithError(("more than 5% of the fits ended neither CONVERGED nor MAX_ITER: " + over).c_str());
+            return;
+        }
+        report_dists(state, by_dist);
+        state.counters["jobs"] = static_cast<double>(workload.jobs());
+        state.counters["fits_per_s"] =
+            benchmark::Counter(static_cast<double>(workload.jobs() * state.iterations()), benchmark::Counter::kIsRate);
+    }
+    catch (const std::exception& error)
+    {
+        state.SkipWithError(error.what());
+    }
+}
+
+// The arguments of the Bessel calls of a nig fit at the true parameters: alpha * sqrt(delta^2 + (z - mu)^2) for
+// z the nig series standardised by its sample mean and standard deviation.
+std::vector<double> nig_bessel_arguments()
+{
+    const ve::testing::VariantProcess process = ve::testing::skewed_processes()[3];
+    const std::vector<double> r = ve::testing::simulate_variant(process, 1, kObservations);
+    const double count = static_cast<double>(r.size());
+    double mean = 0.0;
+    for (const double x : r)
+    {
+        mean += x / count;
+    }
+    double variance = 0.0;
+    for (const double x : r)
+    {
+        variance += (x - mean) * (x - mean) / count;
+    }
+    const double rho = process.skew;
+    const double zeta = process.shape;
+    const double lambda = -0.5;
+    const double k0 = ve::dist::log_bessel_k(lambda, zeta);
+    const double ratio = std::exp(ve::dist::log_bessel_k(lambda + 1.0, zeta) - k0);
+    const double quotient = std::exp(ve::dist::log_bessel_k(lambda + 2.0, zeta) - k0);
+    const double delta = 1.0 / std::sqrt(ratio / zeta + rho * rho / (1.0 - rho * rho) * (quotient - ratio * ratio));
+    const double alpha = zeta / (delta * std::sqrt(1.0 - rho * rho));
+    const double mu = -rho * alpha * delta * delta * ratio / zeta;
+    std::vector<double> arguments;
+    for (const double x : r)
+    {
+        const double z = (x - mean) / std::sqrt(variance);
+        arguments.push_back(alpha * std::sqrt(delta * delta + (z - mu) * (z - mu)));
+    }
+    return arguments;
+}
+
+using BesselDual = ve::ad::Dual<8>;
+
+// fixed_order: the double-order overload at order -1 (nig, K_1). free_order: the two-Dual overload at the ghyp
+// order lambda - 1/2 with lambda = 1.
+void run_log_bessel_k(benchmark::State& state, bool free_order)
+{
+    const std::vector<double> arguments = nig_bessel_arguments();
+    const double order = free_order ? 0.5 : -1.0;
+    const auto evaluate = [&] {
+        double sum = 0.0;
+        for (const double x : arguments)
+        {
+            const BesselDual argument = ve::ad::variable<8>(x, 1);
+            const BesselDual value = free_order
+                                         ? ve::dist::log_bessel_k(ve::ad::variable<8>(order, 0), argument)
+                                         : ve::dist::log_bessel_k(order, argument);
+            sum += ve::ad::value_of(value);
+        }
+        return sum;
+    };
+    if (!std::isfinite(evaluate()))
+    {
+        state.SkipWithError("log K is not finite at the reference arguments");
+        return;
+    }
+    for (auto _ : state)
+    {
+        benchmark::DoNotOptimize(evaluate());
+    }
+    state.counters["arguments"] = static_cast<double>(arguments.size());
+    state.counters["calls_per_s"] = benchmark::Counter(
+        static_cast<double>(arguments.size() * state.iterations()), benchmark::Counter::kIsRate);
+}
+
 int hardware_threads()
 {
     return static_cast<int>(std::max(1U, std::thread::hardware_concurrency()));
@@ -624,6 +826,12 @@ void register_all()
         ->Unit(benchmark::kSecond)
         ->UseRealTime()
         ->Iterations(1);
+    benchmark::RegisterBenchmark("BM_TccGridFull/threads:hw", run_full_grid, heavy_tails)
+        ->Unit(benchmark::kSecond)
+        ->UseRealTime()
+        ->Iterations(1);
+    benchmark::RegisterBenchmark("BM_LogBesselK/fixed_order", run_log_bessel_k, false);
+    benchmark::RegisterBenchmark("BM_LogBesselK/free_order", run_log_bessel_k, true);
 }
 
 }

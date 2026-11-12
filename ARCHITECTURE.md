@@ -52,10 +52,12 @@ like any other wrapper would be.
 | `src/garch/presample.hpp` | The pre-sample rule shared by the recursions: a state held at a value up to a time, and the expected value of a term before the first observation |
 | `src/garch/sgarch.hpp`, `egarch.hpp`, `gjrgarch.hpp`, `csgarch.hpp` | The variance recursions of sGARCH (also iGARCH), eGARCH, gjrGARCH and csGARCH, templates over the scalar type |
 | `src/garch/power_garch.hpp` | The recursion in sigma^power shared by apARCH and the eight fGARCH submodels |
-| `src/dist/densities.hpp` | Log-densities of the standardized normal, Student-t and GED, templates over the scalar type |
-| `src/dist/moments.hpp`, `moments.cpp` | Expected absolute shock and the fGARCH news moments (Gauss-Legendre quadrature for the shifted ALLGARCH moment) |
+| `src/dist/densities.hpp` | `Density<T>`, a `std::variant` of the log-density families, and `make_density`, `log_density`, `density_kink`: the one entry point the likelihood uses |
+| `src/dist/symmetric.hpp`, `skewed.hpp`, `hyperbolic.hpp`, `johnson.hpp` | The families of the variant: norm, std and ged; sstd and sged (Fernandez-Steel); nig and ghyp; jsu. Templates over the scalar type |
+| `src/dist/bessel.hpp`, `bessel.cpp` | `log_bessel_k` and its derivatives. Boost.Math is included only in `bessel.cpp`, so no other file sees it |
+| `src/dist/moments.hpp`, `moments.cpp` | Expected absolute shock, P(z < 0) and the fGARCH news moments (Gauss-Legendre quadrature for the shifted and the asymmetric ones) |
 | `src/model/layout.hpp`, `layout.cpp` | `Layout`: parameter blocks (gamma, eta1, eta2, power), offsets, count, `ParameterKind` of each parameter and rugarch names of a `Spec` |
-| `src/model/likelihood.hpp`, `likelihood.cpp` | `loglik<T>`: the log-likelihood with its per-observation terms, residuals and variances, and the backcast; dispatches by model to the recursion; instantiated for `double` and `Dual<8>`, `Dual<16>`, `Dual<32>`, `Dual<40>` |
+| `src/model/likelihood.hpp`, `likelihood.cpp` | `loglik<T>`: the log-likelihood with its per-observation terms, residuals and variances, and the backcast; dispatches by model to the recursion; instantiated for `double` and `Dual<8>`, `Dual<16>`, `Dual<32>`, `Dual<42>` |
 | `src/model/parameter_map.*`, `start_values.*` | Layout-driven map between the unconstrained and natural parameter spaces, a template over the scalar type; validity check, start values, and `on_boundary` (parameters left out of the standard-error blocks) |
 | `src/optim/lbfgs.hpp` (+ `curvature_memory.hpp`, `line_search.hpp`, `vector_math.hpp`) | L-BFGS minimizer, a template over the objective |
 | `src/fit/fit.hpp`, `fit.cpp` | `fit_one`: one series, one spec |
@@ -128,7 +130,8 @@ into statuses.
 
 The log-likelihood is written once, as a template over the scalar type (`src/model/likelihood.cpp`, with
 `src/mean`, `src/garch` and `src/dist` as its pieces). `fit_one` instantiates it with `double` for values and
-with `ad::Dual<N>` (N = 8, 16, 32 or 40, the narrowest that holds k parameters; 40 holds the widest layout, orders 6 with every block) for gradients: the unconstrained
+with `ad::Dual<N>` (N = 8, 16, 32 or 42, the narrowest that holds k parameters; 42 holds the widest layout, orders 6 with every block
+and `ghyp`) for gradients: the unconstrained
 parameters are seeded as dual variables, `model::parameter_map` maps them to the natural parameters inside the same
 computation, and the derivative of the objective comes out of one evaluation. `model::loglik` picks the variance recursion by `Layout::model`. A new model or
 distribution adds a template function, a `Layout` entry and its `ParameterKind`s; the driver and the optimizer do not

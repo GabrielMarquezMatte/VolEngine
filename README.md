@@ -10,8 +10,9 @@ not depend on the thread count. Default conventions follow R's `rugarch`; those 
 Version 0.1.0 (pre-release). Supported models, each with orders 1 to 6: sGARCH, eGARCH, gjrGARCH, apARCH, iGARCH,
 csGARCH and fGARCH with its eight submodels (garch, tgarch, avgarch, ngarch, nagarch, aparch, gjrgarch, allgarch).
 Every model takes an ARMA(m,n) conditional mean (orders 0 to 6, with or without a constant) and normal (`norm`),
-Student-t (`std`) or GED (`ged`) innovations, with Hessian and robust standard errors and the usual information
-criteria. More features come in later releases.
+Student-t (`std`) or GED (`ged`) innovations, or the skewed ones: skewed Student-t (`sstd`), skewed GED (`sged`),
+normal inverse Gaussian (`nig`), generalized hyperbolic (`ghyp`) and Johnson SU (`jsu`), with Hessian and robust
+standard errors and the usual information criteria. More features come in later releases.
 Until 1.0 the C ABI may change between releases. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Python example
@@ -39,6 +40,14 @@ fit = ctx.fit(spec, returns)
 print(fit.coef("robust"))         # mu, ar1, ma1, omega, alpha1, alpha2, beta1, shape
 ```
 
+A skewed distribution adds a `skew` coefficient (and `ghlambda` for `ghyp`) after `shape`:
+
+```python
+spec = ve.Spec(model="gjrgarch", dist="sstd")   # gjrGARCH(1,1) with skewed Student-t innovations
+fit = ctx.fit(spec, returns)
+print(fit.coef("robust"))         # mu, omega, alpha1, beta1, gamma1, skew, shape
+```
+
 The model is part of the spec too; fGARCH needs its submodel:
 
 ```python
@@ -53,8 +62,8 @@ different lengths, and `options=ve.FitOptions(var_init="backcast")` for the `arc
 ## Build
 
 Needs CMake 3.28+ and a C++23 compiler (GCC 15+, a recent MSVC or Clang); the presets use Ninja, except
-`msvc-release` (Visual Studio) and `native-release` (the default generator). GoogleTest and BS::thread_pool are
-fetched by CMake.
+`msvc-release` (Visual Studio) and `native-release` (the default generator). GoogleTest, BS::thread_pool and the
+headers of Boost.Math (modified Bessel functions for `nig` and `ghyp`) are fetched by CMake.
 
 ```
 cmake --preset gcc-release
