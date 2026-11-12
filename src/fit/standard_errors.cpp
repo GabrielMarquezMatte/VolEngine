@@ -99,7 +99,7 @@ Indices interior_indices(const model::Layout& layout, std::span<const double> th
     Indices interior;
     for (std::size_t i = 0; i < theta.size(); ++i)
     {
-        if (!model::on_boundary(layout, theta, i))
+        if (layout.is_estimated(i) && !model::on_boundary(layout, theta, i))
         {
             interior.push_back(i);
         }

@@ -251,6 +251,11 @@ bool fill_at_estimate(FitResult& result, const fit::LikelihoodProblem& problem, 
     }
     result.loglik = loglik;
     fill_series(result, r, std::move(residuals), sigma2);
+    if (problem.layout.variance_targeting)
+    {
+        result.estimate[problem.layout.omega()] =
+            model::targeted_omega<double>(result.residuals, result.estimate, problem.layout);
+    }
     fit::StandardErrors errors = with_dual_width(
         problem.layout.count(),
         [&]<std::size_t N>()
@@ -265,12 +270,36 @@ bool fill_at_estimate(FitResult& result, const fit::LikelihoodProblem& problem, 
     return true;
 }
 
+// Writes the estimate of the free parameters into result.estimate, starting from `theta`. With nothing to
+// estimate the optimizer does not run and the model is evaluated at `theta`.
+optim::Stop estimate_parameters(const fit::LikelihoodProblem& problem,
+                                const model::Standardization& standardization, std::vector<double> theta,
+                                FitResult& result)
+{
+    if (problem.layout.estimated_count() == 0)
+    {
+        result.estimate = std::move(theta);
+        return optim::Stop::Converged;
+    }
+    std::size_t k = problem.layout.count();
+    std::vector<double> u(k);
+    model::to_unconstrained(theta, u, problem.layout, standardization);
+    optim::LbfgsResult outcome = with_dual_width(
+        k, [&]<std::size_t N>() { return minimize<N>(problem, standardization, result.config, u); });
+    if (outcome.stop == optim::Stop::NonFinite)
+    {
+        return outcome.stop;
+    }
+    result.estimate = std::move(theta);
+    model::to_natural<double>(u, result.estimate, problem.layout, standardization);
+    return outcome.stop;
+}
+
 // Fills `result`, which arrives as empty_result, and returns its status. On every status other than a
 // finished optimization the estimate stays NaN.
 FitStatus estimate(std::span<const double> r, FitResult& result)
 {
     fit::LikelihoodProblem problem{r, model::layout_of(result.spec), result.config.var_init};
-    std::size_t k = problem.layout.count();
     if (has_insufficient_data(r, result.spec, problem.layout))
     {
         return FitStatus::InsufficientData;
@@ -281,21 +310,17 @@ FitStatus estimate(std::span<const double> r, FitResult& result)
         return FitStatus::Failed;
     }
     model::Standardization standardization = model::standardization_of(r);
-    std::vector<double> u(k);
-    model::to_unconstrained(theta, u, problem.layout, standardization);
-    optim::LbfgsResult outcome = with_dual_width(
-        k, [&]<std::size_t N>() { return minimize<N>(problem, standardization, result.config, u); });
-    if (outcome.stop == optim::Stop::NonFinite)
+    optim::Stop stop = estimate_parameters(problem, standardization, std::move(theta), result);
+    if (stop == optim::Stop::NonFinite)
     {
         return FitStatus::Failed;
     }
-    model::to_natural<double>(u, result.estimate, problem.layout, standardization);
     if (!fill_at_estimate(result, problem, standardization.scale))
     {
         std::ranges::fill(result.estimate, kNaN);
         return FitStatus::Failed;
     }
-    return status_from(outcome.stop);
+    return status_from(stop);
 }
 
 }
