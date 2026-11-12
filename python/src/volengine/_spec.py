@@ -107,6 +107,17 @@ class Spec:
     likelihood in which omega is a function of them (as in rugarch), not from the two-step covariance
     of Francq, Horvath and Zakoian (2011).
 
+    `mxreg` and `vxreg` are the numbers of mean and variance regressor columns (0..8, VE_MAX_REGRESSORS) and
+    `archm` is ARCH-in-mean: 0 none, 1 adds xi * sigma_t to the mean, 2 adds xi * sigma_t**2. Their parameters are
+    named, in order, "mu", "ar1".., "ma1".., "archm", "mxreg1".., "omega", ... and "vxreg1".. before "skew". The
+    data go to `Context.fit(..., mxreg=, vxreg=)`. Mean: m_t = mu + sum(delta_k * x_t,k) + xi * sigma_t**p and
+    d_t = r_t - m_t; the ARMA acts on d_t, and the pre-sample residuals (for var_init "sample" and variance
+    targeting) are those with xi = 0. Variance: omega becomes omega + sum(zeta_k * v_t,k) in the scale of the
+    model (sigma**2, log sigma**2 or sigma**delta; in csgarch it enters q_t). Under variance targeting
+    omega = target - sum(zeta_k * mean(v_k)). With var_init "backcast" and `mxreg`, the backcast uses the
+    residuals of the OLS of r on [1 (with a mean), X], as arch does. Persistence < 1 is always enforced, unlike
+    rugarch, which drops it when there is `vxreg`; a sigma**2 <= 0 gives a log-likelihood of -inf.
+
     Rejected with VolEngineError (the message names the problem): a name the spec does not have
     (`fixed={"shpe": 5.0}`, or "shape" under dist "norm"), fixing the iGARCH `beta_q` or `omega` under
     variance targeting (both derived), variance targeting with "igarch" or "csgarch", and a csgarch
@@ -124,6 +135,9 @@ class Spec:
     fixed: Mapping[str, float] = field(default_factory=dict)
     start: Mapping[str, float] = field(default_factory=dict)
     variance_targeting: bool = False
+    mxreg: int = 0
+    vxreg: int = 0
+    archm: int = 0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "fixed", frozen_values(self.fixed))
@@ -144,6 +158,9 @@ class Spec:
                 frozenset(self.fixed.items()),
                 frozenset(self.start.items()),
                 self.variance_targeting,
+                self.mxreg,
+                self.vxreg,
+                self.archm,
             )
         )
 
@@ -171,6 +188,9 @@ class Spec:
         check(lib.ve_spec_set_arma(handle.pointer, *arma))
         check(lib.ve_spec_set_dist(handle.pointer, dist))
         check(lib.ve_spec_set_include_mean(handle.pointer, int(self.include_mean)))
+        check(lib.ve_spec_set_mxreg(handle.pointer, int32(self.mxreg, "mxreg")))
+        check(lib.ve_spec_set_vxreg(handle.pointer, int32(self.vxreg, "vxreg")))
+        check(lib.ve_spec_set_archm(handle.pointer, int32(self.archm, "archm")))
         self.apply_values(handle)
         return handle
 

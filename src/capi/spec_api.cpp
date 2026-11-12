@@ -10,6 +10,7 @@
 #include <vector>
 
 static_assert(VE_MAX_ORDER == ve::kMaxOrder, "the C header and the engine disagree on the order limit");
+static_assert(VE_MAX_REGRESSORS == ve::kMaxRegressors, "the C header and the engine disagree on the regressor limit");
 
 using ve::capi::guard;
 using ve::capi::set_error;
@@ -201,6 +202,57 @@ extern "C" ve_status ve_spec_set_arma(ve_spec* s, int32_t m, int32_t n)
             }
             s->spec.ar = m;
             s->spec.ma = n;
+            return VE_OK;
+        });
+}
+
+namespace
+{
+
+ve_status set_regressor_count(ve_spec* s, int32_t count, int ve::Spec::* member)
+{
+    return guard(
+        [&]
+        {
+            if (s == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "s must not be null");
+            }
+            if (count < 0 || count > VE_MAX_REGRESSORS)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "count must be in 0 .. VE_MAX_REGRESSORS (8)");
+            }
+            s->spec.*member = count;
+            return VE_OK;
+        });
+}
+
+}
+
+extern "C" ve_status ve_spec_set_mxreg(ve_spec* s, int32_t count)
+{
+    return set_regressor_count(s, count, &ve::Spec::mxreg);
+}
+
+extern "C" ve_status ve_spec_set_vxreg(ve_spec* s, int32_t count)
+{
+    return set_regressor_count(s, count, &ve::Spec::vxreg);
+}
+
+extern "C" ve_status ve_spec_set_archm(ve_spec* s, int32_t power)
+{
+    return guard(
+        [&]
+        {
+            if (s == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "s must not be null");
+            }
+            if (power < 0 || power > 2)
+            {
+                return bad_value("archm", power);
+            }
+            s->spec.archm = power;
             return VE_OK;
         });
 }

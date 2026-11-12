@@ -622,3 +622,79 @@ def test_spec_values_are_read_only():
 def test_variance_targeting_in_igarch_raises():
     with pytest.raises(ve.VolEngineError, match="variance targeting"):
         ve.Spec("igarch", variance_targeting=True)
+
+
+def mean_regressors(shape):
+    return np.random.default_rng(7).standard_normal(shape)
+
+
+def test_mean_regressors_1d(ctx, series):
+    x = mean_regressors((series.shape[0], 2))
+    fit = ctx.fit(ve.Spec(mxreg=2), series[:, 0], mxreg=x)
+    assert fit.names == ("mu", "mxreg1", "mxreg2", "omega", "alpha1", "beta1")
+    assert fit.status == "converged"
+
+
+def test_regressors_panel_slices(ctx, series):
+    x = mean_regressors((*series.shape, 2))
+    v = np.abs(mean_regressors((*series.shape, 1)))
+    spec = ve.Spec(mxreg=2, vxreg=1)
+    fits = ctx.fit(spec, series, mxreg=x, vxreg=v)
+    for j in range(series.shape[1]):
+        alone = ctx.fit(spec, series[:, j], mxreg=x[:, j, :], vxreg=v[:, j, :])
+        assert np.array_equal(fits[j].coef().estimate, alone.coef().estimate, equal_nan=True)
+        assert fits[j].names[-1] == "vxreg1"
+
+
+def test_regressors_follow_ranges_and_non_contiguous_views(ctx, series):
+    x = mean_regressors((series.shape[0], 3, 2))[:, ::-1, :]
+    fits = ctx.fit(ve.Spec(mxreg=2), series, mxreg=x, starts=RAGGED_STARTS, lengths=RAGGED_LENGTHS)
+    first, length = RAGGED_STARTS[1], RAGGED_LENGTHS[1]
+    alone = ctx.fit(ve.Spec(mxreg=2), series[first : first + length, 1], mxreg=x[first : first + length, 1, :])
+    assert np.array_equal(fits[1].coef().estimate, alone.coef().estimate)
+
+
+def test_specs_without_regressors_get_null(ctx, series):
+    x = mean_regressors((*series.shape, 2))
+    fits = ctx.fit([ve.Spec(), ve.Spec(mxreg=2)], series, mxreg=x)
+    assert fits.shape == (2, 3)
+    assert fits[0, 0].names == ("mu", "omega", "alpha1", "beta1")
+    assert fits[1, 0].names[:3] == ("mu", "mxreg1", "mxreg2")
+    plain = ctx.fit(ve.Spec(), series[:, 0])
+    assert np.array_equal(fits[0, 0].coef().estimate, plain.coef().estimate)
+
+
+def test_regressor_shape_mismatch_raises(ctx, series):
+    spec = ve.Spec(mxreg=2)
+    data = series[:, 0]
+    with pytest.raises(ValueError, match="mxreg"):
+        ctx.fit(spec, data)
+    with pytest.raises(ValueError, match="mxreg"):
+        ctx.fit(spec, data, mxreg=mean_regressors((data.shape[0], 3)))
+    with pytest.raises(ValueError, match="mxreg"):
+        ctx.fit(spec, data, mxreg=mean_regressors((data.shape[0] - 1, 2)))
+    with pytest.raises(ValueError, match="mxreg"):
+        ctx.fit(spec, series, mxreg=mean_regressors((series.shape[0], 2)))
+    with pytest.raises(ValueError, match="vxreg"):
+        ctx.fit(ve.Spec(vxreg=1), data, vxreg=None)
+    with pytest.raises(ValueError, match="mxreg"):
+        ctx.fit([ve.Spec(mxreg=2), ve.Spec(mxreg=1)], data, mxreg=mean_regressors((data.shape[0], 2)))
+
+
+def test_archm_names(ctx, series):
+    fit = ctx.fit(ve.Spec(arma=(0, 1), archm=2), series[:, 0])
+    assert fit.names == ("mu", "ma1", "archm", "omega", "alpha1", "beta1")
+
+
+def test_regressor_and_archm_options_are_validated():
+    with pytest.raises(ve.VolEngineError, match="VE_MAX_REGRESSORS"):
+        ve.Spec(mxreg=9)
+    with pytest.raises(ve.VolEngineError, match="archm"):
+        ve.Spec(archm=3)
+    assert ve.Spec(mxreg=1) != ve.Spec(vxreg=1)
+    assert hash(ve.Spec(archm=1)) != hash(ve.Spec(archm=2))
+
+
+def test_unknown_fit_keyword_raises(ctx, series):
+    with pytest.raises(TypeError, match="bogus"):
+        ctx.fit(ve.Spec(), series[:, 0], bogus=1)  # type: ignore[call-overload]

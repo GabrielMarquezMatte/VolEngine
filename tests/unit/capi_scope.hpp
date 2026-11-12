@@ -81,6 +81,9 @@ struct BatchInputs
     std::vector<std::size_t> job_spec;
     std::vector<std::size_t> job_series;
     const ve_fit_options* options = nullptr;
+    // One entry per job; an empty vector is a null array.
+    std::vector<const ve_panel*> mxreg;
+    std::vector<const ve_panel*> vxreg;
 };
 
 inline BatchPtr build_batch(const BatchInputs& inputs)
@@ -104,6 +107,12 @@ inline BatchPtr build_batch(const BatchInputs& inputs)
     if (inputs.options != nullptr)
     {
         EXPECT_EQ(ve_batch_set_options(raw, inputs.options), VE_OK);
+    }
+    if (!inputs.mxreg.empty() || !inputs.vxreg.empty())
+    {
+        const ve_panel* const* mean = inputs.mxreg.empty() ? nullptr : inputs.mxreg.data();
+        const ve_panel* const* variance = inputs.vxreg.empty() ? nullptr : inputs.vxreg.data();
+        EXPECT_EQ(ve_batch_set_regressors(raw, mean, variance, inputs.job_spec.size()), VE_OK);
     }
     return batch;
 }
