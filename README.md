@@ -12,8 +12,8 @@ csGARCH and fGARCH with its eight submodels (garch, tgarch, avgarch, ngarch, nag
 Every model takes an ARMA(m,n) conditional mean (orders 0 to 6, with or without a constant) and normal (`norm`),
 Student-t (`std`) or GED (`ged`) innovations, or the skewed ones: skewed Student-t (`sstd`), skewed GED (`sged`),
 normal inverse Gaussian (`nig`), generalized hyperbolic (`ghyp`) and Johnson SU (`jsu`), with Hessian and robust
-standard errors and the usual information criteria. Any parameter can be fixed or given a start value, and the
-variance can be targeted. More features come in later releases.
+standard errors and the usual information criteria. Any estimated parameter can be fixed or given a start value
+(the derived ones cannot), and the variance can be targeted. More features come in later releases.
 Until 1.0 the C ABI may change between releases. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Python example
@@ -67,7 +67,12 @@ print(ctx.fit(warm, returns).status)
 print(ctx.fit(ve.Spec(variance_targeting=True), returns).coef("robust"))   # omega is derived
 ```
 
-The criteria count only the estimated parameters. Rules and rejected combinations are in
+The criteria count only the estimated parameters. Variance targeting computes `omega` inside the likelihood from the
+residuals of the current mean over the whole sample, with m2 = mean(e^2) and P the persistence: `m2 (1 - P)` for
+sGARCH and gjrGARCH, `log(m2) (1 - sum(beta))` for eGARCH, `mean(|e|^delta) (1 - P)` for apARCH and fGARCH. These
+specs are rejected (`VE_INVALID_ARGUMENT`, `VolEngineError` in Python): variance targeting in iGARCH or csGARCH,
+fixing the iGARCH `beta_q` or `omega` under variance targeting (both derived), and a csGARCH with `eta21` fixed and
+some `beta` free. The conventions checked against `rugarch` and `arch` are in
 [docs/guide/validation.md](docs/guide/validation.md).
 
 `ctx.fit` also takes a `(T, N)` array (one fit per column), a list of specs, `starts` and `lengths` for series of
