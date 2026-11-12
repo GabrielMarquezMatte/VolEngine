@@ -3,7 +3,9 @@
 `data/sgarch11_norm.csv` holds the plan-1 sGARCH(1,1)-normal series (seed 20261110, three lengths);
 `data/grid.csv` holds one T = 3000 series per process below, drawn in order from one stream (seed 20261111);
 `data/grid_2b.csv` holds one T = 3000 series per GARCH variant, drawn in order from one stream (seed 20261112);
-`data/grid_2c.csv` holds one T = 3000 series per skewed distribution, drawn in order from one stream (seed 20261113).
+`data/grid_2c.csv` holds one T = 3000 series per skewed distribution, drawn in order from one stream (seed 20261113);
+`data/regressors_2e.csv` holds the regressors x1, x2, v1 and `data/grid_2e.csv` one T = 3000 series per regressor or
+ARCH-in-mean process, all from one stream (seed 20261114): the x2 draws first, then the shocks of each series.
 """
 
 import csv
@@ -25,11 +27,14 @@ VARIANT_SEED = 20261112
 VARIANT_BURN_IN = 1000
 VARIANT_MU = 0.05
 SKEWED_SEED = 20261113
+REGRESSOR_SEED = 20261114
 
 Shocks = Callable[[np.random.Generator, int], NDArray[np.float64]]
 # (sigma2, q): the conditional variance and the csGARCH permanent component (unused by the other models).
 State = tuple[float, float]
 Step = Callable[[State, float], State]
+# (state, z, shift): the step with the variance intercept omega moved by shift, the variance regressors' term.
+ShiftedStep = Callable[[State, float, float], State]
 
 
 class Process(NamedTuple):
@@ -292,6 +297,69 @@ SKEWED = (
 )
 
 
+class Regressors(NamedTuple):
+    """The regressors at t = 1 - VARIANT_BURN_IN .. GRID_LENGTH; the last GRID_LENGTH rows are the series' rows."""
+
+    x1: NDArray[np.float64]
+    x2: NDArray[np.float64]
+    v1: NDArray[np.float64]
+
+
+def make_regressors(rng: np.random.Generator) -> Regressors:
+    t = np.arange(1 - VARIANT_BURN_IN, GRID_LENGTH + 1, dtype=np.float64)
+    return Regressors(np.sin(t / 40.0), rng.standard_normal(t.size), np.abs(np.cos(t / 25.0)))
+
+
+def shifted(build: Callable[..., Step], omega: float, *rest: float) -> ShiftedStep:
+    def step(state: State, z: float, shift: float) -> State:
+        return build(omega + shift, *rest)(state, z)
+
+    return step
+
+
+class Process2e(NamedTuple):
+    """r_t = mu + sum delta_k x_t,k + xi sigma_t^power + d_t, with d_t = ar d_(t-1) + sigma_t z_t, and the variance
+    intercept omega + zeta v_t."""
+
+    name: str
+    mu: float
+    ar: float
+    delta: tuple[float, float]
+    xi: float
+    power: float
+    step: ShiftedStep
+    zeta: float
+    shocks: Shocks
+
+
+PROCESSES_2E = (
+    Process2e("arx_sgarch11_norm", 0.05, 0.3, (0.3, -0.2), 0.0, 1.0, shifted(gjrgarch_step, 0.02, 0.08, 0.0, 0.9), 0.0,
+              normal_shocks),
+    Process2e("sgarch11_vx_std", 0.05, 0.0, (0.0, 0.0), 0.0, 1.0, shifted(gjrgarch_step, 0.01, 0.08, 0.0, 0.88), 0.05,
+              student_shocks(6.0)),
+    Process2e("archm_gjrgarch11_norm", 0.02, 0.0, (0.0, 0.0), 0.1, 1.0, shifted(gjrgarch_step, 0.02, 0.03, 0.09, 0.9),
+              0.0, normal_shocks),
+    Process2e("archm2_egarch11_std", 0.02, 0.0, (0.0, 0.0), 0.05, 2.0,
+              shifted(egarch_step, -0.01, -0.08, 0.15, 0.97, student_abs_moment(6.0)), 0.0, student_shocks(6.0)),
+)
+
+
+def simulate_2e(process: Process2e, shocks: NDArray[np.float64], regressors: Regressors) -> NDArray[np.float64]:
+    """Start at sigma2 = q = 1 and d = 0, and drop the first VARIANT_BURN_IN observations."""
+    state: State = (1.0, 1.0)
+    deviation = 0.0
+    returns = np.empty(shocks.size)
+    # The step at t sets the variance of t + 1, whose intercept shift is zeta v_(t+1); the last one is not used.
+    shifts = np.append(process.zeta * regressors.v1[1:], 0.0)
+    for t, z in enumerate(shocks):
+        sigma = math.sqrt(state[0])
+        deviation = process.ar * deviation + sigma * z
+        regressed = process.delta[0] * regressors.x1[t] + process.delta[1] * regressors.x2[t]
+        returns[t] = process.mu + regressed + process.xi * sigma**process.power + deviation
+        state = process.step(state, float(z), float(shifts[t]))
+    return returns[VARIANT_BURN_IN:]
+
+
 def lagged(values: list[float], lag: int, presample: float) -> float:
     if lag > len(values):
         return presample
@@ -373,6 +441,12 @@ def main() -> None:
     rng = np.random.default_rng(SKEWED_SEED)
     skewed = {variant.name: simulate_variant(variant, variant.shocks(rng, length)) for variant in SKEWED}
     write_csv(DATA / "grid_2c.csv", skewed)
+    rng = np.random.default_rng(REGRESSOR_SEED)
+    regressors = make_regressors(rng)
+    series_2e = {p.name: simulate_2e(p, p.shocks(rng, length), regressors) for p in PROCESSES_2E}
+    write_csv(DATA / "grid_2e.csv", series_2e)
+    kept = {name: getattr(regressors, name)[VARIANT_BURN_IN:] for name in Regressors._fields}
+    write_csv(DATA / "regressors_2e.csv", kept)
 
 
 if __name__ == "__main__":
