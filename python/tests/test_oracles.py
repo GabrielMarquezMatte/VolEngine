@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 import volengine as ve
 
 REFERENCE = Path(__file__).resolve().parents[2] / "tests" / "reference"
-DATA_FILES = ("sgarch11_norm.csv", "grid.csv", "grid_2b.csv", "grid_2c.csv")
+DATA_FILES = ("sgarch11_norm.csv", "grid.csv", "grid_2b.csv", "grid_2c.csv", "grid_2e.csv")
 CRITERIA = ("aic", "bic", "hqic", "sic")
 SYMMETRIC = ("norm", "std", "ged")
 # Tighter than the default gradient tolerance; docs/guide/validation.md says why.
@@ -60,6 +60,18 @@ def load_series() -> dict[str, NDArray[np.float64]]:
     return series
 
 
+@cache
+def load_regressors() -> dict[str, NDArray[np.float64]]:
+    return read_columns(REFERENCE / "data" / "regressors_2e.csv")
+
+
+def case_regressors(case: dict[str, Any], key: str) -> NDArray[np.float64] | None:
+    """The (T, k) matrix of the columns a case lists under "mxreg" or "vxreg", None when it lists none."""
+    if key not in case:
+        return None
+    return np.column_stack([load_regressors()[name] for name in case[key]])
+
+
 def oracle_cases(oracle: str) -> list[dict[str, Any]]:
     return [case for case in load_cases() if oracle in case["oracles"]]
 
@@ -85,6 +97,9 @@ def case_spec(case: dict[str, Any]) -> ve.Spec:
         submodel=case.get("submodel"),
         fixed=case.get("fixed", {}),
         variance_targeting=case.get("variance_targeting", False),
+        mxreg=len(case.get("mxreg", [])),
+        vxreg=len(case.get("vxreg", [])),
+        archm=case.get("archm", 0),
     )
 
 
@@ -183,7 +198,13 @@ def test_cases_name_known_series():
 @pytest.mark.parametrize(("oracle", "case"), comparison_params())
 def test_matches_oracle(ctx, oracle, case):
     result = oracle_result(oracle.name, case["id"])
-    fit = ctx.fit(case_spec(case), load_series()[case["series"]], options=fit_options(oracle))
+    fit = ctx.fit(
+        case_spec(case),
+        load_series()[case["series"]],
+        mxreg=case_regressors(case, "mxreg"),
+        vxreg=case_regressors(case, "vxreg"),
+        options=fit_options(oracle),
+    )
     assert fit.status == "converged"
     assert fit.names == tuple(result["params"]) == tuple(result["se"]) == tuple(result[oracle.robust_key])
     if is_evaluation(case, result):
@@ -278,6 +299,8 @@ def test_fixture_estimates_are_interior(oracle, case):
         assert params["eta21"] > 1e-4
     estimated = {name: value for name, value in params.items() if name not in not_estimated(case)}
     assert_distribution_interior(case, estimated)
+    # rugarch bounds a variance regressor's coefficient to [0, 100]: an estimate there is not an optimum.
+    assert all(0.0 < value < 100.0 for value in named(estimated, "vxreg").values())
 
 
 def assert_distribution_interior(case: dict[str, Any], params: dict[str, float]) -> None:

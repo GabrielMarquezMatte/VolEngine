@@ -15,20 +15,26 @@ from numpy.typing import NDArray
 
 REFERENCE = Path(__file__).resolve().parent
 CASES = REFERENCE / "cases.json"
-DATA = tuple(REFERENCE / "data" / name for name in ("sgarch11_norm.csv", "grid.csv", "grid_2b.csv", "grid_2c.csv"))
+DATA = tuple(
+    REFERENCE / "data" / name
+    for name in ("sgarch11_norm.csv", "grid.csv", "grid_2b.csv", "grid_2c.csv", "grid_2e.csv", "regressors_2e.csv")
+)
 FIXTURE = REFERENCE / "fixtures" / "arch.json"
 ArchDist = Literal["normal", "t", "ged", "skewt"]
+ArchVol = Literal["GARCH", "EGARCH"]
 DISTRIBUTIONS: dict[str, ArchDist] = {"norm": "normal", "std": "t", "ged": "ged", "sstd": "skewt"}
 # arch's volatility process and its number of asymmetry terms per ARCH term (arch's order o is that times p).
-VOLATILITIES = {"sgarch": ("GARCH", 0), "gjrgarch": ("GARCH", 1), "egarch": ("EGARCH", 1)}
+VOLATILITIES: dict[str, tuple[ArchVol, int]] = {"sgarch": ("GARCH", 0), "gjrgarch": ("GARCH", 1), "egarch": ("EGARCH", 1)}
 # arch names the terms "alpha[1]", "gamma[1]", "beta[1]", the t shape "nu" and the skew-t (Hansen) shape "eta"
 # and skewness "lambda"; VolEngine uses rugarch's names.
 LAG = re.compile(r"^(alpha|gamma|beta)\[(\d+)\]$")
+# arch's LS mean (a constant, which it includes by default, and the regressors) names them "Const", "x0", "x1", ...
+REGRESSOR = re.compile(r"^x(\d+)$")
 SHAPES = {"nu": "shape", "eta": "shape", "lambda": "skew"}
 # The EGARCH term in |z| is arch's alpha and rugarch's gamma, the term in z the other way round.
 EGARCH_NAMES = {"alpha": "gamma", "gamma": "alpha"}
 # rugarch's parameter order: VolEngine's.
-ORDER = ("mu", "omega", "alpha", "beta", "gamma", "skew", "shape")
+ORDER = ("mu", "mxreg", "omega", "alpha", "beta", "gamma", "skew", "shape")
 SQRT_TWO_OVER_PI = math.sqrt(2.0 / math.pi)
 
 
@@ -47,6 +53,11 @@ def load_columns(paths: tuple[Path, ...]) -> dict[str, NDArray[np.float64]]:
 def volengine_name(model: str, name: str) -> str:
     if name in SHAPES:
         return SHAPES[name]
+    if name == "Const":
+        return "mu"
+    regressor = REGRESSOR.match(name)
+    if regressor is not None:
+        return f"mxreg{int(regressor[1]) + 1}"
     match = LAG.match(name)
     if match is None:
         return name
@@ -131,6 +142,8 @@ def interior_weights(model: str, params: dict[str, Any], pi: float) -> list[floa
 def check_supported(case: dict[str, Any]) -> None:
     if case["arma"] != [0, 0] or not case["include_mean"] or case["model"] not in VOLATILITIES:
         raise ValueError(f"case {case['id']}: the arch oracle covers s, gjr and eGARCH with a constant mean")
+    if "vxreg" in case or "archm" in case:
+        raise ValueError(f"case {case['id']}: arch has no variance regressors and no ARCH-in-mean")
     if case.get("variance_targeting", False):
         raise ValueError(f"case {case['id']}: arch has no variance targeting")
 
@@ -155,26 +168,31 @@ def check_interior(case: dict[str, Any], params: dict[str, Any], pi: float) -> N
         raise RuntimeError(f"arch estimate on case {case['id']} is on the boundary: {params}")
 
 
-def case_model(case: dict[str, Any], values: NDArray[np.float64]) -> Any:
+def case_model(case: dict[str, Any], columns: dict[str, NDArray[np.float64]]) -> Any:
     dist = DISTRIBUTIONS[case["dist"]]
     vol, asymmetry = VOLATILITIES[case["model"]]
     o = asymmetry * case["p"]
-    return arch_model(values, mean="Constant", vol=vol, p=case["p"], o=o, q=case["q"], dist=dist, rescale=False)
+    values = columns[case["series"]]
+    if "mxreg" not in case:
+        return arch_model(values, mean="Constant", vol=vol, p=case["p"], o=o, q=case["q"], dist=dist, rescale=False)
+    # LS includes the constant by default: mu + sum delta_k x_k, VolEngine's mean with mxreg.
+    x = np.column_stack([columns[name] for name in case["mxreg"]])
+    return arch_model(values, x=x, mean="LS", vol=vol, p=case["p"], o=o, q=case["q"], dist=dist, rescale=False)
 
 
-def fit(case: dict[str, Any], values: NDArray[np.float64], cov_type: Literal["classic", "robust"]) -> Any:
-    result = case_model(case, values).fit(disp="off", cov_type=cov_type)
+def fit(case: dict[str, Any], columns: dict[str, NDArray[np.float64]], cov_type: Literal["classic", "robust"]) -> Any:
+    result = case_model(case, columns).fit(disp="off", cov_type=cov_type)
     if result.convergence_flag != 0:
         raise RuntimeError(f"arch did not converge on case {case['id']}: {result.optimization_result.message}")
     return result
 
 
-def fix_case(case: dict[str, Any], values: NDArray[np.float64]) -> dict[str, Any]:
+def fix_case(case: dict[str, Any], columns: dict[str, NDArray[np.float64]]) -> dict[str, Any]:
     """Every parameter fixed: arch's fix() at the fixed point, with the backcast of its fit (the residuals at the
     starting values). Its criteria count every parameter, VolEngine's (rugarch's ugarchfilter) none, so they are
     left out; no standard error."""
     check_evaluation_supported(case)
-    model = case_model(case, values)
+    model = case_model(case, columns)
     names = [*model.parameter_names(), *model.volatility.parameter_names(), *model.distribution.parameter_names()]
     renamed_names = [volengine_name(case["model"], name) for name in names]
     if set(renamed_names) != set(case["fixed"]):
@@ -198,12 +216,12 @@ def fix_case(case: dict[str, Any], values: NDArray[np.float64]) -> dict[str, Any
     }
 
 
-def fit_case(case: dict[str, Any], values: NDArray[np.float64]) -> dict[str, Any]:
+def fit_case(case: dict[str, Any], columns: dict[str, NDArray[np.float64]]) -> dict[str, Any]:
     check_supported(case)
     if case.get("fixed"):
-        return fix_case(case, values)
-    classic = fit(case, values, "classic")
-    robust = fit(case, values, "robust")
+        return fix_case(case, columns)
+    classic = fit(case, columns, "classic")
+    robust = fit(case, columns, "robust")
     if not np.array_equal(classic.params, robust.params):
         raise RuntimeError(f"arch estimates differ between covariance types on case {case['id']}")
     params = renamed(case["model"], classic.params)
@@ -241,7 +259,7 @@ def main() -> None:
         "oracle": "arch",
         "oracle_version": arch.__version__,
         "cases": [case["id"] for case in cases],
-        "results": [fit_case(case, columns[case["series"]]) for case in cases],
+        "results": [fit_case(case, columns) for case in cases],
     }
     FIXTURE.parent.mkdir(parents=True, exist_ok=True)
     FIXTURE.write_text(json.dumps(fixture, indent=2) + "\n", encoding="utf-8", newline="\n")

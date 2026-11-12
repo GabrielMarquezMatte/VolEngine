@@ -8,7 +8,9 @@ suppressPackageStartupMessages({
 
 reference <- file.path("tests", "reference")
 cases_path <- file.path(reference, "cases.json")
-data_paths <- file.path(reference, "data", c("sgarch11_norm.csv", "grid.csv", "grid_2b.csv", "grid_2c.csv"))
+data_paths <- file.path(reference, "data", c("sgarch11_norm.csv", "grid.csv", "grid_2b.csv", "grid_2c.csv",
+                                                "grid_2e.csv"))
+regressors_path <- file.path(reference, "data", "regressors_2e.csv")
 fixture_path <- file.path(reference, "fixtures", "rugarch.json")
 
 load_series <- function(paths) {
@@ -26,17 +28,46 @@ load_series <- function(paths) {
 models <- c(sgarch = "sGARCH", egarch = "eGARCH", gjrgarch = "gjrGARCH", aparch = "apARCH", igarch = "iGARCH",
             csgarch = "csGARCH", fgarch = "fGARCH")
 
+# The columns a case names, as the matrix rugarch's external.regressors takes; NULL when it names none.
+regressor_matrix <- function(columns, regressors) {
+    if (is.null(columns)) {
+        return(NULL)
+    }
+    as.matrix(regressors[, unlist(columns), drop = FALSE])
+}
+
+# The starting values the case sets. A start value for archm makes ugarchfit take the pre-sample residuals from the
+# mean without the archm term (VolEngine's e0) instead of running its auxiliary fit without archm first. archm and
+# every vxreg start at 0.01 and not at 0 (rugarch's default for vxreg, and the value the plan names for archm): from
+# 0 the solver stops there on the flat likelihoods, at the lower bound of vxreg and where the Hessian step, a fraction
+# of the parameter, vanishes (see docs/guide/validation.md).
+start_pars <- function(case) {
+    start <- list()
+    if (!is.null(case$archm)) {
+        start$archm <- 0.01
+    }
+    for (k in seq_along(case$vxreg)) {
+        start[[paste0("vxreg", k)]] <- 0.01
+    }
+    start
+}
+
 # rugarch's garchOrder is c(ARCH order, GARCH order): VolEngine's (p, q).
-case_spec <- function(case) {
+case_spec <- function(case, regressors) {
     variance <- list(model = models[[case$model]], garchOrder = c(case$p, case$q),
-                     variance.targeting = isTRUE(case$variance_targeting))
+                     variance.targeting = isTRUE(case$variance_targeting),
+                     external.regressors = regressor_matrix(case$vxreg, regressors))
     if (!is.null(case$submodel)) {
         variance$submodel <- toupper(case$submodel)
     }
+    archm <- !is.null(case$archm)
     ugarchspec(
         variance.model = variance,
-        mean.model = list(armaOrder = unlist(case$arma), include.mean = case$include_mean),
+        mean.model = list(armaOrder = unlist(case$arma), include.mean = case$include_mean, archm = archm,
+                          archpow = if (archm) case$archm else 1,
+                          external.regressors = regressor_matrix(case$mxreg, regressors)),
         distribution.model = case$dist,
+        start.pars = start_pars(case),
         fixed.pars = if (is.null(case$fixed)) list() else case$fixed
     )
 }
@@ -124,7 +155,8 @@ interior_failures <- function(case, params, persistence, estimated) {
 }
 
 # The skewed distributions: |rho| < 0.999 (nig, ghyp), xi in (0.05, 20) (sstd, sged), 1 / shape > 1e-4 and
-# |ghlambda| < 10. A distribution parameter must also stay off rugarch's own bounds (its LB and UB columns).
+# |ghlambda| < 10. A distribution, archm or regressor parameter must also stay off rugarch's own bounds (its LB and
+# UB columns; vxreg is bounded to [0, 100]).
 distribution_failures <- function(case, fit) {
     params <- coef(fit)
     params <- params[names(params) %in% estimated_names(fit)]
@@ -141,7 +173,7 @@ distribution_failures <- function(case, fit) {
     if ("ghlambda" %in% names(params)) {
         failures <- c(failures, params["ghlambda"][abs(params[["ghlambda"]]) >= 10])
     }
-    names_dist <- intersect(c("skew", "shape", "ghlambda"), names(params))
+    names_dist <- names(params)[grepl("^(skew|shape|ghlambda|archm|mxreg[0-9]+|vxreg[0-9]+)$", names(params))]
     bounds <- fit@model$pars[names_dist, c("LB", "UB"), drop = FALSE]
     on_bound <- abs(params[names_dist] - bounds[, "LB"]) <= 1e-6 * pmax(1, abs(bounds[, "LB"])) |
         abs(params[names_dist] - bounds[, "UB"]) <= 1e-6 * pmax(1, abs(bounds[, "UB"]))
@@ -161,11 +193,30 @@ check_interior <- function(case, fit, persistence) {
 # rugarch's default Hessian is Richardson-extrapolated from a first step of 10% of each parameter (hess.d = 0.1),
 # which is biased where the likelihood is ill-conditioned (two GARCH lags) or not smooth (ged with shape < 2).
 # A first step of 0.1% removes that bias. sged, fitted with shape < 2 at a kink that is not at z = 0, needs 0.01%.
+# The regressor and archm cases take a first step of 1%: the step is a fraction of each parameter, and with a
+# coefficient near zero (mu next to archm, a mean regressor, an apARCH gamma) 0.1% is smaller than the numerical noise
+# (docs/guide/validation.md).
 hessian_step <- function(case) {
     if (case$dist == "sged") {
         return(1e-4)
     }
+    if (uses_regressors(case)) {
+        return(1e-2)
+    }
     1e-3
+}
+
+uses_regressors <- function(case) {
+    !is.null(case$mxreg) || !is.null(case$vxreg) || !is.null(case$archm)
+}
+
+# The regressor and archm cases tighten solnp's tolerance (default 1e-8) to 1e-10: with the default, rugarch stops up to
+# 1e-5 from the optimum along the flat mu-archm direction (docs/guide/validation.md).
+solver_control <- function(case) {
+    if (uses_regressors(case)) {
+        return(list(tol = 1e-10))
+    }
+    list()
 }
 
 # The fixed point evaluated: infocriteria() of a uGARCHfilter counts no parameter. No standard error.
@@ -191,12 +242,12 @@ filter_case <- function(case, spec, series) {
     )
 }
 
-fit_case <- function(case, series) {
-    spec <- case_spec(case)
+fit_case <- function(case, series, regressors) {
+    spec <- case_spec(case, regressors)
     if (is_evaluation(spec)) {
         return(filter_case(case, spec, series))
     }
-    fit <- ugarchfit(spec, series[[case$series]], solver = "hybrid",
+    fit <- ugarchfit(spec, series[[case$series]], solver = "hybrid", solver.control = solver_control(case),
                      numderiv.control = list(hess.d = hessian_step(case)))
     if (convergence(fit) != 0) {
         stop(sprintf("rugarch did not converge on case %s", case$id))
@@ -226,11 +277,12 @@ fit_case <- function(case, series) {
 main <- function() {
     cases <- Filter(function(case) "rugarch" %in% unlist(case$oracles), read_json(cases_path))
     series <- load_series(data_paths)
+    regressors <- read.csv(regressors_path, check.names = FALSE)
     fixture <- list(
         oracle = "rugarch",
         oracle_version = as.character(packageVersion("rugarch")),
         cases = vapply(cases, function(case) case$id, ""),
-        results = lapply(cases, fit_case, series = series)
+        results = lapply(cases, fit_case, series = series, regressors = regressors)
     )
     dir.create(dirname(fixture_path), recursive = TRUE, showWarnings = FALSE)
     write_json(fixture, fixture_path, auto_unbox = TRUE, digits = I(17), pretty = TRUE, na = "null")
