@@ -396,7 +396,7 @@ T shock_moment(std::span<const T> theta, const Layout& layout, std::size_t i)
     {
         eta1 = theta[layout.asymmetry_begin() + i];
     }
-    T shape = shape_of(theta, layout);
+    T shape = shape_parameters_of(theta, layout).shape;
     T power = power_of(theta, layout);
     if (layout.eta2 == 0)
     {
@@ -434,9 +434,9 @@ template ad::Dual<16> shock_moment<ad::Dual<16>>(std::span<const ad::Dual<16>>, 
 template void to_natural<ad::Dual<32>>(std::span<const ad::Dual<32>>, std::span<ad::Dual<32>>, const Layout&,
                                  const Standardization&);
 template ad::Dual<32> shock_moment<ad::Dual<32>>(std::span<const ad::Dual<32>>, const Layout&, std::size_t);
-template void to_natural<ad::Dual<40>>(std::span<const ad::Dual<40>>, std::span<ad::Dual<40>>, const Layout&,
+template void to_natural<ad::Dual<42>>(std::span<const ad::Dual<42>>, std::span<ad::Dual<42>>, const Layout&,
                                  const Standardization&);
-template ad::Dual<40> shock_moment<ad::Dual<40>>(std::span<const ad::Dual<40>>, const Layout&, std::size_t);
+template ad::Dual<42> shock_moment<ad::Dual<42>>(std::span<const ad::Dual<42>>, const Layout&, std::size_t);
 
 void to_unconstrained(std::span<const double> theta, std::span<double> u, const Layout& layout,
                       const Standardization& standardization)

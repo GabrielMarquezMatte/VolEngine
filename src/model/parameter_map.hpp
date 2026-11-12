@@ -29,7 +29,7 @@ struct Standardization
 // eta1 and the apARCH gamma: 2 logistic(x) - 1; eta2 unchanged; free delta or lambda: exp(x).
 // omega = s^2 exp(u), or s^power exp(u) in apARCH and fGARCH, or u + (1 - sum beta) log(s^2) in eGARCH.
 // csGARCH: rho = P + (1 - 1e-8 - P) logistic(x_rho), phi = sum(beta) logistic(x_phi).
-// Instantiated only for T = double, ad::Dual<8>, ad::Dual<16>, ad::Dual<32> and ad::Dual<40>.
+// Instantiated only for T = double, ad::Dual<8>, ad::Dual<16>, ad::Dual<32> and ad::Dual<42>.
 template <class T>
 void to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout,
                 const Standardization& standardization);

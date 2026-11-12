@@ -153,11 +153,81 @@ TEST(Layout, WidestFitsWidestDual)
 {
     ve::Spec s = spec_of(Model::FGarchAllGarch, ve::kMaxOrder, ve::kMaxOrder);
     s.ar = s.ma = ve::kMaxOrder;
-    s.dist = ve::Dist::Std;
+    s.dist = ve::Dist::Ghyp;
     auto l = ve::model::layout_of(s);
     EXPECT_EQ(l.count(), ve::kMaxParameterCount);
-    EXPECT_EQ(l.count(), 40u);
-    EXPECT_EQ(ve::model::parameter_names(l).size(), 40u);
+    EXPECT_EQ(l.count(), 42u);
+    EXPECT_EQ(ve::model::parameter_names(l).size(), 42u);
+}
+
+TEST(Layout, DistributionBlocksFollowRugarchOrder)
+{
+    for (ve::Dist dist : {ve::Dist::Sstd, ve::Dist::Sged, ve::Dist::Nig, ve::Dist::Jsu})
+    {
+        ve::Spec s;
+        s.dist = dist;
+        auto l = ve::model::layout_of(s);
+        EXPECT_EQ(ve::model::parameter_names(l),
+                  (Names{"mu", "omega", "alpha1", "beta1", "skew", "shape"}));
+        EXPECT_EQ(l.skew(), 4u);
+        EXPECT_EQ(l.shape(), 5u);
+        EXPECT_FALSE(l.has_ghlambda());
+        EXPECT_EQ(l.count(), 6u);
+    }
+    ve::Spec g;
+    g.dist = ve::Dist::Ghyp;
+    auto l = ve::model::layout_of(g);
+    EXPECT_EQ(ve::model::parameter_names(l),
+              (Names{"mu", "omega", "alpha1", "beta1", "skew", "shape", "ghlambda"}));
+    EXPECT_EQ(l.ghlambda(), 6u);
+    EXPECT_EQ(l.count(), 7u);
+    for (ve::Dist dist : {ve::Dist::Norm, ve::Dist::Std, ve::Dist::Ged})
+    {
+        ve::Spec s;
+        s.dist = dist;
+        EXPECT_FALSE(ve::model::layout_of(s).has_skew());
+        EXPECT_FALSE(ve::model::layout_of(s).has_ghlambda());
+    }
+}
+
+TEST(Layout, DistributionKinds)
+{
+    auto kind_of = [](ve::Dist dist, std::size_t offset)
+    {
+        ve::Spec s;
+        s.dist = dist;
+        auto l = ve::model::layout_of(s);
+        return l.kind(l.skew() + offset);
+    };
+    EXPECT_EQ(kind_of(ve::Dist::Sstd, 0), ParameterKind::Positive);
+    EXPECT_EQ(kind_of(ve::Dist::Sged, 0), ParameterKind::Positive);
+    for (ve::Dist dist : {ve::Dist::Nig, ve::Dist::Ghyp, ve::Dist::Jsu})
+    {
+        EXPECT_EQ(kind_of(dist, 0), ParameterKind::Real);
+    }
+    for (ve::Dist dist : {ve::Dist::Sstd, ve::Dist::Sged, ve::Dist::Nig, ve::Dist::Ghyp, ve::Dist::Jsu})
+    {
+        EXPECT_EQ(kind_of(dist, 1), ParameterKind::Positive);
+    }
+    EXPECT_EQ(kind_of(ve::Dist::Ghyp, 2), ParameterKind::Real);
+    EXPECT_EQ(kind_of(ve::Dist::Std, 0), ParameterKind::Positive);
+}
+
+TEST(Layout, ShapeParametersOf)
+{
+    ve::Spec s;
+    s.dist = ve::Dist::Ghyp;
+    auto l = ve::model::layout_of(s);
+    std::vector<double> theta{0.0, 0.1, 0.1, 0.8, -0.3, 1.5, 2.0};
+    auto p = ve::model::shape_parameters_of<double>(theta, l);
+    EXPECT_EQ(p.skew, -0.3);
+    EXPECT_EQ(p.shape, 1.5);
+    EXPECT_EQ(p.ghlambda, 2.0);
+    auto norm = ve::model::layout_of({});
+    auto q = ve::model::shape_parameters_of<double>(std::span<const double>(theta).first(4), norm);
+    EXPECT_EQ(q.skew, 0.0);
+    EXPECT_EQ(q.shape, 0.0);
+    EXPECT_EQ(q.ghlambda, 0.0);
 }
 
 TEST(Layout, ParameterKinds)

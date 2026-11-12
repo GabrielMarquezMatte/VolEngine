@@ -92,9 +92,19 @@ std::size_t Layout::beta_begin() const
     return alpha_begin() + static_cast<std::size_t>(arch);
 }
 
+bool Layout::has_skew() const
+{
+    return dist != Dist::Norm && dist != Dist::Std && dist != Dist::Ged;
+}
+
 bool Layout::has_shape() const
 {
     return dist != Dist::Norm;
+}
+
+bool Layout::has_ghlambda() const
+{
+    return dist == Dist::Ghyp;
 }
 
 std::size_t Layout::gamma_begin() const
@@ -117,14 +127,24 @@ std::size_t Layout::power() const
     return eta2_begin() + static_cast<std::size_t>(eta2);
 }
 
-std::size_t Layout::shape() const
+std::size_t Layout::skew() const
 {
     return power() + (free_power ? 1 : 0);
 }
 
-std::size_t Layout::count() const
+std::size_t Layout::shape() const
+{
+    return skew() + (has_skew() ? 1 : 0);
+}
+
+std::size_t Layout::ghlambda() const
 {
     return shape() + (has_shape() ? 1 : 0);
+}
+
+std::size_t Layout::count() const
+{
+    return ghlambda() + (has_ghlambda() ? 1 : 0);
 }
 
 bool Layout::has_derived() const
@@ -224,7 +244,11 @@ ParameterKind Layout::kind(std::size_t index) const
     {
         return cs ? ParameterKind::Weight : ParameterKind::Real;
     }
-    return ParameterKind::Positive;
+    if (index == skew() && has_skew())
+    {
+        return dist == Dist::Sstd || dist == Dist::Sged ? ParameterKind::Positive : ParameterKind::Real;
+    }
+    return index == ghlambda() && has_ghlambda() ? ParameterKind::Real : ParameterKind::Positive;
 }
 
 Layout layout_of(const Spec& spec)
@@ -266,9 +290,17 @@ std::vector<std::string> parameter_names(const Layout& layout)
     {
         names.emplace_back(layout.model == Model::ApArch ? "delta" : "lambda");
     }
+    if (layout.has_skew())
+    {
+        names.emplace_back("skew");
+    }
     if (layout.has_shape())
     {
         names.emplace_back("shape");
+    }
+    if (layout.has_ghlambda())
+    {
+        names.emplace_back("ghlambda");
     }
     return names;
 }
