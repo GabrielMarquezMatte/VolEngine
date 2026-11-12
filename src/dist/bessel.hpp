@@ -33,6 +33,18 @@ inline double log_bessel_k_scaled_slope(double order, double x)
     return 1.0 - ratio - order / x;
 }
 
+// d f / d order by Richardson extrapolation of central differences at step and 2 step, accurate to O(step^4).
+// log K is analytic in the order, so the step can be large. Boost computes K in double where long double is
+// double (Apple Silicon, MSVC), and a step of 1e-5 turned its rounding into 1e-7 of a likelihood gradient.
+template <class F>
+double order_slope(F f, double order, double x)
+{
+    double step = 1e-3 * std::max(1.0, std::fabs(order));
+    double fine = (f(order + step, x) - f(order - step, x)) / (2.0 * step);
+    double coarse = (f(order + 2.0 * step, x) - f(order - 2.0 * step, x)) / (4.0 * step);
+    return (4.0 * fine - coarse) / 3.0;
+}
+
 }
 
 // Derivative in x only.
@@ -43,14 +55,13 @@ T log_bessel_k(double order, const T& x)
     return ad::chain(x, v, detail::log_bessel_k_slope(order, ad::value_of(x)));
 }
 
-// Derivative in order by central difference of log K (the one approximate derivative of the engine), in x as above.
+// Derivative in order by finite differences of log K (the one approximate derivative of the engine), in x as above.
 template <class T>
 T log_bessel_k(const T& order, const T& x)
 {
     double nu = ad::value_of(order);
     double xv = ad::value_of(x);
-    double step = 1e-5 * std::max(1.0, std::fabs(nu));
-    double d_order = (log_bessel_k(nu + step, xv) - log_bessel_k(nu - step, xv)) / (2.0 * step);
+    double d_order = detail::order_slope([](double v, double y) { return log_bessel_k(v, y); }, nu, xv);
     return ad::chain(order, x, log_bessel_k(nu, xv), d_order, detail::log_bessel_k_slope(nu, xv));
 }
 
@@ -67,8 +78,7 @@ T log_bessel_k_scaled(const T& order, const T& x)
 {
     double nu = ad::value_of(order);
     double xv = ad::value_of(x);
-    double step = 1e-5 * std::max(1.0, std::fabs(nu));
-    double d_order = (log_bessel_k_scaled(nu + step, xv) - log_bessel_k_scaled(nu - step, xv)) / (2.0 * step);
+    double d_order = detail::order_slope([](double v, double y) { return log_bessel_k_scaled(v, y); }, nu, xv);
     double slope = detail::log_bessel_k_scaled_slope(nu, xv);
     return ad::chain(order, x, log_bessel_k_scaled(nu, xv), d_order, slope);
 }
