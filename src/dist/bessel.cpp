@@ -1,7 +1,17 @@
 #include "dist/bessel.hpp"
 
+// MSVC's code generator reports C4701 (local possibly used uninitialized) for n and u in Boost's
+// bessel_ik.hpp, which set them on every path that reads them; /external:W0 does not reach code-generation
+// warnings, so /WX would fail on Boost's code.
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4701)
+#endif
 #include <boost/math/special_functions/bessel.hpp>
 #include <boost/math/policies/policy.hpp>
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 #include <cmath>
 #include <limits>
