@@ -85,7 +85,8 @@ Layout base_layout(const Spec& spec)
                   .dist = spec.dist,
                   .archm = spec.archm,
                   .mxreg = spec.mxreg,
-                  .vxreg = spec.vxreg};
+                  .vxreg = spec.vxreg,
+                  .arfima = spec.arfima};
 }
 
 std::optional<std::size_t> index_of(const std::vector<std::string>& names, const std::string& name)
@@ -131,6 +132,10 @@ std::optional<std::string> regressor_problem(const Spec& spec)
     if (spec.archm < 0 || spec.archm > 2)
     {
         return "archm must be 0, 1 (sigma) or 2 (sigma^2)";
+    }
+    if (spec.arfima && spec.archm != 0)
+    {
+        return "arfima cannot be combined with archm";
     }
     return std::nullopt;
 }
@@ -214,9 +219,14 @@ std::size_t Layout::ma_begin() const
     return ar_begin() + static_cast<std::size_t>(ar);
 }
 
-std::size_t Layout::archm_index() const
+std::size_t Layout::arfima_index() const
 {
     return ma_begin() + static_cast<std::size_t>(ma);
+}
+
+std::size_t Layout::archm_index() const
+{
+    return arfima_index() + (has_arfima() ? 1 : 0);
 }
 
 std::size_t Layout::mxreg_begin() const
@@ -500,6 +510,10 @@ std::vector<std::string> parameter_names(const Layout& layout)
     }
     append_block(names, "ar", layout.ar);
     append_block(names, "ma", layout.ma);
+    if (layout.has_arfima())
+    {
+        names.emplace_back("arfima");
+    }
     if (layout.has_archm())
     {
         names.emplace_back("archm");
