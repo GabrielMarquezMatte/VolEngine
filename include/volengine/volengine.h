@@ -84,11 +84,15 @@ VE_API void ve_context_free(ve_context* ctx);
 #define VE_DIST_SGED 4 /* skew: xi > 0, shape: nu > 0 */
 /* sstd versus arch's SkewStudent (Hansen): arch's skewness lambda in (-1, 1) relates to xi by
    xi = sqrt((1 + lambda) / (1 - lambda)), and the standard error of lambda follows by the delta method,
-   d xi / d lambda = 1 / (xi (1 - lambda)^2). VolEngine only reports xi. */
+   d xi / d lambda = 1 / (xi (1 - lambda)^2). VolEngine only reports xi; the other way,
+   lambda = (xi^2 - 1) / (xi^2 + 1) and SE(lambda) = SE(xi) 4 xi / (xi^2 + 1)^2. */
 /* Generalized hyperbolic in the standardized (rho, zeta) parametrization; nig is ghyp with
-   lambda = -1/2 fixed. */
-#define VE_DIST_NIG 5 /* skew: rho in (-1, 1), shape: zeta > 0 */
-#define VE_DIST_GHYP 6 /* skew: rho in (-1, 1), shape: zeta > 0, ghlambda: lambda in R */
+   lambda = -1/2 fixed. Past zeta = 1e6 double precision no longer standardizes the density (by then a
+   normal to an excess kurtosis of order 1 / zeta, 1.5e-5 for nig): the log-likelihood there is -inf, as
+   outside the domain. Near-normal data drives zeta up, where rho and zeta are barely identified: the
+   Hessian is then often not positive definite, and every standard error is NaN. */
+#define VE_DIST_NIG 5 /* skew: rho in (-1, 1), shape: zeta in (0, 1e6] */
+#define VE_DIST_GHYP 6 /* skew: rho in (-1, 1), shape: zeta in (0, 1e6], ghlambda: lambda in R */
 /* Johnson SU as in rugarch (Rigby and Stasinopoulos). */
 #define VE_DIST_JSU 7 /* skew: nu in R, shape: tau > 0 */
 #define VE_MAX_ORDER 6
