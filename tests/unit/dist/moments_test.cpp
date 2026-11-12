@@ -542,6 +542,75 @@ TEST(Moments, SharpCoresMatchReferenceQuadrature)
     }
 }
 
+// Review Focus 1 at the far edge of the domain: a nig or ghyp that double precision cannot standardize is not
+// computable, and its moments are NaN; one that is computable integrates to one with mean 0 and variance 1.
+void expect_standardized_or_not_computable(const SkewedCase& c)
+{
+    SCOPED_TRACE(case_label(c) + " zeta " + std::to_string(c.parameters.shape));
+    if (!ve::dist::in_domain(c.dist, c.parameters))
+    {
+        EXPECT_TRUE(std::isnan(abs_moment(c.dist, c.parameters, 2.0)));
+        EXPECT_TRUE(std::isnan(asymmetric_moment(c.dist, c.parameters, 0.3, 1.5)));
+        EXPECT_TRUE(std::isnan(shifted_moment(c.dist, c.parameters, 0.3, 0.2, 1.5)));
+        EXPECT_TRUE(std::isnan(probability_below_zero(c.dist, c.parameters)));
+        return;
+    }
+    ve::dist::Density<double> density = ve::dist::make_density(c.dist, c.parameters);
+    auto f = [&](double z) { return std::exp(ve::dist::log_density(density, z)); };
+    ve::testing::RawMoments moments = ve::testing::reference_moments(f, 0.0);
+    EXPECT_NEAR(moments[0], 1.0, 1e-6);
+    EXPECT_NEAR(moments[1], 0.0, 1e-6);
+    EXPECT_NEAR(moments[2], 1.0, 1e-6);
+    EXPECT_NEAR(abs_moment(c.dist, c.parameters, 2.0), 1.0, 1e-6);
+    double probability = probability_below_zero(c.dist, c.parameters);
+    EXPECT_NEAR(probability, reference_probability_below_zero(c), 1e-6);
+}
+
+std::vector<SkewedCase> extreme_hyperbolic_cases(std::initializer_list<double> zetas,
+                                                 std::initializer_list<double> rhos)
+{
+    std::vector<SkewedCase> cases;
+    for (double zeta : zetas)
+    {
+        for (double rho : rhos)
+        {
+            for (double sign : {-1.0, 1.0})
+            {
+                cases.push_back({Dist::Nig, {sign * rho, zeta, 0.0}, sign < 0.0});
+                cases.push_back({Dist::Ghyp, {sign * rho, zeta, -2.5}, sign < 0.0});
+                cases.push_back({Dist::Ghyp, {sign * rho, zeta, 1.5}, sign < 0.0});
+            }
+        }
+    }
+    return cases;
+}
+
+TEST(Moments, ExtremeHyperbolicStandardizedOrNotComputable)
+{
+    for (const SkewedCase& c : extreme_hyperbolic_cases({1e9, 1e12}, {0.99, 1.0 - 1e-12}))
+    {
+        expect_standardized_or_not_computable(c);
+    }
+}
+
+// The computable edge: zeta at kMaxHyperbolicShape, and rho up to the last double below 1.
+TEST(Moments, HyperbolicEdgeIsStandardized)
+{
+    double last_below_one = std::nextafter(1.0, 0.0);
+    for (const SkewedCase& c : extreme_hyperbolic_cases({ve::dist::kMaxHyperbolicShape, 1e3, 1.0},
+                                                        {0.99, 1.0 - 1e-12, last_below_one}))
+    {
+        EXPECT_TRUE(ve::dist::in_domain(c.dist, c.parameters)) << case_label(c);
+        expect_standardized_or_not_computable(c);
+    }
+    double past_cap = std::nextafter(ve::dist::kMaxHyperbolicShape, 2e6);
+    for (const SkewedCase& c : extreme_hyperbolic_cases({past_cap}, {0.0}))
+    {
+        EXPECT_FALSE(ve::dist::in_domain(c.dist, c.parameters)) << case_label(c);
+        expect_standardized_or_not_computable(c);
+    }
+}
+
 // Below tau ~ 0.053 the jsu constant c overflows to 0, and the moments are NaN rather than 0.
 TEST(Moments, JohnsonPastOverflowIsNaN)
 {

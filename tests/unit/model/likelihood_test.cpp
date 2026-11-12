@@ -1,5 +1,6 @@
 #include "model/likelihood.hpp"
 #include "model/likelihood_terms.hpp"
+#include "model/parameter_map.hpp"
 
 #include "model/start_values.hpp"
 #include "simulated_garch.hpp"
@@ -452,8 +453,8 @@ TEST(Likelihood, SkewedHandCase)
     }
 }
 
-// zeta this small with order 40 overflows K_40 to +inf, so the terms are NaN (inf - inf), which is not a
-// likelihood.
+// zeta this small with order 40 overflows the Bessel ratios, so the ghyp cannot be standardized: it is not
+// computable, and the likelihood is -inf rather than NaN.
 TEST(Likelihood, NonFiniteTermIsInvalid)
 {
     std::vector<double> r = ve::testing::simulate_garch_series(42, 50);
@@ -493,6 +494,66 @@ TEST(Likelihood, InfiniteSumIsInvalid)
 {
     expect_infinite_sum_invalid<double>();
     expect_infinite_sum_invalid<Dual<8>>();
+}
+
+// A GARCH(1,1) point with the given distribution parameters; ghlambda = 1.5 for ghyp.
+std::vector<double> hyperbolic_theta(const Layout& layout, double rho, double zeta)
+{
+    std::vector<double> theta(layout.count());
+    theta[layout.mu()] = 0.04;
+    theta[layout.omega()] = 0.05;
+    theta[layout.alpha_begin()] = 0.05;
+    theta[layout.beta_begin()] = 0.85;
+    if (layout.model == Model::GjrGarch)
+    {
+        theta[layout.gamma_begin()] = 0.05;
+    }
+    theta[layout.skew()] = rho;
+    theta[layout.shape()] = zeta;
+    if (layout.has_ghlambda())
+    {
+        theta[layout.ghlambda()] = 1.5;
+    }
+    return theta;
+}
+
+struct HyperbolicPoint
+{
+    double rho;
+    double zeta;
+    bool computable;
+};
+
+// Review Focus 1: the likelihood and the validity rule agree with in_domain on where nig and ghyp are
+// computable.
+TEST(Likelihood, HyperbolicComputabilityAgrees)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(42, 200);
+    double past_cap = std::nextafter(ve::dist::kMaxHyperbolicShape, 2e6);
+    std::vector<HyperbolicPoint> points{{0.99, 1e9, false},    {1.0 - 1e-12, 1e12, false},
+                                        {0.3, past_cap, false}, {0.3, 1e-300, false},
+                                        {1.0 - 1e-12, 1e6, true}, {-0.3, 5.0, true}};
+    for (Model model : {Model::SGarch, Model::GjrGarch})
+    {
+        for (Dist dist : {Dist::Nig, Dist::Ghyp})
+        {
+            Layout layout = ve::model::layout_of({.model = model, .dist = dist});
+            for (const HyperbolicPoint& point : points)
+            {
+                SCOPED_TRACE(::testing::Message() << "model " << static_cast<int>(model) << ", dist "
+                                                  << static_cast<int>(dist) << ", rho " << point.rho
+                                                  << ", zeta " << point.zeta);
+                std::vector<double> theta = hyperbolic_theta(layout, point.rho, point.zeta);
+                EXPECT_EQ(ve::dist::in_domain(dist, ve::model::shape_parameters_of<double>(theta, layout)),
+                          point.computable);
+                EXPECT_EQ(ve::model::is_valid(theta, layout), point.computable);
+                EXPECT_EQ(std::isfinite(loglik_at(r, theta, layout, VarInit::Sample)), point.computable);
+                std::vector<Dual<8>> seeds = seeded<8>(theta);
+                Dual<8> dual = loglik<Dual<8>>(r, seeds, layout, VarInit::Sample, {});
+                EXPECT_EQ(std::isfinite(dual.value), point.computable);
+            }
+        }
+    }
 }
 
 TEST(Likelihood, SkewedDomainGivesNonFinite)

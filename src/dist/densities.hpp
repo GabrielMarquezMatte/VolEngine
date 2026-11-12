@@ -69,11 +69,11 @@ T density_kink(const Density<T>& density)
     return -(skewed->shift / skewed->stretch);
 }
 
-// The parameter domains of the "Distribuições" table; the parameters a distribution lacks are not read.
+// The parameter domains of the "Distribuições" table, nig and ghyp cut to where they are computable (see
+// hyperbolic_computable); the parameters a distribution lacks are not read.
 inline bool in_domain(Dist dist, const ShapeParameters<double>& parameters)
 {
     bool positive_skew = parameters.skew > 0.0;
-    bool correlation_skew = std::fabs(parameters.skew) < 1.0;
     bool positive_shape = parameters.shape > 0.0;
     switch (dist)
     {
@@ -82,9 +82,9 @@ inline bool in_domain(Dist dist, const ShapeParameters<double>& parameters)
         case Dist::Sged:
             return positive_skew && positive_shape;
         case Dist::Nig:
-            return correlation_skew && positive_shape;
+            return hyperbolic_computable(parameters.skew, parameters.shape, -0.5);
         case Dist::Ghyp:
-            return correlation_skew && positive_shape && std::isfinite(parameters.ghlambda);
+            return hyperbolic_computable(parameters.skew, parameters.shape, parameters.ghlambda);
         case Dist::Jsu:
             return std::isfinite(parameters.skew) && positive_shape;
         case Dist::Norm:

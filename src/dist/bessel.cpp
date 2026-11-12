@@ -49,16 +49,16 @@ double hankel_scaled_log_k(double order, double x)
     return 0.5 * std::log(std::numbers::pi / (2.0 * x)) + std::log1p(sum);
 }
 
-// log K_order(x) for order >= 0 and x >= kAsymptoticFrom: the series gives K_frac and K_(frac+1), and the forward
-// recurrence K_(v+1) = K_(v-1) + 2v/x K_v, stable for K, climbs to the order. Boost cannot serve here: its K
-// underflows for log K < -745, which large orders reach already at x = 900.
+// log(e^x K_order(x)) for order >= 0 and x >= kAsymptoticFrom: the series gives K_frac and K_(frac+1), and
+// the forward recurrence K_(v+1) = K_(v-1) + 2v/x K_v, stable for K, climbs to the order. Boost cannot serve
+// here: its K underflows for log K < -745, which large orders reach already at x = 900.
 double scaled_recurrence_log_k(double order, double x)
 {
     double fraction = order - std::floor(order);
     int steps = static_cast<int>(order - fraction);
     if (steps == 0)
     {
-        return hankel_scaled_log_k(fraction, x) - x;
+        return hankel_scaled_log_k(fraction, x);
     }
     double below = std::exp(hankel_scaled_log_k(fraction, x));
     double above = std::exp(hankel_scaled_log_k(fraction + 1.0, x));
@@ -75,7 +75,7 @@ double scaled_recurrence_log_k(double order, double x)
             above = 1.0;
         }
     }
-    return log_scale + std::log(above) - x;
+    return log_scale + std::log(above);
 }
 
 double boost_log_k(double order, double x)
@@ -110,9 +110,18 @@ double log_bessel_k(double order, double x)
     }
     if (x >= kAsymptoticFrom)
     {
-        return scaled_recurrence_log_k(std::fabs(order), x);
+        return scaled_recurrence_log_k(std::fabs(order), x) - x;
     }
     return log_k_avoiding_five_halves_shortcut(std::fabs(order), x);
+}
+
+double log_bessel_k_scaled(double order, double x)
+{
+    if (x >= kAsymptoticFrom && std::fabs(order) < kMaxBoostOrder)
+    {
+        return scaled_recurrence_log_k(std::fabs(order), x);
+    }
+    return log_bessel_k(order, x) + x;
 }
 
 }

@@ -43,6 +43,14 @@ inline bool has_student_tail(Dist dist)
 }
 
 template <class T>
+bool in_domain_of(Dist dist, const ShapeParameters<T>& parameters)
+{
+    ShapeParameters<double> values{ad::value_of(parameters.skew), ad::value_of(parameters.shape),
+                                   ad::value_of(parameters.ghlambda)};
+    return in_domain(dist, values);
+}
+
+template <class T>
 bool infinite_moment(Dist dist, const ShapeParameters<T>& parameters, const T& power)
 {
     return has_student_tail(dist) && ad::value_of(parameters.shape) <= ad::value_of(power);
@@ -206,8 +214,11 @@ void add_refinements(Breakpoints<T>& breakpoints, const T& kink, double directio
 }
 
 // A nig or ghyp with delta below kRefinedBelow peaks within a few delta of its location, which gets a split
-// point and the refinements of a kink at the scale delta. The points are values only: the density is smooth
-// there.
+// point and the refinements of a kink at the scale delta. As |rho| nears 1 the minimum of g, at the offset
+// rho delta / cosine from the location (see hyperbolic.hpp), moves away from it; once that offset reaches
+// kRefinedBelow the peak at the location has either widened or been suppressed by exp(-alpha g), and the mass
+// lies about the minimum, which the refinements follow instead. The points are values only: the density is
+// smooth there.
 template <class T>
 void add_location_refinements(Breakpoints<T>& breakpoints, const Density<T>& density)
 {
@@ -216,15 +227,21 @@ void add_location_refinements(Breakpoints<T>& breakpoints, const Density<T>& den
     {
         return;
     }
-    double delta = std::sqrt(ad::value_of(hyperbolic->delta2));
+    double delta = ad::value_of(hyperbolic->delta);
     if (!(delta < kRefinedBelow))
     {
         return;
     }
-    T location{ad::value_of(hyperbolic->location)};
-    breakpoints.add(location);
-    add_refinements(breakpoints, location, -1.0, delta);
-    add_refinements(breakpoints, location, 1.0, delta);
+    double center = ad::value_of(hyperbolic->location);
+    double minimum_offset = ad::value_of(hyperbolic->rho) * delta / ad::value_of(hyperbolic->cosine);
+    if (std::fabs(minimum_offset) >= kRefinedBelow)
+    {
+        center += minimum_offset;
+    }
+    T point{center};
+    breakpoints.add(point);
+    add_refinements(breakpoints, point, -1.0, delta);
+    add_refinements(breakpoints, point, 1.0, delta);
 }
 
 template <class T>
@@ -420,7 +437,7 @@ T johnson_probability_below_zero(const JohnsonLogDensity<T>& density)
 }
 
 // E(|z - eta2| - eta1 (z - eta2))^power, by quadrature (in the normal variable for jsu); +inf for std and
-// sstd with shape <= power.
+// sstd with shape <= power, NaN otherwise outside the domain (see in_domain).
 template <class T>
 T shifted_moment(Dist dist, const ShapeParameters<T>& parameters, const T& eta1, const T& eta2,
                  const T& power)
@@ -428,6 +445,10 @@ T shifted_moment(Dist dist, const ShapeParameters<T>& parameters, const T& eta1,
     if (detail::infinite_moment(dist, parameters, power))
     {
         return T{std::numeric_limits<double>::infinity()};
+    }
+    if (!detail::in_domain_of(dist, parameters))
+    {
+        return T{std::numeric_limits<double>::quiet_NaN()};
     }
     if (dist == Dist::Jsu)
     {
@@ -439,7 +460,7 @@ T shifted_moment(Dist dist, const ShapeParameters<T>& parameters, const T& eta1,
 }
 
 // E|z|^power: the closed form for norm, std and ged, the quadrature for the others; +inf for std and sstd
-// with shape <= power.
+// with shape <= power, NaN for the others outside the domain.
 template <class T>
 T abs_moment(Dist dist, const ShapeParameters<T>& parameters, const T& power)
 {
@@ -477,13 +498,17 @@ T asymmetric_moment(Dist dist, const ShapeParameters<T>& parameters, const T& et
 }
 
 // P(z < 0): exactly 0.5 for norm, std and ged, Phi(r(0)) for jsu, the quadrature of f over (-inf, 0) for the
-// others.
+// others; NaN outside the domain but for norm, std and ged.
 template <class T>
 T probability_below_zero(Dist dist, const ShapeParameters<T>& parameters)
 {
     if (detail::is_symmetric(dist))
     {
         return T{0.5};
+    }
+    if (!detail::in_domain_of(dist, parameters))
+    {
+        return T{std::numeric_limits<double>::quiet_NaN()};
     }
     if (dist == Dist::Jsu)
     {
