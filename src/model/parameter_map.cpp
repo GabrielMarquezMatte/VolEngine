@@ -2,6 +2,7 @@
 
 #include "dist/densities.hpp"
 #include "dist/moments.hpp"
+#include "model/regressor_map.hpp"
 #include "model/weight_terms.hpp"
 
 #include <algorithm>
@@ -195,8 +196,34 @@ void mean_to_natural(std::span<const T> u, std::span<T> theta, const Layout& lay
         theta[layout.mu()] = standardization.location + standardization.scale * u[layout.mu()];
     }
     std::copy(u.begin() + static_cast<std::ptrdiff_t>(layout.ar_begin()),
-              u.begin() + static_cast<std::ptrdiff_t>(layout.omega()),
+              u.begin() + static_cast<std::ptrdiff_t>(layout.archm_index()),
               theta.begin() + static_cast<std::ptrdiff_t>(layout.ar_begin()));
+}
+
+// Needs the natural power, so it follows write_fixed.
+template <class T>
+void regressors_to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout,
+                           const Standardization& standardization)
+{
+    for (std::size_t index = layout.archm_index(); index < layout.skew(); ++index)
+    {
+        if (is_regressor(layout, index) && layout.is_estimated(index))
+        {
+            theta[index] = u[index] * regressor_scale<T>(theta, layout, standardization, index);
+        }
+    }
+}
+
+void regressors_to_unconstrained(std::span<const double> theta, std::span<double> u, const Layout& layout,
+                                 const Standardization& standardization)
+{
+    for (std::size_t index = layout.archm_index(); index < layout.skew(); ++index)
+    {
+        if (is_regressor(layout, index))
+        {
+            u[index] = theta[index] / regressor_scale<double>(theta, layout, standardization, index);
+        }
+    }
 }
 
 // The distribution parameters, eta1 or the apARCH gamma, eta2 and the free power: everything kappa and pi
@@ -591,6 +618,7 @@ void to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout,
     copy_egarch_reals<T>(u, theta, layout);
     shock_parameters_to_natural<T>(u, theta, layout);
     write_fixed<T>(theta, layout);
+    regressors_to_natural<T>(u, theta, layout, standardization);
     weights_to_natural<T>(u, theta, layout);
     if (layout.model == Model::CsGarch)
     {
@@ -641,8 +669,9 @@ void to_unconstrained(std::span<const double> theta, std::span<double> u, const 
         u[layout.mu()] = (theta[layout.mu()] - standardization.location) / scale;
     }
     std::copy(theta.begin() + static_cast<std::ptrdiff_t>(layout.ar_begin()),
-              theta.begin() + static_cast<std::ptrdiff_t>(layout.omega()),
+              theta.begin() + static_cast<std::ptrdiff_t>(layout.archm_index()),
               u.begin() + static_cast<std::ptrdiff_t>(layout.ar_begin()));
+    regressors_to_unconstrained(theta, u, layout, standardization);
     u[layout.omega()] = omega_to_unconstrained(theta, layout, scale);
     copy_egarch_reals<double>(theta, u, layout);
     shock_parameters_to_unconstrained(theta, u, layout);
@@ -658,6 +687,17 @@ void to_unconstrained(std::span<const double> theta, std::span<double> u, const 
             u[index] = 0.0;
         }
     }
+}
+
+double natural_scale(const Layout& layout, const Standardization& standardization, std::span<const double> theta,
+                     std::size_t index)
+{
+    if (is_regressor(layout, index))
+    {
+        return regressor_scale<double>(theta, layout, standardization, index);
+    }
+    assert(layout.include_mean && index == layout.mu());
+    return standardization.scale;
 }
 
 WeightTerms weight_terms(std::span<const double> theta, const Layout& layout)

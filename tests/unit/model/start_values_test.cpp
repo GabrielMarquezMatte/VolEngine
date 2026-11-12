@@ -1,6 +1,8 @@
 #include "model/start_values.hpp"
 
 #include "dist/moments.hpp"
+#include "linalg/least_squares.hpp"
+#include "model/data.hpp"
 #include "model/parameter_map.hpp"
 #include "simulated_garch.hpp"
 
@@ -388,6 +390,92 @@ TEST(StartValues, WarmStartFromEstimate)
     std::vector<double> u(plain.count());
     to_unconstrained(theta, u, plain, {});
     EXPECT_TRUE(std::ranges::all_of(u, [](double value) { return std::isfinite(value); }));
+}
+
+
+// Two regressor columns, row-major.
+std::vector<double> mean_regressors(std::size_t rows)
+{
+    std::vector<double> x(rows * 2);
+    for (std::size_t t = 0; t < rows; ++t)
+    {
+        x[2 * t] = std::sin(0.37 * static_cast<double>(t));
+        x[2 * t + 1] = std::cos(0.11 * static_cast<double>(t)) + 0.2 * std::sin(1.3 * static_cast<double>(t));
+    }
+    return x;
+}
+
+TEST(StartValues, OlsStart)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(5, 150);
+    std::vector<double> x = mean_regressors(r.size());
+    Layout layout = ve::model::layout_of({.mxreg = 2, .vxreg = 1, .archm = 1});
+    ve::model::Data data{r, {x, 2}, {x, 2}};
+    std::vector<double> a;
+    for (std::size_t t = 0; t < r.size(); ++t)
+    {
+        a.insert(a.end(), {1.0, x[2 * t], x[2 * t + 1]});
+    }
+    std::vector<double> b = ve::linalg::least_squares(a, 3, r);
+    std::vector<double> theta = start_values(data, layout);
+    EXPECT_TRUE(is_valid(theta, layout));
+    EXPECT_NEAR(theta[layout.mu()], b[0], 1e-14);
+    EXPECT_NEAR(theta[layout.mxreg_begin()], b[1], 1e-14);
+    EXPECT_NEAR(theta[layout.mxreg_begin() + 1], b[2], 1e-14);
+    EXPECT_EQ(theta[layout.archm_index()], 0.0);
+    EXPECT_EQ(theta[layout.vxreg_begin()], 0.0);
+    Layout plain = ve::model::layout_of({});
+    EXPECT_EQ(start_values(r, plain), start_values(ve::model::Data{r}, plain));
+}
+
+TEST(StartValues, OlsStartWithoutMean)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(6, 100);
+    std::vector<double> x = mean_regressors(r.size());
+    Layout layout = ve::model::layout_of({.include_mean = false, .mxreg = 2});
+    std::vector<double> b = ve::linalg::least_squares(x, 2, r);
+    std::vector<double> theta = start_values(ve::model::Data{r, {x, 2}}, layout);
+    EXPECT_NEAR(theta[layout.mxreg_begin()], b[0], 1e-14);
+    EXPECT_NEAR(theta[layout.mxreg_begin() + 1], b[1], 1e-14);
+}
+
+TEST(StartValues, CollinearRegressorsStayFinite)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(7, 100);
+    std::vector<double> x(r.size() * 3);
+    for (std::size_t t = 0; t < r.size(); ++t)
+    {
+        x[3 * t] = 1.0;
+        x[3 * t + 1] = 1.0;
+        x[3 * t + 2] = std::sin(0.3 * static_cast<double>(t));
+    }
+    Layout layout = ve::model::layout_of({.mxreg = 3});
+    std::vector<double> theta = start_values(ve::model::Data{r, {x, 3}}, layout);
+    for (double value : theta)
+    {
+        EXPECT_TRUE(std::isfinite(value));
+    }
+    EXPECT_TRUE(is_valid(theta, layout));
+}
+
+TEST(StartValues, FixedRegressorLeavesTheLeastSquaresToTheOthers)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(8, 150);
+    std::vector<double> x = mean_regressors(r.size());
+    Layout layout = ve::model::layout_of({.fixed = {{"mxreg1", 0.5}}, .mxreg = 2});
+    std::vector<double> a;
+    std::vector<double> y(r.size());
+    for (std::size_t t = 0; t < r.size(); ++t)
+    {
+        a.insert(a.end(), {1.0, x[2 * t + 1]});
+        y[t] = r[t] - 0.5 * x[2 * t];
+    }
+    std::vector<double> b = ve::linalg::least_squares(a, 2, y);
+    std::vector<double> theta = start_values(ve::model::Data{r, {x, 2}}, layout);
+    EXPECT_EQ(theta[layout.mxreg_begin()], 0.5);
+    EXPECT_NEAR(theta[layout.mu()], b[0], 1e-12);
+    EXPECT_NEAR(theta[layout.mxreg_begin() + 1], b[1], 1e-12);
+    EXPECT_TRUE(is_valid(theta, layout));
 }
 
 }
