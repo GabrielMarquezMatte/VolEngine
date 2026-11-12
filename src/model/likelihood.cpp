@@ -162,9 +162,8 @@ T mean_square(std::span<const T> residuals)
     return sum / static_cast<double>(residuals.size());
 }
 
-// (mean |e|^power)^(2 / power): the variance whose sigma^power is the sample mean of |e|^power.
 template <class T>
-T mean_power_variance(std::span<const T> residuals, const T& power, bool free_power)
+T mean_power(std::span<const T> residuals, const T& power, bool free_power)
 {
     using std::abs;
     T sum{0.0};
@@ -172,7 +171,14 @@ T mean_power_variance(std::span<const T> residuals, const T& power, bool free_po
     {
         sum = sum + garch::raise(abs(e), power, free_power);
     }
-    return garch::raise(sum / static_cast<double>(residuals.size()), 2.0 / power, free_power);
+    return sum / static_cast<double>(residuals.size());
+}
+
+// (mean |e|^power)^(2 / power): the variance whose sigma^power is the sample mean of |e|^power.
+template <class T>
+T mean_power_variance(std::span<const T> residuals, const T& power, bool free_power)
+{
+    return garch::raise(mean_power(residuals, power, free_power), 2.0 / power, free_power);
 }
 
 // rugarch holds sigma2_t for t < max(m, n, p, q), the ARMA orders included, at the sample mean of the squared
@@ -348,6 +354,44 @@ T sum_of_density_terms(std::span<const T> residuals, std::span<const T> sigma2,
                       { return sum_of_alternative<T>(residuals, sigma2, alternative, terms); }, density);
 }
 
+template <class T>
+struct Evaluation
+{
+    std::span<const double> r;
+    std::span<const T> residuals;
+    std::span<T> sigma2;
+    std::span<T> terms;
+    VarInit var_init;
+    const dist::ShapeParameters<T>& shape;
+};
+
+template <class T>
+T evaluate(const Evaluation<T>& e, std::span<const T> theta, const Layout& layout)
+{
+    garch::Presample<T> initial = presample<T>(e.r, e.residuals, theta, layout, e.var_init);
+    if (!fill_variance<T>(e.residuals, theta, layout, initial, e.sigma2))
+    {
+        return T{kInvalidLoglik};
+    }
+    return sum_of_density_terms<T>(e.residuals, e.sigma2, dist::make_density(layout.dist, e.shape), e.terms);
+}
+
+}
+
+template <class T>
+T targeted_omega(std::span<const T> residuals, std::span<const T> theta, const Layout& layout)
+{
+    using std::log;
+    T slack = T{1.0} - persistence<T>(theta, layout);
+    if (layout.model == Model::EGarch)
+    {
+        return log(mean_square(residuals)) * slack;
+    }
+    if (layout.is_power_family())
+    {
+        return mean_power(residuals, power_of(theta, layout), layout.free_power) * slack;
+    }
+    return mean_square(residuals) * slack;
 }
 
 template <class T>
@@ -368,13 +412,26 @@ T loglik(std::span<const double> r, std::span<const T> theta, const Layout& layo
     std::span<T> residuals = provided_or(out.residuals, residual_storage, r.size());
     std::span<T> sigma2 = provided_or(out.sigma2, variance_storage, r.size());
     mean::arma_residuals(r, arma_parameters(theta, layout), residuals);
-    garch::Presample<T> initial = presample<T>(r, residuals, theta, layout, var_init);
-    if (!fill_variance<T>(residuals, theta, layout, initial, sigma2))
+    Evaluation<T> evaluation{r, residuals, sigma2, out.terms, var_init, shape};
+    if (!layout.variance_targeting)
     {
-        return T{kInvalidLoglik};
+        return evaluate<T>(evaluation, theta, layout);
     }
-    return sum_of_density_terms<T>(residuals, sigma2, dist::make_density(layout.dist, shape), out.terms);
+    std::array<T, kMaxParameterCount> targeted;
+    std::ranges::copy(theta, targeted.begin());
+    targeted[layout.omega()] = targeted_omega<T>(residuals, theta, layout);
+    return evaluate<T>(evaluation, std::span<const T>(targeted).first(theta.size()), layout);
 }
+
+template double targeted_omega<double>(std::span<const double>, std::span<const double>, const Layout&);
+template ad::Dual<8> targeted_omega<ad::Dual<8>>(std::span<const ad::Dual<8>>, std::span<const ad::Dual<8>>,
+                                                 const Layout&);
+template ad::Dual<16> targeted_omega<ad::Dual<16>>(std::span<const ad::Dual<16>>, std::span<const ad::Dual<16>>,
+                                                   const Layout&);
+template ad::Dual<32> targeted_omega<ad::Dual<32>>(std::span<const ad::Dual<32>>, std::span<const ad::Dual<32>>,
+                                                   const Layout&);
+template ad::Dual<42> targeted_omega<ad::Dual<42>>(std::span<const ad::Dual<42>>, std::span<const ad::Dual<42>>,
+                                                   const Layout&);
 
 template double loglik<double>(std::span<const double>, std::span<const double>, const Layout&, VarInit,
                                const LoglikOutputs<double>&);
