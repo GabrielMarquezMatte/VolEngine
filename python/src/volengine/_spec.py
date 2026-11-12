@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import KW_ONLY, dataclass, field
-from types import MappingProxyType
+from typing import NoReturn
 
 from ._native import Handle, check, create_handle, int32, lib
 
@@ -32,8 +32,26 @@ def code_of(table: dict[str, int], kind: str, name: str) -> int:
     return table[name]
 
 
+class _FrozenDict(dict[str, float]):
+    """A dict that refuses every mutation; unlike MappingProxyType it pickles, deep-copies and works with asdict."""
+
+    def _refuse(self, *args: object, **kwargs: object) -> NoReturn:
+        raise TypeError(f"{type(self).__name__} is read-only")
+
+    __setitem__ = __delitem__ = clear = pop = popitem = setdefault = update = __ior__ = _refuse
+
+    def __reduce__(self) -> tuple[type[_FrozenDict], tuple[dict[str, float]]]:
+        return (type(self), (dict(self),))
+
+
 def frozen_values(values: Mapping[str, float]) -> Mapping[str, float]:
-    return MappingProxyType({name: float(value) for name, value in values.items()})
+    return _FrozenDict({name: float(value) for name, value in values.items()})
+
+
+def encoded_name(name: str) -> bytes:
+    if "\0" in name:
+        raise ValueError(f"parameter name {name!r} contains a NUL byte")
+    return name.encode()
 
 
 @dataclass(frozen=True)
@@ -74,9 +92,10 @@ class Spec:
     A derived parameter (the iGARCH `beta_q`, and `omega` under variance targeting) is a function of
     the others: it has a name and a value, NaN standard errors, and is not counted either. `start`
     maps names to starting values that replace the defaults; a start value for a derived parameter is
-    ignored, so `dict(zip(fit.names, fit.coef().estimate))` is a valid warm start. A name cannot be in
-    both mappings (ValueError). If the starting point is outside the model's domain, the fit ends
-    "failed" with NaN. A spec with every parameter fixed does not optimize: the fit evaluates the model
+    ignored, so `dict(zip(fit.names, fit.coef().estimate))` is a valid warm start. A start value for a
+    name that is also in `fixed` is ignored, because fixed wins: `Spec(fixed=..., start=dict(zip(fit.names,
+    fit.coef().estimate)))` is a valid warm start. A name with a NUL character is a ValueError. If the
+    starting point is outside the model's domain, the fit ends "failed" with NaN. A spec with every parameter fixed does not optimize: the fit evaluates the model
     at the fixed point and is "converged" when the log-likelihood is finite.
 
     `variance_targeting=True` makes `omega` derived: it is computed inside the likelihood from the
@@ -109,9 +128,6 @@ class Spec:
     def __post_init__(self) -> None:
         object.__setattr__(self, "fixed", frozen_values(self.fixed))
         object.__setattr__(self, "start", frozen_values(self.start))
-        both = sorted(self.fixed.keys() & self.start.keys())
-        if both:
-            raise ValueError(f"parameters in both fixed and start: {both}")
         self.native_handle().close()
         object.__setattr__(self, "arma", tuple(self.arma))
 
@@ -160,9 +176,9 @@ class Spec:
 
     def apply_values(self, handle: Handle) -> None:
         for name, value in self.fixed.items():
-            check(lib.ve_spec_set_fixed(handle.pointer, name.encode(), value))
+            check(lib.ve_spec_set_fixed(handle.pointer, encoded_name(name), value))
         for name, value in self.start.items():
-            check(lib.ve_spec_set_start(handle.pointer, name.encode(), value))
+            check(lib.ve_spec_set_start(handle.pointer, encoded_name(name), value))
         check(lib.ve_spec_set_variance_targeting(handle.pointer, int(self.variance_targeting)))
         check(lib.ve_spec_validate(handle.pointer))
 

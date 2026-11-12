@@ -1,6 +1,9 @@
+import copy
 import ctypes
+import dataclasses
 import gc
 import math
+import pickle
 import weakref
 
 import numpy as np
@@ -546,9 +549,45 @@ def test_unknown_fixed_name_raises():
         ve.Spec(fixed={"shpe": 5.0})
 
 
-def test_name_in_fixed_and_start_raises():
-    with pytest.raises(ValueError, match="mu"):
-        ve.Spec(fixed={"mu": 0.0}, start={"mu": 0.1})
+def test_fixed_wins_over_start_for_the_same_name(ctx, series):
+    fit = ctx.fit(ve.Spec(fixed={"alpha1": 0.08}, start={"alpha1": 0.4}), series[:, 0])
+    table = dict(zip(fit.names, zip(fit.coef().estimate, fit.coef().std_error, strict=True), strict=True))
+    assert table["alpha1"][0] == 0.08
+    assert math.isnan(table["alpha1"][1])
+
+
+def test_warm_start_keeps_fixed(ctx, series):
+    spec = ve.Spec(dist="std", fixed={"shape": 6.0})
+    plain = ctx.fit(spec, series[:, 0], options=ve.FitOptions(max_iter=100))
+    warm_spec = ve.Spec(dist="std", fixed={"shape": 6.0}, start=dict(zip(plain.names, plain.coef().estimate, strict=True)))
+    warm = ctx.fit(warm_spec, series[:, 0], options=ve.FitOptions(max_iter=100))
+    assert warm.coef().estimate[plain.names.index("shape")] == 6.0
+    assert np.allclose(warm.coef().estimate, plain.coef().estimate, atol=1e-6, rtol=0.0)
+
+
+def test_nul_in_a_parameter_name_raises():
+    for field in ("fixed", "start"):
+        with pytest.raises(ValueError, match="mu"):
+            ve.Spec(**{field: {"mu\0x": 0.0}})
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        ve.Spec(),
+        ve.Spec(dist="std", fixed={"shape": 6.0}, start={"alpha1": 0.1}, variance_targeting=True),
+    ],
+)
+def test_spec_pickles_deepcopies_and_converts_with_asdict(spec):
+    for clone in (pickle.loads(pickle.dumps(spec)), copy.deepcopy(spec)):
+        assert clone == spec
+        assert hash(clone) == hash(spec)
+        assert dict(clone.fixed) == dict(spec.fixed)
+        assert dict(clone.start) == dict(spec.start)
+    as_dict = dataclasses.asdict(spec)
+    assert as_dict["fixed"] == dict(spec.fixed)
+    assert as_dict["start"] == dict(spec.start)
+    assert ve.Spec(**as_dict) == spec
 
 
 def test_spec_with_values_hashes():
@@ -568,6 +607,16 @@ def test_spec_values_are_read_only():
         spec.fixed["mu"] = 1.0  # type: ignore[index]
     with pytest.raises(TypeError):
         spec.start["alpha1"] = 1.0  # type: ignore[index]
+    for values in (spec.fixed, spec.start):
+        for mutate in (values.clear, values.popitem, lambda: values.pop("mu"), lambda: values.update(mu=1.0)):
+            with pytest.raises(TypeError):
+                mutate()  # type: ignore[attr-defined]
+        with pytest.raises(TypeError):
+            del values["mu"]  # type: ignore[attr-defined]
+        with pytest.raises(TypeError):
+            values.setdefault("mu", 1.0)  # type: ignore[attr-defined]
+        with pytest.raises(TypeError):
+            values |= {"mu": 1.0}  # type: ignore[assignment,operator]
 
 
 def test_variance_targeting_in_igarch_raises():

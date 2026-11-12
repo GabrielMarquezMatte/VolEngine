@@ -122,11 +122,11 @@ VE_API ve_status ve_spec_set_include_mean(ve_spec* s, int32_t include_mean); /* 
    variance targeting, omega. It has a name and a value, NaN standard errors and does not count in the
    criteria. The criteria count the estimated parameters only (none when everything is fixed).
    Names are those of ve_fit_param_name (rugarch's: mu, ar1, ma1, omega, alpha1, beta1, gamma1, eta11,
-   eta21, delta, skew, shape, ghlambda, ...). A name is in at most one of the fixed and start lists:
-   fixing a name removes its start value and the other way round; setting a name again replaces its
-   value. Names are resolved when the spec is used (ve_spec_validate, ve_fit_batch), not by the setters,
-   so the order of the setters does not matter. NULL or empty name, or a value that is NaN or infinite,
-   is VE_INVALID_ARGUMENT and leaves the spec unchanged.
+   eta21, delta, skew, shape, ghlambda, ...). Fixing a name removes its start value, and a start value
+   given for a name that is fixed is ignored: fixed wins in either order of the setters, which give the
+   same fit. Setting a name again replaces its value. Names are resolved when the spec is used
+   (ve_spec_validate, ve_fit_batch), not by the setters. NULL or empty name, or a value that is NaN or
+   infinite, is VE_INVALID_ARGUMENT and leaves the spec unchanged.
    Fixing the parameters together can leave no admissible point (sGARCH with alpha1 = 0.6 and beta1 = 0.5,
    persistence >= 1): that fit ends VE_FIT_FAILED with NaN values, and the rest of the batch is
    unaffected. A spec with no estimated parameter does not run the optimizer: the fit evaluates the
@@ -134,9 +134,10 @@ VE_API ve_status ve_spec_set_include_mean(ve_spec* s, int32_t include_mean); /* 
    log-likelihood is finite, VE_FIT_FAILED when it is not, with NaN standard errors. */
 VE_API ve_status ve_spec_set_fixed(ve_spec* s, const char* name, double value);
 /* Replaces the default start value of the parameter. A start value for a derived parameter is
-   ignored, so all the estimates of a previous fit can be passed back as a warm start. When the
-   starting point leaves the model's domain, the fit ends VE_FIT_FAILED with NaN. The same name rules
-   as ve_spec_set_fixed apply. */
+   ignored, and so is one for a fixed parameter (it never unfixes it), so all the estimates of a
+   previous fit can be passed back as a warm start next to the fixed values. When the starting point
+   leaves the model's domain, the fit ends VE_FIT_FAILED with NaN. The same name rules as
+   ve_spec_set_fixed apply. */
 VE_API ve_status ve_spec_set_start(ve_spec* s, const char* name, double value);
 /* Variance targeting, 0 or 1 (default 0); other values are VE_INVALID_ARGUMENT. omega becomes
    derived and is computed inside the likelihood from the residuals e_t of the current mean parameters

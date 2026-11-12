@@ -116,7 +116,8 @@ ve_status check_name_and_value(const char* name, double value)
     return VE_OK;
 }
 
-// A name lives in at most one of the two lists: setting it in one removes it from the other.
+// Fixing a name removes its start value. A start value never unfixes: on a fixed name it stays in the
+// list and the core ignores it, so the setters give the same fit in either order.
 ve_status set_named_value(ve_spec* s, const char* name, double value, bool as_fixed)
 {
     return guard(
@@ -131,10 +132,11 @@ ve_status set_named_value(ve_spec* s, const char* name, double value, bool as_fi
             {
                 return status;
             }
-            auto& target = as_fixed ? s->spec.fixed : s->spec.start;
-            auto& other = as_fixed ? s->spec.start : s->spec.fixed;
-            remove_name(other, name);
-            put_value(target, name, value);
+            if (as_fixed)
+            {
+                remove_name(s->spec.start, name);
+            }
+            put_value(as_fixed ? s->spec.fixed : s->spec.start, name, value);
             return VE_OK;
         });
 }

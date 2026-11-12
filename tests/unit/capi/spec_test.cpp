@@ -1,4 +1,6 @@
 #include "capi/handles.hpp"
+#include "capi_scope.hpp"
+#include "simulated_garch.hpp"
 
 #include <cmath>
 #include <gtest/gtest.h>
@@ -12,6 +14,48 @@ namespace
 bool error_mentions(const std::string& text)
 {
     return std::string(ve_last_error()).find(text) != std::string::npos;
+}
+
+constexpr double kFixedAlpha = 0.08;
+constexpr std::size_t kFitLength = 600;
+constexpr std::size_t kAlphaIndex = 2;
+
+struct AlphaFit
+{
+    ve::testing::Snapshot snapshot;
+    double alpha_error = 0.0;
+};
+
+// sGARCH(1,1) with alpha1 fixed at kFixedAlpha and given the start value 0.4, in either setter order.
+AlphaFit fit_with_fixed_and_start_alpha(bool fixed_first)
+{
+    ve::testing::SpecPtr spec = ve::testing::make_spec(1);
+    if (fixed_first)
+    {
+        EXPECT_EQ(ve_spec_set_fixed(spec.get(), "alpha1", kFixedAlpha), VE_OK);
+    }
+    EXPECT_EQ(ve_spec_set_start(spec.get(), "alpha1", 0.4), VE_OK);
+    if (!fixed_first)
+    {
+        EXPECT_EQ(ve_spec_set_fixed(spec.get(), "alpha1", kFixedAlpha), VE_OK);
+    }
+    EXPECT_EQ(ve_spec_validate(spec.get()), VE_OK);
+    const std::vector<double> data = ve::testing::simulate_garch_matrix(kFitLength, 1);
+    ve::testing::PanelPtr panel = ve::testing::make_panel(data.data(), kFitLength, 1);
+    ve::testing::BatchInputs inputs;
+    inputs.specs = {spec.get()};
+    inputs.panel = panel.get();
+    inputs.job_spec = {0};
+    inputs.job_series = {0};
+    ve::testing::BatchPtr batch = ve::testing::build_batch(inputs);
+    ve::testing::ContextPtr context = ve::testing::make_context(1);
+    ve::testing::FitSet fits = ve::testing::fit_all(context.get(), batch.get());
+    AlphaFit result;
+    result.snapshot = ve::testing::read_snapshot(fits[0]);
+    std::vector<double> errors(result.snapshot.estimate.size());
+    EXPECT_EQ(ve_fit_std_errors(fits[0], VE_SE_HESSIAN, errors.data()), VE_OK);
+    result.alpha_error = errors.at(kAlphaIndex);
+    return result;
 }
 
 }
@@ -176,7 +220,8 @@ TEST(CapiSpec, FixedAndStartSetters)
     EXPECT_EQ(spec->spec.fixed[0].value, 0.3);
 
     ASSERT_EQ(ve_spec_set_start(spec, "alpha1", 0.4), VE_OK);
-    EXPECT_TRUE(spec->spec.fixed.empty());
+    ASSERT_EQ(spec->spec.fixed.size(), 1u);
+    EXPECT_EQ(spec->spec.fixed[0].value, 0.3);
     ASSERT_EQ(spec->spec.start.size(), 1u);
     EXPECT_EQ(spec->spec.start[0].value, 0.4);
 
@@ -194,6 +239,19 @@ TEST(CapiSpec, FixedAndStartSetters)
     EXPECT_EQ(ve_spec_set_variance_targeting(spec, 0), VE_OK);
     EXPECT_FALSE(spec->spec.variance_targeting);
     ve_spec_free(spec);
+}
+
+TEST(CapiSpec, StartValueNeverUnfixesInEitherOrder)
+{
+    const AlphaFit fixed_first = fit_with_fixed_and_start_alpha(true);
+    const AlphaFit start_first = fit_with_fixed_and_start_alpha(false);
+    for (const AlphaFit* fit : {&fixed_first, &start_first})
+    {
+        EXPECT_EQ(fit->snapshot.status, VE_FIT_CONVERGED);
+        EXPECT_EQ(fit->snapshot.estimate.at(kAlphaIndex), kFixedAlpha);
+        EXPECT_TRUE(std::isnan(fit->alpha_error));
+    }
+    EXPECT_EQ(fixed_first.snapshot, start_first.snapshot);
 }
 
 TEST(CapiSpec, ValidateReportsSpecProblems)

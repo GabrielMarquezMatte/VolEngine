@@ -1269,6 +1269,19 @@ TEST(FitRoles, InvalidFixedFails)
     EXPECT_TRUE(all_nan(result.estimate));
 }
 
+// A valid fixed point (omega > 0, persistence < 1) whose variance recursion overflows: sigma2 -> inf.
+TEST(FitRoles, AllFixedWithNonFiniteLoglikFails)
+{
+    Spec spec;
+    spec.fixed = {{"mu", 0.0}, {"omega", 1e308}, {"alpha1", 0.05}, {"beta1", 0.9}};
+    FitResult result;
+    ASSERT_NO_THROW(result = fit_simulated(spec));
+    EXPECT_EQ(result.status, FitStatus::Failed);
+    EXPECT_TRUE(all_nan(result.estimate));
+    EXPECT_TRUE(std::isnan(result.loglik));
+    EXPECT_TRUE(result.sigma.empty());
+}
+
 TEST(FitRoles, AllFixedEvaluates)
 {
     Spec spec = std_spec();
