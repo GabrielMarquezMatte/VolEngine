@@ -32,7 +32,7 @@ constexpr std::size_t kObservations = 5000;
 std::vector<double> simulate_garch_returns(std::size_t count)
 {
     std::mt19937_64 engine(7);
-    std::normal_distribution<double> shock(0.0, 1.0);
+    ve::testing::PortableNormal shock{1.0};
     double mu = 0.05;
     double omega = 0.01;
     double alpha = 0.08;
@@ -198,7 +198,7 @@ TEST(Fit, NonFiniteObservationFails)
 TEST(Fit, StandardErrorsAreNaNOrPositiveWhenArchEffectIsAbsent)
 {
     std::mt19937_64 engine(3);
-    std::normal_distribution<double> shock(0.0, 1.0);
+    ve::testing::PortableNormal shock{1.0};
     std::vector<double> r(3000);
     std::ranges::generate(r, [&] { return shock(engine); });
     FitResult result = ve::fit_one(r, Spec{}, ve::FitConfig{});
@@ -397,7 +397,7 @@ TEST(FitGeneric, NamesAreGenerated)
     Spec spec = generic_spec(2, 1, ve::Dist::Std);
     spec.ar = 1;
     FitResult result =
-        ve::fit_one(ve::testing::simulate_portable_garch_series(5, 1000), spec, ve::FitConfig{});
+        ve::fit_one(ve::testing::simulate_garch_series(5, 1000), spec, ve::FitConfig{});
     std::vector<std::string> expected{"mu", "ar1", "omega", "alpha1", "alpha2", "beta1", "shape"};
     EXPECT_EQ(result.names, expected);
     EXPECT_EQ(result.estimate.size(), expected.size());
@@ -417,7 +417,7 @@ TEST(FitGeneric, ScaleInvarianceStillHolds)
 
 void expect_insufficient(const Spec& spec, std::size_t length, std::size_t parameter_count)
 {
-    std::vector<double> r = ve::testing::simulate_portable_garch_series(9, length);
+    std::vector<double> r = ve::testing::simulate_garch_series(9, length);
     FitResult result = ve::fit_one(r, spec, ve::FitConfig{});
     EXPECT_EQ(result.status, FitStatus::InsufficientData) << "length " << length;
     EXPECT_EQ(result.nobs, length);
@@ -539,7 +539,7 @@ TEST(FitGeneric, DeterministicAcrossBuckets)
 
 TEST(FitGeneric, BucketSpecsHaveFourElevenAndTwentySevenParameters)
 {
-    std::vector<double> r = ve::testing::simulate_portable_garch_series(9, 3);
+    std::vector<double> r = ve::testing::simulate_garch_series(9, 3);
     EXPECT_EQ(ve::fit_one(r, Spec{}, ve::FitConfig{}).names.size(), 4u);
     EXPECT_EQ(ve::fit_one(r, full_spec(2, 2), ve::FitConfig{}).names.size(), 11u);
     EXPECT_EQ(ve::fit_one(r, full_spec(6, 6), ve::FitConfig{}).names.size(), 27u);
@@ -944,7 +944,7 @@ TEST(FitModels, ShortSeriesUsesEstimatedCount)
     spec.model = ve::Model::IGarch;
     spec.include_mean = false;
     ASSERT_EQ(ve::model::layout_of(spec).estimated_count(), 2u);
-    std::vector<double> r = ve::testing::simulate_portable_garch_series(9, 4);
+    std::vector<double> r = ve::testing::simulate_garch_series(9, 4);
     EXPECT_NE(ve::fit_one(r, spec, ve::FitConfig{}).status, FitStatus::InsufficientData);
     r.pop_back();
     EXPECT_EQ(ve::fit_one(r, spec, ve::FitConfig{}).status, FitStatus::InsufficientData);
@@ -1037,7 +1037,7 @@ TEST(FitDistributions, SymmetricLimitMatchesKernel)
 
 TEST(FitDistributions, NearNormalEndsFinite)
 {
-    std::vector<double> r = ve::testing::simulate_portable_garch_series(46, kObservations);
+    std::vector<double> r = ve::testing::simulate_garch_series(46, kObservations);
     for (ve::Dist dist : {ve::Dist::Nig, ve::Dist::Ghyp})
     {
         SCOPED_TRACE(static_cast<int>(dist));

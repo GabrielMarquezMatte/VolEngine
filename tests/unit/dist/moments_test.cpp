@@ -227,25 +227,25 @@ TEST(Moments, DerivativesMatchFiniteDifferences)
     }
 }
 
-// The values of plan 2b, bit for bit: the Density variant and the kink split leave norm, std and ged
-// unchanged.
+// norm, std and ged keep the values recorded with GCC before the Density variant and the kink split. Other
+// standard libraries round lgamma, pow and exp differently in the last bits, so the check allows 4 ulps.
 TEST(Moments, SymmetricUnchanged)
 {
-    EXPECT_EQ(shifted_moment(Dist::Std, {.shape = 4.5}, 0.3, 0.5, 1.5), 0x1.45145bccd1599p+0);
-    EXPECT_EQ(shifted_moment(Dist::Ged, {.shape = 1.5}, -0.4, -0.3, 0.8), 0x1.c345836c0c961p-1);
-    EXPECT_EQ(shifted_moment(Dist::Norm, {}, 0.2, 0.0, 1.5), 0x1.bef6589a7740bp-1);
-    EXPECT_EQ(abs_moment(Dist::Std, {.shape = 6.0}, 1.3), 0x1.8f33133cba259p-1);
-    EXPECT_EQ(asymmetric_moment(Dist::Ged, {.shape = 1.2}, 0.3, 1.7), 0x1.d73cc4872552fp-1);
+    EXPECT_DOUBLE_EQ(shifted_moment(Dist::Std, {.shape = 4.5}, 0.3, 0.5, 1.5), 0x1.45145bccd1599p+0);
+    EXPECT_DOUBLE_EQ(shifted_moment(Dist::Ged, {.shape = 1.5}, -0.4, -0.3, 0.8), 0x1.c345836c0c961p-1);
+    EXPECT_DOUBLE_EQ(shifted_moment(Dist::Norm, {}, 0.2, 0.0, 1.5), 0x1.bef6589a7740bp-1);
+    EXPECT_DOUBLE_EQ(abs_moment(Dist::Std, {.shape = 6.0}, 1.3), 0x1.8f33133cba259p-1);
+    EXPECT_DOUBLE_EQ(asymmetric_moment(Dist::Ged, {.shape = 1.2}, 0.3, 1.7), 0x1.d73cc4872552fp-1);
     using Number = ve::ad::Dual<8>;
     Number moment = shifted_moment(Dist::Std, {.shape = ve::ad::variable<8>(6.0, 0)},
                                    ve::ad::variable<8>(0.3, 1), ve::ad::variable<8>(0.4, 2),
                                    ve::ad::variable<8>(1.5, 3));
-    EXPECT_EQ(moment.value, 0x1.2cf79e0107bcp+0);
+    EXPECT_DOUBLE_EQ(moment.value, 0x1.2cf79e0107bcp+0);
     std::array<double, 4> gradient = {0x1.6497c15daa294p-7, 0x1.d8cce45356801p-1, 0x1.1de1d413c16bdp+0,
                                       0x1.4ffa5edf97d1fp-1};
     for (std::size_t i = 0; i < gradient.size(); ++i)
     {
-        EXPECT_EQ(moment.grad[i], gradient[i]) << i;
+        EXPECT_DOUBLE_EQ(moment.grad[i], gradient[i]) << i;
     }
     for (Dist dist : {Dist::Norm, Dist::Std, Dist::Ged})
     {
