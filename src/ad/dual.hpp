@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <numbers>
 
 namespace ve::ad
 {
@@ -205,6 +206,12 @@ Dual<N> sqrt(const Dual<N>& x)
 {
     double root = std::sqrt(x.value);
     return chain(x, root, 0.5 / root);
+}
+
+template <std::size_t N>
+Dual<N> erfc(const Dual<N>& x)
+{
+    return chain(x, std::erfc(x.value), -2.0 / std::sqrt(std::numbers::pi) * std::exp(-x.value * x.value));
 }
 
 template <std::size_t N>

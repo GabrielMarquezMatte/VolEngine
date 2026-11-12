@@ -115,10 +115,19 @@ T segment_integral(const Integrand& integrand, const T& lower, const T& upper)
 }
 
 // A std or sstd integrand decays as |z|^(power - nu - 1), which z = edge + (1 - t)^-k turns into
-// (1 - t)^(k (nu - power) - 1): smooth enough at t = 1 once k (nu - power) >= 2.
+// (1 - t)^(k (nu - power) - 1): smooth enough at t = 1 once k (nu - power) >= 2. An sged one decays as
+// exp(-a |z|^nu), which k = 1 / nu turns into exp(-a (1 - t)^-1), flat at t = 1, where a nu below 1 would
+// leave mass beyond the last node. k stops at kMaxSgedTailExponent, where the last node (1 - t ~ 3.5e-4)
+// sits at z ~ 1e34 and its powers stay finite.
+constexpr double kMaxSgedTailExponent = 10.0;
+
 template <class T>
 double tail_exponent(Dist dist, const ShapeParameters<T>& parameters, const T& power)
 {
+    if (dist == Dist::Sged)
+    {
+        return std::clamp(1.0 / ad::value_of(parameters.shape), 1.0, kMaxSgedTailExponent);
+    }
     if (!has_student_tail(dist))
     {
         return 1.0;
@@ -135,7 +144,8 @@ constexpr double kRefinedBelow = 0.5;
 constexpr double kRefinementRatio = 4.0;
 
 // The z-scale of the density on each side of its kink: 1 / (xi sigma) below and xi / sigma above for sstd and
-// sged, 1 for the others.
+// sged, 1 for the others. The sged ones are scaled by the kernel's lambda when below 1: a small nu puts the
+// kernel's core within lambda << 1 of the kink.
 struct SideScales
 {
     double below;
@@ -152,14 +162,19 @@ SideScales side_scales(const Density<T>& density)
     }
     double skew = ad::value_of(skewed->skew);
     double stretch = ad::value_of(skewed->stretch);
-    return {1.0 / (skew * stretch), skew / stretch};
+    double core = 1.0;
+    if (skewed->kernel.dist == Dist::Ged)
+    {
+        core = std::min(1.0, ad::value_of(skewed->kernel.scale));
+    }
+    return {core / (skew * stretch), core * skew / stretch};
 }
 
 // The split points of one quadrature.
 template <class T>
 struct Breakpoints
 {
-    std::array<T, 2 * kMaxRefinements + 2> points{};
+    std::array<T, 2 * kMaxRefinements + 3> points{};
     std::size_t count = 0;
 
     void add(const T& point)
@@ -190,12 +205,35 @@ void add_refinements(Breakpoints<T>& breakpoints, const T& kink, double directio
     }
 }
 
+// A nig or ghyp with delta below kRefinedBelow peaks within a few delta of its location, which gets a split
+// point and the refinements of a kink at the scale delta. The points are values only: the density is smooth
+// there.
+template <class T>
+void add_location_refinements(Breakpoints<T>& breakpoints, const Density<T>& density)
+{
+    const HyperbolicLogDensity<T>* hyperbolic = std::get_if<HyperbolicLogDensity<T>>(&density);
+    if (hyperbolic == nullptr)
+    {
+        return;
+    }
+    double delta = std::sqrt(ad::value_of(hyperbolic->delta2));
+    if (!(delta < kRefinedBelow))
+    {
+        return;
+    }
+    T location{ad::value_of(hyperbolic->location)};
+    breakpoints.add(location);
+    add_refinements(breakpoints, location, -1.0, delta);
+    add_refinements(breakpoints, location, 1.0, delta);
+}
+
 template <class T>
 void add_side_refinements(Breakpoints<T>& breakpoints, const Density<T>& density, const T& kink)
 {
     SideScales scales = side_scales(density);
     add_refinements(breakpoints, kink, -1.0, scales.below);
     add_refinements(breakpoints, kink, 1.0, scales.above);
+    add_location_refinements(breakpoints, density);
 }
 
 // int over [points[0] - 1, points.back()], one piece between each pair of neighbouring points.
@@ -271,9 +309,109 @@ T below_zero_quadrature(const DensityIntegrand<T>& integrand, double exponent)
     return tail_integral(integrand, points.front(), -1.0, exponent) + breakpoint_sum(integrand, points);
 }
 
+// A jsu is z = center + scale sinh((r + skew) / shape) of a standard normal r, and a small shape puts its
+// mass in a peak of width ~scale, which no fixed grid in z resolves. Its moments are taken in r instead,
+// where (|z - eta2| - eta1 (z - eta2))^power phi(r) is smooth but at the cusp r(eta2). For large |r| it is
+// ~exp(power |r| / shape - r^2 / 2), which peaks at |r| = power / shape, so the mass lies within
+// kJohnsonReach of [-power / shape, power / shape] and of the cusp (exp(-50) of the peak beyond). Pieces are
+// at most kJohnsonPiece wide, where 64 nodes integrate a unit Gaussian to rounding; past kJohnsonMaxPieces
+// per side (power / shape > ~118, where the moment overflows anyway) they widen.
+constexpr double kJohnsonReach = 10.0;
+constexpr double kJohnsonPiece = 8.0;
+constexpr double kJohnsonMaxPieces = 16.0;
+// sinh(u) overflows past |u| ~ 710; beyond kSinhLimit, log |center - eta2 + scale sinh(u)| is
+// log(scale) + |u| - log 2 to rounding.
+constexpr double kSinhLimit = 700.0;
+
+// r(z) = shape asinh((z - center) / scale) - skew, increasing in z.
+template <class T>
+T johnson_normal_of(const JohnsonLogDensity<T>& density, const T& z)
+{
+    using std::asinh;
+    return density.shape * asinh((z - density.center) / density.scale) - density.skew;
 }
 
-// E(|z - eta2| - eta1 (z - eta2))^power, by quadrature; +inf for std and sstd with shape <= power.
+template <class T>
+struct SignedLog
+{
+    T log;
+    double sign;
+};
+
+// log |z(r) - eta2| and its sign, for u = (r + skew) / shape.
+template <class T>
+SignedLog<T> johnson_log_distance(const JohnsonLogDensity<T>& density, const T& eta2, const T& u)
+{
+    using std::abs;
+    using std::log;
+    using std::sinh;
+    if (std::fabs(ad::value_of(u)) > kSinhLimit)
+    {
+        double sign = ad::value_of(u) < 0.0 ? -1.0 : 1.0;
+        return {log(density.scale) + abs(u) - std::numbers::ln2, sign};
+    }
+    T distance = density.center - eta2 + density.scale * sinh(u);
+    double sign = ad::value_of(distance) < 0.0 ? -1.0 : 1.0;
+    return {log(abs(distance)), sign};
+}
+
+// (|z - eta2| - eta1 (z - eta2))^power phi(r), at z = z(r).
+template <class T>
+struct JohnsonShockIntegrand
+{
+    JohnsonLogDensity<T> density;
+    T eta1;
+    T eta2;
+    T power;
+
+    T operator()(const T& r) const
+    {
+        using std::exp;
+        using std::log;
+        T u = (r + density.skew) / density.shape;
+        SignedLog<T> distance = johnson_log_distance(density, eta2, u);
+        T log_shock = power * (distance.log + log(1.0 - eta1 * distance.sign));
+        return exp(log_shock - 0.5 * (r * r) - 0.5 * std::log(2.0 * std::numbers::pi));
+    }
+};
+
+// int over [lower, upper] in equal pieces.
+template <class T>
+T johnson_pieces(const JohnsonShockIntegrand<T>& integrand, const T& lower, const T& upper)
+{
+    double width = ad::value_of(upper) - ad::value_of(lower);
+    double pieces = std::clamp(std::ceil(width / kJohnsonPiece), 1.0, kJohnsonMaxPieces);
+    T step = (upper - lower) / pieces;
+    T sum{0.0};
+    for (double k = 0.0; k < pieces; k += 1.0)
+    {
+        sum = sum + segment_integral(integrand, lower + step * k, lower + step * (k + 1.0));
+    }
+    return sum;
+}
+
+template <class T>
+T johnson_shock_moment(const JohnsonShockIntegrand<T>& integrand)
+{
+    T cusp = johnson_normal_of(integrand.density, integrand.eta2);
+    double peak = ad::value_of(integrand.power) / ad::value_of(integrand.density.shape);
+    double lower = std::min(-peak, ad::value_of(cusp)) - kJohnsonReach;
+    double upper = std::max(peak, ad::value_of(cusp)) + kJohnsonReach;
+    return johnson_pieces(integrand, T{lower}, cusp) + johnson_pieces(integrand, cusp, T{upper});
+}
+
+// P(z < 0) = Phi(r(0)).
+template <class T>
+T johnson_probability_below_zero(const JohnsonLogDensity<T>& density)
+{
+    using std::erfc;
+    return 0.5 * erfc(-(johnson_normal_of(density, T{0.0}) / std::numbers::sqrt2));
+}
+
+}
+
+// E(|z - eta2| - eta1 (z - eta2))^power, by quadrature (in the normal variable for jsu); +inf for std and
+// sstd with shape <= power.
 template <class T>
 T shifted_moment(Dist dist, const ShapeParameters<T>& parameters, const T& eta1, const T& eta2,
                  const T& power)
@@ -281,6 +419,11 @@ T shifted_moment(Dist dist, const ShapeParameters<T>& parameters, const T& eta1,
     if (detail::infinite_moment(dist, parameters, power))
     {
         return T{std::numeric_limits<double>::infinity()};
+    }
+    if (dist == Dist::Jsu)
+    {
+        JohnsonLogDensity<T> density = johnson_log_density(parameters.skew, parameters.shape);
+        return detail::johnson_shock_moment(detail::JohnsonShockIntegrand<T>{density, eta1, eta2, power});
     }
     detail::ShockPowerIntegrand<T> integrand{make_density(dist, parameters), eta1, eta2, power};
     return detail::shock_power_quadrature(integrand, detail::tail_exponent(dist, parameters, power));
@@ -324,13 +467,18 @@ T asymmetric_moment(Dist dist, const ShapeParameters<T>& parameters, const T& et
     return asymmetry * abs_moment(dist, parameters, power);
 }
 
-// P(z < 0): exactly 0.5 for norm, std and ged, the quadrature of f over (-inf, 0) for the others.
+// P(z < 0): exactly 0.5 for norm, std and ged, Phi(r(0)) for jsu, the quadrature of f over (-inf, 0) for the
+// others.
 template <class T>
 T probability_below_zero(Dist dist, const ShapeParameters<T>& parameters)
 {
     if (detail::is_symmetric(dist))
     {
         return T{0.5};
+    }
+    if (dist == Dist::Jsu)
+    {
+        return detail::johnson_probability_below_zero(johnson_log_density(parameters.skew, parameters.shape));
     }
     detail::DensityIntegrand<T> integrand{make_density(dist, parameters)};
     return detail::below_zero_quadrature(integrand, detail::tail_exponent(dist, parameters, T{0.0}));
