@@ -3,6 +3,7 @@
 #include "dist/densities.hpp"
 #include "dist/moments.hpp"
 #include "model/likelihood.hpp"
+#include "model/weight_terms.hpp"
 #include "simulated_garch.hpp"
 
 #include <algorithm>
@@ -15,6 +16,7 @@
 #include <span>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 namespace
@@ -1069,6 +1071,390 @@ TEST(ParameterMap, DistributionBoundaries)
     Layout jsu = ve::model::layout_of({.dist = Dist::Jsu, .include_mean = false});
     EXPECT_EQ(boundary_of(jsu, std::vector<double>{0.01, 0.05, 0.9, 0.5, 1e9}), Indices{4});
     EXPECT_EQ(boundary_of(jsu, std::vector<double>{0.01, 0.05, 0.9, 1e9, 2.0}), Indices{});
+}
+
+}
+
+namespace
+{
+
+using ve::Spec;
+using ve::model::layout_of;
+using ve::model::persistence;
+using ve::model::WeightTerms;
+
+Layout fixed_layout(Spec spec, std::vector<ve::ParameterValue> fixed)
+{
+    spec.fixed = std::move(fixed);
+    return layout_of(spec);
+}
+
+std::vector<double> spec_interior_theta(const Layout& layout)
+{
+    std::vector<double> theta = model_interior_theta(layout);
+    set_parameters(theta, layout, interior_parameters(layout.dist));
+    return theta;
+}
+
+struct FixedCase
+{
+    Layout layout;
+    std::vector<double> theta;
+    std::size_t index;
+};
+
+// The spec with each theta_i in turn fixed at its interior value, where spec_problem accepts it.
+void append_fixed_cases(std::vector<FixedCase>& cases, Spec spec)
+{
+    Layout plain = layout_of(spec);
+    std::vector<double> theta = spec_interior_theta(plain);
+    std::vector<std::string> names = ve::model::parameter_names(plain);
+    for (std::size_t index = 0; index < names.size(); ++index)
+    {
+        spec.fixed = {{names[index], theta[index]}};
+        if (ve::model::spec_problem(spec))
+        {
+            continue;
+        }
+        cases.push_back({layout_of(spec), theta, index});
+    }
+}
+
+std::vector<FixedCase> fixed_cases()
+{
+    std::vector<FixedCase> cases;
+    for (Model model : kAllModels)
+    {
+        for (Orders orders : {Orders{1, 1}, Orders{2, 2}})
+        {
+            for (ArmaOrders arma : {ArmaOrders{0, 0}, ArmaOrders{1, 1}})
+            {
+                for (Dist dist : {Dist::Norm, Dist::Sstd, Dist::Ghyp})
+                {
+                    append_fixed_cases(cases, {.model = model,
+                                               .p = orders.arch,
+                                               .q = orders.garch,
+                                               .ar = arma.ar,
+                                               .ma = arma.ma,
+                                               .dist = dist});
+                }
+            }
+        }
+    }
+    return cases;
+}
+
+std::string name_of(const FixedCase& c)
+{
+    return name_of(c.layout) + ", fixed " + std::to_string(c.index);
+}
+
+// Start values change where the optimizer starts, never the map.
+TEST(ParameterMap, PlainSpecsUnchanged)
+{
+    const Standardization standardization{0.02, 1.7};
+    std::mt19937_64 engine(9);
+    ve::testing::PortableNormal draw{1.0};
+    for (const Layout& layout : model_layouts())
+    {
+        Layout started = layout;
+        for (std::size_t i = 0; i < layout.count(); ++i)
+        {
+            started.started.set(i, layout.is_estimated(i));
+            started.given[i] = 0.123;
+        }
+        std::vector<double> u(layout.count());
+        std::ranges::generate(u, [&] { return draw(engine); });
+        std::vector<double> theta(u.size());
+        std::vector<double> expected(u.size());
+        to_natural<double>(u, theta, started, standardization);
+        to_natural<double>(u, expected, layout, standardization);
+        EXPECT_EQ(theta, expected) << name_of(layout);
+        std::vector<double> interior = model_interior_theta(layout);
+        to_unconstrained(interior, theta, started, standardization);
+        to_unconstrained(interior, expected, layout, standardization);
+        EXPECT_EQ(theta, expected) << name_of(layout);
+    }
+}
+
+// natural_from_terms inverts weight_terms on every entry it writes, and leaves the others alone.
+void expect_terms_round_trip(std::span<const double> theta, const Layout& layout)
+{
+    std::vector<double> rebuilt(theta.begin(), theta.end());
+    ve::model::natural_from_terms(ve::model::weight_terms(theta, layout), rebuilt, layout);
+    for (std::size_t i = 0; i < theta.size(); ++i)
+    {
+        EXPECT_NEAR(rebuilt[i], theta[i], 1e-12 * std::max(1.0, std::abs(theta[i]))) << "parameter " << i;
+    }
+}
+
+TEST(ParameterMap, FixedEntriesKeepTheirValue)
+{
+    std::mt19937_64 engine(13);
+    ve::testing::PortableNormal draw{1.0};
+    for (const FixedCase& c : fixed_cases())
+    {
+        SCOPED_TRACE(name_of(c));
+        std::vector<double> u(c.theta.size());
+        std::ranges::generate(u, [&] { return draw(engine); });
+        std::vector<double> mapped(u.size());
+        to_natural<double>(u, mapped, c.layout, Standardization{0.03, 0.7});
+        EXPECT_EQ(mapped[c.index], c.theta[c.index]);
+        expect_round_trip(c.theta, c.layout);
+        expect_terms_round_trip(c.theta, c.layout);
+    }
+}
+
+// theta = to_natural(u) for 200 u ~ N(0, 3) drawn from mt19937_64(7).
+std::vector<std::vector<double>> budget_draws(const Layout& layout)
+{
+    std::mt19937_64 engine(7);
+    ve::testing::PortableNormal draw{3.0};
+    std::vector<std::vector<double>> draws;
+    std::vector<double> u(layout.count());
+    for (int trial = 0; trial < 200; ++trial)
+    {
+        std::ranges::generate(u, [&] { return draw(engine); });
+        std::vector<double>& theta = draws.emplace_back(layout.count());
+        to_natural<double>(u, theta, layout, Standardization{});
+    }
+    return draws;
+}
+
+void expect_gjr_budgets()
+{
+    // sstd gjrGARCH (mu, omega, alpha1, beta1, gamma1, skew, shape)
+    Layout gamma = fixed_layout({.model = Model::GjrGarch, .dist = Dist::Sstd},
+                                {{"gamma1", -0.05}, {"skew", 0.8}, {"shape", 6.0}});
+    double pi = ve::dist::probability_below_zero(Dist::Sstd, ShapeParameters<double>{0.8, 6.0, 0.0});
+    for (const std::vector<double>& theta : budget_draws(gamma))
+    {
+        EXPECT_GE(theta[2], 0.05);
+        EXPECT_LT(theta[2] + theta[3] + pi * theta[4], kCeiling);
+    }
+    Layout alpha = fixed_layout({.model = Model::GjrGarch, .dist = Dist::Sstd}, {{"alpha1", 0.02}});
+    for (const std::vector<double>& theta : budget_draws(alpha))
+    {
+        double below = ve::dist::probability_below_zero(Dist::Sstd, shape_parameters_of<double>(theta, alpha));
+        if (!(below >= 1e-8 && below <= 1.0 - 1e-8))
+        {
+            continue;
+        }
+        EXPECT_EQ(theta[2], 0.02);
+        EXPECT_GE(theta[2] + theta[4], 0.0);
+    }
+}
+
+TEST(ParameterMap, FixedWeightsLeaveTheirBudget)
+{
+    // sGARCH (mu, omega, alpha1, beta1)
+    for (const std::vector<double>& theta : budget_draws(fixed_layout({}, {{"alpha1", 0.3}})))
+    {
+        EXPECT_LT(theta[2] + theta[3], kCeiling);
+        EXPECT_GE(theta[3], 0.0);
+    }
+    expect_gjr_budgets();
+    // csGARCH (mu, omega, alpha1, beta1, eta11, eta21)
+    for (const std::vector<double>& theta : budget_draws(fixed_layout({.model = Model::CsGarch}, {{"eta11", 0.95}})))
+    {
+        EXPECT_LT(theta[2] + theta[3], 0.95);
+        EXPECT_EQ(theta[4], 0.95);
+    }
+    // iGARCH (mu, omega, alpha1, beta1, beta2)
+    Layout igarch = fixed_layout({.model = Model::IGarch, .q = 2}, {{"alpha1", 0.2}});
+    for (const std::vector<double>& theta : budget_draws(igarch))
+    {
+        EXPECT_NEAR(theta[2] + theta[3] + theta[4], 1.0, 1e-15);
+        EXPECT_GE(theta[4], 0.0);
+    }
+}
+
+TEST(ParameterMap, FixedBeyondBudgetIsNaN)
+{
+    // sGARCH (mu, omega, alpha1, beta1): alpha1 + beta1 >= 1 whatever omega is.
+    Layout both = fixed_layout({}, {{"alpha1", 0.6}, {"beta1", 0.5}});
+    std::vector<double> theta(4);
+    to_natural<double>(std::vector<double>{0.1, -2.0, 0.3, 0.4}, theta, both, Standardization{});
+    EXPECT_FALSE(is_valid(theta, both));
+    for (const std::vector<double>& draw : budget_draws(fixed_layout({}, {{"alpha1", 0.6}})))
+    {
+        EXPECT_LT(draw[3], 0.4);
+    }
+    // sGARCH(2,1) (mu, omega, alpha1, alpha2, beta1): no budget is left for alpha2.
+    Layout over = fixed_layout({.p = 2}, {{"alpha1", 0.6}, {"beta1", 0.5}});
+    std::vector<double> wide(5);
+    to_natural<double>(std::vector<double>{0.1, -2.0, 0.3, 0.4, 0.5}, wide, over, Standardization{});
+    EXPECT_TRUE(std::isnan(wide[3]));
+    EXPECT_FALSE(is_valid(wide, over));
+}
+
+// The spec with one parameter, drawn by picker, fixed at its interior value.
+Layout one_drawn_fixed(Spec spec, std::mt19937_64& picker)
+{
+    Layout plain = layout_of(spec);
+    std::vector<double> theta = spec_interior_theta(plain);
+    std::vector<std::string> names = ve::model::parameter_names(plain);
+    for (;;)
+    {
+        std::size_t index = picker() % names.size();
+        spec.fixed = {{names[index], theta[index]}};
+        if (!ve::model::spec_problem(spec))
+        {
+            return layout_of(spec);
+        }
+    }
+}
+
+// The ceiling less the terms of the fixed positions: what the free weights share.
+double budget_left(std::span<const double> theta, const Layout& layout)
+{
+    WeightTerms terms = ve::model::weight_terms(theta, layout);
+    std::size_t begin = layout.model == Model::EGarch ? layout.beta_begin() : layout.alpha_begin();
+    double budget = terms.ceiling;
+    for (std::size_t j = 0; j < terms.count; ++j)
+    {
+        if (layout.is_fixed(begin + j))
+        {
+            budget -= terms.terms[j];
+        }
+    }
+    return budget;
+}
+
+TEST(ParameterMap, AlwaysValidWithFixed)
+{
+    std::mt19937_64 engine(5);
+    std::mt19937_64 picker(11);
+    ve::testing::PortableNormal draw{3.0};
+    for (Model model : kAllModels)
+    {
+        for (Dist dist : {Dist::Norm, Dist::Sstd})
+        {
+            Layout layout = one_drawn_fixed({.model = model, .dist = dist}, picker);
+            std::vector<double> u(layout.count());
+            std::vector<double> theta(layout.count());
+            for (int trial = 0; trial < 2000; ++trial)
+            {
+                std::ranges::generate(u, [&] { return draw(engine); });
+                to_natural<double>(u, theta, layout, Standardization{0.01, 1.3});
+                bool exempt = !(budget_left(theta, layout) > 0.0) || outside_computable_domain(layout, theta);
+                ASSERT_TRUE(is_valid(theta, layout) || exempt)
+                    << name_of(layout) << ", fixed " << layout.fixed.to_string() << ", trial " << trial;
+            }
+        }
+    }
+}
+
+TEST(ParameterMap, DualMatchesDoubleWithFixed)
+{
+    using Dual16 = ve::ad::Dual<16>;
+    const Standardization standardization{0.02, 1.7};
+    std::mt19937_64 engine(9);
+    ve::testing::PortableNormal draw{1.0};
+    for (const FixedCase& c : fixed_cases())
+    {
+        std::vector<double> u(c.theta.size());
+        std::ranges::generate(u, [&] { return draw(engine); });
+        std::vector<Dual16> seeds;
+        for (std::size_t i = 0; i < u.size(); ++i)
+        {
+            seeds.push_back(ve::ad::variable<16>(u[i], i));
+        }
+        std::vector<Dual16> dual_theta(u.size());
+        std::vector<double> theta(u.size());
+        to_natural<Dual16>(seeds, dual_theta, c.layout, standardization);
+        to_natural<double>(u, theta, c.layout, standardization);
+        for (std::size_t i = 0; i < u.size(); ++i)
+        {
+            ASSERT_TRUE(same_value(ve::ad::value_of(dual_theta[i]), theta[i])) << name_of(c) << ", parameter " << i;
+        }
+        EXPECT_EQ(dual_theta[c.index].grad, Dual16{}.grad) << name_of(c);
+    }
+}
+
+// sum alpha + sum beta, with pi gamma_i in gjrGARCH and alpha_i kappa_i in apARCH and fGARCH; sum beta in eGARCH.
+double expected_persistence(std::span<const double> theta, const Layout& layout)
+{
+    double sum = sum_of(theta.subspan(layout.beta_begin(), static_cast<std::size_t>(layout.garch)));
+    if (layout.model == Model::EGarch)
+    {
+        return sum;
+    }
+    double pi = ve::dist::probability_below_zero(layout.dist, shape_parameters_of(theta, layout));
+    for (std::size_t i = 0; i < static_cast<std::size_t>(layout.arch); ++i)
+    {
+        double term = theta[layout.alpha_begin() + i];
+        if (layout.model == Model::GjrGarch)
+        {
+            term += pi * theta[layout.gamma_begin() + i];
+        }
+        if (layout.is_power_family())
+        {
+            term *= shock_moment<double>(theta, layout, i);
+        }
+        sum += term;
+    }
+    return sum;
+}
+
+void expect_persistence_gradient(const Layout& layout, std::span<const double> theta)
+{
+    using Dual16 = ve::ad::Dual<16>;
+    std::vector<Dual16> seeds;
+    for (std::size_t i = 0; i < theta.size(); ++i)
+    {
+        seeds.push_back(ve::ad::variable<16>(theta[i], i));
+    }
+    Dual16 dual = persistence<Dual16>(seeds, layout);
+    constexpr double kStep = 1e-6;
+    std::vector<double> up(theta.begin(), theta.end());
+    std::vector<double> down(theta.begin(), theta.end());
+    for (std::size_t i = 0; i < theta.size(); ++i)
+    {
+        up[i] += kStep;
+        down[i] -= kStep;
+        double difference = (persistence<double>(up, layout) - persistence<double>(down, layout)) / (2.0 * kStep);
+        up[i] = theta[i];
+        down[i] = theta[i];
+        EXPECT_NEAR(dual.grad[i], difference, 1e-7 * std::max(1.0, std::abs(difference)))
+            << name_of(layout) << ", d P / d theta" << i;
+    }
+}
+
+TEST(ParameterMap, PersistenceMatchesWeights)
+{
+    for (const Layout& layout : model_layouts())
+    {
+        std::vector<double> theta = model_interior_theta(layout);
+        double value = persistence<double>(theta, layout);
+        WeightTerms terms = ve::model::weight_terms(theta, layout);
+        EXPECT_NEAR(value, sum_of(std::span<const double>(terms.terms).first(terms.count)), 1e-15)
+            << name_of(layout);
+        EXPECT_NEAR(value, expected_persistence(theta, layout), 1e-15) << name_of(layout);
+        expect_persistence_gradient(layout, theta);
+    }
+}
+
+TEST(ParameterMap, GjrFixedGammaBoundary)
+{
+    // gjrGARCH (omega, alpha1, beta1, gamma1): alpha1 >= -gamma1 = 0.05.
+    Layout layout = fixed_layout({.model = Model::GjrGarch, .include_mean = false}, {{"gamma1", -0.05}});
+    EXPECT_TRUE(on_boundary(layout, std::vector<double>{0.01, 0.05 + 1e-9, 0.9, -0.05}, 1));
+    EXPECT_FALSE(on_boundary(layout, std::vector<double>{0.01, 0.06, 0.9, -0.05}, 1));
+}
+
+TEST(ParameterMap, VarianceTargetingIgnoresOmega)
+{
+    // sGARCH (omega, alpha1, beta1)
+    Layout layout = layout_of({.include_mean = false, .variance_targeting = true});
+    constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_TRUE(is_valid(std::vector<double>{kNaN, 0.05, 0.9}, layout));
+    EXPECT_TRUE(is_valid(std::vector<double>{-1.0, 0.05, 0.9}, layout));
+    EXPECT_FALSE(is_valid(std::vector<double>{-1.0, 0.05, 0.95}, layout));
+    std::vector<double> u{7.0, 7.0, 7.0};
+    to_unconstrained(std::vector<double>{kNaN, 0.05, 0.9}, u, layout, Standardization{});
+    EXPECT_EQ(u[0], 0.0);
+    EXPECT_TRUE(std::isfinite(u[1]) && std::isfinite(u[2]));
 }
 
 }
