@@ -918,6 +918,102 @@ TEST(ParameterMap, GjrNeedsProbabilityBelowZeroInsideUnitInterval)
     EXPECT_TRUE(is_valid(std::vector<double>{0.01, 0.05, 0.85, 0.1, 19.48, 1.5}, layout));
 }
 
+// alpha_i is read back as w / kappa_i, so a kappa that is not a positive finite double makes theta invalid:
+// here the jsu constant c overflows to 0 at tau = 0.03, and kappa is NaN.
+TEST(ParameterMap, PowerFamilyNeedsPositiveFiniteMoment)
+{
+    // jsu apARCH (omega, alpha1, beta1, gamma1, delta, skew, shape)
+    Layout layout = ve::model::layout_of({.model = Model::ApArch, .dist = Dist::Jsu, .include_mean = false});
+    EXPECT_FALSE(is_valid(std::vector<double>{0.01, 0.05, 0.9, 0.0, 2.0, 0.5, 0.03}, layout));
+    EXPECT_TRUE(is_valid(std::vector<double>{0.01, 0.05, 0.9, 0.0, 2.0, 0.5, 2.0}, layout));
+}
+
+// gjrGARCH, apARCH and fGARCH-ALLGARCH read pi or kappa, taken by quadrature under the skewed distributions.
+std::vector<Layout> skewed_quadrature_layouts()
+{
+    std::vector<Layout> layouts;
+    for (Model model : {Model::GjrGarch, Model::ApArch, Model::FGarchAllGarch})
+    {
+        for (Dist dist : kSkewedDists)
+        {
+            layouts.push_back(ve::model::layout_of({.model = model, .ar = 1, .ma = 1, .dist = dist}));
+        }
+    }
+    return layouts;
+}
+
+TEST(ParameterMap, DualMatchesDoubleSkewed)
+{
+    using Dual42 = ve::ad::Dual<42>;
+    const Standardization standardization{0.02, 1.7};
+    std::mt19937_64 engine(9);
+    std::normal_distribution<double> draw(0.0, 1.0);
+    for (const Layout& layout : skewed_quadrature_layouts())
+    {
+        std::vector<double> u(layout.count());
+        std::ranges::generate(u, [&] { return draw(engine); });
+        std::vector<Dual42> seeds;
+        for (std::size_t i = 0; i < u.size(); ++i)
+        {
+            seeds.push_back(ve::ad::variable<42>(u[i], i));
+        }
+        std::vector<Dual42> dual_theta(u.size());
+        std::vector<double> theta(u.size());
+        to_natural<Dual42>(seeds, dual_theta, layout, standardization);
+        to_natural<double>(u, theta, layout, standardization);
+        for (std::size_t i = 0; i < u.size(); ++i)
+        {
+            ASSERT_EQ(ve::ad::value_of(dual_theta[i]), theta[i]) << name_of(layout) << ", parameter " << i;
+        }
+    }
+}
+
+void expect_jacobian_matches(const Layout& layout, std::span<const double> u)
+{
+    using Dual16 = ve::ad::Dual<16>;
+    const Standardization standardization{0.02, 1.7};
+    std::vector<Dual16> seeds;
+    for (std::size_t i = 0; i < u.size(); ++i)
+    {
+        seeds.push_back(ve::ad::variable<16>(u[i], i));
+    }
+    std::vector<Dual16> dual_theta(u.size());
+    to_natural<Dual16>(seeds, dual_theta, layout, standardization);
+    constexpr double kStep = 1e-6;
+    std::vector<double> up(u.begin(), u.end());
+    std::vector<double> down(u.begin(), u.end());
+    std::vector<double> theta_up(u.size());
+    std::vector<double> theta_down(u.size());
+    for (std::size_t i = 0; i < u.size(); ++i)
+    {
+        up[i] += kStep;
+        down[i] -= kStep;
+        to_natural<double>(up, theta_up, layout, standardization);
+        to_natural<double>(down, theta_down, layout, standardization);
+        up[i] = u[i];
+        down[i] = u[i];
+        for (std::size_t j = 0; j < u.size(); ++j)
+        {
+            double difference = (theta_up[j] - theta_down[j]) / (2.0 * kStep);
+            double gradient = dual_theta[j].grad[i];
+            EXPECT_NEAR(gradient, difference, 1e-7 * std::max(1.0, std::abs(gradient)))
+                << name_of(layout) << ", d theta" << j << " / d u" << i;
+        }
+    }
+}
+
+TEST(ParameterMap, DualJacobianMatchesFiniteDifferencesSkewed)
+{
+    std::mt19937_64 engine(17);
+    std::normal_distribution<double> draw(0.0, 0.5);
+    for (const Layout& layout : skewed_quadrature_layouts())
+    {
+        std::vector<double> u(layout.count());
+        std::ranges::generate(u, [&] { return draw(engine); });
+        expect_jacobian_matches(layout, u);
+    }
+}
+
 TEST(ParameterMap, DistributionBoundaries)
 {
     // nig sGARCH (omega, alpha1, beta1, skew, shape)
