@@ -146,6 +146,39 @@ TEST(CapiSpec, Arma)
     ve_spec_free(spec);
 }
 
+TEST(CapiSpec, RegressorSetters)
+{
+    ve_spec* spec = nullptr;
+    ASSERT_EQ(ve_spec_create(VE_MODEL_SGARCH, &spec), VE_OK);
+    for (int32_t count : {0, 1, VE_MAX_REGRESSORS})
+    {
+        EXPECT_EQ(ve_spec_set_mxreg(spec, count), VE_OK);
+        EXPECT_EQ(spec->spec.mxreg, count);
+        EXPECT_EQ(ve_spec_set_vxreg(spec, count), VE_OK);
+        EXPECT_EQ(spec->spec.vxreg, count);
+    }
+    for (int32_t count : {-1, VE_MAX_REGRESSORS + 1})
+    {
+        EXPECT_EQ(ve_spec_set_mxreg(spec, count), VE_INVALID_ARGUMENT);
+        EXPECT_TRUE(error_mentions("VE_MAX_REGRESSORS"));
+        EXPECT_EQ(ve_spec_set_vxreg(spec, count), VE_INVALID_ARGUMENT);
+    }
+    EXPECT_EQ(spec->spec.mxreg, VE_MAX_REGRESSORS);
+    EXPECT_EQ(spec->spec.vxreg, VE_MAX_REGRESSORS);
+    for (int32_t power : {0, 1, 2})
+    {
+        EXPECT_EQ(ve_spec_set_archm(spec, power), VE_OK);
+        EXPECT_EQ(spec->spec.archm, power);
+    }
+    EXPECT_EQ(ve_spec_set_archm(spec, 3), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_spec_set_archm(spec, -1), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(spec->spec.archm, 2);
+    EXPECT_EQ(ve_spec_set_mxreg(nullptr, 1), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_spec_set_vxreg(nullptr, 1), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_spec_set_archm(nullptr, 1), VE_INVALID_HANDLE);
+    ve_spec_free(spec);
+}
+
 TEST(CapiSpec, NewDistributions)
 {
     ve_spec* spec = nullptr;

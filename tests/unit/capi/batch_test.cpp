@@ -1,5 +1,6 @@
 #include "capi_scope.hpp"
 #include "fit/fit.hpp"
+#include "model/data.hpp"
 #include "simulated_garch.hpp"
 
 #include <atomic>
@@ -794,4 +795,265 @@ TEST(CapiBatch, CreateRejectsNullOutAndResetsOut)
     EXPECT_NE(batch, nullptr);
     ve_batch_free(batch);
     ve_batch_free(nullptr);
+}
+
+namespace
+{
+
+constexpr std::size_t kMeanColumns = 2;
+constexpr std::size_t kVarianceColumns = 1;
+
+// Row-major rows x columns values; `shift` makes every series different and `offset` keeps them positive.
+std::vector<double> regressor_values(std::size_t rows, std::size_t columns, double shift, double offset)
+{
+    std::vector<double> values(rows * columns);
+    for (std::size_t row = 0; row < rows; ++row)
+    {
+        for (std::size_t col = 0; col < columns; ++col)
+        {
+            const double period = 7.0 + 5.0 * static_cast<double>(col);
+            values[row * columns + col] = offset + std::sin((static_cast<double>(row) + shift) / period);
+        }
+    }
+    return values;
+}
+
+SpecPtr regressor_spec(std::size_t mxreg, std::size_t vxreg, int32_t archm)
+{
+    SpecPtr spec = ve::testing::make_spec(1);
+    EXPECT_EQ(ve_spec_set_mxreg(spec.get(), static_cast<int32_t>(mxreg)), VE_OK);
+    EXPECT_EQ(ve_spec_set_vxreg(spec.get(), static_cast<int32_t>(vxreg)), VE_OK);
+    EXPECT_EQ(ve_spec_set_archm(spec.get(), archm), VE_OK);
+    return spec;
+}
+
+struct OptionsHandle
+{
+    std::unique_ptr<ve_fit_options, OptionsFree> handle;
+
+    explicit OptionsHandle(int32_t max_iter)
+    {
+        ve_fit_options* raw = nullptr;
+        EXPECT_EQ(ve_fit_options_create(&raw), VE_OK);
+        handle.reset(raw);
+        EXPECT_EQ(ve_fit_options_set_max_iter(raw, max_iter), VE_OK);
+    }
+};
+
+// Job 0 is valid; the tests break job 1.
+struct RegressorChecks
+{
+    ve::testing::ContextPtr context = ve::testing::make_context(2);
+    SpecPtr mean_spec = regressor_spec(kMeanColumns, 0, 0);
+    SpecPtr plain_spec = ve::testing::make_spec(1);
+    PanelPtr data = ve::testing::make_panel(matrix().data(), kShortT, kSeries);
+    std::vector<double> good_values = regressor_values(kShortT, kMeanColumns, 0.0, 0.0);
+    PanelPtr good = ve::testing::make_panel(good_values.data(), kShortT, kMeanColumns);
+    OptionsHandle options{kShortMaxIter};
+
+    BatchInputs inputs(const ve_spec* second_spec) const
+    {
+        BatchInputs batch;
+        batch.specs = {mean_spec.get(), second_spec};
+        batch.panel = data.get();
+        batch.job_spec = {0, 1};
+        batch.job_series = {0, 1};
+        batch.options = options.handle.get();
+        return batch;
+    }
+
+    // Job 1 gets `bad` as its mean regressor and must be rejected with `reason` in the message.
+    void expect_rejected_mean(const ve_panel* bad, const std::string& reason, const ve_spec* second_spec) const
+    {
+        BatchInputs batch = inputs(second_spec);
+        batch.mxreg = {good.get(), bad};
+        expect_rejected(batch, "job 1", reason);
+    }
+
+    void expect_rejected(const BatchInputs& batch_inputs, const std::string& job, const std::string& reason) const
+    {
+        BatchPtr batch = ve::testing::build_batch(batch_inputs);
+        ve_fit* outputs[2] = {reinterpret_cast<ve_fit*>(0x1), reinterpret_cast<ve_fit*>(0x1)};
+        EXPECT_EQ(ve_fit_batch(context.get(), batch.get(), outputs), VE_INVALID_ARGUMENT);
+        EXPECT_EQ(outputs[0], nullptr);
+        EXPECT_EQ(outputs[1], nullptr);
+        EXPECT_TRUE(contains(last_error(), job)) << last_error();
+        EXPECT_TRUE(contains(last_error(), reason)) << last_error();
+    }
+};
+
+}
+
+TEST(CapiFit, RegressorChecks)
+{
+    RegressorChecks scenario;
+    const ve_spec* mean_spec = scenario.mean_spec.get();
+    scenario.expect_rejected_mean(nullptr, "mxreg is missing", mean_spec);
+    scenario.expect_rejected_mean(scenario.good.get(), "mxreg is given but", scenario.plain_spec.get());
+    scenario.expect_rejected(scenario.inputs(mean_spec), "job 0", "mxreg is missing");
+
+    BatchInputs variance_for_plain = scenario.inputs(scenario.plain_spec.get());
+    variance_for_plain.mxreg = {scenario.good.get(), nullptr};
+    variance_for_plain.vxreg = {nullptr, scenario.good.get()};
+    scenario.expect_rejected(variance_for_plain, "job 1", "vxreg is given but");
+
+    std::vector<double> three = regressor_values(kShortT, 3, 0.0, 0.0);
+    PanelPtr three_columns = ve::testing::make_panel(three.data(), kShortT, 3);
+    scenario.expect_rejected_mean(three_columns.get(), "3 columns", mean_spec);
+
+    PanelPtr short_rows = ve::testing::make_panel(scenario.good_values.data(), kShortT - 1, kMeanColumns);
+    scenario.expect_rejected_mean(short_rows.get(), "rows", mean_spec);
+
+    const size_t starts[] = {0, 0};
+    const size_t lengths[] = {kShortT, kShortT};
+    PanelPtr ranged = ve::testing::make_panel(scenario.good_values.data(), kShortT, kMeanColumns);
+    ASSERT_EQ(ve_panel_set_ranges(ranged.get(), starts, lengths), VE_OK);
+    scenario.expect_rejected_mean(ranged.get(), "ranges", mean_spec);
+
+    for (double bad : {kNaN, std::numeric_limits<double>::infinity()})
+    {
+        std::vector<double> broken = scenario.good_values;
+        broken[10 * kMeanColumns + 1] = bad;
+        PanelPtr broken_panel = ve::testing::make_panel(broken.data(), kShortT, kMeanColumns);
+        scenario.expect_rejected_mean(broken_panel.get(), "row 10", mean_spec);
+    }
+}
+
+TEST(CapiFit, RegressorCountMustMatchJobs)
+{
+    RegressorChecks scenario;
+    BatchPtr batch = ve::testing::build_batch(scenario.inputs(scenario.mean_spec.get()));
+    const ve_panel* mxreg[] = {scenario.good.get()};
+    ASSERT_EQ(ve_batch_set_regressors(batch.get(), mxreg, nullptr, 1), VE_OK);
+    ve_fit* outputs[2] = {reinterpret_cast<ve_fit*>(0x1), reinterpret_cast<ve_fit*>(0x1)};
+    EXPECT_EQ(ve_fit_batch(scenario.context.get(), batch.get(), outputs), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(outputs[0], nullptr);
+    EXPECT_TRUE(contains(last_error(), "2 jobs")) << last_error();
+    EXPECT_EQ(ve_batch_set_regressors(batch.get(), mxreg, nullptr, 0), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_batch_set_regressors(nullptr, mxreg, nullptr, 1), VE_INVALID_HANDLE);
+}
+
+TEST(CapiFit, RegressorRowsOutsideTheSeriesRangeAreNotChecked)
+{
+    RegressorChecks scenario;
+    const size_t starts[] = {0, 100, 0};
+    const size_t lengths[] = {kShortT, 200, kShortT};
+    ASSERT_EQ(ve_panel_set_ranges(scenario.data.get(), starts, lengths), VE_OK);
+    std::vector<double> broken = scenario.good_values;
+    broken[10 * kMeanColumns] = kNaN;
+    PanelPtr broken_panel = ve::testing::make_panel(broken.data(), kShortT, kMeanColumns);
+    BatchInputs inputs = scenario.inputs(scenario.mean_spec.get());
+    inputs.mxreg = {scenario.good.get(), broken_panel.get()};
+    BatchPtr batch = ve::testing::build_batch(inputs);
+    FitSet fits = ve::testing::fit_all(scenario.context.get(), batch.get());
+    EXPECT_EQ(ve::testing::read_snapshot(fits[1]).nobs, 200u);
+}
+
+namespace
+{
+
+// Three jobs on series 2, 0, 1 of a ragged panel, each with its own mean and variance regressors.
+struct RaggedRegressors
+{
+    static constexpr std::size_t kJobs = 3;
+    static constexpr int32_t kMaxIter = 300;
+    static constexpr std::size_t kStarts[kJobs] = {0, 400, 1100};
+    static constexpr std::size_t kLengths[kJobs] = {900, 700, 800};
+    static constexpr std::size_t kSeriesOfJob[kJobs] = {2, 0, 1};
+
+    SpecPtr spec = regressor_spec(kMeanColumns, kVarianceColumns, 0);
+    PanelPtr data = ve::testing::make_panel(matrix().data(), kT, kSeries);
+    OptionsHandle options{kMaxIter};
+    std::vector<std::vector<double>> mean_values;
+    std::vector<std::vector<double>> variance_values;
+    std::vector<PanelPtr> panels;
+    BatchPtr batch;
+
+    RaggedRegressors()
+    {
+        EXPECT_EQ(ve_panel_set_ranges(data.get(), kStarts, kLengths), VE_OK);
+        BatchInputs inputs;
+        inputs.specs = {spec.get()};
+        inputs.panel = data.get();
+        inputs.job_spec = {0, 0, 0};
+        inputs.options = options.handle.get();
+        for (std::size_t job = 0; job < kJobs; ++job)
+        {
+            const double shift = 13.0 * static_cast<double>(job);
+            mean_values.push_back(regressor_values(kT, kMeanColumns, shift, 0.0));
+            variance_values.push_back(regressor_values(kT, kVarianceColumns, shift, 1.5));
+            panels.push_back(ve::testing::make_panel(mean_values[job].data(), kT, kMeanColumns));
+            panels.push_back(ve::testing::make_panel(variance_values[job].data(), kT, kVarianceColumns));
+            inputs.job_series.push_back(kSeriesOfJob[job]);
+            inputs.mxreg.push_back(panels[2 * job].get());
+            inputs.vxreg.push_back(panels[2 * job + 1].get());
+        }
+        batch = ve::testing::build_batch(inputs);
+    }
+
+    // ve::fit_one on the rows of the job's own series and regressors.
+    Snapshot direct(std::size_t job) const
+    {
+        const std::size_t series = kSeriesOfJob[job];
+        const std::size_t first = kStarts[series];
+        const std::size_t length = kLengths[series];
+        const std::vector<double> r = column(matrix(), series, first, length);
+        auto rows = [&](const std::vector<double>& values, std::size_t columns)
+        {
+            const auto begin = values.begin() + static_cast<std::ptrdiff_t>(first * columns);
+            return std::vector<double>(begin, begin + static_cast<std::ptrdiff_t>(length * columns));
+        };
+        const std::vector<double> x = rows(mean_values[job], kMeanColumns);
+        const std::vector<double> v = rows(variance_values[job], kVarianceColumns);
+        ve::Spec direct_spec;
+        direct_spec.mxreg = static_cast<int>(kMeanColumns);
+        direct_spec.vxreg = static_cast<int>(kVarianceColumns);
+        ve::FitConfig config;
+        config.max_iter = kMaxIter;
+        const ve::model::Data data_slices{r, {x, kMeanColumns}, {v, kVarianceColumns}};
+        return snapshot_of(ve::fit_one(data_slices, direct_spec, config));
+    }
+};
+
+}
+
+TEST(CapiFit, RaggedRegressorsMatchSlices)
+{
+    RaggedRegressors scenario;
+    for (int32_t threads : {1, 4})
+    {
+        ve::testing::ContextPtr context = ve::testing::make_context(threads);
+        FitSet fits = ve::testing::fit_all(context.get(), scenario.batch.get());
+        for (std::size_t job = 0; job < RaggedRegressors::kJobs; ++job)
+        {
+            EXPECT_EQ(ve::testing::read_snapshot(fits[job]), scenario.direct(job))
+                << "threads " << threads << " job " << job;
+        }
+    }
+}
+
+TEST(CapiFit, RegressorParamNames)
+{
+    SpecPtr spec = regressor_spec(kMeanColumns, kVarianceColumns, 1);
+    ASSERT_EQ(ve_spec_set_arma(spec.get(), 1, 1), VE_OK);
+    std::vector<double> mean = regressor_values(kShortT, kMeanColumns, 0.0, 0.0);
+    std::vector<double> variance = regressor_values(kShortT, kVarianceColumns, 0.0, 1.5);
+    PanelPtr mean_panel = ve::testing::make_panel(mean.data(), kShortT, kMeanColumns);
+    PanelPtr variance_panel = ve::testing::make_panel(variance.data(), kShortT, kVarianceColumns);
+    PanelPtr data = ve::testing::make_panel(matrix().data(), kShortT, kSeries);
+    OptionsHandle options(kShortMaxIter);
+    BatchInputs inputs;
+    inputs.specs = {spec.get()};
+    inputs.panel = data.get();
+    inputs.job_spec = {0};
+    inputs.job_series = {0};
+    inputs.options = options.handle.get();
+    inputs.mxreg = {mean_panel.get()};
+    inputs.vxreg = {variance_panel.get()};
+    BatchPtr batch = ve::testing::build_batch(inputs);
+    ve::testing::ContextPtr context = ve::testing::make_context(1);
+    FitSet fits = ve::testing::fit_all(context.get(), batch.get());
+    const std::vector<std::string> expected = {
+        "mu", "ar1", "ma1", "archm", "mxreg1", "mxreg2", "omega", "alpha1", "beta1", "vxreg1"};
+    EXPECT_EQ(param_names(fits[0]), expected);
 }

@@ -156,6 +156,48 @@ extern "C" ve_status ve_batch_set_options(ve_batch* b, const ve_fit_options* opt
         });
 }
 
+namespace
+{
+
+std::vector<const ve::PanelView*> panel_views(const ve_panel* const* panels, size_t n_jobs)
+{
+    std::vector<const ve::PanelView*> views;
+    if (panels == nullptr)
+    {
+        return views;
+    }
+    views.reserve(n_jobs);
+    for (size_t job = 0; job < n_jobs; ++job)
+    {
+        views.push_back(panels[job] == nullptr ? nullptr : &panels[job]->view);
+    }
+    return views;
+}
+
+}
+
+extern "C" ve_status ve_batch_set_regressors(
+    ve_batch* b, const ve_panel* const* mxreg, const ve_panel* const* vxreg, size_t n_jobs)
+{
+    return guard(
+        [&]
+        {
+            if (b == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "b must not be null");
+            }
+            if (n_jobs == 0)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "n_jobs must be >= 1");
+            }
+            auto mean = panel_views(mxreg, n_jobs);
+            auto variance = panel_views(vxreg, n_jobs);
+            b->batch.mean_regressors = std::move(mean);
+            b->batch.variance_regressors = std::move(variance);
+            return VE_OK;
+        });
+}
+
 extern "C" ve_status ve_batch_job_count(const ve_batch* b, size_t* out)
 {
     return guard(

@@ -55,7 +55,9 @@ VE_API void ve_context_free(ve_context* ctx);
    distribution parameters (see VE_DIST_*).
    Only the iGARCH beta_q is derived (1 - sum alpha - the other betas): it has a name and a value,
    it is not estimated, its standard error is NaN, and the information criteria count the estimated
-   parameters only. Each fGARCH submodel is a model value. */
+   parameters only. Each fGARCH submodel is a model value.
+   ARCH-in-mean (ve_spec_set_archm) adds archm after ma, and the regressors add mxreg1..mxregK after archm and
+   vxreg1..vxregJ after the variance block (before skew), as in rugarch. */
 #define VE_MODEL_SGARCH 0
 #define VE_MODEL_EGARCH 1 /* gamma1..gammap */
 #define VE_MODEL_GJRGARCH 2 /* gamma1..gammap */
@@ -96,6 +98,7 @@ VE_API void ve_context_free(ve_context* ctx);
 /* Johnson SU as in rugarch (Rigby and Stasinopoulos). */
 #define VE_DIST_JSU 7 /* skew: nu in R, shape: tau > 0 */
 #define VE_MAX_ORDER 6
+#define VE_MAX_REGRESSORS 8
 #define VE_VARINIT_SAMPLE 0
 #define VE_VARINIT_BACKCAST 1
 
@@ -116,6 +119,13 @@ VE_API ve_status ve_spec_set_arma(ve_spec* s, int32_t m, int32_t n);
 /* dist in VE_DIST_NORM .. VE_DIST_JSU, else VE_INVALID_ARGUMENT and the spec is unchanged. */
 VE_API ve_status ve_spec_set_dist(ve_spec* s, int32_t dist);
 VE_API ve_status ve_spec_set_include_mean(ve_spec* s, int32_t include_mean); /* 0 or 1 */
+/* Mean regressors (K columns) and variance regressors (J columns), 0 .. VE_MAX_REGRESSORS, default 0; else
+   VE_INVALID_ARGUMENT and the spec is unchanged. The data come with ve_batch_set_regressors. */
+VE_API ve_status ve_spec_set_mxreg(ve_spec* s, int32_t count);
+VE_API ve_status ve_spec_set_vxreg(ve_spec* s, int32_t count);
+/* ARCH-in-mean: 0 none (default), 1 adds xi sigma_t to the mean, 2 adds xi sigma_t^2. Else
+   VE_INVALID_ARGUMENT and the spec is unchanged. */
+VE_API ve_status ve_spec_set_archm(ve_spec* s, int32_t power);
 /* Parameter roles. Every parameter is estimated, fixed or derived. A fixed parameter (set_fixed) keeps
    the given value, is not optimized, has NaN standard errors and does not count in the criteria. A
    derived parameter is a function of the others that the model defines: the iGARCH beta_q and, under
@@ -205,6 +215,24 @@ VE_API ve_status ve_batch_set_jobs(ve_batch* b, const size_t* job_spec, const si
                                     size_t n_jobs);
 /* Not called = defaults; a NULL options is VE_INVALID_HANDLE. */
 VE_API ve_status ve_batch_set_options(ve_batch* b, const ve_fit_options* options);
+/* Regressors of the jobs: mxreg and vxreg have n_jobs entries, entry i for job i (n_jobs is checked against the
+   job count by ve_fit_batch, so jobs may be set in any order); a whole array NULL means no job has that kind,
+   one NULL entry that job has none. Each entry is a borrowed panel, like the data panel (same lifetime, same
+   strides), with t equal to the data panel's t and n equal to the spec's mxreg or vxreg count K; it has no
+   ranges. Job i uses the rows starts[s] .. starts[s] + lengths[s] - 1 of the DATA panel's ranges for its series
+   s. A regressor is present if and only if the count of the spec is > 0, and its rows used by the job must be
+   finite; ve_fit_batch reports any breach as VE_INVALID_ARGUMENT with "job <i>: ...". Copies the pointers only.
+   Mean: m_t = mu + sum_k delta_k x_t,k + xi sigma_t^p (xi only with archm), d_t = r_t - m_t, and the ARMA acts
+   on d_t: e_t = d_t - sum phi_i d_(t-i) - sum theta_j e_(t-j) (e_t = d_t for t < m). The pre-sample residuals
+   (var_init sample mean, variance targeting target) are those of the same recursion with xi = 0.
+   Variance: omega becomes omega + sum_k zeta_k v_t,k at each t, in the scale of the model (sigma^2, log sigma^2
+   or sigma^delta); csGARCH adds it to q_t, whose pre-sample stays omega / (1 - rho). Persistence P < 1 is always
+   enforced, unlike rugarch, which drops it with vxreg. A sigma^2 <= 0 makes the log-likelihood -inf.
+   Variance targeting with vxreg: omega = target - sum_k zeta_k mean(v_k), the means over the rows of the series.
+   Backcast (VE_VARINIT_BACKCAST) with mxreg uses the residuals of the OLS of r on [1 (with a mean), X] (as arch);
+   the ARMA stays out of the OLS. Without mxreg that is r - mean(r) (r without a mean). */
+VE_API ve_status ve_batch_set_regressors(ve_batch* b, const ve_panel* const* mxreg, const ve_panel* const* vxreg,
+                                         size_t n_jobs);
 VE_API ve_status ve_batch_job_count(const ve_batch* b, size_t* out);
 VE_API void ve_batch_free(ve_batch* b);
 

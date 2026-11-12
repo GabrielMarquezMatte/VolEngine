@@ -5,7 +5,7 @@ from __future__ import annotations
 import ctypes
 from collections.abc import Sequence
 from contextlib import ExitStack
-from typing import Any, overload
+from typing import TYPE_CHECKING, Any, TypedDict, overload
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -13,6 +13,9 @@ from numpy.typing import ArrayLike, NDArray
 from ._fit import CoefTable, Fit
 from ._native import Handle, VolEngineError, check, create_handle, int32, lib
 from ._spec import FitOptions, Spec
+
+if TYPE_CHECKING:
+    from typing import Unpack
 
 __all__ = [
     "CoefTable",
@@ -26,6 +29,16 @@ __all__ = [
 Series1D = Sequence[float]
 
 ELEMENT_BYTES = np.dtype(np.float64).itemsize
+
+
+class FitKeywords(TypedDict, total=False):
+    """The optional keywords of `Context.fit`."""
+
+    options: FitOptions | None
+    starts: ArrayLike | None
+    lengths: ArrayLike | None
+    mxreg: ArrayLike | None
+    vxreg: ArrayLike | None
 
 
 def panel_array(data: ArrayLike) -> tuple[NDArray[np.float64], bool]:
@@ -84,6 +97,52 @@ def open_batch(stack: ExitStack, specs: Sequence[Spec], panel: Handle, options: 
     return batch
 
 
+def regressor_array(
+    values: ArrayLike | None, name: str, counts: list[int], data_shape: tuple[int, ...]
+) -> NDArray[np.float64] | None:
+    """`values` as (T, N, k), or None when no spec has regressors of this kind; the specs with k = 0 ignore it."""
+    widths = {count for count in counts if count > 0}
+    if not widths:
+        return None
+    if values is None:
+        raise ValueError(f"a spec has {name} > 0, so {name} is required")
+    array = np.asarray(values, dtype=np.float64)
+    for width in widths:
+        if array.shape != (*data_shape, width):
+            raise ValueError(f"{name} must have shape {(*data_shape, width)} for a spec with {name} = {width}, "
+                             f"got {array.shape}")
+    if len(data_shape) == 1:
+        array = array[:, None, :]
+    if any(stride % ELEMENT_BYTES for stride in array.strides):
+        array = np.ascontiguousarray(array)
+    return array
+
+
+def open_regressors(stack: ExitStack, array: NDArray[np.float64] | None, counts: list[int]) -> NDArray[np.uintp] | None:
+    """The panel of job j, in the order of `set_jobs`, for each spec in `counts`: series s of `array`, no copy."""
+    if array is None:
+        return None
+    pointers = [open_panel(stack, array[:, series, :]).pointer for series in range(array.shape[1])]
+    absent = [0] * len(pointers)
+    jobs: list[int] = []
+    for count in counts:
+        jobs += pointers if count > 0 else absent
+    return np.array(jobs, dtype=np.uintp)
+
+
+def set_regressors(batch: Handle, mean: NDArray[np.uintp] | None, variance: NDArray[np.uintp] | None) -> None:
+    jobs = mean if mean is not None else variance
+    if jobs is None:
+        return
+    mean_data = None
+    if mean is not None:
+        mean_data = mean.ctypes.data
+    variance_data = None
+    if variance is not None:
+        variance_data = variance.ctypes.data
+    check(lib.ve_batch_set_regressors(batch.pointer, mean_data, variance_data, jobs.size))
+
+
 def shaped(fits: list[Fit], shape: tuple[int, ...]) -> NDArray[np.object_]:
     grid = np.empty(len(fits), dtype=object)
     for position, fit in enumerate(fits):
@@ -104,63 +163,51 @@ class Context:
         check(lib.ve_context_set_threads(self._handle.pointer, threads))
 
     @overload
-    def fit(
-        self,
-        spec: Spec,
-        data: Series1D,
-        *,
-        options: FitOptions | None = ...,
-        starts: ArrayLike | None = ...,
-        lengths: ArrayLike | None = ...,
-    ) -> Fit: ...
+    def fit(self, spec: Spec, data: Series1D, **keywords: Unpack[FitKeywords]) -> Fit: ...
 
     @overload
-    def fit(
-        self,
-        spec: Spec,
-        data: ArrayLike,
-        *,
-        options: FitOptions | None = ...,
-        starts: ArrayLike | None = ...,
-        lengths: ArrayLike | None = ...,
-    ) -> Fit | NDArray[np.object_]: ...
+    def fit(self, spec: Spec, data: ArrayLike, **keywords: Unpack[FitKeywords]) -> Fit | NDArray[np.object_]: ...
 
     @overload
-    def fit(
-        self,
-        spec: Sequence[Spec],
-        data: ArrayLike,
-        *,
-        options: FitOptions | None = ...,
-        starts: ArrayLike | None = ...,
-        lengths: ArrayLike | None = ...,
-    ) -> NDArray[np.object_]: ...
+    def fit(self, spec: Sequence[Spec], data: ArrayLike, **keywords: Unpack[FitKeywords]) -> NDArray[np.object_]: ...
 
-    def fit(
-        self,
-        spec: Spec | Sequence[Spec],
-        data: ArrayLike,
-        *,
-        options: FitOptions | None = None,
-        starts: ArrayLike | None = None,
-        lengths: ArrayLike | None = None,
-    ) -> Fit | NDArray[np.object_]:
+    def fit(self, spec: Spec | Sequence[Spec], data: ArrayLike, **keywords: Unpack[FitKeywords]) -> Fit | NDArray[np.object_]:
         """Fit every spec on every series of `data`: (T,) or (T, N), optionally with row ranges.
 
         One spec and a 1D series give a Fit; one spec and (T, N) data give an object array of
         shape (N,); a list of specs gives (n_specs,) or (n_specs, N).
+
+        Keywords (all optional): `options` (FitOptions), `starts` and `lengths` (row ranges, given together),
+        `mxreg` and `vxreg`, the mean and variance regressors of the specs with mxreg > 0 or vxreg > 0:
+        shape (T, k) for 1D data and (T, N, k) for (T, N) data, k being the count of the spec (a different k, a
+        different shape or a missing array is a ValueError). Series j uses X[:, j, :] without a copy, and with
+        `starts` and `lengths` its rows starts[j] .. starts[j] + lengths[j] - 1 of the regressors. The specs with a
+        count of 0 take no regressors.
         """
+        unknown = sorted(keywords.keys() - FitKeywords.__annotations__.keys())
+        if unknown:
+            raise TypeError(f"fit() got an unexpected keyword argument {unknown[0]!r}")
+        starts, lengths = keywords.get("starts"), keywords.get("lengths")
         if (starts is None) != (lengths is None):
             raise ValueError("starts and lengths must be given together")
-        specs = [spec]
+        specs: list[Spec] = []
+        if isinstance(spec, Spec):
+            specs.append(spec)
         if not isinstance(spec, Spec):
-            specs = list(spec)
+            specs.extend(spec)
         array, one_dimensional = panel_array(data)
         series_count = array.shape[1]
         ranges = None
-        if starts is not None:
+        if starts is not None and lengths is not None:
             ranges = (range_array(starts, series_count, "starts"), range_array(lengths, series_count, "lengths"))
-        fits = self._run(specs, array, options, ranges)
+        data_shape = array.shape
+        if one_dimensional:
+            data_shape = array.shape[:1]
+        regressors = (
+            regressor_array(keywords.get("mxreg"), "mxreg", [item.mxreg for item in specs], data_shape),
+            regressor_array(keywords.get("vxreg"), "vxreg", [item.vxreg for item in specs], data_shape),
+        )
+        fits = self._run(specs, array, keywords.get("options"), ranges, regressors)
         if isinstance(spec, Spec) and one_dimensional:
             return fits[0]
         if isinstance(spec, Spec):
@@ -175,6 +222,7 @@ class Context:
         array: NDArray[np.float64],
         options: FitOptions | None,
         ranges: tuple[NDArray[np.uintp], NDArray[np.uintp]] | None,
+        regressors: tuple[NDArray[np.float64] | None, NDArray[np.float64] | None],
     ) -> list[Fit]:
         if any(stride % ELEMENT_BYTES for stride in array.strides):
             array = np.ascontiguousarray(array)
@@ -185,6 +233,9 @@ class Context:
                 set_ranges(panel, ranges[0], ranges[1])
             batch = open_batch(stack, specs, panel, options)
             set_jobs(batch, len(specs), series_count)
+            mean = open_regressors(stack, regressors[0], [spec.mxreg for spec in specs])
+            variance = open_regressors(stack, regressors[1], [spec.vxreg for spec in specs])
+            set_regressors(batch, mean, variance)
             return self._fit_batch(batch)
 
     def _fit_batch(self, batch: Handle) -> list[Fit]:
