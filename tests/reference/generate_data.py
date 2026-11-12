@@ -2,7 +2,8 @@
 
 `data/sgarch11_norm.csv` holds the plan-1 sGARCH(1,1)-normal series (seed 20261110, three lengths);
 `data/grid.csv` holds one T = 3000 series per process below, drawn in order from one stream (seed 20261111);
-`data/grid_2b.csv` holds one T = 3000 series per GARCH variant, drawn in order from one stream (seed 20261112).
+`data/grid_2b.csv` holds one T = 3000 series per GARCH variant, drawn in order from one stream (seed 20261112);
+`data/grid_2c.csv` holds one T = 3000 series per skewed distribution, drawn in order from one stream (seed 20261113).
 """
 
 import csv
@@ -13,6 +14,7 @@ from typing import NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy import special, stats  # type: ignore[import-untyped]
 
 DATA = Path(__file__).resolve().parent / "data"
 PLAN_ONE_SEED = 20261110
@@ -22,6 +24,7 @@ GRID_LENGTH = 3000
 VARIANT_SEED = 20261112
 VARIANT_BURN_IN = 1000
 VARIANT_MU = 0.05
+SKEWED_SEED = 20261113
 
 Shocks = Callable[[np.random.Generator, int], NDArray[np.float64]]
 # (sigma2, q): the conditional variance and the csGARCH permanent component (unused by the other models).
@@ -53,14 +56,130 @@ def student_shocks(nu: float) -> Shocks:
     return draw
 
 
-def ged_shocks(nu: float) -> Shocks:
+def ged_log_scale(nu: float) -> float:
+    return 0.5 * (-2.0 / nu * math.log(2.0) + math.lgamma(1.0 / nu) - math.lgamma(3.0 / nu))
+
+
+def ged_magnitudes(nu: float) -> Shocks:
     # |z| = lambda (2 u)^(1/nu) with u ~ Gamma(1/nu, 1) has the unit-variance GED density.
-    log_lambda = 0.5 * (-2.0 / nu * math.log(2.0) + math.lgamma(1.0 / nu) - math.lgamma(3.0 / nu))
+    log_lambda = ged_log_scale(nu)
 
     def draw(rng: np.random.Generator, length: int) -> NDArray[np.float64]:
-        magnitude = math.exp(log_lambda) * (2.0 * rng.gamma(1.0 / nu, 1.0, length)) ** (1.0 / nu)
+        return math.exp(log_lambda) * (2.0 * rng.gamma(1.0 / nu, 1.0, length)) ** (1.0 / nu)
+
+    return draw
+
+
+def ged_shocks(nu: float) -> Shocks:
+    magnitudes = ged_magnitudes(nu)
+
+    def draw(rng: np.random.Generator, length: int) -> NDArray[np.float64]:
+        magnitude = magnitudes(rng, length)
         sign = np.where(rng.random(length) < 0.5, -1.0, 1.0)
         return sign * magnitude
+
+    return draw
+
+
+def student_magnitudes(nu: float) -> Shocks:
+    shocks = student_shocks(nu)
+
+    def draw(rng: np.random.Generator, length: int) -> NDArray[np.float64]:
+        return np.abs(shocks(rng, length))
+
+    return draw
+
+
+def ged_abs_moment(nu: float) -> float:
+    """E|z| of the unit-variance GED."""
+    return math.exp(ged_log_scale(nu) + math.log(2.0) / nu + math.lgamma(2.0 / nu) - math.lgamma(1.0 / nu))
+
+
+def fernandez_steel_shocks(magnitudes: Shocks, mean_abs: float, xi: float) -> Shocks:
+    """y = xi |x| with probability xi^2 / (1 + xi^2), else -|x| / xi, for |x| from the unit-variance kernel whose
+    E|x| is mean_abs; z = (y - mu_xi) / sigma_xi has mean 0 and variance 1."""
+    mean = mean_abs * (xi - 1.0 / xi)
+    sd = math.sqrt((1.0 - mean_abs**2) * (xi * xi + 1.0 / (xi * xi)) + 2.0 * mean_abs**2 - 1.0)
+
+    def draw(rng: np.random.Generator, length: int) -> NDArray[np.float64]:
+        magnitude = magnitudes(rng, length)
+        right = rng.random(length) < xi * xi / (1.0 + xi * xi)
+        return (np.where(right, xi * magnitude, -magnitude / xi) - mean) / sd
+
+    return draw
+
+
+class Johnson(NamedTuple):
+    """Johnson SU in Rigby and Stasinopoulos' parametrization, standardized: z = c (sqrt(w) sinh(omega) + x),
+    with N = -nu + tau asinh(x) standard normal."""
+
+    w: float
+    omega: float
+    c: float
+
+
+def johnson(nu: float, tau: float) -> Johnson:
+    w = math.exp(1.0 / (tau * tau))
+    omega = -nu / tau
+    c = (0.5 * (w - 1.0) * (w * math.cosh(2.0 * omega) + 1.0)) ** -0.5
+    return Johnson(w, omega, c)
+
+
+def johnson_shocks(nu: float, tau: float) -> Shocks:
+    k = johnson(nu, tau)
+
+    def draw(rng: np.random.Generator, length: int) -> NDArray[np.float64]:
+        return k.c * (math.sqrt(k.w) * math.sinh(k.omega) + np.sinh((rng.standard_normal(length) + nu) / tau))
+
+    return draw
+
+
+def johnson_abs_moment(nu: float, tau: float) -> float:
+    """E|z| = 2 E[z; z > 0], since E z = 0. z > 0 when N > n0, and E[exp(a N); N > n0] = exp(a^2 / 2) Phi(a - n0)."""
+    k = johnson(nu, tau)
+    n0 = tau * math.asinh(-math.sqrt(k.w) * math.sinh(k.omega)) - nu
+    upper = math.exp(nu / tau) * stats.norm.cdf(1.0 / tau - n0)
+    lower = math.exp(-nu / tau) * stats.norm.cdf(-1.0 / tau - n0)
+    partial = math.sqrt(k.w) * (math.sinh(k.omega) * stats.norm.cdf(-n0) + 0.5 * (upper - lower))
+    return 2.0 * k.c * partial
+
+
+class Hyperbolic(NamedTuple):
+    """The generalized hyperbolic (alpha, beta, delta, mu) with mean 0 and variance 1 at (rho, zeta, lambda)."""
+
+    alpha: float
+    beta: float
+    delta: float
+    mu: float
+
+
+def hyperbolic(rho: float, zeta: float, lam: float) -> Hyperbolic:
+    first = special.kve(lam + 1.0, zeta) / special.kve(lam, zeta)
+    second = special.kve(lam + 2.0, zeta) / special.kve(lam, zeta)
+    delta = (first / zeta + rho * rho / (1.0 - rho * rho) * (second - first * first)) ** -0.5
+    alpha = zeta / (delta * math.sqrt(1.0 - rho * rho))
+    beta = rho * alpha
+    return Hyperbolic(alpha, beta, delta, -beta * delta * delta * first / zeta)
+
+
+def nig_shocks(rho: float, zeta: float) -> Shocks:
+    """Normal variance-mean mixture z = mu + beta W + sqrt(W) N, W inverse Gaussian with mean delta^2 / zeta
+    (= delta / sqrt(alpha^2 - beta^2)) and shape delta^2."""
+    gh = hyperbolic(rho, zeta, -0.5)
+
+    def draw(rng: np.random.Generator, length: int) -> NDArray[np.float64]:
+        mixing = rng.wald(gh.delta**2 / zeta, gh.delta**2, length)
+        return gh.mu + gh.beta * mixing + np.sqrt(mixing) * rng.standard_normal(length)
+
+    return draw
+
+
+def ghyp_shocks(rho: float, zeta: float, lam: float) -> Shocks:
+    gh = hyperbolic(rho, zeta, lam)
+    law = stats.genhyperbolic(p=lam, a=gh.alpha * gh.delta, b=gh.beta * gh.delta, loc=gh.mu, scale=gh.delta)
+
+    def draw(rng: np.random.Generator, length: int) -> NDArray[np.float64]:
+        return np.asarray(law.rvs(size=length, random_state=rng), dtype=np.float64)
 
     return draw
 
@@ -152,6 +271,25 @@ VARIANTS = (
     Variant("csgarch11_std", csgarch_step(0.01, 0.06, 0.85, 0.99, 0.04), student_shocks(7.0)),
     Variant("fgarch_allgarch11_norm", allgarch_step(0.02, 0.08, 0.88, (0.3, 0.2), 1.5), normal_shocks),
 )
+SKEWED = (
+    Variant(
+        "gjrgarch11_sstd",
+        gjrgarch_step(0.01, 0.03, 0.09, 0.9),
+        fernandez_steel_shocks(student_magnitudes(6.0), student_abs_moment(6.0), 0.85),
+    ),
+    Variant(
+        "aparch11_sged",
+        aparch_step(0.02, 0.08, 0.4, 0.9, 1.3),
+        fernandez_steel_shocks(ged_magnitudes(1.4), ged_abs_moment(1.4), 0.9),
+    ),
+    Variant(
+        "egarch11_jsu",
+        egarch_step(-0.01, -0.08, 0.15, 0.97, johnson_abs_moment(-0.5, 2.0)),
+        johnson_shocks(-0.5, 2.0),
+    ),
+    Variant("sgarch11_nig", gjrgarch_step(0.02, 0.08, 0.0, 0.9), nig_shocks(-0.3, 1.5)),
+    Variant("sgarch11_ghyp", gjrgarch_step(0.02, 0.08, 0.0, 0.9), ghyp_shocks(-0.3, 1.5, 1.0)),
+)
 
 
 def lagged(values: list[float], lag: int, presample: float) -> float:
@@ -232,6 +370,9 @@ def main() -> None:
     length = VARIANT_BURN_IN + GRID_LENGTH
     variants = {variant.name: simulate_variant(variant, variant.shocks(rng, length)) for variant in VARIANTS}
     write_csv(DATA / "grid_2b.csv", variants)
+    rng = np.random.default_rng(SKEWED_SEED)
+    skewed = {variant.name: simulate_variant(variant, variant.shocks(rng, length)) for variant in SKEWED}
+    write_csv(DATA / "grid_2c.csv", skewed)
 
 
 if __name__ == "__main__":
