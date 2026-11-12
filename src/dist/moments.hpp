@@ -390,6 +390,8 @@ T johnson_pieces(const JohnsonShockIntegrand<T>& integrand, const T& lower, cons
     return sum;
 }
 
+// NaN where the density overflows (shape below ~0.053, where scale is 0 and center 0 or NaN) or the range
+// is not finite, which the pieces would otherwise turn into an empty sum, 0.
 template <class T>
 T johnson_shock_moment(const JohnsonShockIntegrand<T>& integrand)
 {
@@ -397,6 +399,13 @@ T johnson_shock_moment(const JohnsonShockIntegrand<T>& integrand)
     double peak = ad::value_of(integrand.power) / ad::value_of(integrand.density.shape);
     double lower = std::min(-peak, ad::value_of(cusp)) - kJohnsonReach;
     double upper = std::max(peak, ad::value_of(cusp)) + kJohnsonReach;
+    double scale = ad::value_of(integrand.density.scale);
+    bool computable = scale > 0.0 && std::isfinite(scale) && std::isfinite(ad::value_of(cusp)) &&
+                      std::isfinite(lower) && std::isfinite(upper);
+    if (!computable)
+    {
+        return T{std::numeric_limits<double>::quiet_NaN()};
+    }
     return johnson_pieces(integrand, T{lower}, cusp) + johnson_pieces(integrand, cusp, T{upper});
 }
 

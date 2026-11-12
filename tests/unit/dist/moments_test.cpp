@@ -542,6 +542,20 @@ TEST(Moments, SharpCoresMatchReferenceQuadrature)
     }
 }
 
+// Below tau ~ 0.053 the jsu constant c overflows to 0, and the moments are NaN rather than 0.
+TEST(Moments, JohnsonPastOverflowIsNaN)
+{
+    for (double tau : {0.05, 0.03, 0.02})
+    {
+        SCOPED_TRACE(::testing::Message() << "tau " << tau);
+        ve::dist::ShapeParameters<double> parameters{0.5, tau, 0.0};
+        EXPECT_TRUE(std::isnan(abs_moment(Dist::Jsu, parameters, 2.0)));
+        EXPECT_TRUE(std::isnan(abs_moment(Dist::Jsu, parameters, 1.0)));
+        EXPECT_TRUE(std::isnan(shifted_moment(Dist::Jsu, parameters, 0.3, 0.2, 1.5)));
+        EXPECT_TRUE(std::isnan(probability_below_zero(Dist::Jsu, parameters)));
+    }
+}
+
 TEST(Moments, JohnsonDerivativesMatchFiniteDifferences)
 {
     for (double tau : {0.3, 1.0})

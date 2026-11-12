@@ -19,6 +19,7 @@ namespace
 
 constexpr double kPersistenceCeiling = 1.0 - 1e-8;
 constexpr double kBoundary = 1e-8;
+constexpr double kInfinity = std::numeric_limits<double>::infinity();
 // gjrGARCH: 2 p + q.
 constexpr std::size_t kMaxWeightCount = 3 * kMaxOrder;
 
@@ -346,6 +347,17 @@ T omega_to_natural(std::span<const T> u, std::span<const T> theta, const Layout&
     return (scale * scale) * exp(x);
 }
 
+// value where 0 < value < upper, NaN otherwise. alpha_i is read back as w / kappa_i, and in gjrGARCH as
+// w / (1 - pi) with gamma_i = w / pi - alpha_i, so a kappa or pi outside its range gives NaN weights.
+double nan_unless(double value, double upper)
+{
+    if (value > 0.0 && value < upper)
+    {
+        return value;
+    }
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
 // The natural weights of theta (see to_natural), in double.
 Weights natural_weights(std::span<const double> theta, const Layout& layout)
 {
@@ -356,7 +368,7 @@ Weights natural_weights(std::span<const double> theta, const Layout& layout)
     double below = 0.5;
     if (layout.model == Model::GjrGarch)
     {
-        below = probability_below_zero_of<double>(theta, layout);
+        below = nan_unless(probability_below_zero_of<double>(theta, layout), 1.0);
     }
     for (std::size_t i = 0; i < p && layout.model == Model::GjrGarch; ++i)
     {
@@ -366,7 +378,8 @@ Weights natural_weights(std::span<const double> theta, const Layout& layout)
     }
     for (std::size_t i = 0; i < p && layout.is_power_family(); ++i)
     {
-        weights[i] = theta[layout.alpha_begin() + i] * shock_moment<double>(theta, layout, i);
+        double moment = nan_unless(shock_moment<double>(theta, layout, i), kInfinity);
+        weights[i] = theta[layout.alpha_begin() + i] * moment;
     }
     return weights;
 }
@@ -457,7 +470,8 @@ bool shock_parameters_valid(std::span<const double> theta, const Layout& layout)
     return asymmetry_valid && (!layout.free_power || theta[layout.power()] > 0.0);
 }
 
-// A kappa that is not finite gives a weight that is NaN or +inf, which fails here.
+// A kappa that is not a positive finite double, or a gjrGARCH pi outside (0, 1), gives NaN weights (see
+// nan_unless), which fail here.
 bool weights_valid(std::span<const double> theta, const Layout& layout)
 {
     Weights natural = natural_weights(theta, layout);
@@ -476,17 +490,6 @@ bool weights_valid(std::span<const double> theta, const Layout& layout)
         return sum <= 1.0;
     }
     return sum < kPersistenceCeiling;
-}
-
-// gjrGARCH reads alpha_i back as w / (1 - pi) and gamma_i as w / pi - alpha_i.
-bool split_valid(std::span<const double> theta, const Layout& layout)
-{
-    if (layout.model != Model::GjrGarch)
-    {
-        return true;
-    }
-    double below = probability_below_zero_of<double>(theta, layout);
-    return below > 0.0 && below < 1.0;
 }
 
 bool csgarch_valid(std::span<const double> theta, const Layout& layout)
@@ -601,7 +604,7 @@ bool is_valid(std::span<const double> theta, const Layout& layout)
     {
         return false;
     }
-    if (!shock_parameters_valid(theta, layout) || !split_valid(theta, layout))
+    if (!shock_parameters_valid(theta, layout))
     {
         return false;
     }
