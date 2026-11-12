@@ -17,7 +17,7 @@ SUBMODELS = {
     "gjrgarch": 12,
     "allgarch": 13,
 }
-DISTRIBUTIONS = {"norm": 0, "std": 1, "ged": 2}
+DISTRIBUTIONS = {"norm": 0, "std": 1, "ged": 2, "sstd": 3, "sged": 4, "nig": 5, "ghyp": 6, "jsu": 7}
 VAR_INITS = {"sample": 0, "backcast": 1}
 
 
@@ -45,6 +45,16 @@ class Spec:
     "gjrgarch" and "allgarch"; every other model rejects it. The iGARCH `beta_q` is derived
     (1 - sum of alphas - the other betas), not estimated: it has a name and a value, its standard error
     is NaN and the criteria count the estimated parameters only.
+
+    `dist` is one of "norm", "std", "ged", "sstd", "sged", "nig", "ghyp" and "jsu", all standardized to
+    zero mean and unit variance. Distribution parameters come last in the fit names, in the order `skew`,
+    `shape`, `ghlambda`: "std" has `shape` (nu > 2), "ged" has `shape` (nu > 0); "sstd" and "sged" are
+    Fernandez-Steel skewed versions of those kernels with `skew` xi > 0 and the same `shape`; "nig" and
+    "ghyp" are the generalized hyperbolic in the standardized (rho, zeta) parametrization with `skew` rho
+    in (-1, 1) and `shape` zeta > 0 ("ghyp" adds `ghlambda`, a real number; "nig" fixes it at -1/2);
+    "jsu" is Johnson SU with `skew` nu (a real number) and `shape` tau > 0. The "sstd" `skew` is xi, not
+    arch's Hansen skewness lambda in (-1, 1): xi = sqrt((1 + lambda) / (1 - lambda)), and the standard
+    error of lambda follows by the delta method, d xi / d lambda = 1 / (xi * (1 - lambda)**2).
     """
 
     model: str = "sgarch"

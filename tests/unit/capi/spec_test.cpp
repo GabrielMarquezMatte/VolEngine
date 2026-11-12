@@ -110,8 +110,26 @@ TEST(CapiSpec, NewDistributions)
     EXPECT_EQ(spec->spec.dist, ve::Dist::Std);
     EXPECT_EQ(ve_spec_set_dist(spec, VE_DIST_GED), VE_OK);
     EXPECT_EQ(spec->spec.dist, ve::Dist::Ged);
-    EXPECT_EQ(ve_spec_set_dist(spec, 3), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_spec_set_dist(spec, 8), VE_INVALID_ARGUMENT);
     EXPECT_EQ(spec->spec.dist, ve::Dist::Ged);
+    ve_spec_free(spec);
+}
+
+TEST(CapiSpec, AllDistributions)
+{
+    ve_spec* spec = nullptr;
+    ASSERT_EQ(ve_spec_create(VE_MODEL_SGARCH, &spec), VE_OK);
+    for (int32_t dist = 0; dist <= 7; ++dist)
+    {
+        EXPECT_EQ(ve_spec_set_dist(spec, dist), VE_OK) << dist;
+        EXPECT_EQ(static_cast<int32_t>(spec->spec.dist), dist);
+    }
+    for (const int32_t bad : {8, -1})
+    {
+        EXPECT_EQ(ve_spec_set_dist(spec, bad), VE_INVALID_ARGUMENT) << bad;
+        EXPECT_TRUE(error_mentions("dist"));
+        EXPECT_EQ(spec->spec.dist, ve::Dist::Jsu);
+    }
     ve_spec_free(spec);
 }
 
@@ -119,7 +137,7 @@ TEST(CapiSpec, DistAndIncludeMeanValidation)
 {
     ve_spec* spec = nullptr;
     ASSERT_EQ(ve_spec_create(VE_MODEL_SGARCH, &spec), VE_OK);
-    EXPECT_EQ(ve_spec_set_dist(spec, 5), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_spec_set_dist(spec, 9), VE_INVALID_ARGUMENT);
     EXPECT_TRUE(error_mentions("dist"));
     EXPECT_EQ(ve_spec_set_include_mean(spec, 2), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_spec_set_include_mean(spec, -1), VE_INVALID_ARGUMENT);

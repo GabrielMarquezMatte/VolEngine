@@ -47,10 +47,15 @@ ve_status to_model(int32_t value, ve::Model& model)
 static_assert(VE_DIST_NORM == static_cast<int32_t>(ve::Dist::Norm));
 static_assert(VE_DIST_STD == static_cast<int32_t>(ve::Dist::Std));
 static_assert(VE_DIST_GED == static_cast<int32_t>(ve::Dist::Ged));
+static_assert(VE_DIST_SSTD == static_cast<int32_t>(ve::Dist::Sstd));
+static_assert(VE_DIST_SGED == static_cast<int32_t>(ve::Dist::Sged));
+static_assert(VE_DIST_NIG == static_cast<int32_t>(ve::Dist::Nig));
+static_assert(VE_DIST_GHYP == static_cast<int32_t>(ve::Dist::Ghyp));
+static_assert(VE_DIST_JSU == static_cast<int32_t>(ve::Dist::Jsu));
 
 ve_status to_dist(int32_t value, ve::Dist& dist)
 {
-    if (value != VE_DIST_NORM && value != VE_DIST_STD && value != VE_DIST_GED)
+    if (value < VE_DIST_NORM || value > VE_DIST_JSU)
     {
         return bad_value("dist", value);
     }
