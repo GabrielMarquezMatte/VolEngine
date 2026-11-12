@@ -1,9 +1,9 @@
-#include "fit/cholesky.hpp"
+#include "linalg/cholesky.hpp"
 
 #include <cassert>
 #include <cmath>
 
-namespace ve::fit
+namespace ve::linalg
 {
 
 namespace

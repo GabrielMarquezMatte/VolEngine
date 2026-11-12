@@ -64,10 +64,11 @@ add_library(volengine_core STATIC
     src/dist/bessel.cpp
     src/dist/moments.cpp
     src/fit/batch.cpp
-    src/fit/cholesky.cpp
     src/fit/criteria.cpp
     src/fit/fit.cpp
     src/fit/standard_errors.cpp
+    src/linalg/cholesky.cpp
+    src/linalg/least_squares.cpp
     src/model/layout.cpp
     src/model/likelihood.cpp
     src/model/parameter_map.cpp
@@ -128,6 +129,7 @@ if(VE_BUILD_TESTS)
         tests/unit/garch/gjrgarch_test.cpp
         tests/unit/garch/power_garch_test.cpp
         tests/unit/garch/sgarch_test.cpp
+        tests/unit/linalg/least_squares_test.cpp
         tests/unit/mean/arma_test.cpp
         tests/unit/model/layout_test.cpp
         tests/unit/model/likelihood_test.cpp
