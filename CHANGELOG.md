@@ -11,12 +11,29 @@ library whose ABI version differs).
 
 ### Changed
 
+- Python: `Context.fit` takes its optional arguments as `**keywords` (a `TypedDict`), to carry `mxreg` and `vxreg`
+  without a longer signature. The call syntax is the same (`options=`, `starts=`, `lengths=` by name); an unknown
+  keyword is a `TypeError`.
+- With `vxreg`, the persistence stays limited to P < 1 (as everywhere here), while `rugarch` drops that restriction when
+  the model has a `vxreg`. Estimates inside the stationary region agree; the difference is recorded in
+  [docs/guide/validation.md](docs/guide/validation.md).
 - **Breaking (Python):** `loglik` and the information criteria are members of `Fit` (`fit.loglik`, `fit.aic()`,
   `fit.bic()`, `fit.hqic()`, `fit.sic()`, each criterion with `per_obs=`). The module functions `ve.loglik`,
   `ve.aic`, `ve.bic`, `ve.hqic` and `ve.sic` are removed, with no alias.
 
 ### Added
 
+- Mean regressors (`mxreg`), variance regressors (`vxreg`) and ARCH-in-mean (`archm`, on the standard deviation or the
+  variance) for every model, following `rugarch`: the parameters `archm`, `mxreg1..` and `vxreg1..` (up to 8 of each
+  kind) in the `rugarch` order, with start values from the least squares of the series on the mean regressors and
+  standard errors as for the other parameters. A spec without regressors and without `archm` gives the numbers of
+  before. C API: `ve_spec_set_mxreg`, `ve_spec_set_vxreg`, `ve_spec_set_archm`, `ve_batch_set_regressors` and
+  `VE_MAX_REGRESSORS`. Python: `Spec(mxreg=, vxreg=, archm=)` and `ctx.fit(spec, y, mxreg=X, vxreg=V)`. Validated
+  against `rugarch` and `arch` ([docs/guide/validation.md](docs/guide/validation.md)).
+- `ad::Dual<59>`: the widest layout now holds 59 parameters (`kMaxParameterCount`); the `Dual` buckets are 8, 16, 32
+  and 59. This replaces the `Dual<42>` below.
+- Benchmarks for the regressor and ARCH-in-mean cases (`BM_Loglik` and `BM_FitOne`), not yet measured on the benchmark
+  machine ([docs/performance/benchmarks.md](docs/performance/benchmarks.md)).
 - Fixed parameters, start values and variance targeting, as `fixed.pars`, `start.pars` and `variance.targeting` of
   `rugarch`. Each parameter is estimated, fixed or derived (the iGARCH `beta_q`, and `omega` under variance
   targeting); fixed and derived ones have NaN standard errors and do not count in the criteria. A spec with every

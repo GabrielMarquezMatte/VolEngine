@@ -55,6 +55,24 @@ page, so this page publishes no number for them. The run is also to record the p
 `BM_FitOne` for nig and ghyp, to decide whether a Bessel K of our own or an analytic derivative in the ghyp
 lambda is worth it. The tables below are those of plan 2a and describe sGARCH only.
 
+## Plan 2e cases: not measured yet
+
+The regressor and ARCH-in-mean cases are `BM_Loglik/<series>/{double,dual}` and `BM_FitOne/<series>` (T = 5000) for
+`arx_sgarch11_norm` (AR(1) with 2 mean regressors, sGARCH), `sgarch11_vx_std` (1 variance regressor, sGARCH, std),
+`archm_gjrgarch11_norm` (`archm` with the standard deviation, gjrGARCH) and `archm2_egarch11_std` (`archm` with the
+variance, eGARCH, std), each on the series of the oracle suite simulated by `tests/unit/simulated_garch.hpp`, at the
+parameters of the process. None has been run on the machine of this page, so this page publishes no number for them.
+The `archm` cases use the joint loop of the variance and the mean, which the sequential cases do not.
+
+### Effect on the existing cases (task 4 of plan 2e)
+
+The variance recursions were rewritten in step form for the joint loop. Compared before and after, interleaved A/B
+runs of the existing `BM_Loglik` cases on a noisy machine: on this (noisy) machine, the non-archm path stayed within
+about 5-7% of before. The minimum-time ratios (after over before) ranged from 0.87 to 1.07 with no systematic
+direction, but `s11_norm/dual` and `gjrgarch11_norm/dual` hinted at about 5% for `Dual`. Sub-5% resolution needs the
+benchmark machine; re-run the existing cases there before and after to settle it. No table is given: the machine was
+shared and each series of runs moved more than that.
+
 ## Plan 2d: no new benchmark
 
 Fixed parameters, start values and variance targeting add branches only when the `Layout` has fixed or start

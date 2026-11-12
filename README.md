@@ -13,7 +13,8 @@ Every model takes an ARMA(m,n) conditional mean (orders 0 to 6, with or without 
 Student-t (`std`) or GED (`ged`) innovations, or the skewed ones: skewed Student-t (`sstd`), skewed GED (`sged`),
 normal inverse Gaussian (`nig`), generalized hyperbolic (`ghyp`) and Johnson SU (`jsu`), with Hessian and robust
 standard errors and the usual information criteria. Any estimated parameter can be fixed or given a start value
-(the derived ones cannot), and the variance can be targeted. More features come in later releases.
+(the derived ones cannot), the variance can be targeted, and the mean and the variance take external regressors
+(`mxreg`, `vxreg`) and ARCH-in-mean (`archm`), as in `rugarch`. More features come in later releases.
 Until 1.0 the C ABI may change between releases. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Python example
@@ -76,6 +77,24 @@ stays fixed. These specs are rejected (`VE_INVALID_ARGUMENT`, `VolEngineError` i
 fixing the iGARCH `beta_q` or `omega` under variance targeting (both derived), and a csGARCH with `eta21` fixed and
 some `beta` free. The conventions checked against `rugarch` and `arch` are in
 [docs/guide/validation.md](docs/guide/validation.md).
+
+Regressors are counted in the spec and passed to `fit`; ARCH-in-mean adds the conditional standard deviation
+(`archm=1`) or variance (`archm=2`) to the mean:
+
+```python
+rng = np.random.default_rng(2)
+X = rng.standard_normal((3000, 2))
+spec = ve.Spec(mxreg=2, archm=1)
+fit = ctx.fit(spec, returns, mxreg=X)
+print(fit.coef("robust"))         # mu, archm, mxreg1, mxreg2, omega, alpha1, beta1
+```
+
+The rules, in short: `mxreg` and `vxreg` take a `(T, k)` array (`(T, N, k)` with `(T, N)` data), with k the count in
+the spec, and a wrong count or shape is a `ValueError`; the regressor of row t acts on observation t (lag it yourself);
+`vxreg` shifts the variance intercept in the scale of the model, and the persistence stays below 1 (`rugarch` drops that
+restriction when there is a `vxreg`); under variance targeting `omega` is the target minus the coefficients times the
+regressor means. The conventions and the checks against `rugarch` and `arch` are in
+[docs/guide/validation.md](docs/guide/validation.md#rugarch-and-arch-regressors-and-arch-in-mean).
 
 `ctx.fit` also takes a `(T, N)` array (one fit per column), a list of specs, `starts` and `lengths` for series of
 different lengths, and `options=ve.FitOptions(var_init="backcast")` for the `arch` convention.

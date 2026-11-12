@@ -329,6 +329,108 @@ void run_fit_one(benchmark::State& state, const NamedSpec& named)
         benchmark::Counter(static_cast<double>(state.iterations()), benchmark::Counter::kIsRate);
 }
 
+// The regressor series of the unit tests, each fitted under the model that generated it.
+struct RegressorCase
+{
+    std::string name;
+    ve::Spec spec;
+    ve::testing::RegressorProcess process;
+};
+
+const std::vector<RegressorCase>& regressor_cases()
+{
+    static const std::vector<RegressorCase> cases = [] {
+        std::vector<RegressorCase> all;
+        for (const ve::testing::RegressorProcess& process : ve::testing::regressor_processes())
+        {
+            ve::Spec spec = variant_spec(process.variance.model, process.variance.dist);
+            spec.ar = process.ar != 0.0 ? 1 : 0;
+            spec.mxreg = static_cast<int>(process.delta.size());
+            spec.vxreg = process.has_vxreg ? 1 : 0;
+            spec.archm = process.archm;
+            all.push_back({process.name, spec, process});
+        }
+        return all;
+    }();
+    return cases;
+}
+
+ve::model::Data regressor_data(const ve::testing::RegressorSeries& series)
+{
+    const ve::model::RegressorMatrix mean{series.x, series.x.size() / kObservations};
+    const ve::model::RegressorMatrix variance{series.v, series.v.size() / kObservations};
+    return ve::model::Data{series.r, mean, variance};
+}
+
+// The parameters of the process the series was simulated from.
+std::vector<double> regressor_theta(const RegressorCase& item, const ve::model::Layout& layout)
+{
+    std::vector<double> theta = reference_theta(layout);
+    apply_process(theta, layout, item.process.variance);
+    theta[layout.mu()] = item.process.mu;
+    if (layout.ar > 0)
+    {
+        theta[layout.ar_begin()] = item.process.ar;
+    }
+    if (layout.has_archm())
+    {
+        theta[layout.archm_index()] = item.process.xi;
+    }
+    for (std::size_t k = 0; k < item.process.delta.size(); ++k)
+    {
+        theta[layout.mxreg_begin() + k] = item.process.delta[k];
+    }
+    if (layout.vxreg > 0)
+    {
+        theta[layout.vxreg_begin()] = item.process.zeta;
+    }
+    return theta;
+}
+
+void run_regressor_loglik(benchmark::State& state, const RegressorCase& item, bool with_gradient)
+{
+    const ve::testing::RegressorSeries series = ve::testing::simulate_regressor_process(item.process, 1, kObservations);
+    const ve::model::Data data = regressor_data(series);
+    const ve::model::Layout layout = ve::model::layout_of(item.spec);
+    const std::vector<double> theta = regressor_theta(item, layout);
+    if (!with_gradient)
+    {
+        const ve::model::LoglikOutputs<double> none{};
+        time_evaluations(state, layout.count(),
+                         [&] { return ve::model::loglik<double>(data, theta, layout, ve::VarInit::Sample, none); });
+        return;
+    }
+    const auto seeds = dual_seeds<8>(theta);
+    const ve::model::LoglikOutputs<ve::ad::Dual<8>> none{};
+    time_evaluations(state, layout.count(), [&] {
+        const std::span<const ve::ad::Dual<8>> parameters(seeds);
+        return ve::model::loglik<ve::ad::Dual<8>>(data, parameters, layout, ve::VarInit::Sample, none).value;
+    });
+}
+
+void run_regressor_fit_one(benchmark::State& state, const RegressorCase& item)
+{
+    const ve::testing::RegressorSeries series = ve::testing::simulate_regressor_process(item.process, 1, kObservations);
+    const ve::model::Data data = regressor_data(series);
+    const ve::FitConfig config;
+    StatusCounts counts;
+    for (auto _ : state)
+    {
+        ve::FitResult result = ve::fit_one(data, item.spec, config);
+        counts = StatusCounts{};
+        counts.add(static_cast<int32_t>(result.status));
+        if (counts.other != 0)
+        {
+            state.SkipWithError("the fit ended neither CONVERGED nor MAX_ITER");
+            return;
+        }
+        benchmark::DoNotOptimize(result.loglik);
+    }
+    report_status(state, counts);
+    state.counters["fits_per_s"] =
+        benchmark::Counter(static_cast<double>(state.iterations()), benchmark::Counter::kIsRate);
+}
+
 template <class T, void (*Free)(T*)>
 struct CDeleter
 {
@@ -782,6 +884,13 @@ void register_all()
         benchmark::RegisterBenchmark("BM_Loglik/" + named.name + "/double", run_loglik, named, false);
         benchmark::RegisterBenchmark("BM_Loglik/" + named.name + "/dual", run_loglik, named, true);
         benchmark::RegisterBenchmark("BM_FitOne/" + named.name, run_fit_one, named)
+            ->Unit(benchmark::kMillisecond);
+    }
+    for (const RegressorCase& item : regressor_cases())
+    {
+        benchmark::RegisterBenchmark("BM_Loglik/" + item.name + "/double", run_regressor_loglik, item, false);
+        benchmark::RegisterBenchmark("BM_Loglik/" + item.name + "/dual", run_regressor_loglik, item, true);
+        benchmark::RegisterBenchmark("BM_FitOne/" + item.name, run_regressor_fit_one, item)
             ->Unit(benchmark::kMillisecond);
     }
     static const std::vector<ve::Spec> single{named_specs().front().spec};
