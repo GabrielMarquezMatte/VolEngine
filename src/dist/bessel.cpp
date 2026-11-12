@@ -21,6 +21,10 @@ constexpr double kMaxBoostOrder = 1e5;
 constexpr double kRescaleAbove = 1e100;
 constexpr int kMaxTerms = 30;
 constexpr double kTermTolerance = 1e-17;
+// Boost takes K_v with |4 v^2 - 25| < 8 x eps^(1/4) from the first four terms of the Hankel series
+// (A&S 9.7.2), exact at v = 5/2 but neither accurate nor smooth in v beside it. Its eps is that of the type
+// it computes in, long double on GCC: the band uses the eps^(1/4) of double, the wider of the two.
+constexpr double kFiveHalvesBand = 0x1p-13;
 
 namespace policies = boost::math::policies;
 
@@ -74,6 +78,24 @@ double scaled_recurrence_log_k(double order, double x)
     return log_scale + std::log(above) - x;
 }
 
+double boost_log_k(double order, double x)
+{
+    return std::log(boost::math::cyl_bessel_k(order, x, IgnoreErrors()));
+}
+
+// order >= 0 and x < kAsymptoticFrom. Beside 5/2, K_v = K_(v-2) + 2 (v - 1) / x K_(v-1), from orders Boost
+// takes by its general method.
+double boost_log_k_outside_five_halves(double order, double x)
+{
+    if (std::fabs(4.0 * order * order - 25.0) >= 8.0 * x * kFiveHalvesBand)
+    {
+        return boost_log_k(order, x);
+    }
+    double below = boost_log_k(order - 2.0, x);
+    double above = boost_log_k(order - 1.0, x);
+    return above + std::log(2.0 * (order - 1.0) / x + std::exp(below - above));
+}
+
 }
 
 double log_bessel_k(double order, double x)
@@ -90,7 +112,7 @@ double log_bessel_k(double order, double x)
     {
         return scaled_recurrence_log_k(std::fabs(order), x);
     }
-    return std::log(boost::math::cyl_bessel_k(std::fabs(order), x, IgnoreErrors()));
+    return boost_log_k_outside_five_halves(std::fabs(order), x);
 }
 
 }
