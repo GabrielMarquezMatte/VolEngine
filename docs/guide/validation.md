@@ -352,7 +352,13 @@ persistence, with its own π and κ, agrees with `rugarch`'s `persistence()` to 
   (P(z < 0) = 0.469 at ξ = 0.85, ν = 6).
 - **nig and ghyp** are the generalized hyperbolic in the standardized (ρ, ζ) parametrization of the "Densidades",
   with `skew` = ρ, `shape` = ζ and, for ghyp, `ghlambda` = λ, named so in `coef()` (nig has no `ghlambda`: λ = −½
-  is fixed). ρ < 0 is negative skew (P(z < 0) = 0.459 for nig at ρ = −0.3, ζ = 1.5).
+  is fixed). ρ < 0 is negative skew (P(z < 0) = 0.459 for nig at ρ = −0.3, ζ = 1.5). The density is computable
+  for ζ ≤ 10⁶ (`kMaxHyperbolicShape`, `src/dist/hyperbolic.hpp`) and any |ρ| < 1: past it Q − R² ≈ 1/ζ, a
+  difference of Bessel ratios near 1, keeps a relative error of ~5e-15·ζ (6e-10 at 10⁶, 3e-7 at 10⁸, 1e-4 at
+  10¹¹ against 60-digit `mpmath`), and ℓ is −∞ there, π and κ NaN, and the point not valid. Near-normal data
+  drives ζ̂ to 10³–10⁶ and often |ρ̂| towards 1, where neither is identified: the numerical Hessian is then
+  usually not positive definite and every standard error is NaN (35 of 48 nig and ghyp fits of sGARCH(1,1) and
+  gjrGARCH(1,1) on twelve i.i.d. N(0, 0.01²) series of 2000), with ℓ̂ at most 3.4 above the normal fit's.
 - **jsu** is Johnson SU in Rigby and Stasinopoulos' parametrization, standardized: r = −ν + τ asinh x with
   x = (z − c√w sinh ω)/c, w = exp(1/τ²), ω = −ν/τ. `skew` = ν and `shape` = τ, with the same sign: ν > 0 gives
   P(z < 0) > ½ (0.526 at ν = 0.5, τ = 2), and on `egarch11_jsu`, simulated with ν = −0.5, both programs estimate
@@ -417,7 +423,8 @@ The skew-t (read: `SkewStudent` in `arch/univariate/distribution.py`):
   standard errors by the **delta method**, SE(ξ) = SE(λ) · dξ/dλ with dξ/dλ = 1/(ξ(1 − λ)²); the conversion is
   monotone, so the optimum is the same point. The likelihood is the same: at `arch`'s converted estimates VolEngine's
   ℓ (`backcast`) equals `arch`'s to 1.8e-15 (relative) on the three cases, and the converted standard errors
-  agree to 1.7e-4 (Hessian) and 5.2e-4 (robust).
+  agree to 1.7e-4 (Hessian) and 5.2e-4 (robust). From VolEngine's ξ to `arch`'s λ: λ = (ξ² − 1)/(ξ² + 1) and
+  SE(λ) = SE(ξ) · 4ξ/(ξ² + 1)².
 - **gjrGARCH backcast with a skewed shock.** A lag before t = 0 reads b/2 for 1[ε < 0]ε² with the skew-t too: the
   constant does not depend on the distribution, as hypothesized (π = P(z < 0) enters only the persistence).
   `oracle_arch.py` computes that persistence, for the interior check, with π = `SkewStudent.cdf(0)`.

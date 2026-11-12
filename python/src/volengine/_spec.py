@@ -51,10 +51,16 @@ class Spec:
     `shape`, `ghlambda`: "std" has `shape` (nu > 2), "ged" has `shape` (nu > 0); "sstd" and "sged" are
     Fernandez-Steel skewed versions of those kernels with `skew` xi > 0 and the same `shape`; "nig" and
     "ghyp" are the generalized hyperbolic in the standardized (rho, zeta) parametrization with `skew` rho
-    in (-1, 1) and `shape` zeta > 0 ("ghyp" adds `ghlambda`, a real number; "nig" fixes it at -1/2);
-    "jsu" is Johnson SU with `skew` nu (a real number) and `shape` tau > 0. The "sstd" `skew` is xi, not
-    arch's Hansen skewness lambda in (-1, 1): xi = sqrt((1 + lambda) / (1 - lambda)), and the standard
-    error of lambda follows by the delta method, d xi / d lambda = 1 / (xi * (1 - lambda)**2).
+    in (-1, 1) and `shape` zeta in (0, 1e6] ("ghyp" adds `ghlambda`, a real number; "nig" fixes it at
+    -1/2); "jsu" is Johnson SU with `skew` nu (a real number) and `shape` tau > 0. The "sstd" `skew` is
+    xi, not arch's Hansen skewness lambda in (-1, 1): xi = sqrt((1 + lambda) / (1 - lambda)), and the
+    standard error of lambda follows by the delta method, d xi / d lambda = 1 / (xi * (1 - lambda)**2);
+    the other way, lambda = (xi**2 - 1) / (xi**2 + 1) and SE(lambda) = SE(xi) * 4 * xi / (xi**2 + 1)**2.
+
+    Past zeta = 1e6 double precision no longer standardizes "nig" and "ghyp" (by then a normal to an
+    excess kurtosis of order 1 / zeta, 1.5e-5 for nig), and the log-likelihood is -inf there. On
+    near-normal data their fits drive zeta up, where rho and zeta are barely identified: the Hessian is
+    then often not positive definite, and every standard error is NaN.
     """
 
     model: str = "sgarch"
