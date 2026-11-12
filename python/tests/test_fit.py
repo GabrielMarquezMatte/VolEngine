@@ -261,6 +261,13 @@ def test_unknown_dist_raises():
         ve.Spec(dist="cauchy")
 
 
+def test_unknown_distribution():
+    with pytest.raises(ValueError) as error:
+        ve.Spec(dist="ghst")
+    for name in ("norm", "std", "ged", "sstd", "sged", "nig", "ghyp", "jsu"):
+        assert repr(name) in str(error.value)
+
+
 def test_unknown_model_raises():
     with pytest.raises(ValueError, match="unknown model"):
         ve.Spec(model="figarch")
@@ -470,6 +477,20 @@ def simulate_igarch(seed):
 )
 def test_variant_names(ctx, series, model, submodel, extra):
     fit = ctx.fit(ve.Spec(model, submodel=submodel), series[:, 0], options=ve.FitOptions(max_iter=30))
+    assert fit.names == ("mu", "omega", "alpha1", "beta1", *extra)
+
+
+@pytest.mark.parametrize(
+    ("dist", "extra"),
+    [
+        ("sstd", ("skew", "shape")),
+        ("nig", ("skew", "shape")),
+        ("ghyp", ("skew", "shape", "ghlambda")),
+        ("jsu", ("skew", "shape")),
+    ],
+)
+def test_distribution_names(ctx, series, dist, extra):
+    fit = ctx.fit(ve.Spec(dist=dist), series[:, 0], options=ve.FitOptions(max_iter=30))
     assert fit.names == ("mu", "omega", "alpha1", "beta1", *extra)
 
 

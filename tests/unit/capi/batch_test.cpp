@@ -144,10 +144,11 @@ struct SpecShape
 constexpr std::size_t kShortT = 600;
 constexpr int kShortMaxIter = 30;
 
-// The biggest layout of each bucket: 4 (k = 4), 8 (eGARCH(2,1) with std) and 40 (ALLGARCH ARMA(6,6)-(6,6)).
+// Three buckets: 4 (sGARCH with norm), 8 (gjrGARCH with sstd, 7 parameters) and 42 (the widest layout:
+// ALLGARCH ARMA(6,6)-(6,6) with ghyp).
 constexpr SpecShape kShapes[] = {{VE_MODEL_SGARCH, 1, 1, 0, 0, VE_DIST_NORM},
-    {VE_MODEL_EGARCH, 2, 1, 0, 0, VE_DIST_STD},
-    {VE_MODEL_FGARCH_ALLGARCH, 6, 6, 6, 6, VE_DIST_STD}};
+    {VE_MODEL_GJRGARCH, 1, 1, 0, 0, VE_DIST_SSTD},
+    {VE_MODEL_FGARCH_ALLGARCH, 6, 6, 6, 6, VE_DIST_GHYP}};
 
 SpecPtr make_shaped_spec(const SpecShape& shape)
 {
@@ -294,7 +295,7 @@ TEST(CapiFit, CartesianBatchMatchesFitOne)
     }
 }
 
-TEST(CapiFit, MixedBucketsInOneBatch)
+TEST(CapiFit, MixedBucketsWithWidest)
 {
     std::vector<SpecPtr> specs;
     for (const SpecShape& shape : kShapes)
@@ -330,6 +331,17 @@ TEST(CapiFit, GeneratedParamNames)
     FitSet fits = mixed_fits(1, specs, panel.get());
     const std::vector<std::string> expected = {
         "mu", "ar1", "ma1", "omega", "alpha1", "alpha2", "beta1", "shape"};
+    EXPECT_EQ(param_names(fits[0]), expected);
+}
+
+TEST(CapiFit, DistributionParamNames)
+{
+    const SpecShape ghyp{VE_MODEL_SGARCH, 1, 1, 0, 0, VE_DIST_GHYP};
+    std::vector<SpecPtr> specs;
+    specs.push_back(make_shaped_spec(ghyp));
+    PanelPtr panel = ve::testing::make_panel(matrix().data(), kShortT, kSeries);
+    FitSet fits = mixed_fits(1, specs, panel.get());
+    const std::vector<std::string> expected = {"mu", "omega", "alpha1", "beta1", "skew", "shape", "ghlambda"};
     EXPECT_EQ(param_names(fits[0]), expected);
 }
 

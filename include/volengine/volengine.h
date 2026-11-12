@@ -50,8 +50,9 @@ VE_API ve_status ve_context_threads(const ve_context* ctx, int32_t* out);
 VE_API void ve_context_free(ve_context* ctx);
 
 /* Parameter names and order for every model: mu, ar1..arm, ma1..man, omega, alpha1..alphap,
-   beta1..betaq, gamma1..gammap, eta11..eta1p, eta21..eta2p, delta or lambda, shape. A model only has
-   the blocks listed next to it; mu is absent without a mean and shape is present for std and ged.
+   beta1..betaq, gamma1..gammap, eta11..eta1p, eta21..eta2p, delta or lambda, skew, shape, ghlambda. A
+   model only has the blocks listed next to it; mu is absent without a mean and the last three are the
+   distribution parameters (see VE_DIST_*).
    Only the iGARCH beta_q is derived (1 - sum alpha - the other betas): it has a name and a value,
    it is not estimated, its standard error is NaN, and the information criteria count the estimated
    parameters only. Each fGARCH submodel is a model value. */
@@ -71,11 +72,25 @@ VE_API void ve_context_free(ve_context* ctx);
 #define VE_MODEL_FGARCH_ALLGARCH 13 /* eta11..eta1p, eta21..eta2p, lambda free */
 /* A model value outside VE_MODEL_SGARCH .. VE_MODEL_FGARCH_ALLGARCH makes ve_spec_create return
    VE_INVALID_ARGUMENT. */
-/* VE_DIST_STD and VE_DIST_GED are standardized to zero mean and unit variance (as in rugarch and
-   arch); their shape parameter is named "shape", with domain nu > 2 (std) and nu > 0 (ged). */
+/* Every distribution is standardized to zero mean and unit variance (as in rugarch and arch). The
+   distribution parameters come last in the parameter vector, in the order skew, shape, ghlambda;
+   a distribution only has the ones listed next to it. */
 #define VE_DIST_NORM 0
-#define VE_DIST_STD 1
-#define VE_DIST_GED 2
+#define VE_DIST_STD 1 /* shape: nu > 2 */
+#define VE_DIST_GED 2 /* shape: nu > 0 */
+/* Fernandez-Steel skewing of the std and ged kernels (with the same nu), standardized as in rugarch;
+   xi = 1 is the symmetric kernel. */
+#define VE_DIST_SSTD 3 /* skew: xi > 0, shape: nu > 2 */
+#define VE_DIST_SGED 4 /* skew: xi > 0, shape: nu > 0 */
+/* sstd versus arch's SkewStudent (Hansen): arch's skewness lambda in (-1, 1) relates to xi by
+   xi = sqrt((1 + lambda) / (1 - lambda)), and the standard error of lambda follows by the delta method,
+   d xi / d lambda = 1 / (xi (1 - lambda)^2). VolEngine only reports xi. */
+/* Generalized hyperbolic in the standardized (rho, zeta) parametrization; nig is ghyp with
+   lambda = -1/2 fixed. */
+#define VE_DIST_NIG 5 /* skew: rho in (-1, 1), shape: zeta > 0 */
+#define VE_DIST_GHYP 6 /* skew: rho in (-1, 1), shape: zeta > 0, ghlambda: lambda in R */
+/* Johnson SU as in rugarch (Rigby and Stasinopoulos). */
+#define VE_DIST_JSU 7 /* skew: nu in R, shape: tau > 0 */
 #define VE_MAX_ORDER 6
 #define VE_VARINIT_SAMPLE 0
 #define VE_VARINIT_BACKCAST 1
@@ -94,6 +109,7 @@ VE_API ve_status ve_spec_set_order(ve_spec* s, int32_t p, int32_t q);
 /* ARMA(m, n) conditional mean; m, n in 0 .. VE_MAX_ORDER, else VE_INVALID_ARGUMENT and the spec is
    unchanged. The default is ARMA(0, 0). */
 VE_API ve_status ve_spec_set_arma(ve_spec* s, int32_t m, int32_t n);
+/* dist in VE_DIST_NORM .. VE_DIST_JSU, else VE_INVALID_ARGUMENT and the spec is unchanged. */
 VE_API ve_status ve_spec_set_dist(ve_spec* s, int32_t dist);
 VE_API ve_status ve_spec_set_include_mean(ve_spec* s, int32_t include_mean); /* 0 or 1 */
 VE_API void ve_spec_free(ve_spec* s);
