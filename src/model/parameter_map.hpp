@@ -19,17 +19,19 @@ constexpr std::array<double, kMaxRegressors> unit_scales()
 
 // Location and scale of the series, so that the unconstrained problem does not depend on its units.
 // scale must be > 0. The regressor scales are the standard deviations s_x,k and s_v,k of the columns, 1 where
-// there is no column or it is constant.
+// there is no column or it is constant; the centers are the means of the mean regressor columns.
 struct Standardization
 {
     double location = 0.0;
     double scale = 1.0;
     std::array<double, kMaxRegressors> mean_regressor_scale = unit_scales();
     std::array<double, kMaxRegressors> variance_regressor_scale = unit_scales();
+    std::array<double, kMaxRegressors> mean_regressor_center{};
 };
 
 // Both spaces follow the Layout order, and each unconstrained entry sits at the position of the natural one it
-// maps to; s = scale. mu = location + s m; ARMA unchanged; skew: xi = exp(x) (sstd, sged),
+// maps to; s = scale. mu = location + s m, less sum_k mxreg_k center_k when mu is estimated beside mean
+// regressors, so that shifting a column moves mu alone; ARMA unchanged; skew: xi = exp(x) (sstd, sged),
 // rho = 2 logistic(x) - 1 (nig, ghyp), nu = x (jsu); shape: 2 + exp(x) (std, sstd), exp(x) (the others);
 // ghlambda = x.
 // The weights are entries >= 0 summing to the persistence P: the first weight position holds v, with

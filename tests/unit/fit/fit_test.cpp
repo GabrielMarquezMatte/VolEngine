@@ -1505,6 +1505,31 @@ TEST(FitRegressors, UnitEquivariance)
     EXPECT_NEAR(estimate_of(archm_other, "archm"), xi, 1e-4 * std::abs(xi));
 }
 
+// X + 100: the same fit, with mu moved by -100 sum delta.
+TEST(FitRegressors, ShiftedColumnsMoveMuAlone)
+{
+    RegressorFit arx = regressor_fit(0);
+    const RegressorSeries& series = regressor_series(0);
+    FitResult base = ve::fit_one(data_of(series, arx.spec), arx.spec, ve::FitConfig{});
+    std::vector<double> x = series.x;
+    for (double& value : x)
+    {
+        value += 100.0;
+    }
+    FitResult shifted = ve::fit_one(ve::model::Data{series.r, {x, 2}}, arx.spec, ve::FitConfig{});
+    ASSERT_EQ(base.status, FitStatus::Converged);
+    ASSERT_EQ(shifted.status, FitStatus::Converged);
+    EXPECT_NEAR(shifted.loglik, base.loglik, 1e-8 * std::abs(base.loglik));
+    double mu = estimate_of(base, "mu");
+    for (const char* name : {"mxreg1", "mxreg2"})
+    {
+        double delta = estimate_of(base, name);
+        EXPECT_NEAR(estimate_of(shifted, name), delta, 1e-4 * std::abs(delta)) << name;
+        mu -= 100.0 * delta;
+    }
+    EXPECT_NEAR(estimate_of(shifted, "mu"), mu, 1e-4 * std::abs(mu));
+}
+
 // Review Focus 1: a column equal to another one has no separate coefficient.
 TEST(FitRegressors, CollinearColumnFinite)
 {
