@@ -514,3 +514,62 @@ def test_igarch_derived_beta_has_nan_se(ctx):
     std_error = dict(zip(fit.names, fit.coef().std_error, strict=True))
     assert math.isnan(std_error["beta1"])
     assert all(math.isfinite(value) for name, value in std_error.items() if name != "beta1")
+
+
+def test_fixed_parameter_is_kept_with_nan_se(ctx, series):
+    fit = ctx.fit(ve.Spec(dist="std", fixed={"shape": 6.0}), series[:, 0], options=ve.FitOptions(max_iter=100))
+    table = dict(zip(fit.names, zip(fit.coef().estimate, fit.coef().std_error, strict=True), strict=True))
+    assert table["shape"][0] == 6.0
+    assert math.isnan(table["shape"][1])
+    assert all(math.isfinite(se) for name, (_, se) in table.items() if name != "shape")
+
+
+def test_start_does_not_change_the_optimum(ctx, series):
+    plain = ctx.fit(ve.Spec(), series[:, 0])
+    start = dict(zip(plain.names, plain.coef().estimate, strict=True))
+    warm = ctx.fit(ve.Spec(start=start), series[:, 0])
+    assert np.allclose(warm.coef().estimate, plain.coef().estimate, atol=1e-6, rtol=0.0)
+
+
+def test_variance_targeting_omega_has_nan_se(ctx, series):
+    fit = ctx.fit(ve.Spec(variance_targeting=True), series[:, 0])
+    std_error = dict(zip(fit.names, fit.coef().std_error, strict=True))
+    assert math.isnan(std_error["omega"])
+    assert all(math.isfinite(value) for name, value in std_error.items() if name != "omega")
+    estimate = dict(zip(fit.names, fit.coef().estimate, strict=True))
+    variance = float(np.mean(fit.residuals**2))
+    assert estimate["omega"] == pytest.approx(variance * (1.0 - estimate["alpha1"] - estimate["beta1"]))
+
+
+def test_unknown_fixed_name_raises():
+    with pytest.raises(ve.VolEngineError, match="shpe"):
+        ve.Spec(fixed={"shpe": 5.0})
+
+
+def test_name_in_fixed_and_start_raises():
+    with pytest.raises(ValueError, match="mu"):
+        ve.Spec(fixed={"mu": 0.0}, start={"mu": 0.1})
+
+
+def test_spec_with_values_hashes():
+    source = {"mu": 0.0}
+    spec = ve.Spec(fixed=source)
+    assert spec == ve.Spec(fixed={"mu": 0.0})
+    assert hash(spec) == hash(ve.Spec(fixed={"mu": 0.0}))
+    assert spec != ve.Spec(start={"mu": 0.0})
+    source["mu"] = 1.0
+    assert spec.fixed["mu"] == 0.0
+    assert spec == ve.Spec(fixed={"mu": 0.0})
+
+
+def test_spec_values_are_read_only():
+    spec = ve.Spec(fixed={"mu": 0.0}, start={"alpha1": 0.1})
+    with pytest.raises(TypeError):
+        spec.fixed["mu"] = 1.0  # type: ignore[index]
+    with pytest.raises(TypeError):
+        spec.start["alpha1"] = 1.0  # type: ignore[index]
+
+
+def test_variance_targeting_in_igarch_raises():
+    with pytest.raises(ve.VolEngineError, match="variance targeting"):
+        ve.Spec("igarch", variance_targeting=True)

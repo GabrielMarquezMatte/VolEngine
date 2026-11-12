@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import KW_ONLY, dataclass
+from collections.abc import Mapping
+from dataclasses import KW_ONLY, dataclass, field
+from types import MappingProxyType
 
 from ._native import Handle, check, create_handle, int32, lib
 
@@ -28,6 +30,10 @@ def code_of(table: dict[str, int], kind: str, name: str) -> int:
             listed.append("fgarch")
         raise ValueError(f"unknown {kind} {name!r}; expected one of {sorted(listed)}")
     return table[name]
+
+
+def frozen_values(values: Mapping[str, float]) -> Mapping[str, float]:
+    return MappingProxyType({name: float(value) for name, value in values.items()})
 
 
 @dataclass(frozen=True)
@@ -61,6 +67,31 @@ class Spec:
     excess kurtosis of order 1 / zeta, 1.5e-5 for nig), and the log-likelihood is -inf there. On
     near-normal data their fits drive zeta up, where rho and zeta are barely identified: the Hessian is
     then often not positive definite, and every standard error is NaN.
+
+    Every parameter is estimated, fixed or derived. `fixed` maps parameter names (those of `Fit.names`:
+    "mu", "ar1", "omega", "alpha1", "beta1", "gamma1", "eta11", "skew", "shape", ...) to values the
+    fit keeps: they are not optimized, their standard errors are NaN and the criteria do not count them.
+    A derived parameter (the iGARCH `beta_q`, and `omega` under variance targeting) is a function of
+    the others: it has a name and a value, NaN standard errors, and is not counted either. `start`
+    maps names to starting values that replace the defaults; a start value for a derived parameter is
+    ignored, so `dict(zip(fit.names, fit.coef().estimate))` is a valid warm start. A name cannot be in
+    both mappings (ValueError). If the starting point is outside the model's domain, the fit ends
+    "failed" with NaN. A spec with every parameter fixed does not optimize: the fit evaluates the model
+    at the fixed point and is "converged" when the log-likelihood is finite.
+
+    `variance_targeting=True` makes `omega` derived: it is computed inside the likelihood from the
+    residuals of the current mean parameters over the whole sample (m2 = mean of e_t**2, P the
+    persistence): omega = m2 * (1 - P) for sgarch and gjrgarch (P = sum(alpha) + sum(beta), plus
+    pi * sum(gamma) with pi = P(z < 0) for gjrgarch); omega = log(m2) * (1 - sum(beta)) for egarch;
+    omega = mean(|e_t|**delta) * (1 - P) for aparch and fgarch, with delta the power and
+    P = sum(alpha_i * kappa_i) + sum(beta). The standard errors of the other parameters come from the
+    likelihood in which omega is a function of them (as in rugarch), not from the two-step covariance
+    of Francq, Horvath and Zakoian (2011).
+
+    Rejected with VolEngineError (the message names the problem): a name the spec does not have
+    (`fixed={"shpe": 5.0}`, or "shape" under dist "norm"), fixing the iGARCH `beta_q` or `omega` under
+    variance targeting (both derived), variance targeting with "igarch" or "csgarch", and a csgarch
+    with `eta21` fixed and a free `beta` (fixing it together with every `beta` is accepted).
     """
 
     model: str = "sgarch"
@@ -71,10 +102,34 @@ class Spec:
     dist: str = "norm"
     include_mean: bool = True
     submodel: str | None = None
+    fixed: Mapping[str, float] = field(default_factory=dict)
+    start: Mapping[str, float] = field(default_factory=dict)
+    variance_targeting: bool = False
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "fixed", frozen_values(self.fixed))
+        object.__setattr__(self, "start", frozen_values(self.start))
+        both = sorted(self.fixed.keys() & self.start.keys())
+        if both:
+            raise ValueError(f"parameters in both fixed and start: {both}")
         self.native_handle().close()
         object.__setattr__(self, "arma", tuple(self.arma))
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.model,
+                self.p,
+                self.q,
+                tuple(self.arma),
+                self.dist,
+                self.include_mean,
+                self.submodel,
+                frozenset(self.fixed.items()),
+                frozenset(self.start.items()),
+                self.variance_targeting,
+            )
+        )
 
     def arma_orders(self) -> tuple[int, int]:
         arma = self.arma
@@ -100,7 +155,16 @@ class Spec:
         check(lib.ve_spec_set_arma(handle.pointer, *arma))
         check(lib.ve_spec_set_dist(handle.pointer, dist))
         check(lib.ve_spec_set_include_mean(handle.pointer, int(self.include_mean)))
+        self.apply_values(handle)
         return handle
+
+    def apply_values(self, handle: Handle) -> None:
+        for name, value in self.fixed.items():
+            check(lib.ve_spec_set_fixed(handle.pointer, name.encode(), value))
+        for name, value in self.start.items():
+            check(lib.ve_spec_set_start(handle.pointer, name.encode(), value))
+        check(lib.ve_spec_set_variance_targeting(handle.pointer, int(self.variance_targeting)))
+        check(lib.ve_spec_validate(handle.pointer))
 
 
 @dataclass(frozen=True)

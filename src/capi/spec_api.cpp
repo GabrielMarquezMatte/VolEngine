@@ -1,9 +1,13 @@
 #include "capi/error.hpp"
 #include "capi/handles.hpp"
+#include "model/layout.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 static_assert(VE_MAX_ORDER == ve::kMaxOrder, "the C header and the engine disagree on the order limit");
 
@@ -81,6 +85,58 @@ ve_status to_var_init(int32_t value, ve::VarInit& var_init)
         return VE_OK;
     }
     return bad_value("var_init", value);
+}
+
+void remove_name(std::vector<ve::ParameterValue>& values, const std::string& name)
+{
+    std::erase_if(values, [&name](const ve::ParameterValue& entry) { return entry.name == name; });
+}
+
+void put_value(std::vector<ve::ParameterValue>& values, const std::string& name, double value)
+{
+    const auto found = std::ranges::find(values, name, &ve::ParameterValue::name);
+    if (found == values.end())
+    {
+        values.push_back(ve::ParameterValue{name, value});
+        return;
+    }
+    found->value = value;
+}
+
+ve_status check_name_and_value(const char* name, double value)
+{
+    if (name == nullptr || name[0] == '\0')
+    {
+        return set_error(VE_INVALID_ARGUMENT, "name must not be null or empty");
+    }
+    if (!std::isfinite(value))
+    {
+        return set_error(VE_INVALID_ARGUMENT, "value must be finite");
+    }
+    return VE_OK;
+}
+
+// A name lives in at most one of the two lists: setting it in one removes it from the other.
+ve_status set_named_value(ve_spec* s, const char* name, double value, bool as_fixed)
+{
+    return guard(
+        [&]
+        {
+            if (s == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "s must not be null");
+            }
+            const ve_status status = check_name_and_value(name, value);
+            if (status != VE_OK)
+            {
+                return status;
+            }
+            auto& target = as_fixed ? s->spec.fixed : s->spec.start;
+            auto& other = as_fixed ? s->spec.start : s->spec.fixed;
+            remove_name(other, name);
+            put_value(target, name, value);
+            return VE_OK;
+        });
 }
 
 }
@@ -181,6 +237,52 @@ extern "C" ve_status ve_spec_set_include_mean(ve_spec* s, int32_t include_mean)
                 return bad_value("include_mean", include_mean);
             }
             s->spec.include_mean = include_mean == 1;
+            return VE_OK;
+        });
+}
+
+extern "C" ve_status ve_spec_set_fixed(ve_spec* s, const char* name, double value)
+{
+    return set_named_value(s, name, value, true);
+}
+
+extern "C" ve_status ve_spec_set_start(ve_spec* s, const char* name, double value)
+{
+    return set_named_value(s, name, value, false);
+}
+
+extern "C" ve_status ve_spec_set_variance_targeting(ve_spec* s, int32_t on)
+{
+    return guard(
+        [&]
+        {
+            if (s == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "s must not be null");
+            }
+            if (on != 0 && on != 1)
+            {
+                return bad_value("variance_targeting", on);
+            }
+            s->spec.variance_targeting = on == 1;
+            return VE_OK;
+        });
+}
+
+extern "C" ve_status ve_spec_validate(const ve_spec* s)
+{
+    return guard(
+        [&]
+        {
+            if (s == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "s must not be null");
+            }
+            const std::optional<std::string> problem = ve::model::spec_problem(s->spec);
+            if (problem.has_value())
+            {
+                return set_error(VE_INVALID_ARGUMENT, *problem);
+            }
             return VE_OK;
         });
 }

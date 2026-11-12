@@ -379,6 +379,151 @@ TEST(CapiFit, IGarchCriteriaCountEstimated)
     EXPECT_NEAR(aic, -2.0 * loglik + 2.0 * static_cast<double>(count - 1), 1e-9);
 }
 
+TEST(CapiFit, RejectsInvalidSpecInBatch)
+{
+    SpecPtr valid = ve::testing::make_spec(1);
+    SpecPtr invalid = ve::testing::make_spec(1);
+    ASSERT_EQ(ve_spec_set_dist(invalid.get(), VE_DIST_STD), VE_OK);
+    ASSERT_EQ(ve_spec_set_fixed(invalid.get(), "shape", 5.0), VE_OK);
+    ASSERT_EQ(ve_spec_set_dist(invalid.get(), VE_DIST_NORM), VE_OK);
+    PanelPtr panel = ve::testing::make_panel(matrix().data(), kShortT, kSeries);
+    ve::testing::ContextPtr context = ve::testing::make_context(2);
+    BatchInputs inputs;
+    inputs.specs = {valid.get(), invalid.get()};
+    inputs.panel = panel.get();
+    inputs.job_spec = {0, 1};
+    inputs.job_series = {0, 1};
+    BatchPtr batch = ve::testing::build_batch(inputs);
+    ve_fit* outputs[2] = {reinterpret_cast<ve_fit*>(0x1), reinterpret_cast<ve_fit*>(0x1)};
+    EXPECT_EQ(ve_fit_batch(context.get(), batch.get(), outputs), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(outputs[0], nullptr);
+    EXPECT_EQ(outputs[1], nullptr);
+    EXPECT_TRUE(contains(last_error(), "spec 1: ")) << last_error();
+    EXPECT_TRUE(contains(last_error(), "shape")) << last_error();
+}
+
+namespace
+{
+
+ve::Spec fixed_std_sgarch()
+{
+    ve::Spec spec;
+    spec.dist = ve::Dist::Std;
+    spec.fixed = {{"mu", 0.05}, {"omega", 0.01}, {"alpha1", 0.08}, {"beta1", 0.9}, {"shape", 6.0}};
+    return spec;
+}
+
+ve::Spec targeted_gjr_sstd()
+{
+    ve::Spec spec;
+    spec.model = ve::Model::GjrGarch;
+    spec.dist = ve::Dist::Sstd;
+    spec.variance_targeting = true;
+    return spec;
+}
+
+ve::Spec partly_fixed_sgarch()
+{
+    ve::Spec spec;
+    spec.fixed = {{"alpha1", 0.08}};
+    return spec;
+}
+
+SpecPtr to_handle(const ve::Spec& spec)
+{
+    ve_spec* raw = nullptr;
+    EXPECT_EQ(ve_spec_create(static_cast<int32_t>(spec.model), &raw), VE_OK);
+    SpecPtr handle(raw);
+    EXPECT_EQ(ve_spec_set_order(raw, spec.p, spec.q), VE_OK);
+    EXPECT_EQ(ve_spec_set_arma(raw, spec.ar, spec.ma), VE_OK);
+    EXPECT_EQ(ve_spec_set_dist(raw, static_cast<int32_t>(spec.dist)), VE_OK);
+    EXPECT_EQ(ve_spec_set_include_mean(raw, spec.include_mean ? 1 : 0), VE_OK);
+    EXPECT_EQ(ve_spec_set_variance_targeting(raw, spec.variance_targeting ? 1 : 0), VE_OK);
+    for (const ve::ParameterValue& entry : spec.fixed)
+    {
+        EXPECT_EQ(ve_spec_set_fixed(raw, entry.name.c_str(), entry.value), VE_OK);
+    }
+    for (const ve::ParameterValue& entry : spec.start)
+    {
+        EXPECT_EQ(ve_spec_set_start(raw, entry.name.c_str(), entry.value), VE_OK);
+    }
+    return handle;
+}
+
+Snapshot snapshot_of(const ve::FitResult& result)
+{
+    Snapshot snapshot;
+    snapshot.status = static_cast<int32_t>(result.status);
+    snapshot.nobs = result.nobs;
+    snapshot.estimate = result.estimate;
+    snapshot.loglik = result.loglik;
+    snapshot.sigma = result.sigma;
+    return snapshot;
+}
+
+}
+
+TEST(CapiFit, AllFixedMixedWithEstimated)
+{
+    const std::vector<ve::Spec> specs = {fixed_std_sgarch(), targeted_gjr_sstd(), partly_fixed_sgarch()};
+    std::vector<SpecPtr> handles;
+    BatchInputs inputs;
+    for (const ve::Spec& spec : specs)
+    {
+        handles.push_back(to_handle(spec));
+        inputs.specs.push_back(handles.back().get());
+    }
+    PanelPtr panel = ve::testing::make_panel(matrix().data(), kShortT, kSeries);
+    inputs.panel = panel.get();
+    inputs.job_spec = repeat_each(specs.size(), kSeries);
+    inputs.job_series = cycle(kSeries, specs.size());
+    BatchPtr batch = ve::testing::build_batch(inputs);
+    for (const int32_t threads : {1, 4})
+    {
+        ve::testing::ContextPtr context = ve::testing::make_context(threads);
+        FitSet fits = ve::testing::fit_all(context.get(), batch.get());
+        for (std::size_t job = 0; job < fits.size(); ++job)
+        {
+            const std::vector<double> series = column(matrix(), job % kSeries, 0, kShortT);
+            const Snapshot expected = snapshot_of(ve::fit_one(series, specs[job / kSeries], {}));
+            EXPECT_EQ(ve::testing::read_snapshot(fits[job]), expected) << "job " << job << ", " << threads;
+        }
+    }
+}
+
+TEST(CapiFit, AllFixedFitEvaluatesWithoutEstimating)
+{
+    SpecPtr spec = to_handle(fixed_std_sgarch());
+    PanelPtr panel = ve::testing::make_panel(matrix().data(), kShortT, kSeries);
+    ve::testing::ContextPtr context = ve::testing::make_context(1);
+    BatchInputs inputs;
+    inputs.specs = {spec.get()};
+    inputs.panel = panel.get();
+    inputs.job_spec = {0};
+    inputs.job_series = {0};
+    BatchPtr batch = ve::testing::build_batch(inputs);
+    FitSet fits = ve::testing::fit_all(context.get(), batch.get());
+    const ve_fit* fit = fits[0];
+    int32_t status = -1;
+    ASSERT_EQ(ve_fit_status(fit, &status), VE_OK);
+    EXPECT_EQ(status, VE_FIT_CONVERGED);
+    std::vector<double> errors(5);
+    for (const int32_t kind : {VE_SE_HESSIAN, VE_SE_ROBUST})
+    {
+        ASSERT_EQ(ve_fit_std_errors(fit, kind, errors.data()), VE_OK);
+        for (const double error : errors)
+        {
+            EXPECT_TRUE(std::isnan(error));
+        }
+    }
+    double loglik = 0.0;
+    double aic = 0.0;
+    ASSERT_EQ(ve_loglik(fit, &loglik), VE_OK);
+    ASSERT_EQ(ve_aic(fit, VE_IC_PER_OBS, &aic), VE_OK);
+    EXPECT_TRUE(std::isfinite(loglik));
+    EXPECT_NEAR(aic, -2.0 * loglik / static_cast<double>(kShortT), 1e-12);
+}
+
 TEST(CapiFit, ResultIndependentOfThreadCount)
 {
     ThirtyThreeJobs scenario;

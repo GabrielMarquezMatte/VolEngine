@@ -67,6 +67,18 @@ std::optional<std::string> check_used_series(const Batch& batch)
     return std::nullopt;
 }
 
+std::optional<std::string> check_specs(const Batch& batch)
+{
+    for (std::size_t index = 0; index < batch.specs.size(); ++index)
+    {
+        if (std::optional<std::string> problem = model::spec_problem(batch.specs[index]))
+        {
+            return "spec " + std::to_string(index) + ": " + *problem;
+        }
+    }
+    return std::nullopt;
+}
+
 FitResult run_job(const Batch& batch, const FitJob& job)
 {
     const auto [start, length] = batch.panel->series_range(job.series);
@@ -119,7 +131,9 @@ std::optional<std::string> check_batch(const Batch& batch)
     {
         return "batch has no jobs; call ve_batch_set_jobs";
     }
-    return check_job_indices(batch).or_else([&batch] { return check_used_series(batch); });
+    return check_job_indices(batch)
+        .or_else([&batch] { return check_specs(batch); })
+        .or_else([&batch] { return check_used_series(batch); });
 }
 
 std::vector<FitResult> run_batch(Context& context, const Batch& batch)
