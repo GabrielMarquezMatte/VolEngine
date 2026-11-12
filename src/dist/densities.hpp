@@ -26,6 +26,12 @@ template <class T>
 using Density =
     std::variant<LogDensity<T>, SkewedLogDensity<T>, HyperbolicLogDensity<T>, JohnsonLogDensity<T>>;
 
+// sstd and sged: the Fernandez-Steel skewing of a symmetric kernel, whose skew xi is positive.
+inline bool is_fernandez_steel(Dist dist)
+{
+    return dist == Dist::Sstd || dist == Dist::Sged;
+}
+
 // norm, std and ged get the LogDensity of make_log_density, so their numbers do not change.
 template <class T>
 Density<T> make_density(Dist dist, const ShapeParameters<T>& parameters)
