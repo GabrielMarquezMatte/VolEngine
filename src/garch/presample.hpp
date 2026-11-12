@@ -4,9 +4,10 @@
 #include <span>
 
 // The steps run in a loop here and, for ARCH-in-mean, in a second one in the likelihood. A step with two callers
-// is no longer inlined under GCC -O3, and an un-inlined step costs 30% on the Dual recursion of sGARCH.
+// is no longer inlined under GCC -O3, and an un-inlined step costs 30% on the Dual recursion of sGARCH. MSVC keeps
+// plain inline: __forceinline can raise C4714, an error under /WX.
 #if defined(_MSC_VER) && !defined(__clang__)
-#define VE_FORCE_INLINE __forceinline
+#define VE_FORCE_INLINE inline
 #else
 #define VE_FORCE_INLINE [[gnu::always_inline]] inline
 #endif
