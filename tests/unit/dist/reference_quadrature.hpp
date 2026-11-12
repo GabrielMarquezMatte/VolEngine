@@ -2,6 +2,7 @@
 
 #include "dist/densities.hpp"
 
+#include <array>
 #include <cmath>
 #include <cstddef>
 
@@ -48,6 +49,72 @@ inline double student_tails(const ve::dist::LogDensity<double>& density, double 
         coefficient *= -(m + j) / (j + 1.0);
     }
     return both_sides * tails;
+}
+
+constexpr std::size_t kGradedPoints = 40001;
+constexpr std::size_t kTailPoints = 4001;
+
+// int z^k f(z) dz for k = 0, 1, 2.
+using RawMoments = std::array<double, 3>;
+
+template <class Function>
+void accumulate_moments(const Function& density, double z, double weight, RawMoments& moments)
+{
+    double term = weight * density(z);
+    moments[0] += term;
+    moments[1] += term * z;
+    moments[2] += term * z * z;
+}
+
+// The trapezoid rule in t over z = kink + (bound - kink) t^3: a Fernandez-Steel density has a power
+// singularity in a derivative at its kink, which a uniform grid resolves only to O(h^(1 + shape)), and the
+// cube makes the integrand smooth at t = 0.
+template <class Function>
+void graded_moments(const Function& density, double kink, double bound, RawMoments& moments)
+{
+    double span = bound - kink;
+    double step = 1.0 / static_cast<double>(kGradedPoints - 1);
+    for (std::size_t i = 1; i < kGradedPoints; ++i)
+    {
+        double t = step * static_cast<double>(i);
+        double weight = 3.0 * std::fabs(span) * t * t * step;
+        if (i == kGradedPoints - 1)
+        {
+            weight *= 0.5;
+        }
+        accumulate_moments(density, kink + span * t * t * t, weight, moments);
+    }
+}
+
+// The part beyond |z| = kTrapezoidBound, by the trapezoid rule in u = 1 / |z|: a tail z^-p becomes
+// u^(p - 2), which vanishes at u = 0 for the moments taken here, and an exponential tail vanishes with all
+// its derivatives.
+template <class Function>
+void tail_moments(const Function& density, RawMoments& moments)
+{
+    double step = 1.0 / (kTrapezoidBound * static_cast<double>(kTailPoints - 1));
+    for (std::size_t i = 1; i < kTailPoints; ++i)
+    {
+        double u = step * static_cast<double>(i);
+        double weight = step / (u * u);
+        if (i == kTailPoints - 1)
+        {
+            weight *= 0.5;
+        }
+        accumulate_moments(density, 1.0 / u, weight, moments);
+        accumulate_moments(density, -1.0 / u, weight, moments);
+    }
+}
+
+// The raw moments 0 to 2 over the real line, split at the kink of the density.
+template <class Function>
+RawMoments reference_moments(const Function& density, double kink)
+{
+    RawMoments moments{};
+    graded_moments(density, kink, -kTrapezoidBound, moments);
+    graded_moments(density, kink, kTrapezoidBound, moments);
+    tail_moments(density, moments);
+    return moments;
 }
 
 }
