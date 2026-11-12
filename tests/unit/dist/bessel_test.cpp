@@ -104,6 +104,32 @@ TEST(Bessel, DerivativesMatchFiniteDifferences)
     }
 }
 
+// K_v = K_(v-2) + 2 (v - 1) / x K_(v-1), from orders far from 5/2.
+double five_halves_recurrence(double order, double x)
+{
+    double below = std::exp(log_bessel_k(order - 2.0, x));
+    double above = std::exp(log_bessel_k(order - 1.0, x));
+    return std::log(below + 2.0 * (order - 1.0) / x * above);
+}
+
+// Boost takes K_v for v within ~1e-4 x of 5/2 from a truncated Hankel series, exact at 5/2 only.
+TEST(Bessel, SmoothAroundFiveHalves)
+{
+    for (double x : {0.7, 2.0, 10.0, 100.0, 650.0})
+    {
+        for (double gap : {0.0, 1e-6, -1e-5, 1e-5, 3e-5, 6e-5, 1e-3})
+        {
+            double order = 2.5 + gap;
+            expect_relative(log_bessel_k(order, x), five_halves_recurrence(order, x), 1e-14);
+        }
+        double step = 2.5e-5;
+        double slope =
+            (five_halves_recurrence(2.5 + step, x) - five_halves_recurrence(2.5 - step, x)) / (2.0 * step);
+        auto dual = log_bessel_k(ve::ad::variable<1>(2.5, 0), ve::ad::Dual<1>{x});
+        EXPECT_NEAR(dual.grad[0], slope, 1e-9 * std::max(1.0, std::fabs(slope))) << x;
+    }
+}
+
 TEST(Bessel, NeverThrows)
 {
     constexpr double kNan = std::numeric_limits<double>::quiet_NaN();
