@@ -17,6 +17,13 @@ library whose ABI version differs).
 
 ### Added
 
+- Fixed parameters, start values and variance targeting, as `fixed.pars`, `start.pars` and `variance.targeting` of
+  `rugarch`. Each parameter is estimated, fixed or derived (the iGARCH `beta_q`, and `omega` under variance
+  targeting); fixed and derived ones have NaN standard errors and do not count in the criteria. A spec with every
+  parameter fixed is evaluated at that point without the optimizer. Incompatible specs are
+  `VE_INVALID_ARGUMENT`. C API: `ve_spec_set_fixed`, `ve_spec_set_start`, `ve_spec_set_variance_targeting` and
+  `ve_spec_validate`. Python: `Spec(fixed=, start=, variance_targeting=)`. Validated against `rugarch` and `arch`
+  ([docs/guide/validation.md](docs/guide/validation.md)).
 - Skewed innovations: skewed Student-t (`sstd`), skewed GED (`sged`), normal inverse Gaussian (`nig`),
   generalized hyperbolic (`ghyp`) and Johnson SU (`jsu`), for every model and ARMA mean. C API: `VE_DIST_SSTD`,
   `VE_DIST_SGED`, `VE_DIST_NIG`, `VE_DIST_GHYP` and `VE_DIST_JSU`, values 3 to 7. Python: `Spec(dist=)` with the

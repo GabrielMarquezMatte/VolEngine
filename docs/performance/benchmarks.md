@@ -55,6 +55,12 @@ page, so this page publishes no number for them. The run is also to record the p
 `BM_FitOne` for nig and ghyp, to decide whether a Bessel K of our own or an analytic derivative in the ghyp
 lambda is worth it. The tables below are those of plan 2a and describe sGARCH only.
 
+## Plan 2d: no new benchmark
+
+Fixed parameters, start values and variance targeting add branches only when the `Layout` has fixed or start
+values or variance targeting; a spec without them takes the same path and the same arithmetic as in plan 2c, which
+the existing `BM_*` cases measure. No benchmark was created for plan 2d and none was run.
+
 ## Cost of the log-likelihood and of its gradient by AD
 
 `BM_Loglik/<spec>/double` is one evaluation of `loglik<double>`, `BM_Loglik/<spec>/dual` one of `loglik<Dual<N>>`

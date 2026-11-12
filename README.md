@@ -12,7 +12,8 @@ csGARCH and fGARCH with its eight submodels (garch, tgarch, avgarch, ngarch, nag
 Every model takes an ARMA(m,n) conditional mean (orders 0 to 6, with or without a constant) and normal (`norm`),
 Student-t (`std`) or GED (`ged`) innovations, or the skewed ones: skewed Student-t (`sstd`), skewed GED (`sged`),
 normal inverse Gaussian (`nig`), generalized hyperbolic (`ghyp`) and Johnson SU (`jsu`), with Hessian and robust
-standard errors and the usual information criteria. More features come in later releases.
+standard errors and the usual information criteria. Any parameter can be fixed or given a start value, and the
+variance can be targeted. More features come in later releases.
 Until 1.0 the C ABI may change between releases. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Python example
@@ -55,6 +56,19 @@ spec = ve.Spec(model="fgarch", submodel="allgarch")   # fGARCH-ALLGARCH(1,1), po
 fit = ctx.fit(spec, returns)
 print(fit.coef("robust"))         # mu, omega, alpha1, beta1, eta11, eta21, lambda
 ```
+
+Parameters can be fixed, given start values (a warm start), or `omega` can be derived by variance targeting:
+
+```python
+spec = ve.Spec(dist="std", fixed={"shape": 6.0})   # shape is kept at 6, not estimated, standard error NaN
+fit = ctx.fit(spec, returns)
+warm = ve.Spec(dist="std", start=dict(zip(fit.names, fit.coef().estimate)))   # start from these estimates
+print(ctx.fit(warm, returns).status)
+print(ctx.fit(ve.Spec(variance_targeting=True), returns).coef("robust"))   # omega is derived
+```
+
+The criteria count only the estimated parameters. Rules and rejected combinations are in
+[docs/guide/validation.md](docs/guide/validation.md).
 
 `ctx.fit` also takes a `(T, N)` array (one fit per column), a list of specs, `starts` and `lengths` for series of
 different lengths, and `options=ve.FitOptions(var_init="backcast")` for the `arch` convention.
