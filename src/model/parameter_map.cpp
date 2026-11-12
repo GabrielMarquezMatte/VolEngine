@@ -205,11 +205,19 @@ void distribution_to_unconstrained(std::span<const double> theta, std::span<doub
     }
 }
 
-// pi = P(z < 0) splits the gjrGARCH alpha_i + gamma_i between the negative and the positive shocks.
+// pi = P(z < 0) splits the gjrGARCH alpha_i + gamma_i between the negative and the positive shocks. alpha_i is
+// read back as w / (1 - pi) and gamma_i as w / pi - alpha_i, which lose every digit as pi nears 0 or 1, so a pi
+// within kBoundary of either end is not computable: it comes back NaN.
 template <class T>
 T probability_below_zero_of(std::span<const T> theta, const Layout& layout)
 {
-    return dist::probability_below_zero(layout.dist, shape_parameters_of(theta, layout));
+    T below = dist::probability_below_zero(layout.dist, shape_parameters_of(theta, layout));
+    double value = ad::value_of(below);
+    if (!(value >= kBoundary && value <= 1.0 - kBoundary))
+    {
+        below = T{std::numeric_limits<double>::quiet_NaN()};
+    }
+    return below;
 }
 
 // eGARCH alpha and gamma are unconstrained in both spaces.
@@ -342,8 +350,8 @@ T omega_to_natural(std::span<const T> u, std::span<const T> theta, const Layout&
     return (scale * scale) * exp(x);
 }
 
-// value where 0 < value < upper, NaN otherwise. alpha_i is read back as w / kappa_i, and in gjrGARCH as
-// w / (1 - pi) with gamma_i = w / pi - alpha_i, so a kappa or pi outside its range gives NaN weights.
+// value where 0 < value < upper, NaN otherwise. alpha_i is read back as w / kappa_i, so a kappa outside its
+// range gives NaN weights.
 double nan_unless(double value, double upper)
 {
     if (value > 0.0 && value < upper)
@@ -363,7 +371,7 @@ Weights natural_weights(std::span<const double> theta, const Layout& layout)
     double below = 0.5;
     if (layout.model == Model::GjrGarch)
     {
-        below = nan_unless(probability_below_zero_of<double>(theta, layout), 1.0);
+        below = probability_below_zero_of<double>(theta, layout);
     }
     for (std::size_t i = 0; i < p && layout.model == Model::GjrGarch; ++i)
     {

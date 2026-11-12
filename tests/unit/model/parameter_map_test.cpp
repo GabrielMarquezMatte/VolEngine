@@ -809,8 +809,8 @@ TEST(ParameterMap, RoundTripAllDistributions)
     }
 }
 
-// A density that is not finite at z = 0 (jsu with a shape near 0), or, in gjrGARCH, a pi = P(z < 0) outside
-// (0, 1), which cannot split alpha + gamma.
+// A density that is not finite at z = 0 (jsu with a shape near 0), or, in gjrGARCH, a pi = P(z < 0) within
+// 1e-8 of 0 or 1, which cannot split alpha + gamma.
 bool shock_out_of_range(const Layout& layout, std::span<const double> theta)
 {
     ShapeParameters<double> parameters = shape_parameters_of(theta, layout);
@@ -824,11 +824,11 @@ bool shock_out_of_range(const Layout& layout, std::span<const double> theta)
         return false;
     }
     double pi = ve::dist::probability_below_zero(layout.dist, parameters);
-    return !(pi > 0.0 && pi < 1.0);
+    return !(pi >= 1e-8 && pi <= 1.0 - 1e-8);
 }
 
-// Outside the computable domain whatever the map does: some kappa not a positive finite double, pi outside
-// (0, 1), or a density that is not finite at 0.
+// Outside the computable domain whatever the map does: some kappa not a positive finite double, pi within
+// 1e-8 of 0 or 1, or a density that is not finite at 0.
 bool outside_computable_domain(const Layout& layout, std::span<const double> theta)
 {
     return moment_out_of_range(layout, theta) || (layout.has_skew() && shock_out_of_range(layout, theta));
@@ -905,8 +905,8 @@ TEST(ParameterMap, GjrPersistenceUsesProbabilityBelowZero)
     EXPECT_TRUE(is_valid(theta, layout));
 }
 
-// gjrGARCH reads alpha back as w_alpha / (1 - pi) and gamma as w_gamma / pi - alpha, so a pi outside (0, 1)
-// makes theta invalid even with finite weights. The sged here is past what the quadrature resolves.
+// gjrGARCH reads alpha back as w_alpha / (1 - pi) and gamma as w_gamma / pi - alpha, so a pi within 1e-8 of
+// 0 or 1 makes theta invalid even with finite weights. The sged here is past what the quadrature resolves.
 TEST(ParameterMap, GjrNeedsProbabilityBelowZeroInsideUnitInterval)
 {
     // sged gjrGARCH (omega, alpha1, beta1, gamma1, skew, shape)
@@ -926,6 +926,25 @@ TEST(ParameterMap, PowerFamilyNeedsPositiveFiniteMoment)
     Layout layout = ve::model::layout_of({.model = Model::ApArch, .dist = Dist::Jsu, .include_mean = false});
     EXPECT_FALSE(is_valid(std::vector<double>{0.01, 0.05, 0.9, 0.0, 2.0, 0.5, 0.03}, layout));
     EXPECT_TRUE(is_valid(std::vector<double>{0.01, 0.05, 0.9, 0.0, 2.0, 0.5, 2.0}, layout));
+}
+
+// jsu with skew 2.89 and shape 0.063 puts pi = P(z < 0) within ~1e-13 of 1, where 1 - pi keeps only a few
+// digits: alpha = w / (1 - pi) came out ~1e12 and gamma ~ -1e12, which is_valid rejected while the likelihood
+// stayed finite. Such a pi is not computable: the mapped theta is NaN.
+TEST(ParameterMap, GjrProbabilityNearOneIsNotComputable)
+{
+    Layout layout = ve::model::layout_of({.model = Model::GjrGarch, .dist = Dist::Jsu});
+    std::vector<double> u{0x1.aba8dd8d08dfap+0,  -0x1.080551346a65fp+2, 0x1.3d39091c43106p+3,
+                          -0x1.d08f906568f92p+1, 0x1.96d8429f4afe8p+1,  0x1.71b5b122fc5a0p+1,
+                          -0x1.623dbce211174p+1};
+    std::vector<double> theta(layout.count());
+    to_natural<double>(u, theta, layout, Standardization{0.01, 1.3});
+    double pi = ve::dist::probability_below_zero(Dist::Jsu, ve::model::shape_parameters_of<double>(theta, layout));
+    ASSERT_GT(pi, 1.0 - 1e-8);
+    EXPECT_FALSE(is_valid(theta, layout));
+    EXPECT_TRUE(std::isnan(theta[layout.alpha_begin()]));
+    EXPECT_FALSE(std::isfinite(ve::model::loglik<double>(ve::testing::simulate_portable_garch_series(3, 200), theta,
+                                                         layout, ve::VarInit::Sample, {})));
 }
 
 // gjrGARCH, apARCH and fGARCH-ALLGARCH read pi or kappa, taken by quadrature under the skewed distributions.
