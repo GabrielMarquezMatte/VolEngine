@@ -6,6 +6,7 @@
 #include "simulated_garch.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -566,6 +567,95 @@ TEST(Likelihood, SkewedDomainGivesNonFinite)
     EXPECT_FALSE(std::isfinite(loglik_at(r, std::vector<double>{0.1, 0.1, 0.8, 1.0, 1.5}, nig, VarInit::Sample)));
 }
 
+constexpr std::array<double, 4> kTargetingSeries{0.1, -0.2, 0.3, 0.05};
+
+Layout targeting_layout(Model model, bool targeting)
+{
+    return ve::model::layout_of(
+        {.model = model, .dist = Dist::Norm, .include_mean = false, .variance_targeting = targeting});
+}
+
+double mean_square_of(std::span<const double> values)
+{
+    double sum = 0.0;
+    for (double value : values)
+    {
+        sum += value * value;
+    }
+    return sum / static_cast<double>(values.size());
+}
+
+// The targeted likelihood equals the plain one at the omega the formula gives, whatever omega the targeted
+// theta carries.
+void expect_targeting_matches_explicit_omega(const Layout& layout, std::vector<double> theta, double omega)
+{
+    Layout targeted = targeting_layout(layout.model, true);
+    Layout plain = targeting_layout(layout.model, false);
+    std::vector<double> given = theta;
+    theta[plain.omega()] = omega;
+    given[plain.omega()] = 1234.0;
+    double expected = loglik_at(kTargetingSeries, theta, plain, VarInit::Sample);
+    ASSERT_TRUE(std::isfinite(expected));
+    EXPECT_NEAR(loglik_at(kTargetingSeries, given, targeted, VarInit::Sample), expected,
+                1e-14 * std::abs(expected));
+    EXPECT_NEAR(ve::model::targeted_omega<double>(kTargetingSeries, given, targeted), omega,
+                1e-14 * std::abs(omega));
+}
+
+TEST(Likelihood, TargetedOmegaHandCase)
+{
+    double m2 = mean_square_of(kTargetingSeries);
+    Layout sgarch = targeting_layout(Model::SGarch, false);
+    expect_targeting_matches_explicit_omega(sgarch, {0.0, 0.1, 0.8}, m2 * 0.1);
+
+    Layout egarch = targeting_layout(Model::EGarch, false);
+    std::vector<double> egarch_theta(egarch.count());
+    egarch_theta[egarch.alpha_begin()] = 0.1;
+    egarch_theta[egarch.beta_begin()] = 0.9;
+    egarch_theta[egarch.gamma_begin()] = 0.05;
+    expect_targeting_matches_explicit_omega(egarch, egarch_theta, std::log(m2) * 0.1);
+
+    double delta = 1.5;
+    Layout aparch = targeting_layout(Model::ApArch, false);
+    std::vector<double> aparch_theta(aparch.count());
+    aparch_theta[aparch.alpha_begin()] = 0.1;
+    aparch_theta[aparch.beta_begin()] = 0.8;
+    aparch_theta[aparch.power()] = delta;
+    double mean_power = 0.0;
+    for (double value : kTargetingSeries)
+    {
+        mean_power += std::pow(std::abs(value), delta) / 4.0;
+    }
+    double kappa = std::pow(2.0, delta / 2.0) * std::tgamma((delta + 1.0) / 2.0) / std::sqrt(std::numbers::pi);
+    expect_targeting_matches_explicit_omega(aparch, aparch_theta, mean_power * (1.0 - 0.1 * kappa - 0.8));
+}
+
+TEST(Likelihood, TargetingNearCeilingStaysFinite)
+{
+    std::vector<double> r = wave_series(200);
+    Layout sgarch = targeting_layout(Model::SGarch, true);
+    std::vector<double> sgarch_theta{0.0, 0.1, 0.9 - 2e-8};
+    double omega = ve::model::targeted_omega<double>(r, sgarch_theta, sgarch);
+    EXPECT_GT(omega, 0.0);
+    EXPECT_NEAR(omega, mean_square_of(r) * 2e-8, 1e-6 * omega);
+    EXPECT_TRUE(std::isfinite(loglik_at(r, sgarch_theta, sgarch, VarInit::Sample)));
+
+    std::vector<double> small(200);
+    for (std::size_t t = 0; t < small.size(); ++t)
+    {
+        small[t] = t % 2 == 0 ? 0.2 : -0.2;
+    }
+    Layout egarch = targeting_layout(Model::EGarch, true);
+    std::vector<double> egarch_theta(egarch.count());
+    egarch_theta[egarch.alpha_begin()] = 0.1;
+    egarch_theta[egarch.beta_begin()] = 0.9;
+    egarch_theta[egarch.gamma_begin()] = 0.05;
+    double egarch_omega = ve::model::targeted_omega<double>(small, egarch_theta, egarch);
+    EXPECT_NEAR(egarch_omega, std::log(0.04) * 0.1, 1e-12);
+    EXPECT_LT(egarch_omega, 0.0);
+    EXPECT_TRUE(std::isfinite(loglik_at(small, egarch_theta, egarch, VarInit::Sample)));
+}
+
 struct Orders
 {
     int arch;
@@ -578,18 +668,19 @@ struct ArmaOrders
     int ma;
 };
 
-using GridCase = std::tuple<Model, Orders, ArmaOrders, Dist, VarInit, bool>;
+using GridCase = std::tuple<Model, Orders, ArmaOrders, Dist, VarInit, bool, bool>;
 
 Layout grid_layout(const GridCase& c)
 {
-    auto [model, orders, arma, dist, var_init, include_mean] = c;
+    auto [model, orders, arma, dist, var_init, include_mean, targeting] = c;
     return ve::model::layout_of({.model = model,
                                  .p = orders.arch,
                                  .q = orders.garch,
                                  .ar = arma.ar,
                                  .ma = arma.ma,
                                  .dist = dist,
-                                 .include_mean = include_mean});
+                                 .include_mean = include_mean,
+                                 .variance_targeting = targeting});
 }
 
 // An sGARCH point, kept from before the variants.
@@ -649,7 +740,7 @@ std::vector<double> grid_theta(std::span<const double> r, const Layout& layout)
 
 std::string grid_name(const ::testing::TestParamInfo<GridCase>& info)
 {
-    auto [model, orders, arma, dist, var_init, include_mean] = info.param;
+    auto [model, orders, arma, dist, var_init, include_mean, targeting] = info.param;
     std::string models[] = {"SGarch", "EGarch", "GjrGarch", "ApArch", "IGarch", "CsGarch", "FGarchGarch",
                             "FGarchTGarch", "FGarchAvGarch", "FGarchNGarch", "FGarchNaGarch", "FGarchApArch",
                             "FGarchGjrGarch", "FGarchAllGarch"};
@@ -659,6 +750,7 @@ std::string grid_name(const ::testing::TestParamInfo<GridCase>& info)
                        dists[static_cast<int>(dist)];
     name += var_init == VarInit::Sample ? "Sample" : "Backcast";
     name += include_mean ? "Mean" : "NoMean";
+    name += targeting ? "Targeted" : "";
     return name;
 }
 
@@ -699,6 +791,10 @@ TEST_P(LikelihoodGrid, GradientMatchesFiniteDifferences)
         double coarse = central_difference(i, 2.0 * step);
         double extrapolated = (4.0 * fine - coarse) / 3.0;
         EXPECT_NEAR(ll.grad[i], extrapolated, 1e-6 * std::max(1.0, std::abs(ll.grad[i]))) << "parameter " << i;
+    }
+    if (layout.variance_targeting)
+    {
+        EXPECT_EQ(ll.grad[layout.omega()], 0.0);
     }
 }
 
@@ -741,7 +837,7 @@ INSTANTIATE_TEST_SUITE_P(Likelihood, LikelihoodGrid,
                                                               ArmaOrders{2, 0}),
                                             ::testing::Values(Dist::Norm, Dist::Std, Dist::Ged),
                                             ::testing::Values(VarInit::Sample, VarInit::Backcast),
-                                            ::testing::Bool()),
+                                            ::testing::Bool(), ::testing::Values(false)),
                          grid_name);
 
 INSTANTIATE_TEST_SUITE_P(Variants, LikelihoodGrid,
@@ -755,7 +851,7 @@ INSTANTIATE_TEST_SUITE_P(Variants, LikelihoodGrid,
                                             ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1}),
                                             ::testing::Values(Dist::Norm, Dist::Std, Dist::Ged),
                                             ::testing::Values(VarInit::Sample, VarInit::Backcast),
-                                            ::testing::Values(true)),
+                                            ::testing::Values(true), ::testing::Values(false)),
                          grid_name);
 
 INSTANTIATE_TEST_SUITE_P(Skewed, LikelihoodGrid,
@@ -766,7 +862,17 @@ INSTANTIATE_TEST_SUITE_P(Skewed, LikelihoodGrid,
                                             ::testing::Values(Dist::Sstd, Dist::Sged, Dist::Nig, Dist::Ghyp,
                                                               Dist::Jsu),
                                             ::testing::Values(VarInit::Sample, VarInit::Backcast),
-                                            ::testing::Values(true)),
+                                            ::testing::Values(true), ::testing::Values(false)),
+                         grid_name);
+
+INSTANTIATE_TEST_SUITE_P(Targeted, LikelihoodGrid,
+                         ::testing::Combine(::testing::Values(Model::SGarch, Model::EGarch, Model::GjrGarch,
+                                                              Model::ApArch, Model::FGarchAllGarch),
+                                            ::testing::Values(Orders{1, 1}, Orders{2, 2}),
+                                            ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1}),
+                                            ::testing::Values(Dist::Norm, Dist::Std, Dist::Sstd),
+                                            ::testing::Values(VarInit::Sample, VarInit::Backcast),
+                                            ::testing::Values(true), ::testing::Values(true)),
                          grid_name);
 
 }

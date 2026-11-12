@@ -26,4 +26,10 @@ template <class T>
 T loglik(std::span<const double> r, std::span<const T> theta, const Layout& layout, VarInit var_init,
          const LoglikOutputs<T>& out);
 
+// omega under variance targeting, from the residuals of the mean at theta: m (1 - P) with m the mean of e^2, or
+// of |e|^power in apARCH and fGARCH, and P = persistence(theta); eGARCH: log(mean e^2) (1 - P). theta[omega] is
+// not read. Instantiated as loglik.
+template <class T>
+T targeted_omega(std::span<const T> residuals, std::span<const T> theta, const Layout& layout);
+
 }
