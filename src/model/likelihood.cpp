@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <variant>
 #include <vector>
 
 namespace ve::model
@@ -290,6 +291,12 @@ std::span<T> provided_or(std::span<T> provided, std::vector<T>& storage, std::si
 }
 
 template <class T>
+dist::ShapeParameters<double> value_of(const dist::ShapeParameters<T>& parameters)
+{
+    return {ad::value_of(parameters.skew), ad::value_of(parameters.shape), ad::value_of(parameters.ghlambda)};
+}
+
+template <class T>
 bool is_valid_variance(const T& sigma2)
 {
     double value = ad::value_of(sigma2);
@@ -317,13 +324,17 @@ T sum_of_terms(std::span<const T> residuals, std::span<const T> sigma2, LogDensi
         }
         total = total + term;
     }
+    if (!std::isfinite(ad::value_of(total)))
+    {
+        total = T{kInvalid};
+    }
     return total;
 }
 
 // norm and std read z^2 = e^2 / sigma2, which needs neither sqrt nor a second division.
 template <class T>
-T sum_of_terms(std::span<const T> residuals, std::span<const T> sigma2, const dist::LogDensity<T>& density,
-               std::span<T> terms)
+T sum_of_alternative(std::span<const T> residuals, std::span<const T> sigma2, const dist::LogDensity<T>& density,
+                     std::span<T> terms)
 {
     using std::abs;
     using std::sqrt;
@@ -354,6 +365,26 @@ T sum_of_terms(std::span<const T> residuals, std::span<const T> sigma2, const di
     return T{kInvalid};
 }
 
+// The skewed, hyperbolic and Johnson densities read z = e / sqrt(sigma2).
+template <class T, class Alternative>
+T sum_of_alternative(std::span<const T> residuals, std::span<const T> sigma2, const Alternative& density,
+                     std::span<T> terms)
+{
+    using std::sqrt;
+    return sum_of_terms<T>(residuals, sigma2,
+                           [&density](const T& e, const T& variance)
+                           { return dist::log_density(density, e / sqrt(variance)); },
+                           terms);
+}
+
+template <class T>
+T sum_of_terms(std::span<const T> residuals, std::span<const T> sigma2, const dist::Density<T>& density,
+               std::span<T> terms)
+{
+    return std::visit([&](const auto& alternative)
+                      { return sum_of_alternative<T>(residuals, sigma2, alternative, terms); }, density);
+}
+
 }
 
 template <class T>
@@ -364,8 +395,8 @@ T loglik(std::span<const double> r, std::span<const T> theta, const Layout& layo
     assert(out.terms.empty() || out.terms.size() == r.size());
     assert(out.residuals.empty() || out.residuals.size() == r.size());
     assert(out.sigma2.empty() || out.sigma2.size() == r.size());
-    T shape = shape_parameters_of(theta, layout).shape;
-    if (!dist::in_domain(layout.dist, ad::value_of(shape)))
+    dist::ShapeParameters<T> shape = shape_parameters_of(theta, layout);
+    if (!dist::in_domain(layout.dist, value_of(shape)))
     {
         return T{kInvalid};
     }
@@ -379,7 +410,7 @@ T loglik(std::span<const double> r, std::span<const T> theta, const Layout& layo
     {
         return T{kInvalid};
     }
-    return sum_of_terms<T>(residuals, sigma2, dist::make_log_density(layout.dist, shape), out.terms);
+    return sum_of_terms<T>(residuals, sigma2, dist::make_density(layout.dist, shape), out.terms);
 }
 
 template double loglik<double>(std::span<const double>, std::span<const double>, const Layout&, VarInit,

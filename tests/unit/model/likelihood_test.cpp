@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <gtest/gtest.h>
 #include <numbers>
 #include <random>
@@ -389,6 +390,95 @@ TEST(Likelihood, PowerStdNeedsShapeAbovePower)
     }
 }
 
+// E|z|^power is infinite for sstd with shape <= power, as for std (the tail is the t one).
+TEST(Likelihood, PowerSkewedStudentNeedsShapeAbovePower)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(42, 500);
+    for (VarInit var_init : {VarInit::Sample, VarInit::Backcast})
+    {
+        ModelPoint aparch = model_point(Model::ApArch, Dist::Norm, {0.1, 2.5});
+        aparch.layout.dist = Dist::Sstd;
+        aparch.theta.push_back(0.9);
+        aparch.theta.push_back(2.4);
+        EXPECT_FALSE(std::isfinite(loglik_at(r, aparch.theta, aparch.layout, var_init)));
+        aparch.theta.back() = 3.0;
+        EXPECT_TRUE(std::isfinite(loglik_at(r, aparch.theta, aparch.layout, var_init)));
+    }
+}
+
+struct SkewedCase
+{
+    Dist dist;
+    std::vector<double> parameters;
+};
+
+std::vector<SkewedCase> skewed_cases()
+{
+    return {{Dist::Sstd, {0.8, 6.0}},
+            {Dist::Sged, {1.2, 1.5}},
+            {Dist::Nig, {-0.3, 1.5}},
+            {Dist::Ghyp, {0.3, 2.0, 1.5}},
+            {Dist::Jsu, {0.5, 2.0}}};
+}
+
+// sGARCH(1,1) without a mean, sample init: sigma2_0 is the mean square and the recursion is the plan 2a one.
+TEST(Likelihood, SkewedHandCase)
+{
+    std::vector<double> r{0.1, -0.2, 0.3};
+    double omega = 0.1;
+    double alpha = 0.1;
+    double beta = 0.8;
+    std::vector<double> sigma2(3);
+    sigma2[0] = 0.14 / 3;
+    sigma2[1] = omega + alpha * r[0] * r[0] + beta * sigma2[0];
+    sigma2[2] = omega + alpha * r[1] * r[1] + beta * sigma2[1];
+    for (const SkewedCase& c : skewed_cases())
+    {
+        SCOPED_TRACE(::testing::Message() << "dist " << static_cast<int>(c.dist));
+        Layout layout = ve::model::layout_of({.model = Model::SGarch, .dist = c.dist, .include_mean = false});
+        std::vector<double> theta{omega, alpha, beta};
+        theta.insert(theta.end(), c.parameters.begin(), c.parameters.end());
+        ASSERT_EQ(theta.size(), layout.count());
+        ve::dist::Density<double> density =
+            ve::dist::make_density(c.dist, ve::model::shape_parameters_of<double>(theta, layout));
+        double expected = 0.0;
+        for (std::size_t t = 0; t < 3; ++t)
+        {
+            expected += ve::dist::log_density(density, r[t] / std::sqrt(sigma2[t])) - 0.5 * std::log(sigma2[t]);
+        }
+        double ll = loglik_at(r, theta, layout, VarInit::Sample);
+        EXPECT_NEAR(ll, expected, 1e-14 * std::abs(expected));
+    }
+}
+
+// zeta this small with order 40 overflows K_40 to +inf, so the terms are inf - inf or inf; neither is a likelihood.
+TEST(Likelihood, NonFiniteTermIsInvalid)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(42, 50);
+    Layout layout = ve::model::layout_of({.model = Model::SGarch, .dist = Dist::Ghyp});
+    std::vector<double> theta{0.0, 0.1, 0.1, 0.8, 0.3, 1e-300, 40.0};
+    ASSERT_EQ(theta.size(), layout.count());
+    for (VarInit var_init : {VarInit::Sample, VarInit::Backcast})
+    {
+        double ll = 0.0;
+        ASSERT_NO_THROW(ll = loglik_at(r, theta, layout, var_init));
+        EXPECT_EQ(ll, -std::numeric_limits<double>::infinity());
+        std::vector<Dual<8>> seeds = seeded<8>(theta);
+        Dual<8> dual = loglik<Dual<8>>(r, seeds, layout, var_init, {});
+        EXPECT_EQ(dual.value, -std::numeric_limits<double>::infinity());
+    }
+}
+
+TEST(Likelihood, SkewedDomainGivesNonFinite)
+{
+    std::vector<double> r{0.1, -0.2, 0.3};
+    Layout sstd = ve::model::layout_of({.model = Model::SGarch, .dist = Dist::Sstd, .include_mean = false});
+    EXPECT_FALSE(std::isfinite(loglik_at(r, std::vector<double>{0.1, 0.1, 0.8, 0.8, 1.9}, sstd, VarInit::Sample)));
+    EXPECT_FALSE(std::isfinite(loglik_at(r, std::vector<double>{0.1, 0.1, 0.8, -0.8, 6.0}, sstd, VarInit::Sample)));
+    Layout nig = ve::model::layout_of({.model = Model::SGarch, .dist = Dist::Nig, .include_mean = false});
+    EXPECT_FALSE(std::isfinite(loglik_at(r, std::vector<double>{0.1, 0.1, 0.8, 1.0, 1.5}, nig, VarInit::Sample)));
+}
+
 struct Orders
 {
     int arch;
@@ -461,8 +551,30 @@ std::vector<double> drawn_theta(std::span<const double> r, const Layout& layout)
     return theta;
 }
 
+// Hand-chosen interior distribution parameters, skew, shape, ghlambda in the order of the layout.
+std::vector<double> distribution_parameters(Dist dist)
+{
+    for (const SkewedCase& c : skewed_cases())
+    {
+        if (c.dist == dist)
+        {
+            return c.parameters;
+        }
+    }
+    return {};
+}
+
 std::vector<double> grid_theta(std::span<const double> r, const Layout& layout)
 {
+    std::vector<double> extra = distribution_parameters(layout.dist);
+    if (!extra.empty())
+    {
+        Layout base = layout;
+        base.dist = Dist::Norm;
+        std::vector<double> theta = grid_theta(r, base);
+        theta.insert(theta.end(), extra.begin(), extra.end());
+        return theta;
+    }
     if (layout.model == Model::SGarch)
     {
         return interior_theta(layout);
@@ -476,7 +588,7 @@ std::string grid_name(const ::testing::TestParamInfo<GridCase>& info)
     std::string models[] = {"SGarch", "EGarch", "GjrGarch", "ApArch", "IGarch", "CsGarch", "FGarchGarch",
                             "FGarchTGarch", "FGarchAvGarch", "FGarchNGarch", "FGarchNaGarch", "FGarchApArch",
                             "FGarchGjrGarch", "FGarchAllGarch"};
-    std::string dists[] = {"Norm", "Std", "Ged"};
+    std::string dists[] = {"Norm", "Std", "Ged", "Sstd", "Sged", "Nig", "Ghyp", "Jsu"};
     std::string name = models[static_cast<int>(model)] + "P" + std::to_string(orders.arch) + "Q" +
                        std::to_string(orders.garch) + "Arma" + std::to_string(arma.ar) + std::to_string(arma.ma) +
                        dists[static_cast<int>(dist)];
@@ -573,6 +685,17 @@ INSTANTIATE_TEST_SUITE_P(Variants, LikelihoodGrid,
                                             ::testing::Values(Orders{1, 1}, Orders{2, 2}),
                                             ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1}),
                                             ::testing::Values(Dist::Norm, Dist::Std, Dist::Ged),
+                                            ::testing::Values(VarInit::Sample, VarInit::Backcast),
+                                            ::testing::Values(true)),
+                         grid_name);
+
+INSTANTIATE_TEST_SUITE_P(Skewed, LikelihoodGrid,
+                         ::testing::Combine(::testing::Values(Model::SGarch, Model::EGarch, Model::GjrGarch,
+                                                              Model::ApArch, Model::FGarchAllGarch),
+                                            ::testing::Values(Orders{1, 1}),
+                                            ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1}),
+                                            ::testing::Values(Dist::Sstd, Dist::Sged, Dist::Nig, Dist::Ghyp,
+                                                              Dist::Jsu),
                                             ::testing::Values(VarInit::Sample, VarInit::Backcast),
                                             ::testing::Values(true)),
                          grid_name);
