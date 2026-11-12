@@ -102,6 +102,8 @@ def regressor_array(
 ) -> NDArray[np.float64] | None:
     """`values` as (T, N, k), or None when no spec has regressors of this kind; the specs with k = 0 ignore it."""
     widths = {count for count in counts if count > 0}
+    if not widths and values is not None:
+        raise ValueError(f"{name} was given but no spec has {name} > 0")
     if not widths:
         return None
     if values is None:
@@ -182,7 +184,7 @@ class Context:
         shape (T, k) for 1D data and (T, N, k) for (T, N) data, k being the count of the spec (a different k, a
         different shape or a missing array is a ValueError). Series j uses X[:, j, :] without a copy, and with
         `starts` and `lengths` its rows starts[j] .. starts[j] + lengths[j] - 1 of the regressors. The specs with a
-        count of 0 take no regressors.
+        count of 0 take no regressors; an array given when every spec has a count of 0 is a ValueError.
         """
         unknown = sorted(keywords.keys() - FitKeywords.__annotations__.keys())
         if unknown:

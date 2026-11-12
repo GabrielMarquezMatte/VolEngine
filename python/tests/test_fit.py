@@ -681,6 +681,15 @@ def test_regressor_shape_mismatch_raises(ctx, series):
         ctx.fit([ve.Spec(mxreg=2), ve.Spec(mxreg=1)], data, mxreg=mean_regressors((data.shape[0], 2)))
 
 
+def test_regressors_without_a_spec_that_uses_them_raise(ctx, series):
+    data = series[:, 0]
+    with pytest.raises(ValueError, match="no spec has mxreg > 0"):
+        ctx.fit(ve.Spec(), data, mxreg=mean_regressors((data.shape[0], 2)))
+    with pytest.raises(ValueError, match="no spec has vxreg > 0"):
+        ctx.fit([ve.Spec(), ve.Spec(mxreg=1)], data, mxreg=mean_regressors((data.shape[0], 1)),
+                vxreg=mean_regressors((data.shape[0], 1)))
+
+
 def test_archm_names(ctx, series):
     fit = ctx.fit(ve.Spec(arma=(0, 1), archm=2), series[:, 0])
     assert fit.names == ("mu", "ma1", "archm", "omega", "alpha1", "beta1")
