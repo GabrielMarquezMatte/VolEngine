@@ -1526,21 +1526,35 @@ TEST(FitRegressors, CollinearColumnFinite)
     }
 }
 
-// Review Focus 2: a start whose variance is not positive somewhere ends finite, without an exception.
-TEST(FitRegressors, NegativeVarianceRegion)
+// Review Focus 2. A start whose variance is not positive at some t has -inf as its own log-likelihood: nothing to
+// search from, so the fit is Failed with NaN estimates (the 2d convention), without an exception.
+TEST(FitRegressors, NegativeVarianceAtTheStartFails)
 {
     RegressorFit vx = regressor_fit(1);
     vx.spec.start = {{"vxreg1", -5.0}};
     FitResult result = ve::fit_one(data_of(regressor_series(1), vx.spec), vx.spec, ve::FitConfig{});
-    EXPECT_NE(result.status, FitStatus::InsufficientData);
-    EXPECT_FALSE(std::isinf(result.loglik));
-    for (std::size_t i = 0; i < result.estimate.size(); ++i)
+    EXPECT_EQ(result.status, FitStatus::Failed);
+    EXPECT_TRUE(all_nan(result.estimate));
+    EXPECT_TRUE(std::isnan(result.loglik));
+}
+
+// A valid start near the boundary: the first steps of the search (-0.001) or later ones (-0.04) reach sigma2 <= 0,
+// where the log-likelihood is -inf, and the line search backs off to the optimum (checked by instrumenting the
+// objective: -0.001 returns +inf, as the negated -inf, on evaluations 2 to 5 and then converges).
+TEST(FitRegressors, SearchBacksOffFromNegativeVariance)
+{
+    for (double start : {-0.001, -0.04})
     {
-        EXPECT_FALSE(std::isinf(result.estimate[i])) << result.names[i];
-    }
-    if (result.status == FitStatus::Converged || result.status == FitStatus::MaxIter)
-    {
+        RegressorFit vx = regressor_fit(1);
+        vx.spec.start = {{"vxreg1", start}};
+        FitResult result = ve::fit_one(data_of(regressor_series(1), vx.spec), vx.spec, ve::FitConfig{});
+        ASSERT_EQ(result.status, FitStatus::Converged) << start;
         EXPECT_TRUE(std::isfinite(result.loglik));
+        for (std::size_t i = 0; i < result.estimate.size(); ++i)
+        {
+            EXPECT_TRUE(std::isfinite(result.estimate[i])) << start << " " << result.names[i];
+        }
+        EXPECT_NEAR(estimate_of(result, "vxreg1"), 0.05, 0.02) << start;
     }
 }
 
