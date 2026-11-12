@@ -27,10 +27,12 @@ them, those models fitted in batches behind a C API and a Python package.
           \     |     /
             src/ad                 dual numbers, digamma
               |
+        src/linalg                 Cholesky, least squares
+              |
         src/core   context, spec, panel
 ```
 
-Dependencies point one way: `core` <- `ad` <- `mean`, `garch`, `dist` <- `model` <- `fit` <- `capi`, and
+Dependencies point one way: `core` <- `ad` <- `mean`, `garch`, `dist` <- `model` <- `fit` <- `capi`, `core` <- `linalg` <- `model`, and
 `optim` <- `fit`. Nothing in `src/` includes from `src/capi/` except `capi` itself. Everything below the C API is
 internal and may change in any release; only the header is a contract, and the Python package is a consumer of it
 like any other wrapper would be.
@@ -48,7 +50,8 @@ like any other wrapper would be.
 | `src/core/panel.hpp` | `ve::PanelView`: a borrowed pointer, T, N, element strides and optional per-series start and length |
 | `src/core/var_init.hpp` | The variance initialization enum (`Sample`, `Backcast`) |
 | `src/ad/dual.hpp`, `special.hpp`, `special.cpp` | `ve::ad::Dual<N>`: forward-mode dual numbers and their elementary functions; `digamma` |
-| `src/mean/arma.hpp` | ARMA(m,n) residuals, a template over the scalar type |
+| `src/linalg/cholesky.*`, `least_squares.*` | Cholesky factor and solve; minimum-norm least squares by the normal equations, with a Jacobi pseudo-inverse when they are singular |
+| `src/mean/arma.hpp` | ARMA(m,n) residuals over the returns or over the deviations from the mean (regressors included), a template over the scalar type |
 | `src/garch/presample.hpp` | The pre-sample rule shared by the recursions: a state held at a value up to a time, and the expected value of a term before the first observation |
 | `src/garch/sgarch.hpp`, `egarch.hpp`, `gjrgarch.hpp`, `csgarch.hpp` | The variance recursions of sGARCH (also iGARCH), eGARCH, gjrGARCH and csGARCH, templates over the scalar type |
 | `src/garch/power_garch.hpp` | The recursion in sigma^power shared by apARCH and the eight fGARCH submodels |
@@ -56,13 +59,14 @@ like any other wrapper would be.
 | `src/dist/symmetric.hpp`, `skewed.hpp`, `hyperbolic.hpp`, `johnson.hpp` | The families of the variant: norm, std and ged; sstd and sged (Fernandez-Steel); nig and ghyp; jsu. Templates over the scalar type |
 | `src/dist/bessel.hpp`, `bessel.cpp` | `log_bessel_k` and its derivatives. Boost.Math is included only in `bessel.cpp`, so no other file sees it |
 | `src/dist/moments.hpp`, `moments.cpp` | Expected absolute shock, P(z < 0) and the fGARCH news moments (Gauss-Legendre quadrature for the shifted and the asymmetric ones) |
+| `src/model/data.hpp` | `Data`: the series and its row-major regressor matrices (mean and variance) |
 | `src/model/layout.hpp`, `layout.cpp` | `Layout`: parameter blocks (gamma, eta1, eta2, power), offsets, count, `ParameterKind` of each parameter, rugarch names of a `Spec`, and the role of each parameter (estimated, fixed or derived; `estimated_count`) |
-| `src/model/likelihood.hpp`, `likelihood.cpp` | `loglik<T>`: the log-likelihood (under variance targeting it computes omega from the current residuals, so the AD carries the dependence) with its per-observation terms, residuals and variances, and the backcast; dispatches by model to the recursion; instantiated for `double` and `Dual<8>`, `Dual<16>`, `Dual<32>`, `Dual<42>` |
+| `src/model/likelihood.hpp`, `likelihood.cpp` | `loglik<T>`: the log-likelihood (under variance targeting it computes omega from the current residuals, so the AD carries the dependence) with its per-observation terms, residuals and variances, and the backcast (from the least squares of r on the mean regressors, when there are any); dispatches by model to the recursion; instantiated for `double` and `Dual<8>`, `Dual<16>`, `Dual<32>`, `Dual<42>` |
 | `src/model/weight_terms.hpp` | The weight block seen as terms that sum to the persistence: fixed terms are constants and the free ones share the remaining budget (logistic and softmax) |
 | `src/model/parameter_map.*`, `start_values.*` | Layout-driven map between the unconstrained and natural parameter spaces, a template over the scalar type; validity check, start values, and `on_boundary` (parameters left out of the standard-error blocks) |
 | `src/optim/lbfgs.hpp` (+ `curvature_memory.hpp`, `line_search.hpp`, `vector_math.hpp`) | L-BFGS minimizer, a template over the objective |
 | `src/fit/fit.hpp`, `fit.cpp` | `fit_one`: one series, one spec; with no estimated parameter it evaluates the model at the fixed point and skips the optimizer |
-| `src/fit/standard_errors.*`, `cholesky.*` | Hessian and robust standard errors; Cholesky solves, no explicit inverse |
+| `src/fit/standard_errors.*` | Hessian and robust standard errors; Cholesky solves, no explicit inverse |
 | `src/fit/criteria.*` | Log-likelihood, AIC, BIC, HQIC, SIC |
 | `src/fit/batch.hpp`, `batch.cpp` | `check_batch` and `run_batch`: jobs on the thread pool |
 | `src/fit/fit_result.hpp` | `ve::FitResult`: status, estimates, standard errors, series, all by value |

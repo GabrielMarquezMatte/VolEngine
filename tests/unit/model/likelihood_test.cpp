@@ -1,3 +1,5 @@
+#include "linalg/least_squares.hpp"
+#include "model/data.hpp"
 #include "model/likelihood.hpp"
 #include "model/likelihood_terms.hpp"
 #include "model/parameter_map.hpp"
@@ -656,6 +658,98 @@ TEST(Likelihood, TargetingNearCeilingStaysFinite)
     EXPECT_TRUE(std::isfinite(loglik_at(small, egarch_theta, egarch, VarInit::Sample)));
 }
 
+// Two columns of 6 rows, row-major; with the series of the hand case.
+const std::vector<double> kHandSeries{0.12, -0.05, 0.31, 0.02, -0.22, 0.17};
+const std::vector<double> kHandRegressors{0.5, -1.0, 1.5, 0.2, -0.7, 0.9, 0.1, -0.4, 0.8, 1.1, -1.3, 0.6};
+
+TEST(Likelihood, MeanRegressorsHandCase)
+{
+    Layout layout = ve::model::layout_of({.p = 1, .q = 1, .ar = 1, .dist = Dist::Norm, .mxreg = 2});
+    ASSERT_EQ(layout.count(), 7u);
+    const double mu = 0.03;
+    const double phi = 0.4;
+    const double omega = 0.02;
+    const double alpha = 0.1;
+    const double beta = 0.8;
+    std::vector<double> theta{mu, phi, 0.5, -0.3, omega, alpha, beta};
+    ve::model::Data data{kHandSeries, {kHandRegressors, 2}};
+    std::vector<double> residuals(6);
+    std::vector<double> sigma2(6);
+    double ll = loglik<double>(data, theta, layout, VarInit::Sample, {.residuals = residuals, .sigma2 = sigma2});
+    std::vector<double> d(6);
+    std::vector<double> e(6);
+    for (std::size_t t = 0; t < 6; ++t)
+    {
+        d[t] = kHandSeries[t] - mu - 0.5 * kHandRegressors[2 * t] + 0.3 * kHandRegressors[2 * t + 1];
+        e[t] = t == 0 ? d[t] : d[t] - phi * d[t - 1];
+        EXPECT_NEAR(residuals[t], e[t], 1e-14) << "t = " << t;
+    }
+    double mean_square = 0.0;
+    for (double value : e)
+    {
+        mean_square += value * value / 6.0;
+    }
+    double expected = 0.0;
+    double variance = mean_square;
+    for (std::size_t t = 0; t < 6; ++t)
+    {
+        if (t > 0)
+        {
+            variance = omega + alpha * e[t - 1] * e[t - 1] + beta * variance;
+        }
+        EXPECT_NEAR(sigma2[t], variance, 1e-14 * std::max(1.0, variance)) << "t = " << t;
+        expected += -0.5 * (std::log(2 * std::numbers::pi) + std::log(variance) + e[t] * e[t] / variance);
+    }
+    EXPECT_NEAR(ll, expected, 1e-14 * std::abs(expected));
+}
+
+std::vector<double> regressor_columns(std::size_t rows, std::size_t columns)
+{
+    std::vector<double> x(rows * columns);
+    for (std::size_t t = 0; t < rows; ++t)
+    {
+        for (std::size_t k = 0; k < columns; ++k)
+        {
+            x[t * columns + k] = std::sin(0.37 * static_cast<double>((k + 1) * t) + static_cast<double>(k)) +
+                                 0.3 * static_cast<double>(k) * std::cos(0.11 * static_cast<double>(t));
+        }
+    }
+    return x;
+}
+
+TEST(Likelihood, BackcastFromOls)
+{
+    Layout layout = ve::model::layout_of({.p = 1, .q = 1, .dist = Dist::Norm, .mxreg = 2});
+    std::vector<double> r = ve::testing::simulate_garch_series(5, 120);
+    std::vector<double> x = regressor_columns(r.size(), 2);
+    std::vector<double> a;
+    for (std::size_t t = 0; t < r.size(); ++t)
+    {
+        a.insert(a.end(), {1.0, x[2 * t], x[2 * t + 1]});
+    }
+    std::vector<double> b = ve::linalg::least_squares(a, 3, r);
+    std::vector<double> ols_residuals(r.size());
+    for (std::size_t t = 0; t < r.size(); ++t)
+    {
+        ols_residuals[t] = r[t] - b[0] - b[1] * x[2 * t] - b[2] * x[2 * t + 1];
+    }
+    const double omega = 0.02;
+    std::vector<double> theta{0.04, 0.2, -0.1, omega, 0.05, 0.9};
+    std::vector<double> sigma2(r.size());
+    loglik<double>(ve::model::Data{r, {x, 2}}, theta, layout, VarInit::Backcast, {.sigma2 = sigma2});
+    EXPECT_NEAR(sigma2[0], omega + (0.05 + 0.9) * arch_backcast(ols_residuals, 0.0), 1e-14);
+}
+
+TEST(Likelihood, BackcastWithConstantRegressorColumnStaysFinite)
+{
+    Layout layout = ve::model::layout_of({.p = 1, .q = 1, .dist = Dist::Norm, .mxreg = 2});
+    std::vector<double> r = ve::testing::simulate_garch_series(5, 120);
+    std::vector<double> x(2 * r.size(), 1.0);
+    std::vector<double> theta{0.04, 0.2, -0.1, 0.02, 0.05, 0.9};
+    double ll = loglik<double>(ve::model::Data{r, {x, 2}}, theta, layout, VarInit::Backcast, {});
+    EXPECT_TRUE(std::isfinite(ll));
+}
+
 struct Orders
 {
     int arch;
@@ -874,5 +968,117 @@ INSTANTIATE_TEST_SUITE_P(Targeted, LikelihoodGrid,
                                             ::testing::Values(VarInit::Sample, VarInit::Backcast),
                                             ::testing::Values(true), ::testing::Values(true)),
                          grid_name);
+
+using RegressorCase = std::tuple<Model, ArmaOrders, Dist, VarInit, int>;
+
+class MeanRegressorGrid : public ::testing::TestWithParam<RegressorCase>
+{
+protected:
+    static constexpr std::size_t kLength = 400;
+    std::vector<double> r = ve::testing::simulate_garch_series(11, kLength);
+    Layout layout = layout_of_case();
+    std::vector<double> x = regressor_columns(kLength, static_cast<std::size_t>(layout.mxreg));
+    ve::model::Data data{r, {x, static_cast<std::size_t>(layout.mxreg)}};
+    VarInit var_init = std::get<VarInit>(GetParam());
+    std::vector<double> theta = theta_of_case();
+
+    Layout layout_of_case() const
+    {
+        auto [model, arma, dist, init, mxreg] = GetParam();
+        return ve::model::layout_of({.model = model,
+                                     .ar = arma.ar,
+                                     .ma = arma.ma,
+                                     .dist = dist,
+                                     .mxreg = mxreg});
+    }
+
+    // The point of the same grid without regressors, with the coefficients 0.3, -0.2 put in their block.
+    std::vector<double> theta_of_case() const
+    {
+        Layout plain = layout;
+        plain.mxreg = 0;
+        std::vector<double> base = grid_theta(r, plain);
+        std::vector<double> result(base.begin(), base.begin() + static_cast<std::ptrdiff_t>(layout.mxreg_begin()));
+        for (int k = 0; k < layout.mxreg; ++k)
+        {
+            result.push_back(k == 0 ? 0.3 : -0.2);
+        }
+        result.insert(result.end(), base.begin() + static_cast<std::ptrdiff_t>(layout.mxreg_begin()), base.end());
+        return result;
+    }
+
+    double central_difference(std::size_t index, double step) const
+    {
+        std::vector<double> up = theta;
+        std::vector<double> down = theta;
+        up[index] += step;
+        down[index] -= step;
+        return (loglik<double>(data, up, layout, var_init, {}) - loglik<double>(data, down, layout, var_init, {})) /
+               (2.0 * step);
+    }
+};
+
+TEST_P(MeanRegressorGrid, GradientMatchesFiniteDifferences)
+{
+    std::vector<Dual<32>> seeds = seeded<32>(theta);
+    Dual<32> ll = loglik<Dual<32>>(data, seeds, layout, var_init, {});
+    ASSERT_TRUE(std::isfinite(ll.value));
+    for (std::size_t i = 0; i < theta.size(); ++i)
+    {
+        double step = 3e-6 * std::max(1.0, std::abs(theta[i]));
+        double extrapolated = (4.0 * central_difference(i, step) - central_difference(i, 2.0 * step)) / 3.0;
+        EXPECT_NEAR(ll.grad[i], extrapolated, 1e-6 * std::max(1.0, std::abs(ll.grad[i]))) << "parameter " << i;
+    }
+}
+
+TEST_P(MeanRegressorGrid, TermsSumToTotalAndScoresSumToGradient)
+{
+    std::vector<Dual<32>> seeds = seeded<32>(theta);
+    std::vector<Dual<32>> terms(r.size());
+    Dual<32> ll = loglik<Dual<32>>(data, seeds, layout, var_init, {.terms = terms});
+    Dual<32> sum = ve::ad::constant<32>(0.0);
+    for (const Dual<32>& term : terms)
+    {
+        sum = sum + term;
+    }
+    EXPECT_NEAR(sum.value, ll.value, 1e-10 * std::abs(ll.value));
+    for (std::size_t i = 0; i < theta.size(); ++i)
+    {
+        EXPECT_NEAR(sum.grad[i], ll.grad[i], 1e-9 * std::max(1.0, std::abs(ll.grad[i]))) << "parameter " << i;
+    }
+}
+
+TEST_P(MeanRegressorGrid, DoubleAndDualAgreeOnValue)
+{
+    std::vector<Dual<16>> seeds = seeded<16>(theta);
+    std::vector<double> sigma2(r.size());
+    std::vector<Dual<16>> dual_sigma2(r.size());
+    double plain = loglik<double>(data, theta, layout, var_init, {.sigma2 = sigma2});
+    Dual<16> dual = loglik<Dual<16>>(data, seeds, layout, var_init, {.sigma2 = dual_sigma2});
+    EXPECT_EQ(ve::ad::value_of(dual), plain);
+    for (std::size_t t = 0; t < r.size(); ++t)
+    {
+        ASSERT_EQ(dual_sigma2[t].value, sigma2[t]) << "t = " << t;
+    }
+}
+
+std::string regressor_name(const ::testing::TestParamInfo<RegressorCase>& info)
+{
+    auto [model, arma, dist, var_init, mxreg] = info.param;
+    std::string models[] = {"SGarch", "EGarch", "GjrGarch", "ApArch", "IGarch", "CsGarch"};
+    std::string name = models[static_cast<int>(model)] + "Arma" + std::to_string(arma.ar) + std::to_string(arma.ma);
+    name += dist == Dist::Norm ? "Norm" : "Std";
+    name += var_init == VarInit::Sample ? "Sample" : "Backcast";
+    return name + "Mxreg" + std::to_string(mxreg);
+}
+
+INSTANTIATE_TEST_SUITE_P(Regressors, MeanRegressorGrid,
+                         ::testing::Combine(::testing::Values(Model::SGarch, Model::EGarch, Model::ApArch,
+                                                              Model::CsGarch),
+                                            ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1}),
+                                            ::testing::Values(Dist::Norm, Dist::Std),
+                                            ::testing::Values(VarInit::Sample, VarInit::Backcast),
+                                            ::testing::Values(0, 2)),
+                         regressor_name);
 
 }

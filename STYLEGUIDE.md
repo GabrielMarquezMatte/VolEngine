@@ -270,7 +270,7 @@ configuration for a value that never changes.
 
 ## Layers
 
-Dependencies point one way: `core` ← `ad` ← `mean`, `garch`, `dist` ← `model` ← `fit` ← `capi`, and
+Dependencies point one way: `core` ← `ad` ← `mean`, `garch`, `dist` ← `model` ← `fit` ← `capi`, `core` ← `linalg` ← `model`, and
 `optim` ← `fit`. Nothing in `src/` includes from `src/capi/` except `capi` itself.
 
 ```cpp

@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <span>
 
-namespace ve::fit
+namespace ve::linalg
 {
 
 // Row-major n x n symmetric matrix; reads and overwrites the lower triangle with L, where A = L L^T.

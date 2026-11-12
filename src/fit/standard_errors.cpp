@@ -1,6 +1,6 @@
 #include "fit/standard_errors.hpp"
 
-#include "fit/cholesky.hpp"
+#include "linalg/cholesky.hpp"
 #include "model/parameter_map.hpp"
 
 #include <algorithm>
@@ -168,7 +168,7 @@ double solved_diagonal_entry(std::span<const double> factor, std::span<const dou
 {
     std::vector<double> x(rows.begin() + static_cast<std::ptrdiff_t>(index * k),
                           rows.begin() + static_cast<std::ptrdiff_t>((index + 1) * k));
-    cholesky_solve(factor, k, x);
+    linalg::cholesky_solve(factor, k, x);
     return x[index];
 }
 
@@ -180,7 +180,7 @@ Matrix solve_columns(std::span<const double> factor, std::span<const double> sym
     {
         std::vector<double> x(symmetric.begin() + static_cast<std::ptrdiff_t>(j * k),
                               symmetric.begin() + static_cast<std::ptrdiff_t>((j + 1) * k));
-        cholesky_solve(factor, k, x);
+        linalg::cholesky_solve(factor, k, x);
         for (std::size_t i = 0; i < k; ++i)
         {
             result[i * k + j] = x[i];
@@ -217,7 +217,7 @@ StandardErrors from_hessian(const Matrix& hessian, const Matrix& middle, std::si
 {
     Matrix factor(k * k);
     std::ranges::transform(hessian, factor.begin(), [](double value) { return -value; });
-    if (!cholesky_factor(factor, k))
+    if (!linalg::cholesky_factor(factor, k))
     {
         return unavailable(k);
     }
