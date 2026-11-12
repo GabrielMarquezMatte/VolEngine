@@ -62,15 +62,17 @@ Parameters can be fixed, given start values (a warm start), or `omega` can be de
 ```python
 spec = ve.Spec(dist="std", fixed={"shape": 6.0})   # shape is kept at 6, not estimated, standard error NaN
 fit = ctx.fit(spec, returns)
-warm = ve.Spec(dist="std", start=dict(zip(fit.names, fit.coef().estimate)))   # start from these estimates
-print(ctx.fit(warm, returns).status)
+warm = ve.Spec(dist="std", fixed={"shape": 6.0}, start=dict(zip(fit.names, fit.coef().estimate)))
+print(ctx.fit(warm, returns).status)   # starts from these estimates; the start value of a fixed name is ignored
 print(ctx.fit(ve.Spec(variance_targeting=True), returns).coef("robust"))   # omega is derived
 ```
 
 The criteria count only the estimated parameters. Variance targeting computes `omega` inside the likelihood from the
 residuals of the current mean over the whole sample, with m2 = mean(e^2) and P the persistence: `m2 (1 - P)` for
-sGARCH and gjrGARCH, `log(m2) (1 - sum(beta))` for eGARCH, `mean(|e|^delta) (1 - P)` for apARCH and fGARCH. These
-specs are rejected (`VE_INVALID_ARGUMENT`, `VolEngineError` in Python): variance targeting in iGARCH or csGARCH,
+sGARCH and gjrGARCH, `log(m2) (1 - sum(beta))` for eGARCH, `mean(|e|^delta) (1 - P)` for apARCH and fGARCH. P is
+`sum(alpha) + sum(beta)` for sGARCH; for gjrGARCH it includes `pi sum(gamma)`, with `pi = P(z < 0)`; for apARCH and
+fGARCH it is `sum(alpha kappa) + sum(beta)`. A start value never unfixes a parameter: a name in both `fixed` and `start`
+stays fixed. These specs are rejected (`VE_INVALID_ARGUMENT`, `VolEngineError` in Python): variance targeting in iGARCH or csGARCH,
 fixing the iGARCH `beta_q` or `omega` under variance targeting (both derived), and a csGARCH with `eta21` fixed and
 some `beta` free. The conventions checked against `rugarch` and `arch` are in
 [docs/guide/validation.md](docs/guide/validation.md).

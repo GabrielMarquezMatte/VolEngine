@@ -24,7 +24,9 @@ library whose ABI version differs).
   `VE_INVALID_ARGUMENT`: variance targeting in iGARCH and csGARCH (`rugarch` ignores it in csGARCH and gives
   `omega = 0` in iGARCH; here both are errors on purpose), fixing a derived parameter, and a csGARCH with `eta21`
   fixed and a `beta` free. C API: `ve_spec_set_fixed`, `ve_spec_set_start`, `ve_spec_set_variance_targeting` and
-  `ve_spec_validate`. Python: `Spec(fixed=, start=, variance_targeting=)`. Validated against `rugarch` and `arch`
+  `ve_spec_validate`. Fixed wins over a start value for the same name, in either order of the setters, so
+  `Spec(fixed=..., start=dict(zip(fit.names, fit.coef().estimate)))` is a valid warm start. Python:
+  `Spec(fixed=, start=, variance_targeting=)`, which pickles, deep-copies and works with `dataclasses.asdict`. Validated against `rugarch` and `arch`
   ([docs/guide/validation.md](docs/guide/validation.md)).
 - Skewed innovations: skewed Student-t (`sstd`), skewed GED (`sged`), normal inverse Gaussian (`nig`),
   generalized hyperbolic (`ghyp`) and Johnson SU (`jsu`), for every model and ARMA mean. C API: `VE_DIST_SSTD`,
