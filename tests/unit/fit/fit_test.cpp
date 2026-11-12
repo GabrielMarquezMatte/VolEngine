@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 #include <initializer_list>
 #include <limits>
+#include <numbers>
 #include <optional>
 #include <random>
 #include <span>
@@ -1041,6 +1042,61 @@ TEST(FitDistributions, NearNormalEndsFinite)
     {
         SCOPED_TRACE(static_cast<int>(dist));
         expect_ends_finite(ve::fit_one(r, generic_spec(1, 1, dist), ve::FitConfig{}));
+    }
+}
+
+// i.i.d. N(0, 0.01^2), by Box-Muller on the engine's raw output.
+std::vector<double> portable_normal_series(std::uint64_t seed, std::size_t count)
+{
+    std::mt19937_64 engine(seed);
+    auto uniform = [&engine] { return (static_cast<double>(engine() >> 11) + 0.5) * 0x1.0p-53; };
+    std::vector<double> r(count);
+    for (double& value : r)
+    {
+        double radius = std::sqrt(-2.0 * std::log(uniform()));
+        value = 0.01 * radius * std::cos(2.0 * std::numbers::pi * uniform());
+    }
+    return r;
+}
+
+constexpr std::size_t kNormalSeriesLength = 2000;
+constexpr double kNormalLoglikMargin = 10.0;
+
+// Review Focus 1: on normal data nig and ghyp run towards the normal limit (zeta -> inf, sometimes
+// |rho| -> 1), where a density that is not standardized can report a likelihood far above the normal one,
+// and a gjrGARCH pi > 1 a negative alpha.
+void expect_no_better_than_normal(const std::vector<double>& r, ve::Model model, std::uint64_t seed)
+{
+    Spec spec = generic_spec(1, 1, ve::Dist::Norm);
+    spec.model = model;
+    FitResult normal = ve::fit_one(r, spec, ve::FitConfig{});
+    ASSERT_TRUE(std::isfinite(normal.loglik)) << "seed " << seed;
+    for (ve::Dist dist : {ve::Dist::Nig, ve::Dist::Ghyp})
+    {
+        spec.dist = dist;
+        FitResult result = ve::fit_one(r, spec, ve::FitConfig{});
+        SCOPED_TRACE(::testing::Message() << "seed " << seed << ", model " << static_cast<int>(model)
+                                          << ", dist " << static_cast<int>(dist) << ", status "
+                                          << static_cast<int>(result.status));
+        EXPECT_FALSE(std::isinf(result.loglik));
+        EXPECT_FALSE(result.loglik > normal.loglik + kNormalLoglikMargin)
+            << result.loglik << " vs " << normal.loglik;
+        if (model == ve::Model::GjrGarch && !result.estimate.empty())
+        {
+            EXPECT_FALSE(estimate_of(result, "alpha1") < 0.0) << estimate_of(result, "alpha1");
+        }
+    }
+}
+
+TEST(FitDistributions, NormalDataNeverBeatsTheNormalFit)
+{
+    for (std::uint64_t seed = 100; seed < 108; ++seed)
+    {
+        std::vector<double> r = portable_normal_series(seed, kNormalSeriesLength);
+        for (ve::Model model : {ve::Model::SGarch, ve::Model::GjrGarch})
+        {
+            expect_no_better_than_normal(r, model, seed);
+        }
     }
 }
 
