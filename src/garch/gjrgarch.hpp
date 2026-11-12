@@ -17,6 +17,7 @@ struct GjrGarchParameters
     std::span<const T> alpha;
     std::span<const T> beta;
     std::span<const T> gamma;
+    std::span<const T> intercept_shift{};
 };
 
 // (alpha_i + gamma_i 1[e < 0]) e^2 of lag i; before t = 0, its expected value given the presample variance b,
@@ -41,7 +42,7 @@ template <class T>
 T next_gjr_variance(std::span<const T> residuals, const GjrGarchParameters<T>& p, const Presample<T>& presample,
                     std::span<const T> sigma2, std::size_t t)
 {
-    T variance = p.omega;
+    T variance = intercept_at<T>(p.omega, p.intercept_shift, t);
     for (std::size_t i = 1; i <= p.alpha.size(); ++i)
     {
         variance = variance + gjr_shock(residuals, p, presample.value, t, i);

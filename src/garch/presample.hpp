@@ -16,6 +16,17 @@ struct Presample
     std::size_t held;
 };
 
+// omega + c_t, the intercept of step t. An empty shift is the plain omega, with no term added.
+template <class T>
+T intercept_at(const T& omega, std::span<const T> shift, std::size_t t)
+{
+    if (shift.empty())
+    {
+        return omega;
+    }
+    return omega + shift[t];
+}
+
 template <class T>
 const T& lagged(std::span<const T> values, std::size_t t, std::size_t lag, const T& presample)
 {

@@ -19,6 +19,7 @@ struct EGarchParameters
     std::span<const T> beta;
     std::span<const T> gamma;
     T abs_moment;
+    std::span<const T> intercept_shift{};
 };
 
 // A lag before t = 0 has z = 0 and, as in arch, which drops its term in |z| - sqrt(2/pi), |z| = sqrt(2/pi) for
@@ -30,7 +31,7 @@ T next_log_variance(std::span<const T> residuals, const EGarchParameters<T>& p, 
     using std::abs;
     using std::exp;
     const double presample_abs = std::sqrt(2.0 / std::numbers::pi);
-    T log_variance = p.omega;
+    T log_variance = intercept_at<T>(p.omega, p.intercept_shift, t);
     for (std::size_t i = 1; i <= p.alpha.size(); ++i)
     {
         if (i > t)

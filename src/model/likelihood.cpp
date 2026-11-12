@@ -236,12 +236,28 @@ garch::Presample<T> presample(const Data& data, std::span<const T> residuals, st
     return {mean_square(residuals), held};
 }
 
+// What the variance recursion starts from: the presample and c_t = sum_k zeta_k v_t,k (empty without vxreg).
+template <class T>
+struct Start
+{
+    garch::Presample<T> presample;
+    std::span<const T> intercept_shift;
+};
+
+template <class T, class Parameters>
+Parameters shifted(Parameters p, const Start<T>& start)
+{
+    p.intercept_shift = start.intercept_shift;
+    return p;
+}
+
 // The sGARCH recursion with beta_q = 1 - sum alpha - sum_{j<q} beta_j; the stored beta_q is never read.
 template <class T>
 void igarch_variance(std::span<const T> residuals, std::span<const T> theta, const Layout& layout,
-                     const garch::Presample<T>& initial, std::span<T> sigma2)
+                     const Start<T>& start, std::span<T> sigma2)
 {
     garch::SGarchParameters<T> p = sgarch_parameters(theta, layout);
+    p.intercept_shift = start.intercept_shift;
     std::array<T, kMaxOrder> beta{};
     std::ranges::copy(p.beta, beta.begin());
     T last{1.0};
@@ -255,55 +271,60 @@ void igarch_variance(std::span<const T> residuals, std::span<const T> theta, con
     }
     beta[p.beta.size() - 1] = last;
     p.beta = std::span<const T>(beta).first(p.beta.size());
-    garch::sgarch_variance<T>(residuals, p, initial, sigma2);
+    garch::sgarch_variance<T>(residuals, p, start.presample, sigma2);
 }
 
 template <class T>
-void csgarch_from_residuals(std::span<const T> residuals, const garch::CsGarchParameters<T>& p,
-                            const garch::Presample<T>& initial, std::span<T> sigma2)
+void csgarch_from_residuals(std::span<const T> residuals, garch::CsGarchParameters<T> p, const Start<T>& start,
+                            std::span<T> sigma2)
 {
+    p.intercept_shift = start.intercept_shift;
     std::vector<T> squared_residuals(residuals.size());
     std::vector<T> permanent(residuals.size());
     std::ranges::transform(residuals, squared_residuals.begin(), [](const T& e) { return e * e; });
-    garch::csgarch_variance<T>(squared_residuals, p, initial, sigma2, permanent);
+    garch::csgarch_variance<T>(squared_residuals, p, start.presample, sigma2, permanent);
 }
 
 // False when a shock moment is not finite.
 template <class T>
 bool power_variance(std::span<const T> residuals, std::span<const T> theta, const Layout& layout,
-                    const garch::Presample<T>& initial, std::span<T> sigma2)
+                    const Start<T>& start, std::span<T> sigma2)
 {
     std::array<T, kMaxOrder> moments{};
     garch::PowerGarchParameters<T> p = power_garch_parameters<T>(theta, layout, moments);
+    p.intercept_shift = start.intercept_shift;
     if (!shock_moments(theta, layout, std::span<T>(moments)))
     {
         return false;
     }
-    garch::power_garch_variance<T>(residuals, p, initial, sigma2);
+    garch::power_garch_variance<T>(residuals, p, start.presample, sigma2);
     return true;
 }
 
 // False when the point is outside the domain of the recursion.
 template <class T>
 bool fill_variance(std::span<const T> residuals, std::span<const T> theta, const Layout& layout,
-                   const garch::Presample<T>& initial, std::span<T> sigma2)
+                   const Start<T>& start, std::span<T> sigma2)
 {
     switch (layout.model)
     {
         case Model::SGarch:
-            garch::sgarch_variance<T>(residuals, sgarch_parameters(theta, layout), initial, sigma2);
+            garch::sgarch_variance<T>(residuals, shifted(sgarch_parameters(theta, layout), start), start.presample,
+                                      sigma2);
             return true;
         case Model::IGarch:
-            igarch_variance<T>(residuals, theta, layout, initial, sigma2);
+            igarch_variance<T>(residuals, theta, layout, start, sigma2);
             return true;
         case Model::EGarch:
-            garch::egarch_variance<T>(residuals, egarch_parameters(theta, layout), initial, sigma2);
+            garch::egarch_variance<T>(residuals, shifted(egarch_parameters(theta, layout), start), start.presample,
+                                      sigma2);
             return true;
         case Model::GjrGarch:
-            garch::gjrgarch_variance<T>(residuals, gjrgarch_parameters(theta, layout), initial, sigma2);
+            garch::gjrgarch_variance<T>(residuals, shifted(gjrgarch_parameters(theta, layout), start),
+                                        start.presample, sigma2);
             return true;
         case Model::CsGarch:
-            csgarch_from_residuals<T>(residuals, csgarch_parameters(theta, layout), initial, sigma2);
+            csgarch_from_residuals<T>(residuals, csgarch_parameters(theta, layout), start, sigma2);
             return true;
         case Model::ApArch:
         case Model::FGarchGarch:
@@ -314,7 +335,7 @@ bool fill_variance(std::span<const T> residuals, std::span<const T> theta, const
         case Model::FGarchApArch:
         case Model::FGarchGjrGarch:
         case Model::FGarchAllGarch:
-            return power_variance<T>(residuals, theta, layout, initial, sigma2);
+            return power_variance<T>(residuals, theta, layout, start, sigma2);
     }
     return false;
 }
@@ -423,13 +444,56 @@ struct Evaluation
     std::span<T> terms;
     VarInit var_init;
     const dist::ShapeParameters<T>& shape;
+    std::span<const T> intercept_shift;
 };
+
+// c_t = sum_k zeta_k v_t,k, or an empty span without vxreg.
+template <class T>
+std::span<const T> variance_shift(const Data& data, std::span<const T> theta, const Layout& layout,
+                                  std::vector<T>& storage)
+{
+    if (layout.vxreg == 0)
+    {
+        return {};
+    }
+    std::span<const T> zeta = block(theta, layout.vxreg_begin(), layout.vxreg);
+    storage.resize(data.r.size());
+    for (std::size_t t = 0; t < storage.size(); ++t)
+    {
+        T shift{0.0};
+        for (std::size_t k = 0; k < zeta.size(); ++k)
+        {
+            shift = shift + zeta[k] * data.variance.at(t, k);
+        }
+        storage[t] = shift;
+    }
+    return storage;
+}
+
+// sum_k zeta_k mean_t v_t,k.
+template <class T>
+T mean_shift(const RegressorMatrix& variance, std::span<const T> theta, const Layout& layout)
+{
+    std::span<const T> zeta = block(theta, layout.vxreg_begin(), layout.vxreg);
+    std::size_t rows = variance.values.size() / variance.columns;
+    T total{0.0};
+    for (std::size_t k = 0; k < variance.columns; ++k)
+    {
+        double sum = 0.0;
+        for (std::size_t t = 0; t < rows; ++t)
+        {
+            sum += variance.at(t, k);
+        }
+        total = total + zeta[k] * (sum / static_cast<double>(rows));
+    }
+    return total;
+}
 
 template <class T>
 T evaluate(const Evaluation<T>& e, std::span<const T> theta, const Layout& layout)
 {
-    garch::Presample<T> initial = presample<T>(e.data, e.residuals, theta, layout, e.var_init);
-    if (!fill_variance<T>(e.residuals, theta, layout, initial, e.sigma2))
+    Start<T> start{presample<T>(e.data, e.residuals, theta, layout, e.var_init), e.intercept_shift};
+    if (!fill_variance<T>(e.residuals, theta, layout, start, e.sigma2))
     {
         return T{kInvalidLoglik};
     }
@@ -438,8 +502,11 @@ T evaluate(const Evaluation<T>& e, std::span<const T> theta, const Layout& layou
 
 }
 
+namespace
+{
+
 template <class T>
-T targeted_omega(std::span<const T> residuals, std::span<const T> theta, const Layout& layout)
+T variance_target(std::span<const T> residuals, std::span<const T> theta, const Layout& layout)
 {
     using std::log;
     T slack = T{1.0} - persistence<T>(theta, layout);
@@ -454,6 +521,19 @@ T targeted_omega(std::span<const T> residuals, std::span<const T> theta, const L
     return mean_square(residuals) * slack;
 }
 
+}
+
+template <class T>
+T targeted_omega(std::span<const T> residuals, std::span<const T> theta, const Layout& layout,
+                 const RegressorMatrix& variance)
+{
+    if (variance.columns == 0)
+    {
+        return variance_target<T>(residuals, theta, layout);
+    }
+    return variance_target<T>(residuals, theta, layout) - mean_shift<T>(variance, theta, layout);
+}
+
 template <class T>
 T loglik(const Data& data, std::span<const T> theta, const Layout& layout, VarInit var_init,
          const LoglikOutputs<T>& out)
@@ -461,6 +541,8 @@ T loglik(const Data& data, std::span<const T> theta, const Layout& layout, VarIn
     std::span<const double> r = data.r;
     assert(data.mean.columns == static_cast<std::size_t>(layout.mxreg));
     assert(data.mean.values.size() == r.size() * data.mean.columns);
+    assert(data.variance.columns == static_cast<std::size_t>(layout.vxreg));
+    assert(data.variance.values.size() == r.size() * data.variance.columns);
     assert(theta.size() == layout.count());
     assert(out.terms.empty() || out.terms.size() == r.size());
     assert(out.residuals.empty() || out.residuals.size() == r.size());
@@ -475,26 +557,29 @@ T loglik(const Data& data, std::span<const T> theta, const Layout& layout, VarIn
     std::span<T> residuals = provided_or(out.residuals, residual_storage, r.size());
     std::span<T> sigma2 = provided_or(out.sigma2, variance_storage, r.size());
     mean_residuals<T>(data, theta, layout, residuals);
-    Evaluation<T> evaluation{data, residuals, sigma2, out.terms, var_init, shape};
+    std::vector<T> shift_storage;
+    Evaluation<T> evaluation{data,    residuals, sigma2, out.terms, var_init,
+                             shape,   variance_shift<T>(data, theta, layout, shift_storage)};
     if (!layout.variance_targeting)
     {
         return evaluate<T>(evaluation, theta, layout);
     }
     std::array<T, kMaxParameterCount> targeted;
     std::ranges::copy(theta, targeted.begin());
-    targeted[layout.omega()] = targeted_omega<T>(residuals, theta, layout);
+    targeted[layout.omega()] = targeted_omega<T>(residuals, theta, layout, data.variance);
     return evaluate<T>(evaluation, std::span<const T>(targeted).first(theta.size()), layout);
 }
 
-template double targeted_omega<double>(std::span<const double>, std::span<const double>, const Layout&);
+template double targeted_omega<double>(std::span<const double>, std::span<const double>, const Layout&,
+                                    const RegressorMatrix&);
 template ad::Dual<8> targeted_omega<ad::Dual<8>>(std::span<const ad::Dual<8>>, std::span<const ad::Dual<8>>,
-                                                 const Layout&);
+                                                 const Layout&, const RegressorMatrix&);
 template ad::Dual<16> targeted_omega<ad::Dual<16>>(std::span<const ad::Dual<16>>, std::span<const ad::Dual<16>>,
-                                                   const Layout&);
+                                                   const Layout&, const RegressorMatrix&);
 template ad::Dual<32> targeted_omega<ad::Dual<32>>(std::span<const ad::Dual<32>>, std::span<const ad::Dual<32>>,
-                                                   const Layout&);
+                                                   const Layout&, const RegressorMatrix&);
 template ad::Dual<kMaxParameterCount> targeted_omega<ad::Dual<kMaxParameterCount>>(std::span<const ad::Dual<kMaxParameterCount>>, std::span<const ad::Dual<kMaxParameterCount>>,
-                                                   const Layout&);
+                                                   const Layout&, const RegressorMatrix&);
 
 template double loglik<double>(const Data&, std::span<const double>, const Layout&, VarInit,
                                const LoglikOutputs<double>&);

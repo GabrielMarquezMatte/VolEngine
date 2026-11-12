@@ -17,6 +17,7 @@ struct CsGarchParameters
     std::span<const T> beta;
     T rho;
     T phi;
+    std::span<const T> intercept_shift{};
 };
 
 // sum_i weights_i (values_{t-i} - permanent_{t-i}). Before t = 0 both lags read the presample variance, so a lag
@@ -48,7 +49,7 @@ void csgarch_variance(std::span<const T> squared_residuals, const CsGarchParamet
     std::span<const T> phi(&p.phi, 1);
     for (std::size_t t = held; t < sigma2.size(); ++t)
     {
-        permanent[t] = p.omega + p.rho * lagged<T>(permanent, t, 1, presample.value) +
+        permanent[t] = intercept_at<T>(p.omega, p.intercept_shift, t) + p.rho * lagged<T>(permanent, t, 1, presample.value) +
                        lagged_deviations<T>(phi, squared_residuals, sigma2, t);
         sigma2[t] = permanent[t] + lagged_deviations<T>(p.alpha, squared_residuals, permanent, t) +
                     lagged_deviations<T>(p.beta, sigma2, permanent, t);

@@ -750,6 +750,207 @@ TEST(Likelihood, BackcastWithConstantRegressorColumnStaysFinite)
     EXPECT_TRUE(std::isfinite(ll));
 }
 
+// A variance regressor in [0.5, 1], so that a positive coefficient keeps every sigma2 positive.
+std::vector<double> variance_columns(std::size_t rows, std::size_t columns)
+{
+    std::vector<double> v(rows * columns);
+    for (std::size_t t = 0; t < rows; ++t)
+    {
+        for (std::size_t k = 0; k < columns; ++k)
+        {
+            double s = std::sin(0.23 * static_cast<double>((k + 1) * t) + static_cast<double>(k));
+            v[t * columns + k] = 0.5 + 0.5 * s * s;
+        }
+    }
+    return v;
+}
+
+// plain with the coefficients zeta put in the vxreg block.
+ModelPoint with_vxreg(const ModelPoint& plain, std::span<const double> zeta)
+{
+    ModelPoint result = plain;
+    result.layout.vxreg = static_cast<int>(zeta.size());
+    result.theta.insert(result.theta.begin() + static_cast<std::ptrdiff_t>(plain.layout.vxreg_begin()), zeta.begin(),
+                        zeta.end());
+    return result;
+}
+
+struct ShiftCase
+{
+    Model model;
+    std::vector<double> extra;
+};
+
+// A constant regressor v = 0.7 with zeta = 0.03 moves the intercept to omega + 0.03 * 0.7 in the scale of each
+// model, and nothing else.
+TEST(VarianceRegressors, ConstantRegressorShiftsOmega)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(42, 200);
+    std::vector<double> v(r.size(), 0.7);
+    const double zeta = 0.03;
+    const double shift = zeta * 0.7;
+    std::vector<ShiftCase> cases{{Model::SGarch, {}},
+                                 {Model::IGarch, {}},
+                                 {Model::EGarch, {0.05}},
+                                 {Model::GjrGarch, {0.05}},
+                                 {Model::ApArch, {0.3, 1.5}},
+                                 {Model::FGarchAllGarch, {0.3, 0.2, 1.5}}};
+    for (const ShiftCase& c : cases)
+    {
+        for (VarInit var_init : {VarInit::Sample, VarInit::Backcast})
+        {
+            SCOPED_TRACE(::testing::Message() << "model " << static_cast<int>(c.model) << ", var_init "
+                                            << static_cast<int>(var_init));
+            ModelPoint plain = model_point(c.model, Dist::Norm, c.extra);
+            ModelPoint with = with_vxreg(plain, std::vector<double>{zeta});
+            ModelPoint moved = plain;
+            moved.theta[plain.layout.omega()] += shift;
+            std::vector<double> sigma2(r.size());
+            std::vector<double> moved_sigma2(r.size());
+            double ll = loglik<double>(ve::model::Data{r, {}, {v, 1}}, with.theta, with.layout, var_init,
+                                       {.sigma2 = sigma2});
+            double moved_ll = loglik<double>(r, moved.theta, moved.layout, var_init, {.sigma2 = moved_sigma2});
+            ASSERT_TRUE(std::isfinite(moved_ll));
+            EXPECT_EQ(ll, moved_ll);
+            for (std::size_t t = 0; t < r.size(); ++t)
+            {
+                ASSERT_EQ(sigma2[t], moved_sigma2[t]) << "t = " << t;
+            }
+        }
+    }
+}
+
+// csGARCH: c_t enters q_t, and the presample q stays at omega / (1 - rho), not at (omega + c) / (1 - rho).
+TEST(VarianceRegressors, ConstantRegressorEntersTheCsGarchTrend)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(42, 50);
+    std::vector<double> v(r.size(), 0.7);
+    const double omega = 0.02;
+    const double alpha = 0.08;
+    const double beta = 0.85;
+    const double rho = 0.95;
+    const double phi = 0.03;
+    const double mu = 0.04;
+    const double shift = 0.03 * 0.7;
+    ModelPoint plain = model_point(Model::CsGarch, Dist::Norm, {rho, phi});
+    ModelPoint with = with_vxreg(plain, std::vector<double>{0.03});
+    std::vector<double> residuals(r.size());
+    std::vector<double> sigma2(r.size());
+    std::vector<double> moved_sigma2(r.size());
+    loglik<double>(ve::model::Data{r, {}, {v, 1}}, with.theta, with.layout, VarInit::Sample,
+                   {.residuals = residuals, .sigma2 = sigma2});
+    ModelPoint moved = plain;
+    moved.theta[plain.layout.omega()] += shift;
+    loglik<double>(r, moved.theta, moved.layout, VarInit::Sample, {.sigma2 = moved_sigma2});
+    double mean_square = 0.0;
+    for (double e : residuals)
+    {
+        mean_square += e * e / static_cast<double>(r.size());
+    }
+    EXPECT_NEAR(residuals[0], r[0] - mu, 1e-15);
+    double q = omega / (1.0 - rho);
+    double variance = mean_square + q;
+    EXPECT_NEAR(sigma2[0], variance, 1e-14);
+    for (std::size_t t = 1; t < r.size(); ++t)
+    {
+        double square = residuals[t - 1] * residuals[t - 1];
+        double next_q = omega + shift + rho * q + phi * (square - variance);
+        variance = next_q + alpha * (square - q) + beta * (variance - q);
+        q = next_q;
+        EXPECT_NEAR(sigma2[t], variance, 1e-14 * std::max(1.0, variance)) << "t = " << t;
+    }
+    EXPECT_GT(std::abs(sigma2.back() - moved_sigma2.back()), 1e-6);
+}
+
+TEST(VarianceRegressors, TimeVaryingHandCase)
+{
+    const std::vector<double> r{0.12, -0.05, 0.31, 0.02, -0.22};
+    std::vector<double> v(5);
+    for (std::size_t t = 0; t < v.size(); ++t)
+    {
+        v[t] = std::abs(std::cos(static_cast<double>(t) / 25.0));
+    }
+    const double mu = 0.03;
+    const double omega = 0.02;
+    const double alpha = 0.1;
+    const double beta = 0.8;
+    const double zeta = 0.05;
+    ModelPoint plain = model_point(Model::SGarch, Dist::Norm, {});
+    ModelPoint with = with_vxreg(plain, std::vector<double>{zeta});
+    with.theta = {mu, omega, alpha, beta, zeta};
+    std::vector<double> sigma2(5);
+    double ll = loglik<double>(ve::model::Data{r, {}, {v, 1}}, with.theta, with.layout, VarInit::Sample,
+                               {.sigma2 = sigma2});
+    double mean_square = 0.0;
+    for (double value : r)
+    {
+        mean_square += (value - mu) * (value - mu) / 5.0;
+    }
+    double expected = 0.0;
+    double variance = mean_square;
+    for (std::size_t t = 0; t < r.size(); ++t)
+    {
+        double e = r[t] - mu;
+        if (t > 0)
+        {
+            double previous = r[t - 1] - mu;
+            variance = omega + zeta * v[t] + alpha * previous * previous + beta * variance;
+        }
+        EXPECT_NEAR(sigma2[t], variance, 1e-14 * std::max(1.0, variance)) << "t = " << t;
+        expected += -0.5 * (std::log(2 * std::numbers::pi) + std::log(variance) + e * e / variance);
+    }
+    EXPECT_NEAR(ll, expected, 1e-14 * std::abs(expected));
+}
+
+// Under variance targeting, omega = target - sum_k zeta_k mean(v_k): the targeted likelihood is the plain one at that
+// omega.
+TEST(VarianceRegressors, TargetingSubtractsRegressorMeans)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(42, 200);
+    std::vector<double> v = variance_columns(r.size(), 1);
+    const double zeta = 0.03;
+    const double v_mean = mean_of(v);
+    for (Model model : {Model::SGarch, Model::EGarch})
+    {
+        SCOPED_TRACE(::testing::Message() << "model " << static_cast<int>(model));
+        std::vector<double> extra = model == Model::EGarch ? std::vector<double>{0.05} : std::vector<double>{};
+        ModelPoint with = with_vxreg(model_point(model, Dist::Norm, extra), std::vector<double>{zeta});
+        ModelPoint targeted = with;
+        targeted.layout.variance_targeting = true;
+        ve::model::Data data{r, {}, {v, 1}};
+        std::vector<double> residuals(r.size());
+        std::vector<double> sigma2(r.size());
+        double ll = loglik<double>(data, targeted.theta, targeted.layout, VarInit::Sample,
+                                   {.residuals = residuals, .sigma2 = sigma2});
+        double m2 = mean_square_of(residuals);
+        double target = model == Model::EGarch ? std::log(m2) * (1.0 - 0.85) : m2 * (1.0 - 0.08 - 0.85);
+        double omega = target - zeta * v_mean;
+        EXPECT_NEAR(ve::model::targeted_omega<double>(residuals, targeted.theta, targeted.layout, data.variance),
+                    omega, 1e-15);
+        ModelPoint explicit_omega = with;
+        explicit_omega.theta[with.layout.omega()] = omega;
+        std::vector<double> reference_sigma2(r.size());
+        double reference = loglik<double>(data, explicit_omega.theta, explicit_omega.layout, VarInit::Sample,
+                                          {.sigma2 = reference_sigma2});
+        ASSERT_TRUE(std::isfinite(reference));
+        EXPECT_NEAR(ll, reference, 1e-14 * std::abs(reference));
+        for (std::size_t t = 0; t < r.size(); ++t)
+        {
+            ASSERT_NEAR(sigma2[t], reference_sigma2[t], 1e-14 * reference_sigma2[t]) << "t = " << t;
+        }
+    }
+}
+
+TEST(VarianceRegressors, NonPositiveVarianceIsInvalid)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(42, 200);
+    std::vector<double> v = variance_columns(r.size(), 1);
+    ModelPoint with = with_vxreg(model_point(Model::SGarch, Dist::Norm, {}), std::vector<double>{-10.0});
+    double ll = 0.0;
+    EXPECT_NO_THROW(ll = loglik<double>(ve::model::Data{r, {}, {v, 1}}, with.theta, with.layout, VarInit::Sample, {}));
+    EXPECT_EQ(ll, -std::numeric_limits<double>::infinity());
+}
+
 struct Orders
 {
     int arch;
@@ -969,7 +1170,7 @@ INSTANTIATE_TEST_SUITE_P(Targeted, LikelihoodGrid,
                                             ::testing::Values(true), ::testing::Values(true)),
                          grid_name);
 
-using RegressorCase = std::tuple<Model, ArmaOrders, Dist, VarInit, int>;
+using RegressorCase = std::tuple<Model, ArmaOrders, Dist, VarInit, int, int, bool>;
 
 class MeanRegressorGrid : public ::testing::TestWithParam<RegressorCase>
 {
@@ -978,32 +1179,40 @@ protected:
     std::vector<double> r = ve::testing::simulate_garch_series(11, kLength);
     Layout layout = layout_of_case();
     std::vector<double> x = regressor_columns(kLength, static_cast<std::size_t>(layout.mxreg));
-    ve::model::Data data{r, {x, static_cast<std::size_t>(layout.mxreg)}};
+    std::vector<double> v = variance_columns(kLength, static_cast<std::size_t>(layout.vxreg));
+    ve::model::Data data{r, {x, static_cast<std::size_t>(layout.mxreg)}, {v, static_cast<std::size_t>(layout.vxreg)}};
     VarInit var_init = std::get<VarInit>(GetParam());
     std::vector<double> theta = theta_of_case();
 
     Layout layout_of_case() const
     {
-        auto [model, arma, dist, init, mxreg] = GetParam();
+        auto [model, arma, dist, init, mxreg, vxreg, targeting] = GetParam();
         return ve::model::layout_of({.model = model,
                                      .ar = arma.ar,
                                      .ma = arma.ma,
                                      .dist = dist,
-                                     .mxreg = mxreg});
+                                     .variance_targeting = targeting,
+                                     .mxreg = mxreg,
+                                     .vxreg = vxreg});
     }
 
-    // The point of the same grid without regressors, with the coefficients 0.3, -0.2 put in their block.
+    // The point of the same grid without regressors, with the coefficients 0.3, -0.2 put in the mxreg block and
+    // 0.01 in the vxreg block.
     std::vector<double> theta_of_case() const
     {
         Layout plain = layout;
         plain.mxreg = 0;
+        plain.vxreg = 0;
         std::vector<double> base = grid_theta(r, plain);
         std::vector<double> result(base.begin(), base.begin() + static_cast<std::ptrdiff_t>(layout.mxreg_begin()));
         for (int k = 0; k < layout.mxreg; ++k)
         {
             result.push_back(k == 0 ? 0.3 : -0.2);
         }
-        result.insert(result.end(), base.begin() + static_cast<std::ptrdiff_t>(layout.mxreg_begin()), base.end());
+        result.insert(result.end(), base.begin() + static_cast<std::ptrdiff_t>(layout.mxreg_begin()),
+                      base.begin() + static_cast<std::ptrdiff_t>(plain.vxreg_begin()));
+        result.insert(result.end(), static_cast<std::size_t>(layout.vxreg), 0.01);
+        result.insert(result.end(), base.begin() + static_cast<std::ptrdiff_t>(plain.vxreg_begin()), base.end());
         return result;
     }
 
@@ -1064,12 +1273,13 @@ TEST_P(MeanRegressorGrid, DoubleAndDualAgreeOnValue)
 
 std::string regressor_name(const ::testing::TestParamInfo<RegressorCase>& info)
 {
-    auto [model, arma, dist, var_init, mxreg] = info.param;
+    auto [model, arma, dist, var_init, mxreg, vxreg, targeting] = info.param;
     std::string models[] = {"SGarch", "EGarch", "GjrGarch", "ApArch", "IGarch", "CsGarch"};
     std::string name = models[static_cast<int>(model)] + "Arma" + std::to_string(arma.ar) + std::to_string(arma.ma);
     name += dist == Dist::Norm ? "Norm" : "Std";
     name += var_init == VarInit::Sample ? "Sample" : "Backcast";
-    return name + "Mxreg" + std::to_string(mxreg);
+    name += "Mxreg" + std::to_string(mxreg) + "Vxreg" + std::to_string(vxreg);
+    return name + (targeting ? "Targeted" : "");
 }
 
 INSTANTIATE_TEST_SUITE_P(Regressors, MeanRegressorGrid,
@@ -1078,7 +1288,24 @@ INSTANTIATE_TEST_SUITE_P(Regressors, MeanRegressorGrid,
                                             ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1}),
                                             ::testing::Values(Dist::Norm, Dist::Std),
                                             ::testing::Values(VarInit::Sample, VarInit::Backcast),
-                                            ::testing::Values(0, 2)),
+                                            ::testing::Values(2), ::testing::Values(0, 1), ::testing::Values(false)),
+                         regressor_name);
+
+INSTANTIATE_TEST_SUITE_P(VarianceOnly, MeanRegressorGrid,
+                         ::testing::Combine(::testing::Values(Model::SGarch, Model::EGarch, Model::ApArch,
+                                                              Model::CsGarch),
+                                            ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1}),
+                                            ::testing::Values(Dist::Norm, Dist::Std),
+                                            ::testing::Values(VarInit::Sample, VarInit::Backcast),
+                                            ::testing::Values(0), ::testing::Values(1), ::testing::Values(false)),
+                         regressor_name);
+
+INSTANTIATE_TEST_SUITE_P(TargetedRegressors, MeanRegressorGrid,
+                         ::testing::Combine(::testing::Values(Model::SGarch, Model::EGarch, Model::ApArch),
+                                            ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1}),
+                                            ::testing::Values(Dist::Norm, Dist::Std),
+                                            ::testing::Values(VarInit::Sample, VarInit::Backcast),
+                                            ::testing::Values(0, 2), ::testing::Values(1), ::testing::Values(true)),
                          regressor_name);
 
 }

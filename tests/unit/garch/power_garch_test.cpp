@@ -1,6 +1,7 @@
 #include "garch/power_garch.hpp"
 
 #include <cmath>
+#include <limits>
 #include <gtest/gtest.h>
 #include <vector>
 
@@ -118,6 +119,25 @@ TEST(PowerGarch, BackcastPresample)
         0.1 + 0.05 * shock(-0.1, sigma_power_0, 0.3, 0.2) + 0.03 * 0.9 * presample_power + 0.8 * sigma_power_0;
     EXPECT_NEAR(std::pow(sigma2[0], 0.75), sigma_power_0, 1e-14);
     EXPECT_NEAR(std::pow(sigma2[1], 0.75), sigma_power_1, 1e-14);
+}
+
+TEST(PowerGarch, InterceptShiftEntersEveryStepButTheHeldOnes)
+{
+    std::vector<double> residuals{0.1, -0.2, 0.3};
+    std::vector<double> alpha{0.1};
+    std::vector<double> beta{0.8};
+    std::vector<double> gamma{0.3};
+    std::vector<double> moments{1.0};
+    std::vector<double> shift{std::numeric_limits<double>::quiet_NaN(), 0.03, -0.02};
+    std::vector<double> sigma2(3);
+    double mean_square = 0.14 / 3.0;
+    ve::garch::power_garch_variance<double>(residuals, {0.1, alpha, beta, gamma, {}, 1.5, moments, 0.0, true, shift},
+                                            {mean_square, 1}, sigma2);
+    double sigma_power_1 = 0.1 + 0.03 + 0.1 * std::pow(0.1 - 0.3 * 0.1, 1.5) + 0.8 * std::pow(mean_square, 0.75);
+    double sigma_power_2 = 0.1 - 0.02 + 0.1 * std::pow(0.2 + 0.3 * 0.2, 1.5) + 0.8 * sigma_power_1;
+    EXPECT_NEAR(sigma2[0], mean_square, 1e-15);
+    EXPECT_NEAR(sigma2[1], std::pow(sigma_power_1, 2.0 / 1.5), 1e-14);
+    EXPECT_NEAR(sigma2[2], std::pow(sigma_power_2, 2.0 / 1.5), 1e-14);
 }
 
 }
