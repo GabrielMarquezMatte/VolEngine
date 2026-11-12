@@ -112,7 +112,8 @@ double five_halves_recurrence(double order, double x)
     return std::log(below + 2.0 * (order - 1.0) / x * above);
 }
 
-// Boost takes K_v for v within ~1e-4 x of 5/2 from a truncated Hankel series, exact at 5/2 only.
+// Boost takes K_v for v within ~7e-6 x of 5/2 (its band in long double) from a truncated Hankel series,
+// exact at 5/2 only; log_bessel_k recurs within ~4.9e-5 x of it.
 TEST(Bessel, SmoothAroundFiveHalves)
 {
     for (double x : {0.7, 2.0, 10.0, 100.0, 650.0})
