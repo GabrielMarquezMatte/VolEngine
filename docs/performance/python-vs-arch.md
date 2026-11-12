@@ -33,6 +33,9 @@ with the same specs: constant mean, sGARCH(p,q) and normal, Student-t or GED inn
 
 Notes:
 
+- Not measured yet: `python/benchmarks/bench_vs_arch.py` also times sGARCH(1,1) with `sstd` innovations against
+  `arch`'s `skewt` (the same family; the log-likelihoods are compared, not the parameterizations). The tables
+  above predate that row and were not regenerated, so they show no number for it.
 - The optimizers differ (L-BFGS in VolEngine, SLSQP in `arch`), so the times include different numbers of
   iterations. The second table shows that both reach the same optimum: the largest relative difference of the
   log-likelihood over the 20 series is below 1e-4 for every spec (the script fails otherwise).

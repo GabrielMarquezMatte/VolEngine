@@ -42,6 +42,19 @@ not been run on the machine of this page yet, so this page publishes no number f
 record the profile of `BM_TccGridAllModels` and `BM_FitOne/fgarch_allgarch11_norm` and the assembly of the new
 recursions here. The tables below are those of plan 2a and describe sGARCH only.
 
+## Plan 2c cases: not measured yet
+
+The skewed distributions have their own cases: `BM_Loglik/<series>/{double,dual}` and `BM_FitOne/<series>` for
+`gjrgarch11_sstd`, `aparch11_sged`, `egarch11_jsu`, `sgarch11_nig` and `sgarch11_ghyp` (T = 5000; the ghyp case
+fits the nig series, since the C++ helper does not simulate ghyp); `BM_LogBesselK/{fixed_order,free_order}`, the
+double-order overload at order -1 (nig) and the two-`Dual` overload at the ghyp order 1/2, over 5000 arguments
+alpha * sqrt(delta^2 + (z - mu)^2) of the nig series at its true parameters, with z standardised by the sample
+moments; and `BM_TccGridFull/threads:hw`, the TCC panel over 14 models, orders (1..3, 1..3), ARMA (0,0) and (1,1)
+and the 8 distributions: 40320 fits in one `ve_fit_batch` call. None of them has been run on the machine of this
+page, so this page publishes no number for them. The run is also to record the profile of `BM_TccGridFull` and of
+`BM_FitOne` for nig and ghyp, to decide whether a Bessel K of our own or an analytic derivative in the ghyp
+lambda is worth it. The tables below are those of plan 2a and describe sGARCH only.
+
 ## Cost of the log-likelihood and of its gradient by AD
 
 `BM_Loglik/<spec>/double` is one evaluation of `loglik<double>`, `BM_Loglik/<spec>/dual` one of `loglik<Dual<N>>`

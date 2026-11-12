@@ -22,7 +22,7 @@ from numpy.typing import NDArray
 
 import volengine as ve
 
-ArchDist = Literal["normal", "t", "ged"]
+ArchDist = Literal["normal", "t", "ged", "skewt"]
 ArchVolatility = Literal["GARCH", "EGARCH"]
 SERIES_COUNT = 20
 LENGTH = 5000
@@ -37,6 +37,9 @@ ARCH_VOLATILITIES: dict[str, tuple[ArchVolatility, int]] = {
 }
 MODEL_NAMES = {"sgarch": "sGARCH", "gjrgarch": "gjrGARCH", "egarch": "eGARCH"}
 DISTRIBUTIONS: tuple[tuple[str, ArchDist], ...] = (("norm", "normal"), ("std", "t"), ("ged", "ged"))
+# Hansen's skew-t is the same family as sstd, so the log-likelihoods are comparable; the parameterizations differ
+# and are not compared.
+SKEWED_CASES: tuple[tuple[str, int, int, str, ArchDist], ...] = (("sgarch", 1, 1, "sstd", "skewt"),)
 LOGLIK_TOLERANCE = 1e-4
 
 
@@ -47,7 +50,8 @@ the ratios compare runs on that machine only and say nothing about another one.
 
 The matched-work rows fit the same simulated series (GARCH(1,1) with Student-t(8) innovations, `default_rng(7)`)
 with the same specs: constant mean, sGARCH(p,q), gjrGARCH(1,1) and eGARCH(1,1), each with normal, Student-t or
-GED innovations. `volengine` runs with `Context(threads=1)` and `var_init="backcast"`, the `arch` convention;
+GED innovations, plus sGARCH(1,1) with skewed Student-t innovations (`sstd` against `arch`'s `skewt`, the same
+family with another parameterization). `volengine` runs with `Context(threads=1)` and `var_init="backcast"`, the `arch` convention;
 `arch` runs with `rescale=False` and `fit(disp="off")`, one fit after the other. Each timing is the total wall
 time of the fits it covers.
 """
@@ -77,9 +81,10 @@ class Case(NamedTuple):
 
 
 def cases(model: str) -> list[Case]:
-    return [
+    symmetric = [
         Case(model, p, q, dist, arch_dist) for p, q in MODEL_ORDERS[model] for dist, arch_dist in DISTRIBUTIONS
     ]
+    return symmetric + [Case(*case) for case in SKEWED_CASES if case[0] == model]
 
 
 def simulate() -> NDArray[np.float64]:
