@@ -3,9 +3,12 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
+#include <thread>
+#include <utility>
 #include <vector>
 
 namespace
@@ -165,6 +168,102 @@ TEST(Cdf, SortedMatchesPointwiseOnDenseSamples)
     }
 }
 
+
+std::vector<CdfCase> quantile_cases()
+{
+    std::vector<CdfCase> cases(kCases.begin(), kCases.end());
+    cases.push_back({Dist::Std, {.shape = 8.0}, {}});
+    cases.push_back({Dist::Ged, {.shape = 0.6}, {}});
+    cases.push_back({Dist::Ged, {.shape = 200.0}, {}});
+    cases.push_back({Dist::Sstd, {.skew = 1.4, .shape = 8.0}, {}});
+    cases.push_back({Dist::Sged, {.skew = 0.7, .shape = 1.5}, {}});
+    cases.push_back({Dist::Nig, {.skew = -0.4, .shape = 1.5}, {}});
+    cases.push_back({Dist::Ghyp, {.skew = 0.3, .shape = 2.0, .ghlambda = -1.5}, {}});
+    cases.push_back({Dist::Ghyp, {.skew = 0.3, .shape = 2.0, .ghlambda = 2.0}, {}});
+    cases.push_back({Dist::Jsu, {.skew = 0.8, .shape = 1.5}, {}});
+    return cases;
+}
+
+constexpr std::array<double, 9> kProbabilities{1e-12, 1e-6, 0.01, 0.3, 0.5, 0.7, 0.99, 1.0 - 1e-6, 1.0 - 1e-12};
+
+TEST(DistQuantile, InvertsTheCdf)
+{
+    for (const CdfCase& sample : quantile_cases())
+    {
+        for (double u : kProbabilities)
+        {
+            double z = ve::dist::quantile(sample.dist, sample.parameters, u);
+            double back = ve::dist::cdf(sample.dist, sample.parameters, z);
+            EXPECT_NEAR(back, u, 1e-12 * std::min(u, 1.0 - u) + 1e-15)
+                << static_cast<int>(sample.dist) << " shape " << sample.parameters.shape << " u " << u;
+        }
+    }
+}
+
+TEST(DistQuantile, KnownValues)
+{
+    EXPECT_NEAR(ve::dist::quantile(Dist::Norm, {}, 0.975), 1.959963984540054, 1e-14);
+    // t_5^-1(0.975) = 2.570581835636314, standardized by sqrt(3 / 5).
+    EXPECT_NEAR(ve::dist::quantile(Dist::Std, {.shape = 5.0}, 0.975), 2.570581835636314 * std::sqrt(3.0 / 5.0), 1e-14);
+    for (const CdfCase& sample : {CdfCase{Dist::Norm, {}, {}}, CdfCase{Dist::Std, {.shape = 6.0}, {}},
+                                  CdfCase{Dist::Ged, {.shape = 1.4}, {}},
+                                  CdfCase{Dist::Nig, {.skew = 0.0, .shape = 1.2}, {}},
+                                  CdfCase{Dist::Ghyp, {.skew = 0.0, .shape = 2.0, .ghlambda = -1.5}, {}},
+                                  CdfCase{Dist::Jsu, {.skew = 0.0, .shape = 1.8}, {}}})
+    {
+        EXPECT_NEAR(ve::dist::quantile(sample.dist, sample.parameters, 0.5), 0.0, 1e-12) << static_cast<int>(sample.dist);
+    }
+    EXPECT_EQ(ve::dist::quantile(Dist::Norm, {}, 0.5), 0.0);
+    EXPECT_EQ(ve::dist::quantile(Dist::Std, {.shape = 6.0}, 0.5), 0.0);
+    EXPECT_EQ(ve::dist::quantile(Dist::Ged, {.shape = 1.4}, 0.5), 0.0);
+}
+
+TEST(DistQuantile, Monotone)
+{
+    for (const CdfCase& sample : quantile_cases())
+    {
+        double previous = -std::numeric_limits<double>::infinity();
+        for (std::size_t i = 1; i <= 1000; ++i)
+        {
+            double u = static_cast<double>(i) / 1001.0;
+            double z = ve::dist::quantile(sample.dist, sample.parameters, u);
+            EXPECT_GT(z, previous) << static_cast<int>(sample.dist) << " shape " << sample.parameters.shape << " u " << u;
+            previous = z;
+        }
+    }
+}
+
+TEST(DistQuantile, OutsideTheDomain)
+{
+    EXPECT_TRUE(std::isnan(ve::dist::quantile(Dist::Std, {.shape = 2.0}, 0.3)));
+    EXPECT_TRUE(std::isnan(ve::dist::quantile(Dist::Norm, {}, -0.1)));
+    EXPECT_TRUE(std::isnan(ve::dist::quantile(Dist::Norm, {}, std::numeric_limits<double>::quiet_NaN())));
+    EXPECT_EQ(ve::dist::quantile(Dist::Norm, {}, 0.0), -std::numeric_limits<double>::infinity());
+    EXPECT_EQ(ve::dist::quantile(Dist::Norm, {}, 1.0), std::numeric_limits<double>::infinity());
+}
+
+TEST(DistQuantile, SameBitsOnAnyThread)
+{
+    const std::array<std::pair<Dist, ve::dist::ShapeParameters<double>>, 2> cases{
+        {{Dist::Std, {.shape = 5.311179277998689}}, {Dist::Sged, {.skew = 0.8, .shape = 1.6}}}};
+    for (const auto& [dist, parameters] : cases)
+    {
+        std::vector<double> main_thread;
+        std::vector<double> other;
+        for (double u : kProbabilities)
+        {
+            main_thread.push_back(ve::dist::quantile(dist, parameters, u));
+        }
+        std::thread worker([&] {
+            for (double u : kProbabilities)
+            {
+                other.push_back(ve::dist::quantile(dist, parameters, u));
+            }
+        });
+        worker.join();
+        EXPECT_EQ(main_thread, other) << static_cast<int>(dist);
+    }
+}
 }
 
 #if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
