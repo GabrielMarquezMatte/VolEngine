@@ -31,7 +31,8 @@ them needs neither R nor `arch`. Series names are unique across the data files.
 {"id": str, "series": str, "model": str, "submodel": str (fgarch only), "p": int, "q": int, "arma": [m, n],
  "include_mean": bool, "dist": "norm" | "std" | "ged" | "sstd" | "sged" | "nig" | "ghyp" | "jsu",
  "fixed": {name: float} (optional), "variance_targeting": bool (optional),
- "mxreg": [column] (optional), "vxreg": [column] (optional), "archm": 1 | 2 (optional), "oracles": ["rugarch", "arch"]}
+ "mxreg": [column] (optional), "vxreg": [column] (optional), "archm": 1 | 2 (optional), "arfima": true (optional),
+ "oracles": ["rugarch", "arch"]}
 ```
 
 `model` and `submodel` are the names of VolEngine's Python `Spec` (`"sgarch"`, `"egarch"`, `"gjrgarch"`,
@@ -47,7 +48,8 @@ stacked, in order, as `ctx.fit(..., mxreg=X, vxreg=V)`; `rugarch`'s `mean.model$
 `variance.model$external.regressors`; `arch`'s `x` with `mean="LS"`, which includes the constant, so `include_mean`
 stays true). `archm` is the power p of ARCH-in-mean (`Spec(archm=p)`; `rugarch`'s `archm = TRUE, archpow = p`). `arch` has
 neither `vxreg` nor `archm`, and covers `mxreg` only for a case without ARMA terms: its `ARX` applies the AR to
-y, not to y minus the regressors' mean.
+y, not to y minus the regressors' mean. `arfima` is the ARFIMA mean (`Spec(arfima=True)`; `rugarch`'s `arfima = TRUE`).
+`arch` has no ARFIMA, and the ARFIMA cases name `rugarch` only.
 A case with every parameter in `fixed` is an *evaluation*: nothing is estimated, `oracle_rugarch.R` runs
 `ugarchfilter` and `oracle_arch.py` runs `fix()` at the fixed point. `arch` has no variance targeting and takes
 only evaluation cases among those with `fixed`.
@@ -62,7 +64,7 @@ only evaluation cases among those with `fixed`.
 ```
 
 `cases` lists the ids of the cases that name the oracle, in `cases.json` order, and `results` follows it.
-Parameter names follow `rugarch`, which VolEngine uses: `mu`, `ar1..`, `ma1..`, `archm`, `mxreg1..`, `omega`,
+Parameter names follow `rugarch`, which VolEngine uses: `mu`, `ar1..`, `ma1..`, `arfima` or `archm`, `mxreg1..`, `omega`,
 `alpha1..`, `beta1..`, `gamma1..`, `eta11..`, `eta21..`, `delta` or `lambda`, `vxreg1..`, `skew`, `shape`, `ghlambda`,
 in that order; `oracle_arch.py` renames `Const`, `x0..` (its `LS` mean), `alpha[i]`, `gamma[i]`, `beta[j]`, `nu` and
 the skew-t's `eta` and `lambda` and reorders them. The skew-t `lambda` (Hansen's skewness) becomes `skew` = ξ = √((1 + λ)/(1 − λ)), with its standard errors by
@@ -101,7 +103,8 @@ python/.venv/Scripts/python tests/reference/oracle_arch.py
 
 The regressor and ARCH-in-mean cases (`mxreg`, `vxreg` or `archm` in `cases.json`) are fitted with a few extra
 settings in `oracle_rugarch.R`, each explained in `docs/guide/validation.md`: `start.pars` (`archm` and every `vxreg`
-start at 0.01), `hess.d = 1e-2` and `solver.control = list(tol = 1e-10)`.
+start at 0.01), `hess.d = 1e-2` and `solver.control = list(tol = 1e-10)`. The ARFIMA cases (`arfima` in `cases.json`)
+take `hess.d = 1e-2` only.
 
 The scripts stop with an error if an oracle reports non-convergence or an estimate on the boundary: a weight
 ≤ 1e-4 (the non-negative entries that sum to the persistence P: α and β; β alone in eGARCH; (1 − π)α, β, π(α + γ)
@@ -124,4 +127,6 @@ regenerated for plan 2d on the plan-2b machine, and for the plan-2e cases: `gene
 digits of the earlier CSV files and was run again only to produce `grid_2e.csv` and `regressors_2e.csv`, the `arch` rerun
 changed three earlier results in their robust standard errors (to 2e-9) and `oracle_rugarch.R` was run for the new
 cases only, its results appended to the committed fixture. sged's `hess.d = 1e-4` was chosen
-against the committed fixtures and may need re-tuning on another machine or R version.
+against the committed fixtures and may need re-tuning on another machine or R version. The plan-2f ARFIMA cases
+were added the same way: only `grid_2f.csv` was kept from the generator run, and `oracle_rugarch.R` was run on a copy
+of `cases.json` holding the ARFIMA cases only, its results appended to the committed fixture.

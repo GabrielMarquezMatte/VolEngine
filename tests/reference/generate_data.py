@@ -5,7 +5,8 @@
 `data/grid_2b.csv` holds one T = 3000 series per GARCH variant, drawn in order from one stream (seed 20261112);
 `data/grid_2c.csv` holds one T = 3000 series per skewed distribution, drawn in order from one stream (seed 20261113);
 `data/regressors_2e.csv` holds the regressors x1, x2, v1 and `data/grid_2e.csv` one T = 3000 series per regressor or
-ARCH-in-mean process, all from one stream (seed 20261114): the x2 draws first, then the shocks of each series.
+ARCH-in-mean process, all from one stream (seed 20261114): the x2 draws first, then the shocks of each series;
+`data/grid_2f.csv` holds one T = 3000 series per ARFIMA process, drawn in order from one stream (seed 20261115).
 """
 
 import csv
@@ -28,6 +29,7 @@ VARIANT_BURN_IN = 1000
 VARIANT_MU = 0.05
 SKEWED_SEED = 20261113
 REGRESSOR_SEED = 20261114
+FRACTIONAL_SEED = 20261115
 
 Shocks = Callable[[np.random.Generator, int], NDArray[np.float64]]
 # (sigma2, q): the conditional variance and the csGARCH permanent component (unused by the other models).
@@ -360,6 +362,43 @@ def simulate_2e(process: Process2e, shocks: NDArray[np.float64], regressors: Reg
     return returns[VARIANT_BURN_IN:]
 
 
+class Process2f(NamedTuple):
+    """r_t = mu + d_t, with d_t = ar d_(t-1) + e_t and e_t = sum_{k=0}^{t} psi_k eps_(t-k) the truncated (1 - L)^(-d) of
+    the GARCH shocks eps_t = sigma_t z_t: psi_0 = 1, psi_k = psi_(k-1) (k - 1 + d) / k."""
+
+    name: str
+    mu: float
+    ar: float
+    d: float
+    step: Step
+    shocks: Shocks
+
+
+PROCESSES_2F = (
+    Process2f("arfima_sgarch11_norm", 0.05, 0.0, 0.3, gjrgarch_step(0.02, 0.08, 0.0, 0.9), normal_shocks),
+    Process2f("arfima1_gjrgarch11_std", 0.02, 0.2, 0.25, gjrgarch_step(0.02, 0.03, 0.09, 0.9), student_shocks(6.0)),
+)
+
+
+def simulate_2f(process: Process2f, shocks: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Start at sigma2 = 1 and d = 0, truncate the integration at the first draw and drop the first VARIANT_BURN_IN
+    observations."""
+    state: State = (1.0, 1.0)
+    garch = np.empty(shocks.size)
+    for t, z in enumerate(shocks):
+        garch[t] = math.sqrt(state[0]) * z
+        state = process.step(state, float(z))
+    k = np.arange(1, shocks.size, dtype=np.float64)
+    psi = np.concatenate(([1.0], np.cumprod((k - 1.0 + process.d) / k)))
+    integrated = np.convolve(psi, garch)[: shocks.size]
+    returns = np.empty(shocks.size)
+    deviation = 0.0
+    for t, e in enumerate(integrated):
+        deviation = process.ar * deviation + e
+        returns[t] = process.mu + deviation
+    return returns[VARIANT_BURN_IN:]
+
+
 def lagged(values: list[float], lag: int, presample: float) -> float:
     if lag > len(values):
         return presample
@@ -447,6 +486,9 @@ def main() -> None:
     write_csv(DATA / "grid_2e.csv", series_2e)
     kept = {name: getattr(regressors, name)[VARIANT_BURN_IN:] for name in Regressors._fields}
     write_csv(DATA / "regressors_2e.csv", kept)
+    rng = np.random.default_rng(FRACTIONAL_SEED)
+    series_2f = {p.name: simulate_2f(p, p.shocks(rng, length)) for p in PROCESSES_2F}
+    write_csv(DATA / "grid_2f.csv", series_2f)
 
 
 if __name__ == "__main__":

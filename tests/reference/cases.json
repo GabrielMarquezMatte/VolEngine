@@ -101,5 +101,13 @@
   {"id": "sgarch11_vx_std/egarch11_vx_std", "series": "sgarch11_vx_std", "model": "egarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "std", "vxreg": ["v1"], "oracles": ["rugarch"]},
   {"id": "arx_sgarch11_norm/arma11_sgarch11_archm_mx_norm", "series": "arx_sgarch11_norm", "model": "sgarch", "p": 1, "q": 1, "arma": [1, 1], "include_mean": true, "dist": "norm", "mxreg": ["x1", "x2"], "archm": 1, "oracles": ["rugarch"]},
   {"id": "sgarch11_vx_std/sgarch11_vx_std_vt", "series": "sgarch11_vx_std", "model": "sgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "std", "vxreg": ["v1"], "variance_targeting": true, "oracles": ["rugarch"]},
-  {"id": "arx_sgarch11_norm/sgarch11_ls_norm", "series": "arx_sgarch11_norm", "model": "sgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "mxreg": ["x1", "x2"], "oracles": ["arch"]}
+  {"id": "arx_sgarch11_norm/sgarch11_ls_norm", "series": "arx_sgarch11_norm", "model": "sgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "mxreg": ["x1", "x2"], "oracles": ["arch"]},
+  {"id": "arfima_sgarch11_norm/arfima_sgarch11_norm", "series": "arfima_sgarch11_norm", "model": "sgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "arfima": true, "oracles": ["rugarch"]},
+  {"id": "arfima1_gjrgarch11_std/arfima1_gjrgarch11_std", "series": "arfima1_gjrgarch11_std", "model": "gjrgarch", "p": 1, "q": 1, "arma": [1, 0], "include_mean": true, "dist": "std", "arfima": true, "oracles": ["rugarch"]},
+  {"id": "arfima_sgarch11_norm/arfima_egarch11_norm", "series": "arfima_sgarch11_norm", "model": "egarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "arfima": true, "oracles": ["rugarch"]},
+  {"id": "arfima_sgarch11_norm/arfima_aparch11_norm", "series": "arfima_sgarch11_norm", "model": "aparch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "arfima": true, "oracles": ["rugarch"]},
+  {"id": "arfima_sgarch11_norm/arfima_csgarch11_norm", "series": "arfima_sgarch11_norm", "model": "csgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "arfima": true, "oracles": ["rugarch"]},
+  {"id": "arfima1_gjrgarch11_std/arfima11_gjrgarch11_std", "series": "arfima1_gjrgarch11_std", "model": "gjrgarch", "p": 1, "q": 1, "arma": [1, 1], "include_mean": true, "dist": "std", "arfima": true, "oracles": ["rugarch"]},
+  {"id": "arfima_sgarch11_norm/arfima_sgarch11_mx_norm", "series": "arfima_sgarch11_norm", "model": "sgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "arfima": true, "mxreg": ["x1"], "oracles": ["rugarch"]},
+  {"id": "arfima_sgarch11_norm/arfima_sgarch11_norm_vt", "series": "arfima_sgarch11_norm", "model": "sgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "arfima": true, "variance_targeting": true, "oracles": ["rugarch"]}
 ]
