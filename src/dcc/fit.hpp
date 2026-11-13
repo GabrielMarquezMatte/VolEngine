@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/context.hpp"
 #include "core/spec.hpp"
 #include "dcc/panel.hpp"
 #include "dcc/spec.hpp"
@@ -8,6 +9,8 @@
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -47,5 +50,42 @@ struct DccFitResult
 // With nothing to estimate the spec is evaluated at its fixed values. The caller checked
 // spec_problem(spec, panel->m).
 DccFitResult fit_dcc(std::shared_ptr<const StandardizedPanel> panel, const DccSpec& spec, const FitConfig& config);
+
+// standard_errors asks the batch for the two-stage tables (se_hessian, se_robust); until then they stay NaN.
+struct DccOptions
+{
+    FitConfig config{};
+    bool standard_errors = true;
+};
+
+// The message of the first problem that makes the batch unrunnable, nothing when it can run: the fits do not form
+// a panel (panel_problem), there is no spec, or a spec cannot be fitted to the panel (spec_problem, named "spec i"
+// from 1). As the univariate check_batch, it is asked before the batch, which assumes it passes.
+std::optional<std::string> check_dcc_batch(std::span<const FitResult* const> fits, std::span<const DccSpec> specs);
+
+// One panel, many specs: the panel is built once and shared by the results, and the specs are split among the
+// threads of the context (inside context.with_pool, so a concurrent set_threads waits). Results are indexed like
+// specs and do not depend on the thread count. A spec that does not converge is its result's status, not an
+// error; an exception raised by a fit is rethrown after every started fit has finished. Unlike fit_dcc, the
+// results carry univariate_parameters and univariate_estimates. The batch must pass check_dcc_batch.
+std::vector<DccFitResult> fit_dcc_batch(Context& context, std::span<const FitResult* const> fits,
+                                        std::span<const DccSpec> specs, const DccOptions& options);
+
+enum class Criterion
+{
+    Aic,
+    Bic,
+    Hqic,
+    Sic
+};
+
+// The information criteria of the univariate ones with k = the estimated univariate parameters of all the series +
+// the estimated DCC parameters + m (m - 1) / 2 (Qbar counts, Nbar does not), per observation or, with per_obs
+// false, total. NaN without a finite loglik.
+double dcc_criterion(const DccFitResult& fit, Criterion which, bool per_obs);
+
+// H_t = D_t R_t D_t with D_t = diag(sigma_t) of the panel, T x m x m like r; empty without r. A pure function: the
+// caller that wants it kept computes it once.
+std::vector<double> covariance_path(const DccFitResult& fit);
 
 }

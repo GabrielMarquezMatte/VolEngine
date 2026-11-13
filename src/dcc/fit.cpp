@@ -1,16 +1,22 @@
 #include "dcc/fit.hpp"
 
 #include "ad/dual.hpp"
+#include "core/context.hpp"
 #include "dcc/likelihood.hpp"
 #include "dcc/parameter_map.hpp"
 #include "fit/optimizer.hpp"
+#include "model/layout.hpp"
 #include "optim/lbfgs.hpp"
+
+#include <BS_thread_pool.hpp>
 
 #include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <optional>
+#include <string>
 #include <span>
 #include <utility>
 #include <vector>
@@ -170,6 +176,76 @@ FitStatus estimate(const DccProblem& problem, const FitConfig& config, DccFitRes
     return status_from(stop);
 }
 
+// What the fits of the panel say about the univariate stage, the same for every result of a batch.
+struct UnivariateStage
+{
+    std::size_t parameters = 0;
+    std::vector<double> estimates;
+};
+
+UnivariateStage univariate_stage(std::span<const FitResult* const> fits)
+{
+    UnivariateStage stage;
+    for (const FitResult* fit : fits)
+    {
+        stage.parameters += model::layout_of(fit->spec).estimated_count();
+        stage.estimates.insert(stage.estimates.end(), fit->estimate.begin(), fit->estimate.end());
+    }
+    return stage;
+}
+
+constexpr std::size_t kBlocksPerThread = 4;
+
+// The specs to fit on one panel, all with one config.
+struct SpecBatch
+{
+    const std::shared_ptr<const StandardizedPanel>& panel;
+    std::span<const DccSpec> specs;
+    const FitConfig& config;
+};
+
+// Every spec writes only its own slot of results.
+void run_specs(BS::light_thread_pool& pool, int threads, const SpecBatch& batch, std::vector<DccFitResult>& results)
+{
+    const std::size_t max_blocks = kBlocksPerThread * static_cast<std::size_t>(threads);
+    const std::size_t blocks = std::min(results.size(), max_blocks);
+    auto run_block = [&](std::size_t first, std::size_t last)
+    {
+        for (std::size_t index = first; index < last; ++index)
+        {
+            results[index] = fit_dcc(batch.panel, batch.specs[index], batch.config);
+        }
+    };
+    try
+    {
+        auto futures = pool.submit_blocks(std::size_t{0}, results.size(), run_block, blocks);
+        futures.wait();
+        futures.get();
+    }
+    catch (...)
+    {
+        pool.wait();
+        throw;
+    }
+}
+
+double criterion_per_obs(double loglik, double parameters, double observations, Criterion which)
+{
+    const double fit_term = -2.0 * loglik;
+    switch (which)
+    {
+    case Criterion::Aic:
+        return (fit_term + 2.0 * parameters) / observations;
+    case Criterion::Bic:
+        return (fit_term + parameters * std::log(observations)) / observations;
+    case Criterion::Hqic:
+        return (fit_term + 2.0 * parameters * std::log(std::log(observations))) / observations;
+    case Criterion::Sic:
+        break;
+    }
+    return fit_term / observations + std::log((observations + 2.0 * parameters) / observations);
+}
+
 }
 
 DccFitResult fit_dcc(std::shared_ptr<const StandardizedPanel> panel, const DccSpec& spec, const FitConfig& config)
@@ -181,6 +257,76 @@ DccFitResult fit_dcc(std::shared_ptr<const StandardizedPanel> panel, const DccSp
     problem.free = estimated_positions(problem.layout);
     result.status = estimate(problem, config, result);
     return result;
+}
+
+std::optional<std::string> check_dcc_batch(std::span<const FitResult* const> fits, std::span<const DccSpec> specs)
+{
+    if (std::optional<std::string> problem = panel_problem(fits))
+    {
+        return problem;
+    }
+    if (specs.empty())
+    {
+        return "batch has no specs";
+    }
+    for (std::size_t index = 0; index < specs.size(); ++index)
+    {
+        if (std::optional<std::string> problem = spec_problem(specs[index], fits.size()))
+        {
+            return "spec " + std::to_string(index + 1) + ": " + *problem;
+        }
+    }
+    return std::nullopt;
+}
+
+std::vector<DccFitResult> fit_dcc_batch(Context& context, std::span<const FitResult* const> fits,
+                                        std::span<const DccSpec> specs, const DccOptions& options)
+{
+    assert(!check_dcc_batch(fits, specs));
+    const auto panel = std::make_shared<const StandardizedPanel>(standardize(fits));
+    std::vector<DccFitResult> results(specs.size());
+    const SpecBatch batch{panel, specs, options.config};
+    context.with_pool([&](BS::light_thread_pool& pool, int threads) { run_specs(pool, threads, batch, results); });
+    const UnivariateStage stage = univariate_stage(fits);
+    for (DccFitResult& result : results)
+    {
+        result.univariate_parameters = stage.parameters;
+        result.univariate_estimates = stage.estimates;
+    }
+    return results;
+}
+
+double dcc_criterion(const DccFitResult& fit, Criterion which, bool per_obs)
+{
+    if (!std::isfinite(fit.loglik) || fit.nobs == 0)
+    {
+        return kNaN;
+    }
+    const auto m = static_cast<double>(fit.series);
+    const double parameters =
+        static_cast<double>(fit.univariate_parameters + fit.estimate.size()) + m * (m - 1.0) / 2.0;
+    const auto observations = static_cast<double>(fit.nobs);
+    const double value = criterion_per_obs(fit.loglik, parameters, observations, which);
+    return per_obs ? value : value * observations;
+}
+
+std::vector<double> covariance_path(const DccFitResult& fit)
+{
+    std::vector<double> h;
+    if (fit.r == nullptr || fit.panel == nullptr)
+    {
+        return h;
+    }
+    const std::vector<double>& r = *fit.r;
+    const std::vector<double>& sigma = fit.panel->sigma;
+    const std::size_t m = fit.panel->m;
+    h.resize(r.size());
+    for (std::size_t k = 0; k < h.size(); ++k)
+    {
+        const std::size_t t = k / (m * m);
+        h[k] = sigma[t * m + (k / m) % m] * r[k] * sigma[t * m + k % m];
+    }
+    return h;
 }
 
 }

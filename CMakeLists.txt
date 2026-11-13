@@ -140,6 +140,7 @@ if(VE_BUILD_TESTS)
         tests/unit/capi/panel_test.cpp
         tests/unit/capi/results/sim_test.cpp
         tests/unit/capi/spec_test.cpp
+        tests/unit/dcc/batch_test.cpp
         tests/unit/dcc/fit_test.cpp
         tests/unit/dcc/likelihood_test.cpp
         tests/unit/dcc/panel_test.cpp
