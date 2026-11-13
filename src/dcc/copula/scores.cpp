@@ -1,6 +1,7 @@
 #include "dcc/copula/scores.hpp"
 
 #include <boost/math/distributions/normal.hpp>
+#include <boost/math/policies/policy.hpp>
 #include <boost/math/distributions/students_t.hpp>
 #include <cassert>
 #include <cmath>
@@ -17,10 +18,14 @@ namespace ve::dcc::copula
 namespace
 {
 
+// Computing in double, not promoted to long double, keeps the quantiles to the bit whatever the thread's x87
+// precision (the Python main thread and the pool threads differ on MinGW).
+using DoublePolicy = boost::math::policies::policy<boost::math::policies::promote_double<false>>;
+
 // Each log f1(epsilon_k) goes to marginal[k].
 void normal_scores(std::span<const double> u, std::span<double> epsilon, std::span<double> marginal)
 {
-    const boost::math::normal normal;
+    const boost::math::normal_distribution<double, DoublePolicy> normal;
     const double half_log_two_pi = 0.5 * std::log(2.0 * std::numbers::pi);
     for (std::size_t k = 0; k < u.size(); ++k)
     {
@@ -32,7 +37,7 @@ void normal_scores(std::span<const double> u, std::span<double> epsilon, std::sp
 // log f1(e) = log t_nu(e / s) - log s, s = sqrt((nu - 2) / nu).
 void student_scores(std::span<const double> u, double nu, std::span<double> epsilon, std::span<double> marginal)
 {
-    const boost::math::students_t student(nu);
+    const boost::math::students_t_distribution<double, DoublePolicy> student(nu);
     const double scale = std::sqrt((nu - 2.0) / nu);
     const double constant = std::lgamma((nu + 1.0) / 2.0) - std::lgamma(nu / 2.0) -
                             0.5 * std::log(std::numbers::pi * (nu - 2.0));

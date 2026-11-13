@@ -15,7 +15,9 @@ from ._fit import IC_PER_OBS, IC_TOTAL, SE_KINDS, CoefTable, Fit, status_name
 from ._native import Handle, check, create_handle, int32, lib, native_view, read_scalar
 from ._spec import code_of, encoded_name, frozen_values
 
-MODELS = {"dcc": 0, "adcc": 1, "fdcc": 2}
+MODELS = {"dcc": 0, "adcc": 1, "fdcc": 2, "static": 3}
+COPULAS = {"parametric": 1, "empirical": 2}
+STATIC_METHODS = {"kendall": 1, "ml": 2}
 DISTRIBUTIONS = {"mvnorm": 0, "mvt": 1, "mvlaplace": 2}
 
 
@@ -25,6 +27,11 @@ class DccSpec:
 
     FDCC needs one group label per series, consecutive from 1, and order (1, 1).
     Fixed parameters are excluded from coefficient tables and information criteria.
+
+    copula="parametric" (each fit's cdf) or "empirical" (ranks) makes it a Copula-DCC on
+    the normal or Student scores of the margins; model="static" is a constant-correlation
+    copula, with static_method "kendall" (the default) or "ml", whose C1.. are the free
+    entries of A in R = cov2cor(A A'), as in rmgarch.
     """
 
     model: str = "dcc"
@@ -34,6 +41,8 @@ class DccSpec:
     groups: Sequence[int] | None = None
     fixed: Mapping[str, float] = field(default_factory=dict)
     start: Mapping[str, float] = field(default_factory=dict)
+    copula: str | None = None
+    static_method: str | None = None
 
     def __post_init__(self) -> None:
         if len(self.order) != 2 or any(type(value) is not int for value in self.order):
@@ -49,7 +58,8 @@ class DccSpec:
         groups = None
         if self.groups is not None:
             groups = tuple(self.groups)
-        return hash((self.model, self.order, self.dist, groups, frozenset(self.fixed.items()), frozenset(self.start.items())))
+        return hash((self.model, self.order, self.dist, groups, frozenset(self.fixed.items()), frozenset(self.start.items()),
+                     self.copula, self.static_method))
 
     def native_handle(self) -> Handle:
         model = code_of(MODELS, "model", self.model)
@@ -64,6 +74,11 @@ class DccSpec:
             check(lib.ve_dcc_spec_set_fixed(handle.pointer, encoded_name(name), value))
         for name, value in self.start.items():
             check(lib.ve_dcc_spec_set_start(handle.pointer, encoded_name(name), value))
+        if self.copula is not None:
+            check(lib.ve_dcc_spec_set_copula(handle.pointer, code_of(COPULAS, "copula", self.copula)))
+        if self.static_method is not None:
+            method = code_of(STATIC_METHODS, "static_method", self.static_method)
+            check(lib.ve_dcc_spec_set_static_method(handle.pointer, method))
         return handle
 
 

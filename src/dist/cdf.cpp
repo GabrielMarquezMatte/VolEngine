@@ -3,6 +3,7 @@
 
 #include <boost/math/special_functions/beta.hpp>
 #include <boost/math/special_functions/gamma.hpp>
+#include <boost/math/policies/policy.hpp>
 
 #include <algorithm>
 #include <array>
@@ -15,6 +16,11 @@ namespace ve::dist
 {
 namespace
 {
+
+// Computing in double, not promoted to long double, keeps the cdf to the bit whatever the thread's x87 precision
+// (on MinGW the Python main thread and the pool threads differ, which made a copula's standard errors depend on
+// whether they were computed in the batch or afterwards).
+using DoublePolicy = boost::math::policies::policy<boost::math::policies::promote_double<false>>;
 
 double normal_cdf(double z)
 {
@@ -30,7 +36,7 @@ double kernel_cdf(const LogDensity<double>& density, double z)
     if (density.dist == Dist::Std)
     {
         double nu = 2.0 * density.power - 1.0;
-        double tail = 0.5 * boost::math::ibeta(nu / 2.0, 0.5, density.scale / (density.scale + z * z));
+        double tail = 0.5 * boost::math::ibeta(nu / 2.0, 0.5, density.scale / (density.scale + z * z), DoublePolicy{});
         if (z < 0.0)
         {
             return tail;
@@ -38,7 +44,7 @@ double kernel_cdf(const LogDensity<double>& density, double z)
         return 1.0 - tail;
     }
     double argument = 0.5 * std::pow(std::abs(z) / density.scale, density.power);
-    double tail = 0.5 * boost::math::gamma_q(1.0 / density.power, argument);
+    double tail = 0.5 * boost::math::gamma_q(1.0 / density.power, argument, DoublePolicy{});
     if (z < 0.0)
     {
         return tail;

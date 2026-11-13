@@ -23,7 +23,7 @@ extern "C" ve_status ve_dcc_spec_create(int32_t model, ve_dcc_spec** out)
             {
                 return set_error(VE_INVALID_ARGUMENT, "out must not be null");
             }
-            if (model < VE_DCC_MODEL_DCC || model > VE_DCC_MODEL_FDCC)
+            if (model < VE_DCC_MODEL_DCC || model > VE_DCC_MODEL_STATIC)
             {
                 return set_error(VE_INVALID_ARGUMENT, "unknown DCC model");
             }
@@ -67,6 +67,42 @@ extern "C" ve_status ve_dcc_spec_set_dist(ve_dcc_spec* s, int32_t dist)
                 return set_error(VE_INVALID_ARGUMENT, "unknown DCC distribution");
             }
             s->spec.dist = static_cast<ve::dcc::DccDist>(dist);
+            return VE_OK;
+        });
+}
+
+extern "C" ve_status ve_dcc_spec_set_copula(ve_dcc_spec* s, int32_t transformation)
+{
+    return guard(
+        [&]
+        {
+            if (s == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "s must not be null");
+            }
+            if (transformation < VE_DCC_COPULA_NONE || transformation > VE_DCC_COPULA_EMPIRICAL)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "unknown copula transformation");
+            }
+            s->spec.copula = static_cast<ve::dcc::DccCopula>(transformation);
+            return VE_OK;
+        });
+}
+
+extern "C" ve_status ve_dcc_spec_set_static_method(ve_dcc_spec* s, int32_t method)
+{
+    return guard(
+        [&]
+        {
+            if (s == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "s must not be null");
+            }
+            if (method < VE_DCC_STATIC_DEFAULT || method > VE_DCC_STATIC_ML)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "unknown static_method");
+            }
+            s->spec.static_method = static_cast<ve::dcc::StaticMethod>(method);
             return VE_OK;
         });
 }

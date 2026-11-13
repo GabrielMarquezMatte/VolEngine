@@ -580,7 +580,7 @@ TEST(CapiDcc, ANonConvergedSpecKeepsItsOwnStatus)
 TEST(CapiDcc, SpecSettersRejectBadArguments)
 {
     ve_dcc_spec* spec = reinterpret_cast<ve_dcc_spec*>(&spec);
-    EXPECT_EQ(ve_dcc_spec_create(3, &spec), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_spec_create(4, &spec), VE_INVALID_ARGUMENT);
     EXPECT_EQ(spec, nullptr);
     EXPECT_EQ(ve_dcc_spec_create(-1, &spec), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_dcc_spec_create(VE_DCC_MODEL_DCC, nullptr), VE_INVALID_ARGUMENT);
@@ -908,4 +908,111 @@ TEST(CapiDcc, InvalidSpecsTakePrecedenceOverUnsupportedStandardErrors)
     EXPECT_EQ(invalid.status, VE_INVALID_ARGUMENT);
     EXPECT_EQ(invalid.fit, nullptr);
     EXPECT_TRUE(mentions("dccz9"));
+}
+
+namespace
+{
+
+DccSpecPtr make_copula_spec(int32_t model, int32_t dist, int32_t transformation, int32_t method)
+{
+    DccSpecPtr spec = make_dcc_spec(model, dist);
+    EXPECT_EQ(ve_dcc_spec_set_copula(spec.get(), transformation), VE_OK) << ve_last_error();
+    EXPECT_EQ(ve_dcc_spec_set_static_method(spec.get(), method), VE_OK) << ve_last_error();
+    return spec;
+}
+
+DccSpec core_copula(DccModel model, DccDist dist, ve::dcc::DccCopula copula, ve::dcc::StaticMethod method)
+{
+    DccSpec spec;
+    spec.model = model;
+    spec.dist = dist;
+    spec.copula = copula;
+    spec.static_method = method;
+    return spec;
+}
+
+}
+
+TEST(CapiDcc, CopulaMatchesCore)
+{
+    using ve::dcc::DccCopula;
+    using ve::dcc::StaticMethod;
+    FitSet univariate = univariate_fits(false);
+    std::vector<DccSpecPtr> specs;
+    specs.push_back(make_dcc_spec(VE_DCC_MODEL_DCC, VE_DCC_DIST_MVNORM));
+    specs.push_back(make_copula_spec(VE_DCC_MODEL_DCC, VE_DCC_DIST_MVT, VE_DCC_COPULA_PARAMETRIC, VE_DCC_STATIC_DEFAULT));
+    specs.push_back(make_copula_spec(VE_DCC_MODEL_ADCC, VE_DCC_DIST_MVNORM, VE_DCC_COPULA_EMPIRICAL, VE_DCC_STATIC_DEFAULT));
+    specs.push_back(make_copula_spec(VE_DCC_MODEL_STATIC, VE_DCC_DIST_MVT, VE_DCC_COPULA_PARAMETRIC, VE_DCC_STATIC_ML));
+    DccOptionsPtr options = make_dcc_options(true);
+    DccBatchPtr batch = build_dcc_batch({raw_specs(specs), handles_of(univariate), options.get()});
+    ve::testing::ContextPtr context = ve::testing::make_context(3);
+    DccFits fits(4);
+    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+
+    const std::vector<DccSpec> core{
+        core_copula(DccModel::Dcc, DccDist::MvNorm, DccCopula::None, StaticMethod::Default),
+        core_copula(DccModel::Dcc, DccDist::MvT, DccCopula::Parametric, StaticMethod::Default),
+        core_copula(DccModel::ADcc, DccDist::MvNorm, DccCopula::Empirical, StaticMethod::Default),
+        core_copula(DccModel::Static, DccDist::MvT, DccCopula::Parametric, StaticMethod::Ml),
+    };
+    ve::Context core_context;
+    const std::vector<const ve::FitResult*> results = results_of(univariate);
+    const std::vector<DccFitResult> expected =
+        ve::dcc::fit_dcc_batch(core_context, results, core, ve::dcc::DccOptions{ve::FitConfig{}, true});
+    for (std::size_t i = 0; i < fits.size(); ++i)
+    {
+        SCOPED_TRACE(i);
+        expect_same_report(report_of(fits[i]), report_of_core(expected[i]));
+        EXPECT_EQ(std::bit_cast<std::uint64_t>(read_criterion(fits[i], VE_DCC_CRITERION_BIC, VE_IC_TOTAL)),
+                  std::bit_cast<std::uint64_t>(ve::dcc::dcc_criterion(expected[i], ve::dcc::Criterion::Bic, false)));
+    }
+    std::size_t count = 0;
+    ASSERT_EQ(ve_dcc_fit_param_count(fits[3], &count), VE_OK);
+    EXPECT_EQ(count, 4U);
+}
+
+TEST(CapiDcc, CopulaInvalidCombinations)
+{
+    // Review Focus 2: the setters check ranges, the batch the combinations, before any fit.
+    DccSpecPtr dcc = make_dcc_spec(VE_DCC_MODEL_DCC, VE_DCC_DIST_MVNORM);
+    EXPECT_EQ(ve_dcc_spec_set_copula(nullptr, VE_DCC_COPULA_PARAMETRIC), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_dcc_spec_set_copula(dcc.get(), 3), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_spec_set_copula(dcc.get(), -1), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_spec_set_static_method(nullptr, VE_DCC_STATIC_ML), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_dcc_spec_set_static_method(dcc.get(), 3), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(mentions("static_method"));
+
+    FitSet univariate = univariate_fits(false);
+    struct Case
+    {
+        int32_t model;
+        int32_t dist;
+        int32_t copula;
+        int32_t method;
+        const char* words;
+    };
+    const std::vector<Case> cases{
+        {VE_DCC_MODEL_STATIC, VE_DCC_DIST_MVNORM, VE_DCC_COPULA_NONE, VE_DCC_STATIC_DEFAULT, "needs a copula"},
+        {VE_DCC_MODEL_FDCC, VE_DCC_DIST_MVNORM, VE_DCC_COPULA_PARAMETRIC, VE_DCC_STATIC_DEFAULT, "fdcc model has no copula"},
+        {VE_DCC_MODEL_DCC, VE_DCC_DIST_MVLAPLACE, VE_DCC_COPULA_EMPIRICAL, VE_DCC_STATIC_DEFAULT, "mvlaplace copula"},
+        {VE_DCC_MODEL_DCC, VE_DCC_DIST_MVT, VE_DCC_COPULA_PARAMETRIC, VE_DCC_STATIC_KENDALL, "static_method"},
+    };
+    for (const Case& one : cases)
+    {
+        SCOPED_TRACE(one.words);
+        DccSpecPtr spec = make_copula_spec(one.model, one.dist, one.copula, one.method);
+        if (one.model == VE_DCC_MODEL_FDCC)
+        {
+            const int32_t groups[] = {1, 1, 2};
+            ASSERT_EQ(ve_dcc_spec_set_groups(spec.get(), groups, 3), VE_OK);
+        }
+        const Attempt result = attempt(one_dcc(spec, univariate));
+        EXPECT_EQ(result.status, VE_INVALID_ARGUMENT);
+        EXPECT_EQ(result.fit, nullptr);
+        EXPECT_TRUE(mentions(one.words)) << ve_last_error();
+    }
+    DccSpecPtr started = make_copula_spec(VE_DCC_MODEL_DCC, VE_DCC_DIST_MVT, VE_DCC_COPULA_PARAMETRIC, VE_DCC_STATIC_DEFAULT);
+    ASSERT_EQ(ve_dcc_spec_set_start(started.get(), "mshape", 8.0), VE_OK);
+    EXPECT_EQ(attempt(one_dcc(started, univariate)).status, VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(mentions("mshape takes no start"));
 }
