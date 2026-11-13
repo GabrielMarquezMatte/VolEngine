@@ -3,6 +3,7 @@
 #include "ad/dual.hpp"
 #include "core/blocks.hpp"
 #include "core/context.hpp"
+#include "dcc/copula/fit.hpp"
 #include "dcc/likelihood.hpp"
 #include "dcc/parameter_map.hpp"
 #include "dcc/standard_errors.hpp"
@@ -224,7 +225,8 @@ UnivariateStage univariate_stage(std::span<const FitResult* const> fits)
 
 constexpr std::size_t kBlocksPerThread = 4;
 
-// The specs to fit on one panel, all with one config, and the fits and univariate stage of the panel.
+// The specs to fit on one panel, all with one config, the fits and univariate stage of the panel, and what the
+// copula specs share (empty u when the batch has none).
 struct SpecBatch
 {
     const std::shared_ptr<const StandardizedPanel>& panel;
@@ -232,16 +234,27 @@ struct SpecBatch
     const DccOptions& options;
     std::span<const FitResult* const> fits;
     const UnivariateStage& stage;
+    const copula::CopulaInputs& copula;
 };
+
+DccFitResult fit_one_spec(const SpecBatch& batch, const DccSpec& spec)
+{
+    if (spec.copula != DccCopula::None)
+    {
+        return copula::fit_copula(batch.copula, spec, batch.options.config);
+    }
+    return fit_dcc(batch.panel, spec, batch.options.config);
+}
 
 // With the option, a converged spec gets the standard errors of dcc_standard_errors, which check_dcc_batch made
 // sure the fits can give; the others keep NaN.
 DccFitResult fit_in_batch(const SpecBatch& batch, std::size_t index)
 {
-    DccFitResult result = fit_dcc(batch.panel, batch.specs[index], batch.options.config);
+    DccFitResult result = fit_one_spec(batch, batch.specs[index]);
     result.univariate_parameters = batch.stage.parameters;
     result.univariate_estimates = batch.stage.estimates;
-    if (!batch.options.standard_errors || result.status != FitStatus::Converged)
+    if (!batch.options.standard_errors || result.status != FitStatus::Converged ||
+        result.spec.copula != DccCopula::None)
     {
         return result;
     }
@@ -327,7 +340,8 @@ std::vector<DccFitResult> fit_dcc_batch(Context& context, std::span<const FitRes
     const auto panel = std::make_shared<const StandardizedPanel>(standardize(fits));
     const UnivariateStage stage = univariate_stage(fits);
     std::vector<DccFitResult> results(specs.size());
-    const SpecBatch batch{panel, specs, options, fits, stage};
+    const copula::CopulaInputs copula = copula::copula_inputs(fits, specs);
+    const SpecBatch batch{panel, specs, options, fits, stage, copula};
     context.with_pool([&](BS::light_thread_pool& pool, int threads) { run_specs(pool, threads, batch, results); });
     return results;
 }
@@ -339,8 +353,12 @@ double dcc_criterion(const DccFitResult& fit, Criterion which, bool per_obs)
         return kNaN;
     }
     const auto m = static_cast<double>(fit.series);
+    // The correlation matrix counts once: the estimated C1.. of a static ML copula are its m (m - 1) / 2.
+    const auto estimated_correlations = static_cast<std::size_t>(
+        std::ranges::count_if(fit.names, [](const std::string& name) { return name.starts_with('C'); }));
     const double parameters =
-        static_cast<double>(fit.univariate_parameters + fit.estimate.size()) + m * (m - 1.0) / 2.0;
+        static_cast<double>(fit.univariate_parameters + fit.estimate.size() - estimated_correlations) +
+        m * (m - 1.0) / 2.0;
     const auto observations = static_cast<double>(fit.nobs);
     const double value = criterion_per_obs(fit.loglik, parameters, observations, which);
     return per_obs ? value : value * observations;
