@@ -1,6 +1,7 @@
 #include "forecast/forecast.hpp"
 
 #include "forecast/inputs.hpp"
+#include "forecast/step.hpp"
 #include "forecast/variance_forecast.hpp"
 #include "mean/fractional.hpp"
 #include "model/layout.hpp"
@@ -139,12 +140,28 @@ Forecast forecast(const FitResult& fit, std::size_t horizon, const FutureRegress
     assert(future.mean.values.size() == horizon * future.mean.columns);
     assert(future.variance.columns == static_cast<std::size_t>(layout.vxreg));
     assert(future.variance.values.size() == horizon * future.variance.columns);
-    Inputs in{fit.state, layout, fit.estimate, future, horizon};
+    detail::Moments moments = detail::moments_of(layout, fit.estimate);
+    Inputs in{fit.state, layout, fit.estimate, future, horizon, moments};
     Forecast result;
     result.sigma = detail::variance_forecast(in);
     std::ranges::transform(result.sigma, result.sigma.begin(), [](double variance) { return std::sqrt(variance); });
     result.mean = mean_forecast(in, result.sigma);
     return result;
+}
+
+namespace detail
+{
+
+Step first_step(const Inputs& in)
+{
+    assert(in.horizon == 1);
+    double sigma2 = variance_forecast(in)[0];
+    double level_of_step = level(in, std::sqrt(sigma2), 1);
+    std::vector<double> deviation = in.layout.has_arfima() ? fractional_deviations(in) : arma_deviations(in);
+    double permanent = in.layout.model == Model::CsGarch ? next_permanent(in) : 0.0;
+    return {sigma2, level_of_step + deviation[0], level_of_step, permanent};
+}
+
 }
 
 }
