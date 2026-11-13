@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/spec.hpp"
+#include "dcc/copula/margins.hpp"
 #include "dcc/fit.hpp"
 #include "dcc/panel.hpp"
 #include "dcc/spec.hpp"
@@ -40,6 +41,17 @@ CopulaInputs copula_inputs(std::span<const FitResult* const> fits, std::span<con
 // scores (Kendall). NaN outside the domain.
 double copula_loglik(const CopulaInputs& inputs, const DccSpec& spec, std::span<const double> theta,
                      std::span<double> r = {});
+
+// The summands c_t of copula_loglik without the univariate sum, NaN where it is NaN.
+std::vector<double> copula_terms(const CopulaInputs& inputs, const DccSpec& spec, std::span<const double> theta,
+                                 std::span<double> r = {});
+
+// The inputs of spec at a perturbed univariate point (z and sigma of univariate, each series' estimate in margins),
+// for the two-stage standard errors. Standard keeps the empirical ranks and the Kendall matrix of base (ranks are
+// piecewise constant in theta); Rmgarch recomputes both, as rmgarch's finite differences do (plan 4b notes,
+// section 6). univariate_loglik is 0.
+CopulaInputs inputs_at(std::shared_ptr<const StandardizedPanel> univariate, std::span<const Margin> margins,
+                       const DccSpec& spec, const CopulaInputs& base);
 
 // A DccFitResult like fit_dcc's: names, estimate and status of spec, loglik = copula_loglik at the estimate, r,
 // and the univariate panel (H_t from its sigma). A free mvt shape is the Brent maximum of the profile over

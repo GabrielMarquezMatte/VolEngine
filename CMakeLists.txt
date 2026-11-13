@@ -154,6 +154,7 @@ if(VE_BUILD_TESTS)
         tests/unit/dcc/copula/fit_test.cpp
         tests/unit/dcc/copula/margins_test.cpp
         tests/unit/dcc/copula/scores_test.cpp
+        tests/unit/dcc/copula/standard_errors_test.cpp
         tests/unit/dcc/copula/static_fit_test.cpp
         tests/unit/dcc/batch_test.cpp
         tests/unit/dcc/fit_test.cpp

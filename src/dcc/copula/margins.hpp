@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/spec.hpp"
 #include "dcc/panel.hpp"
 #include "dcc/spec.hpp"
 #include "fit/fit_result.hpp"
@@ -19,6 +20,17 @@ constexpr double kUniformFloor = 0x1p-53;
 // Rmgarch: empirical ecdf = #{z_is <= z_it} / T, then u > 0.99999 becomes 0.99999 and u < 1.5 * 2^-52 becomes
 // 2^-52; Standard: the [kUniformFloor, 1 - kUniformFloor] cut. how is not None; the caller checked panel_problem.
 std::vector<double> uniforms(std::span<const FitResult* const> fits, const StandardizedPanel& panel, DccCopula how,
+                             Convention convention);
+
+// A series' univariate spec and estimate, given apart from its fit (the standard errors' perturbed points).
+struct Margin
+{
+    const Spec* spec;
+    std::span<const double> estimate;
+};
+
+// The same, with the margins in place of the fits.
+std::vector<double> uniforms(std::span<const Margin> margins, const StandardizedPanel& panel, DccCopula how,
                              Convention convention);
 
 }

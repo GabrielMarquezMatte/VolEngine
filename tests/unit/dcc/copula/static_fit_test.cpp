@@ -265,7 +265,7 @@ TEST(CopulaStatic, NonPositiveDefiniteKendallFails)
         const DccSpec spec = static_spec(dist, DccCopula::Empirical, StaticMethod::Kendall);
         CopulaInputs inputs;
         inputs.univariate = panel;
-        inputs.u[2] = ve::dcc::copula::uniforms({}, *panel, DccCopula::Empirical, Convention::Standard);
+        inputs.u[2] = ve::dcc::copula::uniforms(std::span<const ve::dcc::copula::Margin>{}, *panel, DccCopula::Empirical, Convention::Standard);
         inputs.kendall[2] = ve::dcc::copula::kendall_correlation(inputs.u[2], 6, 4);
         ASSERT_FALSE(inputs.kendall[2].has_value());
         const DccFitResult fit = ve::dcc::copula::fit_copula(inputs, spec, FitConfig{});

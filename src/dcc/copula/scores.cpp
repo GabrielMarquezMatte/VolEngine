@@ -9,6 +9,7 @@
 #include <numbers>
 #include <span>
 #include <utility>
+#include <vector>
 
 namespace ve::dcc::copula
 {
@@ -16,33 +17,30 @@ namespace ve::dcc::copula
 namespace
 {
 
-double normal_scores(std::span<const double> u, std::span<double> epsilon)
+// Each log f1(epsilon_k) goes to marginal[k].
+void normal_scores(std::span<const double> u, std::span<double> epsilon, std::span<double> marginal)
 {
     const boost::math::normal normal;
     const double half_log_two_pi = 0.5 * std::log(2.0 * std::numbers::pi);
-    double marginal = 0.0;
     for (std::size_t k = 0; k < u.size(); ++k)
     {
         epsilon[k] = boost::math::quantile(normal, u[k]);
-        marginal -= half_log_two_pi + 0.5 * epsilon[k] * epsilon[k];
+        marginal[k] = -(half_log_two_pi + 0.5 * epsilon[k] * epsilon[k]);
     }
-    return marginal;
 }
 
 // log f1(e) = log t_nu(e / s) - log s, s = sqrt((nu - 2) / nu).
-double student_scores(std::span<const double> u, double nu, std::span<double> epsilon)
+void student_scores(std::span<const double> u, double nu, std::span<double> epsilon, std::span<double> marginal)
 {
     const boost::math::students_t student(nu);
     const double scale = std::sqrt((nu - 2.0) / nu);
     const double constant = std::lgamma((nu + 1.0) / 2.0) - std::lgamma(nu / 2.0) -
                             0.5 * std::log(std::numbers::pi * (nu - 2.0));
-    double marginal = 0.0;
     for (std::size_t k = 0; k < u.size(); ++k)
     {
         epsilon[k] = boost::math::quantile(student, u[k]) * scale;
-        marginal += constant - 0.5 * (nu + 1.0) * std::log1p(epsilon[k] * epsilon[k] / (nu - 2.0));
+        marginal[k] = constant - 0.5 * (nu + 1.0) * std::log1p(epsilon[k] * epsilon[k] / (nu - 2.0));
     }
-    return marginal;
 }
 
 }
@@ -55,17 +53,26 @@ CopulaPanel copula_panel(std::span<const double> u, const StandardizedPanel& uni
     panel->m = univariate.m;
     panel->sigma = univariate.sigma;
     panel->z.resize(u.size());
-    double marginal = 0.0;
+    std::vector<double> each(u.size());
     if (dist == DccDist::MvT)
     {
-        marginal = student_scores(u, shape, panel->z);
+        student_scores(u, shape, panel->z, each);
     }
     if (dist != DccDist::MvT)
     {
-        marginal = normal_scores(u, panel->z);
+        normal_scores(u, panel->z, each);
     }
     refresh_moments(*panel);
-    return {std::move(panel), marginal};
+    CopulaPanel out{std::move(panel), 0.0, std::vector<double>(univariate.t, 0.0)};
+    for (std::size_t k = 0; k < each.size(); ++k)
+    {
+        out.marginal_terms[k / univariate.m] += each[k];
+    }
+    for (const double term : out.marginal_terms)
+    {
+        out.marginal_log_density += term;
+    }
+    return out;
 }
 
 }

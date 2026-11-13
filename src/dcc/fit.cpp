@@ -253,8 +253,7 @@ DccFitResult fit_in_batch(const SpecBatch& batch, std::size_t index)
     DccFitResult result = fit_one_spec(batch, batch.specs[index]);
     result.univariate_parameters = batch.stage.parameters;
     result.univariate_estimates = batch.stage.estimates;
-    if (!batch.options.standard_errors || result.status != FitStatus::Converged ||
-        result.spec.copula != DccCopula::None)
+    if (!batch.options.standard_errors || result.status != FitStatus::Converged)
     {
         return result;
     }

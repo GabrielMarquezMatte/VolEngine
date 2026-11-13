@@ -118,6 +118,22 @@ void finish_gradient(std::span<const double> factor, std::span<const double> wei
     }
 }
 
+// q_t = epsilon_t' R^-1 epsilon_t from the Cholesky factor, leaving R^-1 epsilon_t in y.
+double solved_quadratic(std::span<const double> factor, const StandardizedPanel& scores, std::size_t t,
+                        std::span<double> y)
+{
+    const std::size_t m = scores.m;
+    const std::span<const double> epsilon(scores.z.data() + t * m, m);
+    std::ranges::copy(epsilon, y.begin());
+    linalg::cholesky_solve(factor, m, y);
+    double quadratic = 0.0;
+    for (std::size_t i = 0; i < m; ++i)
+    {
+        quadratic += epsilon[i] * y[i];
+    }
+    return quadratic;
+}
+
 // -static_terms / T over the free entries of x, with its gradient by free_gradient.
 class StaticObjective
 {
@@ -256,14 +272,7 @@ double static_terms(const StandardizedPanel& scores, std::span<const double> r, 
     double sum = 0.0;
     for (std::size_t t = 0; t < scores.t; ++t)
     {
-        const std::span<const double> epsilon(scores.z.data() + t * m, m);
-        std::ranges::copy(epsilon, y.begin());
-        linalg::cholesky_solve(std::span<const double>(factor), m, std::span<double>(y));
-        double quadratic = 0.0;
-        for (std::size_t i = 0; i < m; ++i)
-        {
-            quadratic += epsilon[i] * y[i];
-        }
+        const double quadratic = solved_quadratic(factor, scores, t, y);
         sum += log_density_at(dist, m, shape, log_det, quadratic);
         if (gradient.empty())
         {
@@ -280,6 +289,25 @@ double static_terms(const StandardizedPanel& scores, std::span<const double> r, 
         finish_gradient(factor, weighted, scores.t, m, gradient);
     }
     return sum;
+}
+
+std::vector<double> static_observations(const StandardizedPanel& scores, std::span<const double> r, DccDist dist,
+                                        double shape)
+{
+    const std::size_t m = scores.m;
+    std::vector<double> terms(scores.t, kNaN);
+    std::vector<double> factor(r.begin(), r.end());
+    if (!linalg::cholesky_factor(std::span<double>(factor), m))
+    {
+        return terms;
+    }
+    const double log_det = linalg::cholesky_log_determinant(std::span<const double>(factor), m);
+    std::vector<double> y(m);
+    for (std::size_t t = 0; t < scores.t; ++t)
+    {
+        terms[t] = log_density_at(dist, m, shape, log_det, solved_quadratic(factor, scores, t, y));
+    }
+    return terms;
 }
 
 StaticCorrelation static_ml(const StandardizedPanel& scores, const DccLayout& layout, double shape,

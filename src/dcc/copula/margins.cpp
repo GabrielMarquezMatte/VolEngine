@@ -29,10 +29,10 @@ std::vector<double> column(const StandardizedPanel& panel, std::size_t i)
     return out;
 }
 
-void parametric(const FitResult& fit, const StandardizedPanel& panel, std::size_t i, std::span<double> u)
+void parametric(const Margin& margin, const StandardizedPanel& panel, std::size_t i, std::span<double> u)
 {
-    const model::Layout layout = model::layout_of(fit.spec);
-    const dist::ShapeParameters<double> shape = model::shape_parameters_of<double>(fit.estimate, layout);
+    const model::Layout layout = model::layout_of(*margin.spec);
+    const dist::ShapeParameters<double> shape = model::shape_parameters_of<double>(margin.estimate, layout);
     for (std::size_t t = 0; t < panel.t; ++t)
     {
         u[t * panel.m + i] = dist::cdf(layout.dist, shape, panel.z[t * panel.m + i]);
@@ -81,13 +81,24 @@ void cut(std::span<double> u, Convention convention)
 std::vector<double> uniforms(std::span<const FitResult* const> fits, const StandardizedPanel& panel, DccCopula how,
                              Convention convention)
 {
+    std::vector<Margin> margins;
+    for (const FitResult* fit : fits)
+    {
+        margins.push_back({&fit->spec, fit->estimate});
+    }
+    return uniforms(std::span<const Margin>(margins), panel, how, convention);
+}
+
+std::vector<double> uniforms(std::span<const Margin> margins, const StandardizedPanel& panel, DccCopula how,
+                             Convention convention)
+{
     assert(how != DccCopula::None);
     std::vector<double> u(panel.t * panel.m);
     for (std::size_t i = 0; i < panel.m; ++i)
     {
         if (how == DccCopula::Parametric)
         {
-            parametric(*fits[i], panel, i, u);
+            parametric(margins[i], panel, i, u);
         }
         if (how == DccCopula::Empirical)
         {

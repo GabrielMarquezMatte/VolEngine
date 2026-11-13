@@ -58,7 +58,7 @@ TEST(CopulaMargins, EmpiricalRanks)
 {
     // Two series, five rows; series 0 has a tie at t = 1 and t = 3, broken by the order of t.
     const StandardizedPanel panel = panel_of({0.5, -1.0, 0.2, 2.0, -0.3, 0.1, 0.2, 0.4, 1.0, -2.0}, 5, 2);
-    const std::vector<double> u = uniforms({}, panel, DccCopula::Empirical, Convention::Standard);
+    const std::vector<double> u = uniforms(std::span<const ve::dcc::copula::Margin>{}, panel, DccCopula::Empirical, Convention::Standard);
     // Series 0 is 0.5, 0.2, -0.3, 0.2, 1.0; series 1 is -1.0, 2.0, 0.1, 0.4, -2.0.
     const std::vector<double> ranks0{4, 2, 1, 3, 5};
     const std::vector<double> ranks1{2, 5, 3, 4, 1};
@@ -74,7 +74,7 @@ TEST(CopulaMargins, RmgarchEmpiricalAndCut)
     // ecdf: the share of the series <= z (a tie takes the larger rank), then u > 0.99999 becomes 0.99999 (plan 4b
     // notes, section 2).
     const StandardizedPanel panel = panel_of({0.5, -1.0, 0.2, 2.0, -0.3, 0.1, 0.2, 0.4, 1.0, -2.0}, 5, 2);
-    const std::vector<double> u = uniforms({}, panel, DccCopula::Empirical, Convention::Rmgarch);
+    const std::vector<double> u = uniforms(std::span<const ve::dcc::copula::Margin>{}, panel, DccCopula::Empirical, Convention::Rmgarch);
     EXPECT_DOUBLE_EQ(u[0], 4.0 / 5.0);
     EXPECT_DOUBLE_EQ(u[2], 3.0 / 5.0);
     EXPECT_DOUBLE_EQ(u[6], 3.0 / 5.0);
