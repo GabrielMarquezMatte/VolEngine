@@ -273,8 +273,9 @@ std::vector<DccSpec> hard_specs()
     return {adcc, adcc_t, dcc, spec_of(DccModel::Dcc, DccDist::MvLaplace, Convention::Standard), outside};
 }
 
-// Nearly uncorrelated columns, where the aDCC(2, 1) has nothing to find, and a spec fixed outside its domain.
-// Whatever the status of a spec, the batch reports the one it has alone and the other specs are unchanged.
+// Nearly uncorrelated columns, where the aDCC(2, 1) and DCC(1, 2) specs converge all the same, and a spec fixed
+// outside its domain, which fails: the batch reports the status each spec has alone and leaves the others unchanged.
+// The iteration limit below covers the specs that stop before the optimum.
 TEST(DccBatch, SpecsThatDoNotConvergeKeepTheirStatus)
 {
     const std::vector<FitResult> fits = independent_pair();

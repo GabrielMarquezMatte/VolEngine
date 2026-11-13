@@ -1,6 +1,7 @@
 #include "dcc/fit.hpp"
 
 #include "ad/dual.hpp"
+#include "core/blocks.hpp"
 #include "core/context.hpp"
 #include "dcc/likelihood.hpp"
 #include "dcc/parameter_map.hpp"
@@ -15,9 +16,10 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <memory>
 #include <optional>
-#include <string>
 #include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -207,8 +209,6 @@ struct SpecBatch
 // Every spec writes only its own slot of results.
 void run_specs(BS::light_thread_pool& pool, int threads, const SpecBatch& batch, std::vector<DccFitResult>& results)
 {
-    const std::size_t max_blocks = kBlocksPerThread * static_cast<std::size_t>(threads);
-    const std::size_t blocks = std::min(results.size(), max_blocks);
     auto run_block = [&](std::size_t first, std::size_t last)
     {
         for (std::size_t index = first; index < last; ++index)
@@ -216,17 +216,7 @@ void run_specs(BS::light_thread_pool& pool, int threads, const SpecBatch& batch,
             results[index] = fit_dcc(batch.panel, batch.specs[index], batch.config);
         }
     };
-    try
-    {
-        auto futures = pool.submit_blocks(std::size_t{0}, results.size(), run_block, blocks);
-        futures.wait();
-        futures.get();
-    }
-    catch (...)
-    {
-        pool.wait();
-        throw;
-    }
+    run_in_blocks(pool, threads, results.size(), kBlocksPerThread, run_block);
 }
 
 double criterion_per_obs(double loglik, double parameters, double observations, Criterion which)
