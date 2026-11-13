@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, overload
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ._diagnostics import Nyblom, SignBias, TestResult
+from ._diagnostics import DiagnosticResult, Nyblom, SignBias
 from ._fit import CoefTable, Fit, future_panel
 from ._forecast import Forecast
 from ._native import (
@@ -31,14 +31,14 @@ if TYPE_CHECKING:
     from typing import Unpack
 
 __all__ = [
-    "Nyblom",
-    "SignBias",
-    "TestResult",
     "CoefTable",
     "Context",
+    "DiagnosticResult",
     "Fit",
     "FitOptions",
     "Forecast",
+    "Nyblom",
+    "SignBias",
     "Simulation",
     "Spec",
     "VolEngineError",

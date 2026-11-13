@@ -11,16 +11,16 @@ import numpy as np
 from ._native import check, lib
 
 
-class TestResult(NamedTuple):
+class DiagnosticResult(NamedTuple):
     statistic: float
     p_value: float
 
 
 class SignBias(NamedTuple):
-    sign: TestResult
-    negative: TestResult
-    positive: TestResult
-    joint: TestResult
+    sign: DiagnosticResult
+    negative: DiagnosticResult
+    positive: DiagnosticResult
+    joint: DiagnosticResult
 
 
 class Nyblom(NamedTuple):
@@ -37,10 +37,10 @@ def size_argument(value: int, name: str) -> int:
     return value
 
 
-def read_test(function: Callable[..., int], *args: Any) -> TestResult:
+def read_test(function: Callable[..., int], *args: Any) -> DiagnosticResult:
     out = np.empty(2, dtype=np.float64)
     check(function(*args, out.ctypes.data))
-    return TestResult(float(out[0]), float(out[1]))
+    return DiagnosticResult(float(out[0]), float(out[1]))
 
 
 def critical_values(parameters: int) -> tuple[float, float, float] | None:
