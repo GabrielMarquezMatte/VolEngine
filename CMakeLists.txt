@@ -61,8 +61,10 @@ target_compile_definitions(ve_boost_math INTERFACE BOOST_MATH_STANDALONE)
 add_library(volengine_core STATIC
     src/ad/special.cpp
     src/core/context.cpp
+    src/dcc/fit.cpp
     src/dcc/likelihood.cpp
     src/dcc/panel.cpp
+    src/dcc/parameter_map.cpp
     src/diagnostics/portmanteau.cpp
     src/diagnostics/sign_bias.cpp
     src/diagnostics/tails.cpp
@@ -138,8 +140,10 @@ if(VE_BUILD_TESTS)
         tests/unit/capi/panel_test.cpp
         tests/unit/capi/results/sim_test.cpp
         tests/unit/capi/spec_test.cpp
+        tests/unit/dcc/fit_test.cpp
         tests/unit/dcc/likelihood_test.cpp
         tests/unit/dcc/panel_test.cpp
+        tests/unit/dcc/parameter_map_test.cpp
         tests/unit/dcc/recursion_test.cpp
         tests/unit/dist/cdf_test.cpp
         tests/unit/diagnostics/portmanteau_test.cpp
