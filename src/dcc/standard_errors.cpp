@@ -149,9 +149,10 @@ Point base_point(std::span<const Series> series, std::size_t t)
     return point;
 }
 
-// The copula inputs of spec at point, each series' margin at the point's estimate.
+// The copula inputs of spec at point, each series' margin at the point's estimate, with the scores at shape.
 std::shared_ptr<const copula::CopulaInputs> copula_at(std::span<const Series> series, const Point& point,
-                                                      const DccSpec& spec, const copula::CopulaInputs& base)
+                                                      const DccSpec& spec, const copula::CopulaInputs& base,
+                                                      double shape)
 {
     std::vector<copula::Margin> margins;
     for (std::size_t i = 0; i < series.size(); ++i)
@@ -159,7 +160,8 @@ std::shared_ptr<const copula::CopulaInputs> copula_at(std::span<const Series> se
         margins.push_back({series[i].spec, point.estimates[i]});
     }
     auto univariate = std::make_shared<const StandardizedPanel>(point.panel);
-    return std::make_shared<const copula::CopulaInputs>(copula::inputs_at(std::move(univariate), margins, spec, base));
+    return std::make_shared<const copula::CopulaInputs>(
+        copula::inputs_at(std::move(univariate), margins, spec, base, shape));
 }
 
 // The per-observation terms of the reported loglik that depend on the second stage: log f(z_t; R_t) of the DCC, the
@@ -218,6 +220,12 @@ struct TwoStage
     std::size_t parameters() const { return univariate.size() + free.size(); }
 };
 
+// The mvt shape of the estimate, 0 without it.
+double shape_at(const TwoStage& stage)
+{
+    return stage.layout.has_shape ? stage.theta[stage.layout.shape()] : 0.0;
+}
+
 TwoStage two_stage_of(const DccFitResult& fit, std::span<const FitResult* const> fits)
 {
     TwoStage stage{fit.spec, layout_of(fit.spec, fit.series), {}, {}, series_of(fits), {}, {}, std::nullopt};
@@ -235,7 +243,7 @@ TwoStage two_stage_of(const DccFitResult& fit, std::span<const FitResult* const>
     {
         const DccSpec spec[] = {fit.spec};
         stage.copula = copula::copula_inputs(fits, spec);
-        stage.base.copula = copula_at(stage.series, stage.base, fit.spec, *stage.copula);
+        stage.base.copula = copula_at(stage.series, stage.base, fit.spec, *stage.copula, shape_at(stage));
     }
     return stage;
 }
@@ -340,7 +348,7 @@ void cross_column(const TwoStage& stage, const DccDifferences& differences, std:
     point.estimates[index] = estimate;
     if (stage.copula)
     {
-        point.copula = copula_at(stage.series, point, stage.spec, *stage.copula);
+        point.copula = copula_at(stage.series, point, stage.spec, *stage.copula, shape_at(stage));
     }
     const double shifted = reported_total(point, stage.spec, stage.theta);
     const std::size_t n = stage.parameters();
