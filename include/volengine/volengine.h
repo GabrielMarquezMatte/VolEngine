@@ -285,6 +285,24 @@ VE_API ve_status ve_fit_std_residuals(const ve_fit* f, const double** data, size
 VE_API ve_status ve_fit_fitted(const ve_fit* f, const double** data, size_t* len);
 VE_API void ve_fit_free(ve_fit* f);
 
+/* ---- Forecast ----
+   The forecast of a fit h = 1..horizon steps after its last observation, as rugarch's ugarchforecast with
+   n.roll = 0, at the estimate of the fit. A fit with every parameter fixed forecasts from a specification.
+   mxreg and vxreg: the regressors of the horizon, panels of exactly `horizon` rows x the spec's mxreg / vxreg
+   columns, without ranges; NULL when the spec has none. VE_INVALID_ARGUMENT for horizon 0, a fit with no finite
+   point (see ve_fit_status), a missing or extra panel, or one of another shape. A VE_FIT_FAILED fit that has a
+   finite point forecasts from it. The forecast copies what it needs: it stays valid after f is freed. */
+typedef struct ve_forecast ve_forecast;
+VE_API ve_status ve_forecast_create(const ve_fit* f, size_t horizon, const ve_panel* mxreg,
+                                    const ve_panel* vxreg, ve_forecast** out);
+VE_API ve_status ve_forecast_horizon(const ve_forecast* fc, size_t* out);
+/* Views of `horizon` values, valid until fc is freed. sigma is rugarch's sigmaFor: in eGARCH it is
+   exp(E[log sigma2] / 2), in apARCH and fGARCH E[sigma^delta]^(1 / delta), which for h > 1 is not
+   sqrt(E[sigma2]); in the other models it is sqrt(E[sigma2]). mean is the conditional mean (seriesFor). */
+VE_API ve_status ve_forecast_sigma(const ve_forecast* fc, const double** data, size_t* len);
+VE_API ve_status ve_forecast_mean(const ve_forecast* fc, const double** data, size_t* len);
+VE_API void ve_forecast_free(ve_forecast* fc);
+
 #ifdef __cplusplus
 }
 #endif

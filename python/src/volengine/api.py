@@ -11,7 +11,17 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from ._fit import CoefTable, Fit
-from ._native import Handle, VolEngineError, check, create_handle, int32, lib
+from ._forecast import Forecast
+from ._native import (
+    ELEMENT_BYTES,
+    Handle,
+    VolEngineError,
+    check,
+    create_handle,
+    int32,
+    lib,
+    open_panel,
+)
 from ._spec import FitOptions, Spec
 
 if TYPE_CHECKING:
@@ -22,13 +32,12 @@ __all__ = [
     "Context",
     "Fit",
     "FitOptions",
+    "Forecast",
     "Spec",
     "VolEngineError",
 ]
 
 Series1D = Sequence[float]
-
-ELEMENT_BYTES = np.dtype(np.float64).itemsize
 
 
 class FitKeywords(TypedDict, total=False):
@@ -64,15 +73,6 @@ def range_array(values: ArrayLike, series_count: int, name: str) -> NDArray[np.u
         raise ValueError(f"{name} must have one entry per series ({series_count}), got shape {array.shape}")
     require_integral(array, name)
     return np.ascontiguousarray(array, dtype=np.uintp)
-
-
-def open_panel(stack: ExitStack, array: NDArray[np.float64]) -> Handle:
-    panel = stack.enter_context(
-        create_handle(lib.ve_panel_create, lib.ve_panel_free, array.ctypes.data, array.shape[0], array.shape[1])
-    )
-    stride_t, stride_n = (stride // ELEMENT_BYTES for stride in array.strides)
-    check(lib.ve_panel_set_strides(panel.pointer, stride_t, stride_n))
-    return panel
 
 
 def set_ranges(panel: Handle, first: NDArray[np.uintp], size: NDArray[np.uintp]) -> None:

@@ -5,9 +5,13 @@ from __future__ import annotations
 import ctypes
 import os
 from collections.abc import Callable, Mapping
+from contextlib import ExitStack
 from pathlib import Path
 from types import TracebackType
 from typing import Any
+
+import numpy as np
+from numpy.typing import NDArray
 
 VE_ABI_VERSION = 0
 VE_INTERNAL_ERROR = 5
@@ -90,6 +94,11 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_fit_std_residuals": (_STATUS, _VIEW),
     "ve_fit_fitted": (_STATUS, _VIEW),
     "ve_fit_free": (None, [_HANDLE]),
+    "ve_forecast_create": (_STATUS, [_HANDLE, _SIZE, _HANDLE, _HANDLE, _OUT_HANDLE]),
+    "ve_forecast_horizon": (_STATUS, [_HANDLE, _OUT_SIZE]),
+    "ve_forecast_sigma": (_STATUS, _VIEW),
+    "ve_forecast_mean": (_STATUS, _VIEW),
+    "ve_forecast_free": (None, [_HANDLE]),
 }
 
 
@@ -216,3 +225,33 @@ def read_scalar(ctype: Any, function: Callable[..., int], *args: Any) -> Any:
     out = ctype()
     check(function(*args, ctypes.byref(out)))
     return out.value
+
+
+ELEMENT_BYTES = np.dtype(np.float64).itemsize
+
+
+def open_panel(stack: ExitStack, array: NDArray[np.float64]) -> Handle:
+    panel = stack.enter_context(
+        create_handle(lib.ve_panel_create, lib.ve_panel_free, array.ctypes.data, array.shape[0], array.shape[1])
+    )
+    stride_t, stride_n = (stride // ELEMENT_BYTES for stride in array.strides)
+    check(lib.ve_panel_set_strides(panel.pointer, stride_t, stride_n))
+    return panel
+
+
+def read_only(array: NDArray[np.float64]) -> NDArray[np.float64]:
+    array.flags.writeable = False
+    return array
+
+
+def native_view(owner: object, function: Callable[..., int], pointer: int) -> NDArray[np.float64]:
+    """The read-only view a VE_* view function returns for `pointer`; it keeps `owner` (and its handle) alive."""
+    data = ctypes.POINTER(ctypes.c_double)()
+    length = ctypes.c_size_t()
+    check(function(pointer, ctypes.byref(data), ctypes.byref(length)))
+    if length.value == 0:
+        return read_only(np.empty(0, dtype=np.float64))
+    address = ctypes.cast(data, ctypes.c_void_p).value
+    buffer = (ctypes.c_double * length.value).from_address(address)
+    buffer._owner = owner
+    return read_only(np.frombuffer(buffer, dtype=np.float64))

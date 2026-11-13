@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import ctypes
+import operator
 from collections.abc import Callable
+from contextlib import ExitStack
 from typing import Any, NamedTuple
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
-from ._native import Handle, check, lib, read_scalar
+from ._forecast import Forecast
+from ._native import ELEMENT_BYTES, Handle, check, create_handle, lib, native_view, open_panel, read_scalar
 from ._spec import code_of
 
 STATUS_NAMES = {0: "converged", 1: "max_iter", 2: "failed", 3: "insufficient_data"}
@@ -108,17 +111,40 @@ class Fit:
         return out
 
     def _view(self, function: Callable[..., int]) -> NDArray[np.float64]:
-        data = ctypes.POINTER(ctypes.c_double)()
-        length = ctypes.c_size_t()
-        check(function(self._handle.pointer, ctypes.byref(data), ctypes.byref(length)))
-        if length.value == 0:
-            return read_only(np.empty(0, dtype=np.float64))
-        address = ctypes.cast(data, ctypes.c_void_p).value
-        buffer = (ctypes.c_double * length.value).from_address(address)
-        buffer._owner = self
-        return read_only(np.frombuffer(buffer, dtype=np.float64))
+        return native_view(self, function, self._handle.pointer)
 
+    def forecast(self, horizon: int, *, mxreg: ArrayLike | None = None, vxreg: ArrayLike | None = None) -> Forecast:
+        """sigma and mean for h = 1..horizon after the last observation, as rugarch's ugarchforecast (n.roll = 0).
 
-def read_only(array: NDArray[np.float64]) -> NDArray[np.float64]:
-    array.flags.writeable = False
-    return array
+        `mxreg` and `vxreg` are the regressors of the horizon, (horizon, k) for a spec with k of them ((horizon,)
+        when k = 1), and must be absent when the spec has none. A fit with no finite point raises VolEngineError.
+        See `Forecast` for what `sigma` means in eGARCH, apARCH and fGARCH.
+        """
+        horizon = operator.index(horizon)
+        if horizon < 1:
+            raise ValueError(f"horizon must be at least 1, got {horizon}")
+        with ExitStack() as stack:
+            mean = self._future(stack, mxreg, "mxreg", horizon)
+            variance = self._future(stack, vxreg, "vxreg", horizon)
+            handle = create_handle(
+                lib.ve_forecast_create, lib.ve_forecast_free, self._handle.pointer, horizon, mean, variance
+            )
+        return Forecast(handle)
+
+    def _future(self, stack: ExitStack, values: ArrayLike | None, name: str, horizon: int) -> int | None:
+        """The native panel of the regressors of the horizon, or None for a spec without them."""
+        count = sum(1 for parameter in self.names if parameter.startswith(name))
+        if count == 0:
+            if values is not None:
+                raise ValueError(f"{name} was given but the spec has no {name}")
+            return None
+        if values is None:
+            raise ValueError(f"the spec has {name} = {count}, so {name} is required")
+        array = np.asarray(values, dtype=np.float64)
+        if array.ndim == 1 and count == 1:
+            array = array[:, None]
+        if array.shape != (horizon, count):
+            raise ValueError(f"{name} must have shape {(horizon, count)}, got {array.shape}")
+        if any(stride % ELEMENT_BYTES for stride in array.strides):
+            array = np.ascontiguousarray(array)
+        return open_panel(stack, array).pointer
