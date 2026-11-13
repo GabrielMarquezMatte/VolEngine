@@ -168,6 +168,16 @@ A transformação `spd` fica fora (spec-mãe). Saídas e lote iguais às do 4a.
   benchmark.
 - A divisão de tarefas dentro de cada subplano.
 
+## 8a. Convenções do `rmgarch` que são bugs (decisão do autor, 2026-11-13)
+
+Depois do plano 4a, as convenções do `rmgarch` foram cruzadas com os papers (Engle–Sheppard 2001, Cappiello–Engle–Sheppard 2006) e com o código do MFE e do ARCHModels.jl. Quatro delas são bugs ou desvios:
+- a pré-amostra zero/uns;
+- N̄ centrada;
+- o sanduíche sem transposta;
+- as restrições e o Q̄ duplo do FDCC.
+
+**A convenção pública segue os papers.** A paridade com o `rmgarch` vira um interruptor interno do C++, que só os testes usam e que fica fora da interface C e do Python. Isso refina a seção 6: a ℓ, o BIC e os erros-padrão públicos divergem do `rmgarch` nesses quatro pontos, com explicação em `validation.md`. O detalhe está nas notas do plano 4a, seção 11.
+
 ## 9. Decisões tomadas pelo Claude (para conferir)
 
 - Divisão em 4a núcleo, 4b Copula-DCC, 4c forecast/simulação, nessa ordem.
