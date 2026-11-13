@@ -74,6 +74,8 @@ Notação: m séries, T observações, zᵢₜ = eᵢₜ/σᵢₜ de cada `Fit` 
 - **empírica:** uᵢₜ = rankᵢₜ/(T + 1), com rank 1..T por série e empates desfeitos pela ordem de t (Genest–Ghoudi–
   Rivest 1995);
 - u é limitado a [2⁻⁵³, 1 − 2⁻⁵³] antes do quantil, para que um zᵢₜ extremo não dê ε infinito.
+- **[Rmgarch]** (notas, seção 2): empírica rank/T; o corte é u > 0,99999 → 0,99999 e u < 1,5·2⁻⁵² → 2⁻⁵², nas duas
+  transformações.
 
 **Escores (ε):**
 - **mvnorm:** εᵢₜ = Φ⁻¹(uᵢₜ);
@@ -93,6 +95,8 @@ Notação: m séries, T observações, zᵢₜ = eᵢₜ/σᵢₜ de cada `Fit` 
 **Dinâmica (DCC, aDCC):**
 - é o 4a sobre o panel de ε: Q̄ = cov(ε), N̄ e δ pela regra do 4a, a mesma pré-amostra, as mesmas restrições e os
   mesmos inícios;
+- **[Rmgarch]** (notas, seção 4): N̄ centrada e pré-amostra zero também no que é reportado, ou seja, o
+  `Stage::Objective` do 4a em tudo (ℓ, Rₜ, erros-padrão). Não há a pré-amostra de uns do `dccfit`;
 - **mvnorm:** um `fit_dcc` sobre o panel de ε, construído uma vez por transformação;
 - **mvt com forma livre:** ν̂ = argmax_ν perfil(ν), por `boost::math::tools::brent_find_minima` em [4, 50], com 30
   bits e no máximo 100 iterações. Cada perfil(ν) reconstrói o panel de ε(ν) e roda `fit_dcc` com `mshape` fixo em ν.
@@ -102,14 +106,20 @@ Notação: m séries, T observações, zᵢₜ = eᵢₜ/σᵢₜ de cada `Fit` 
 - **mvt com `mshape` fixo:** um único ajuste interno;
 - `start` em `mshape` com cópula mvt é erro de argumento, porque a busca de Brent não usa início.
 
-**Estática (R constante, Rₜ = R para todo t):**
-- **mvt + `kendall`:** R = sin(πτ̂/2), com τ̂ o tau-b de Kendall amostral de cada par de colunas de u. Os ranks são
-  os mesmos para z, u e ε, então R não depende de ν; ν vem do Brent sobre perfil(ν) com R fixo;
+**Estática (R constante, Rₜ = R para todo t).** O `static_method` vale para as duas cópulas (notas, seção 5), com
+padrão `kendall`, como no `rmgarch`:
+- **`kendall`:** R = sin(πτ̂/2), com τ̂ o tau-b de Kendall amostral de cada par de colunas de u. Os ranks são os
+  mesmos para z, u e ε, então R não depende de ν. Na mvt, ν vem do Brent sobre perfil(ν) com R fixo;
+  - **[Rmgarch]** na mvnorm: R = cor(ε), a correlação de Pearson dos escores (o `rmgarch` chama isso de Kendall);
   - se R não for definida positiva (o Cholesky falha), o status é `Failed`, com estimativa NaN e sem exceção;
   - `ponytail:` falhar em vez de projetar; a projeção de Higham fica para quando alguém pedir.
-- **ML (`ml` na mvt, sempre na mvnorm):**
-  - R = LLᵀ, em que a linha i de L é vᵢ/‖vᵢ‖ com vᵢ = (x_{i1}, …, x_{i,i−1}, 1). Os m(m − 1)/2 parâmetros livres x
-    garantem diagonal 1 e R definida positiva. O início é x = 0, que dá R = I;
+- **`ml`:**
+  - R = LLᵀ, em que a linha i de L é vᵢ/‖vᵢ‖ com vᵢ = (x_{i1}, …, x_{i,i−1}, 1). É o `.Pconstruct` do `rmgarch`:
+    x são as entradas livres de A, e R = cov2cor(AAᵀ). Os m(m − 1)/2 parâmetros livres x garantem diagonal 1 e R
+    definida positiva. O início é x = 0, que dá R = I;
+  - **os Cᵢⱼ reportados são esses x**, não as correlações, como no `rmgarch`. A ordem é a do `lower.tri` do R,
+    por coluna: C1 = x₂₁, C2 = x₃₁, C3 = x₃₂, …. As correlações estão em `R`. O `rmgarch` limita x a [−0,99; 0,99];
+    o VolEngine não, nas duas convenções (notas, seção 8);
   - o L-BFGS existente minimiza −Σ cₜ / T com gradiente analítico. Com wₜ = 1 (mvnorm) ou wₜ = (ν + m)/(ν − 2 + qₜ)
     (mvt), qₜ = εₜᵀR⁻¹εₜ e S_w = Σₜ wₜ εₜεₜᵀ:
 
@@ -118,9 +128,10 @@ Notação: m séries, T observações, zᵢₜ = eᵢₜ/σᵢₜ de cada `Fit` 
     seguido da regra da cadeia por L;
   - na mvt, ν vem do Brent com a ML de R interna em cada ν.
 - **Tabela:**
-  - mvnorm estática: vazia;
+  - mvnorm + Kendall: vazia;
+  - mvnorm + ML: `C1..C{m(m−1)/2}`;
   - mvt + Kendall: só `mshape`;
-  - mvt + ML: `C1..C{m(m−1)/2}` (os Rᵢⱼ na ordem do `rmgarch` que a Task 1 registra) e `mshape`.
+  - mvt + ML: `C1..C{m(m−1)/2}` e `mshape`.
 
 **Critérios:** o k do 4a (univariados estimados + parâmetros estimados + m(m − 1)/2), com a matriz de correlação
 contada **uma vez**: os Cᵢⱼ da estática ML ficam fora da parcela "parâmetros estimados".
@@ -129,11 +140,12 @@ contada **uma vez**: os Cᵢⱼ da estática ML ficam fora da parcela "parâmetr
 - a regra do 4a, com a ℓ reportada da cópula como f(θ) das linhas da cópula;
 - uma perturbação univariada refiltra a série, recalcula zᵢ, uᵢ (paramétrica: a CDF com a forma perturbada) e ε, e
   depois Q̄, N̄ e δ;
-- **empírica:** perturbações pequenas não mudam os ranks, então o bloco cruzado sai 0 e os erros-padrão são os do
-  segundo estágio sozinho. `ponytail:` sem a correção semiparamétrica de Chen–Fan (2006); `validation.md` registra
-  a limitação, e a correção entra quando alguém pedir;
+- **empírica:** os ranks ficam fixos nas perturbações univariadas, então o bloco cruzado sai 0 e os erros-padrão
+  são os do segundo estágio sozinho. `ponytail:` sem a correção semiparamétrica de Chen–Fan (2006); `validation.md`
+  registra a limitação, e a correção entra quando alguém pedir;
+  - **[Rmgarch]:** os ranks são recalculados a cada perturbação, como no `rmgarch` (notas, seção 6);
 - **Kendall:** R não é estimada por ℓ, então só `mshape` tem erro-padrão, com R fixa;
-- os Cᵢⱼ da ML têm erro-padrão nos Rᵢⱼ naturais.
+- os Cᵢⱼ da ML têm erro-padrão nos x reportados.
 
 **Entrada e erros:** as do 4a, mais estas combinações de `spec_problem`, todas com mensagem que nomeia a
 combinação:
@@ -143,12 +155,15 @@ combinação:
 | `static` sem cópula | `"static"` e `"copula"` |
 | cópula com `fdcc` | `"fdcc"` e `"copula"` |
 | cópula com `mvlaplace` | `"mvlaplace"` e `"copula"` |
-| `static_method` explícito fora de `static` + mvt | `"static_method"` |
+| `static_method` explícito fora de `static` | `"static_method"` |
 | `start` em `mshape` com cópula mvt | `"mshape"` e `"start"` |
 | `static` com ordem diferente de (1, 1) | `"order"` |
 
 O método estático tem três valores: `Default` (o Python manda quando `static_method=None`), `Kendall` e `Ml`.
-`Default` vira `Kendall` na mvt estática e é ignorado em qualquer outra combinação.
+`Default` vira `Kendall` na estática e é ignorado em qualquer outra combinação.
+
+**Dados dos testes** (Task 1): `tests/reference/data/copula3.csv`, com univariados sGARCH(1,1)-std nos coeficientes
+das notas, seção 1. O dcc3 do 4a tem margens quase normais, que levam ν ao teto 50.
 
 ## Review Focus
 
@@ -160,7 +175,7 @@ O método estático tem três valores: `Default` (o Python manda quando `static_
    e sem exceção, e as outras specs ficam iguais às ajustadas sozinhas. → teste na Task 4.
 4. **Lote misto, de 1 a 16 threads:** specs DCC e cópula juntas dão o mesmo resultado bit a bit que cada spec
    ajustada sozinha, e as specs com `copula = None` reproduzem o 4a bit a bit. → teste na Task 3.
-5. **Forma da mvt no teto:** o dcc3 dá ν̂ → 50 (o rmgarch estima 49,99999). O Brent tem de voltar ν̂ ≤ 50 com
+5. **Forma da mvt no teto:** com margens quase normais (o dcc3 do 4a), ν̂ → 50 (o rmgarch estima 49,99999). O Brent tem de voltar ν̂ ≤ 50 com
    status `converged`, ℓ finita e erro-padrão finito e positivo, ou NaN documentado. → testes nas Tasks 3 e 5.
 
 ---
@@ -193,15 +208,17 @@ python/tests/oracles/test_copula_oracles.py
 
 **Interfaces:**
 - Produces: as notas, no formato das notas do 4a, com números de referência a 1e-12 para as Tasks 2–5:
-  - **dados:** `tests/reference/data/dcc3.csv`;
+  - **dados:** `tests/reference/data/copula3.csv`, simulado pela sonda (Ruling da Task 1);
   - **univariados:** sGARCH(1,1)-std, ARMA(0,0), `multifit` com solnp e tol 1e-10. Os coeficientes vão nas notas,
     em 15 dígitos;
   - **casos:**
-    - `static_mvnorm_param`, `static_mvnorm_emp`;
+    - `static_mvnorm_kendall_param`, `static_mvnorm_ml_param`, `static_mvnorm_ml_emp`;
     - `static_mvt_kendall_param`, `static_mvt_kendall_emp`, `static_mvt_ml_param`;
     - `dcc_mvnorm_param`, `dcc_mvnorm_emp`, `dcc_mvt_param`, `dcc_mvt_emp`;
     - `adcc_mvnorm_param`, `adcc_mvt_param`;
     - `dcc_mvt_param_shape8`, com `mshape` fixo em 8.
+
+  São 13 casos.
 
 Responder em matemática, cada item conferido numericamente, a ~1e-12, com o objeto ajustado:
 1. u paramétrico e empírico, incluindo o divisor do rank e o limite ou truncamento de u;
@@ -283,8 +300,9 @@ TEST(CopulaScores, QuantilesAndMarginal) {
 }
 TEST(DccParameterMap, CopulaCombinations) {
   // Review Focus 2: cada linha da tabela "Entrada e erros" dá a mensagem com as palavras da tabela;
-  // nomes: static mvt ml m = 3: C1 C2 C3 mshape; static mvt kendall: mshape; static mvnorm: vazio;
-  // correlation_coefficients: 3, 0, 0; copula = None: tudo igual ao 4a
+  // nomes: static mvt ml m = 3: C1 C2 C3 mshape; static mvt kendall: mshape; static mvnorm kendall: vazio;
+  // static mvnorm ml: C1 C2 C3;
+  // correlation_coefficients: 3, 0, 0, 3; copula = None: tudo igual ao 4a
 }
 ```
 
@@ -333,7 +351,7 @@ TEST(DccParameterMap, CopulaCombinations) {
 - [ ] **Step 1: Escrever os testes**
 
 ```cpp
-// dcc3 + univariados sGARCH(1,1)-std nos coeficientes das notas da Task 1.
+// copula3 + univariados sGARCH(1,1)-std nos coeficientes das notas da Task 1.
 TEST(CopulaFit, MvnormIsDccOnScores) {
   // dcc_mvnorm_param, Standard: fit_copula == fit_dcc sobre copula_panel (estimate bit a bit);
   // loglik == univariate_loglik + (reported_loglik + sum log sigma) - marginal_log_density (rel 1e-12)
@@ -406,7 +424,7 @@ TEST(CopulaStatic, KendallFormula) {
   // u de 3 séries fixas (6 linhas): R == sin(pi tau_b/2) com tau_b calculado no teste por pares (1e-15)
 }
 TEST(CopulaStatic, MatchesRmgarch) {
-  // Rmgarch quando a Task 1 achou [Rmgarch] na estática, senão Standard: static_mvnorm_param/emp,
+  // Rmgarch quando a Task 1 achou [Rmgarch] na estática, senão Standard: static_mvnorm_kendall_param, static_mvnorm_ml_param/emp,
   // static_mvt_kendall_param/emp, static_mvt_ml_param: loglik no ponto do rmgarch == notas (rel 1e-10);
   // estimado: R e mshape rel 1e-3 das notas, loglik rel 1e-7
 }
@@ -529,7 +547,7 @@ def test_copula_standard_errors_later(ctx, series): ...
   - o numpy não tem o quantil da t nem as CDFs univariadas, e esses casos ficam com o C++.
 - `validation.md` ganha a seção "`rmgarch`, Copula-DCC":
   - o que é igual nas duas convenções;
-  - cada `[Rmgarch]` da Task 1, com paper e efeito no dcc3 (ℓ, BIC);
+  - cada `[Rmgarch]` da Task 1, com paper e efeito no copula3 (ℓ, BIC);
   - o estimador da mvnorm estática;
   - os erros-padrão empíricos sem Chen–Fan;
   - Kendall não definida positiva dá `failed`;
