@@ -1,11 +1,15 @@
 #pragma once
 
+#include "core/spec.hpp"
 #include "fit/fit_result.hpp"
+#include "forecast/forecast.hpp"
 #include "forecast/inputs.hpp"
 #include "forecast/state.hpp"
 #include "model/layout.hpp"
 
 #include <cstddef>
+#include <expected>
+#include <string>
 #include <vector>
 
 namespace ve::sim
@@ -26,5 +30,11 @@ struct Start
 
 // The final state of the fit at its estimate; fit has a finite point (the caller checks).
 Start start_of_fit(const FitResult& fit);
+
+// rugarch's ugarchpath: the unconditional state of a spec with every parameter fixed, no variance targeting, not
+// iGARCH and stationary, with the level of the first row of the future variance regressors. Its L = max(m, n, p, q,
+// 1) entries hold the unconditional sigma2 (and q in csGARCH), deviations 0 and residuals the presample draws. The
+// message of VE_INVALID_ARGUMENT otherwise.
+std::expected<Start, std::string> start_of_spec(const Spec& spec, const forecast::FutureRegressors& future);
 
 }
