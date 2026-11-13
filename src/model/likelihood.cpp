@@ -237,12 +237,25 @@ garch::Presample<T> presample(const Data& data, std::span<const T> residuals, st
     return {mean_square(residuals), held};
 }
 
-// What the variance recursion starts from: the presample and c_t = sum_k zeta_k v_t,k (empty without vxreg).
+template <class T>
+std::span<T> provided_or(std::span<T> provided, std::vector<T>& storage, std::size_t size)
+{
+    if (!provided.empty())
+    {
+        return provided;
+    }
+    storage.resize(size);
+    return storage;
+}
+
+// What the variance recursion starts from: the presample and c_t = sum_k zeta_k v_t,k (empty without vxreg); and
+// where csGARCH writes its trend q, when asked for (empty: not written).
 template <class T>
 struct Start
 {
     garch::Presample<T> presample;
     std::span<const T> intercept_shift;
+    std::span<T> permanent{};
 };
 
 template <class T, class Parameters>
@@ -289,7 +302,8 @@ void csgarch_from_residuals(std::span<const T> residuals, garch::CsGarchParamete
 {
     p.intercept_shift = start.intercept_shift;
     std::vector<T> squared_residuals(residuals.size());
-    std::vector<T> permanent(residuals.size());
+    std::vector<T> permanent_storage;
+    std::span<T> permanent = provided_or(start.permanent, permanent_storage, residuals.size());
     std::ranges::transform(residuals, squared_residuals.begin(), [](const T& e) { return e * e; });
     garch::csgarch_variance<T>(squared_residuals, p, start.presample, sigma2, permanent);
 }
@@ -347,17 +361,6 @@ bool fill_variance(std::span<const T> residuals, std::span<const T> theta, const
             return power_variance<T>(residuals, theta, layout, start, sigma2);
     }
     return false;
-}
-
-template <class T>
-std::span<T> provided_or(std::span<T> provided, std::vector<T>& storage, std::size_t size)
-{
-    if (!provided.empty())
-    {
-        return provided;
-    }
-    storage.resize(size);
-    return storage;
 }
 
 template <class T>
@@ -574,10 +577,12 @@ bool joint_egarch(JointMean<T>& mean, const garch::EGarchParameters<T>& p, const
 
 // q and e^2 are the state beside sigma2; e^2_{t-1} enters the step as soon as e_{t-1} exists.
 template <class T>
-bool joint_csgarch(JointMean<T>& mean, const garch::CsGarchParameters<T>& p, const garch::Presample<T>& presample,
+bool joint_csgarch(JointMean<T>& mean, const garch::CsGarchParameters<T>& p, const Start<T>& start,
                    std::span<T> sigma2)
 {
-    std::vector<T> permanent(sigma2.size());
+    const garch::Presample<T>& presample = start.presample;
+    std::vector<T> permanent_storage;
+    std::span<T> permanent = provided_or(start.permanent, permanent_storage, sigma2.size());
     std::vector<T> squared_residuals(sigma2.size());
     T long_run = p.omega / (1.0 - p.rho);
     return joint_loop<T>(mean, sigma2,
@@ -643,8 +648,7 @@ bool joint_series(JointMean<T>& mean, const Layout& layout, const Start<T>& star
             return joint_gjrgarch<T>(mean, shifted(gjrgarch_parameters(theta, layout), start), start.presample,
                                      sigma2);
         case Model::CsGarch:
-            return joint_csgarch<T>(mean, shifted(csgarch_parameters(theta, layout), start), start.presample,
-                                    sigma2);
+            return joint_csgarch<T>(mean, shifted(csgarch_parameters(theta, layout), start), start, sigma2);
         case Model::ApArch:
         case Model::FGarchGarch:
         case Model::FGarchTGarch:
@@ -670,6 +674,8 @@ struct Evaluation
     VarInit var_init;
     const dist::ShapeParameters<T>& shape;
     std::span<const T> intercept_shift;
+    std::span<T> deviations;
+    std::span<T> permanent;
 };
 
 // c_t = sum_k zeta_k v_t,k, or an empty span without vxreg.
@@ -725,13 +731,32 @@ bool fill_series(const Evaluation<T>& e, std::span<const T> theta, const Layout&
     }
     JointMean<T> mean{e.data, theta, layout, arma_parameters(theta, layout), std::vector<T>(e.sigma2.size()),
                       e.residuals};
-    return joint_series<T>(mean, layout, start, e.sigma2);
+    if (!joint_series<T>(mean, layout, start, e.sigma2))
+    {
+        return false;
+    }
+    if (!e.deviations.empty())
+    {
+        std::ranges::copy(mean.d, e.deviations.begin());
+    }
+    return true;
+}
+
+// d_t = r_t - mu - sum_k delta_k x_t,k, the series the ARMA acts on without ARCH-in-mean.
+template <class T>
+void fill_deviations(const Data& data, std::span<const T> theta, const Layout& layout, std::span<T> deviations)
+{
+    T mu = arma_parameters(theta, layout).mu;
+    for (std::size_t t = 0; t < deviations.size(); ++t)
+    {
+        deviations[t] = deviation_at<T>(data, theta, layout, mu, t);
+    }
 }
 
 template <class T>
 T evaluate(const Evaluation<T>& e, std::span<const T> theta, const Layout& layout)
 {
-    Start<T> start{presample<T>(e.data, e.e0, theta, layout, e.var_init), e.intercept_shift};
+    Start<T> start{presample<T>(e.data, e.e0, theta, layout, e.var_init), e.intercept_shift, e.permanent};
     if (!fill_series<T>(e, theta, layout, start))
     {
         return T{kInvalidLoglik};
@@ -788,6 +813,8 @@ T loglik(const Data& data, std::span<const T> theta, const Layout& layout, VarIn
     assert(out.terms.empty() || out.terms.size() == r.size());
     assert(out.residuals.empty() || out.residuals.size() == r.size());
     assert(out.sigma2.empty() || out.sigma2.size() == r.size());
+    assert(out.deviations.empty() || out.deviations.size() == r.size());
+    assert(out.permanent.empty() || out.permanent.size() == r.size());
     dist::ShapeParameters<T> shape = shape_parameters_of(theta, layout);
     if (!dist::in_domain(layout.dist, value_of(shape)))
     {
@@ -805,9 +832,21 @@ T loglik(const Data& data, std::span<const T> theta, const Layout& layout, VarIn
         e0 = e0_storage;
     }
     mean_residuals<T>(data, theta, layout, e0);
+    if (!layout.has_archm() && !out.deviations.empty())
+    {
+        fill_deviations<T>(data, theta, layout, out.deviations);
+    }
     std::vector<T> shift_storage;
-    Evaluation<T> evaluation{data,  e0,        residuals, sigma2,
-                             out.terms, var_init, shape,     variance_shift<T>(data, theta, layout, shift_storage)};
+    Evaluation<T> evaluation{data,
+                             e0,
+                             residuals,
+                             sigma2,
+                             out.terms,
+                             var_init,
+                             shape,
+                             variance_shift<T>(data, theta, layout, shift_storage),
+                             out.deviations,
+                             out.permanent};
     if (!layout.variance_targeting)
     {
         return evaluate<T>(evaluation, theta, layout);

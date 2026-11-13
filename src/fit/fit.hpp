@@ -32,12 +32,15 @@ struct LikelihoodProblem
 // theta is not valid or the log-likelihood or its gradient is not finite.
 bool loglik_gradient(const LikelihoodProblem& problem, std::span<const double> theta, std::span<double> grad);
 
-// residuals and sigma2 have the size of data.r; scores is the T x k row-major matrix of per-observation gradients.
+// residuals and sigma2 have the size of data.r; scores is the T x k row-major matrix of per-observation gradients;
+// deviations and permanent as in model::LoglikOutputs, empty when not asked for.
 struct LoglikSeries
 {
     std::span<double> residuals;
     std::span<double> sigma2;
     std::span<double> scores;
+    std::span<double> deviations{};
+    std::span<double> permanent{};
 };
 
 // The log-likelihood at the natural-space theta, filling every series of out in the same pass. The series are

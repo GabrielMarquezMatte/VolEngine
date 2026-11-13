@@ -166,15 +166,19 @@ double loglik_with_scores_with(const fit::LikelihoodProblem& problem, std::span<
     std::vector<Number> terms(count);
     std::vector<Number> residuals(count);
     std::vector<Number> sigma2(count);
+    std::vector<Number> deviations(out.deviations.size());
+    std::vector<Number> permanent(out.permanent.size());
     seed<N>(theta, seeds);
-    Number loglik =
-        model::loglik<Number>(problem.data, seeds, problem.layout, problem.var_init, {terms, residuals, sigma2});
+    Number loglik = model::loglik<Number>(problem.data, seeds, problem.layout, problem.var_init,
+                                          {terms, residuals, sigma2, deviations, permanent});
     for (std::size_t t = 0; t < count; ++t)
     {
         out.residuals[t] = residuals[t].value;
         out.sigma2[t] = sigma2[t].value;
         std::copy_n(terms[t].grad.begin(), k, out.scores.begin() + static_cast<std::ptrdiff_t>(t * k));
     }
+    std::ranges::transform(deviations, out.deviations.begin(), [](const Number& x) { return x.value; });
+    std::ranges::transform(permanent, out.permanent.begin(), [](const Number& x) { return x.value; });
     return loglik.value;
 }
 
@@ -238,6 +242,21 @@ void fill_series(FitResult& result, std::span<const double> r, std::vector<doubl
     result.residuals = std::move(residuals);
 }
 
+std::vector<double> last(std::span<const double> values, std::size_t count)
+{
+    std::span<const double> tail = values.last(std::min(count, values.size()));
+    return {tail.begin(), tail.end()};
+}
+
+// The last L = max(m, n, p, q) entries of each series; every deviation with ARFIMA.
+forecast::ForecastState final_state(const model::Layout& layout, const fit::LoglikSeries& series)
+{
+    std::size_t held = static_cast<std::size_t>(std::max({layout.ar, layout.ma, layout.arch, layout.garch}));
+    std::size_t deviations = layout.has_arfima() ? series.deviations.size() : held;
+    return {last(series.residuals, held), last(series.sigma2, held), last(series.permanent, held),
+            last(series.deviations, deviations)};
+}
+
 bool fill_at_estimate(FitResult& result, const fit::LikelihoodProblem& problem,
                       const model::Standardization& standardization)
 {
@@ -245,12 +264,16 @@ bool fill_at_estimate(FitResult& result, const fit::LikelihoodProblem& problem,
     std::vector<double> residuals(r.size());
     std::vector<double> sigma2(r.size());
     std::vector<double> scores(r.size() * result.estimate.size());
-    double loglik = fit::loglik_with_scores(problem, result.estimate, {residuals, sigma2, scores});
+    std::vector<double> deviations(r.size());
+    std::vector<double> permanent(problem.layout.model == Model::CsGarch ? r.size() : 0);
+    fit::LoglikSeries series{residuals, sigma2, scores, deviations, permanent};
+    double loglik = fit::loglik_with_scores(problem, result.estimate, series);
     if (!std::isfinite(loglik))
     {
         return false;
     }
     result.loglik = loglik;
+    result.state = final_state(problem.layout, series);
     fill_series(result, r, std::move(residuals), sigma2);
     if (problem.layout.variance_targeting)
     {

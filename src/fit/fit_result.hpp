@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/spec.hpp"
+#include "forecast/state.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -36,6 +37,7 @@ struct FitResult
     std::vector<double> residuals;
     std::vector<double> std_residuals;
     std::vector<double> fitted;
+    forecast::ForecastState state;
 };
 
 }
