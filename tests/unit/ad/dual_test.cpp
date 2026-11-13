@@ -120,6 +120,21 @@ TEST(Dual, HyperbolicFunctions)
     }
 }
 
+TEST(Dual, TrigonometricFunctions)
+{
+    for (double v : {-2.0, 0.3, 1.7})
+    {
+        auto x = ve::ad::variable<2>(v, 1);
+        auto s = ve::ad::sin(x);
+        auto c = ve::ad::cos(x);
+        EXPECT_EQ(s.value, std::sin(v));
+        EXPECT_EQ(c.value, std::cos(v));
+        EXPECT_EQ(s.grad[1], std::cos(v));
+        EXPECT_EQ(c.grad[1], -std::sin(v));
+        EXPECT_EQ(s.grad[0], 0.0);
+    }
+}
+
 TEST(Dual, ErfcMatchesItsDerivative)
 {
     for (double v : {-2.0, 0.0, 0.3, 4.0})

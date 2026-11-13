@@ -226,6 +226,18 @@ Dual<N> cosh(const Dual<N>& x)
     return chain(x, std::cosh(x.value), std::sinh(x.value));
 }
 
+template <std::size_t N>
+Dual<N> sin(const Dual<N>& x)
+{
+    return chain(x, std::sin(x.value), std::cos(x.value));
+}
+
+template <std::size_t N>
+Dual<N> cos(const Dual<N>& x)
+{
+    return chain(x, std::cos(x.value), -std::sin(x.value));
+}
+
 // hypot avoids the overflow of 1 + x^2 for large |x|.
 template <std::size_t N>
 Dual<N> asinh(const Dual<N>& x)
