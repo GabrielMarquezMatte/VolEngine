@@ -197,8 +197,8 @@ struct SpecBatch
     const UnivariateStage& stage;
 };
 
-// With the option, a converged spec gets the standard errors of dcc_standard_errors; the others keep NaN, as does
-// every spec when the fits have regressors.
+// With the option, a converged spec gets the standard errors of dcc_standard_errors, which check_dcc_batch made
+// sure the fits can give; the others keep NaN.
 DccFitResult fit_in_batch(const SpecBatch& batch, std::size_t index)
 {
     DccFitResult result = fit_dcc(batch.panel, batch.specs[index], batch.options.config);
@@ -209,11 +209,9 @@ DccFitResult fit_in_batch(const SpecBatch& batch, std::size_t index)
         return result;
     }
     std::expected<DccStandardErrors, std::string> errors = dcc_standard_errors(result, batch.fits);
-    if (errors)
-    {
-        result.se_hessian = std::move(errors->hessian);
-        result.se_robust = std::move(errors->robust);
-    }
+    assert(errors.has_value());
+    result.se_hessian = std::move(errors->hessian);
+    result.se_robust = std::move(errors->robust);
     return result;
 }
 
@@ -260,7 +258,8 @@ DccFitResult fit_dcc(std::shared_ptr<const StandardizedPanel> panel, const DccSp
     return result;
 }
 
-std::optional<std::string> check_dcc_batch(std::span<const FitResult* const> fits, std::span<const DccSpec> specs)
+std::optional<std::string> check_dcc_batch(std::span<const FitResult* const> fits, std::span<const DccSpec> specs,
+                                           const DccOptions& options)
 {
     if (std::optional<std::string> problem = panel_problem(fits))
     {
@@ -277,13 +276,17 @@ std::optional<std::string> check_dcc_batch(std::span<const FitResult* const> fit
             return "spec " + std::to_string(index + 1) + ": " + *problem;
         }
     }
+    if (options.standard_errors)
+    {
+        return standard_errors_problem(fits);
+    }
     return std::nullopt;
 }
 
 std::vector<DccFitResult> fit_dcc_batch(Context& context, std::span<const FitResult* const> fits,
                                         std::span<const DccSpec> specs, const DccOptions& options)
 {
-    assert(!check_dcc_batch(fits, specs));
+    assert(!check_dcc_batch(fits, specs, options));
     const auto panel = std::make_shared<const StandardizedPanel>(standardize(fits));
     const UnivariateStage stage = univariate_stage(fits);
     std::vector<DccFitResult> results(specs.size());

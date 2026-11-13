@@ -31,7 +31,7 @@ struct TwoStagePieces
 };
 
 // The pieces of fit at its estimate, or why there are none: fits_problem, a fit without a finite estimate, or
-// univariate fits with regressors (a message that names them). A numerical failure leaves NaN entries.
+// standard_errors_problem. A numerical failure leaves NaN entries.
 std::expected<TwoStagePieces, std::string> two_stage_pieces(const DccFitResult& fit,
                                                             std::span<const FitResult* const> fits);
 
@@ -52,6 +52,10 @@ struct DccStandardErrors
 
 std::expected<DccStandardErrors, std::string> dcc_standard_errors(const DccFitResult& fit,
                                                                   std::span<const FitResult* const> fits);
+
+// Why the two-stage standard errors cannot be computed from fits, or nullopt: a series with mxreg or vxreg, whose
+// regressors its fit does not keep for the refiltering (the message names "regressors").
+std::optional<std::string> standard_errors_problem(std::span<const FitResult* const> fits);
 
 // Why fits are not those fit was estimated on, or nullopt: another number of series or of observations, or
 // univariate estimates that differ, bit for bit, from fit.univariate_estimates (as filled by fit_dcc_batch).

@@ -8,9 +8,12 @@
 #include "linalg/cholesky.hpp"
 #include "linalg/lu.hpp"
 #include "model/likelihood.hpp"
+#include "model/parameter_map.hpp"
+#include "model/start_values.hpp"
 
 #include <algorithm>
 #include <bit>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -33,8 +36,8 @@ double step_scale()
     return std::cbrt(std::numeric_limits<double>::epsilon());
 }
 
-// eps^(1/3) max(|x|, 1), as the difference it makes to x in floating point.
-double hessian_step(double x)
+// rmgarch's Hessian step, eps^(1/3) max(|x|, 1), as the difference it makes to x in floating point.
+double rmgarch_step(double x)
 {
     const double step = step_scale() * std::max(std::abs(x), 1.0);
     return (x + step) - x;
@@ -66,24 +69,22 @@ struct Series
     fit::LikelihoodProblem problem;
     std::vector<double> estimate;
     std::vector<std::size_t> free;
+    model::Standardization standardization;
 };
 
-// Moving the vector keeps each returns buffer in place, so the problems stay valid.
-std::expected<std::vector<Series>, std::string> series_of(std::span<const FitResult* const> fits)
+// Moving the vector keeps each returns buffer in place, so the problems stay valid. The fits passed
+// standard_errors_problem.
+std::vector<Series> series_of(std::span<const FitResult* const> fits)
 {
     std::vector<Series> series(fits.size());
     for (std::size_t i = 0; i < fits.size(); ++i)
     {
         const std::optional<fit::LikelihoodProblem> problem = fit::problem_of(*fits[i], series[i].returns);
-        if (!problem)
-        {
-            return std::unexpected("series " + std::to_string(i + 1) +
-                                   " has regressors, which its fit does not keep, so the standard errors cannot "
-                                   "refilter it");
-        }
+        assert(problem.has_value());
         series[i].problem = *problem;
         series[i].estimate = fits[i]->estimate;
         series[i].free = fit::interior_indices(problem->layout, series[i].estimate);
+        series[i].standardization = model::standardization_of(problem->data);
     }
     return series;
 }
@@ -236,7 +237,7 @@ DccDifferences dcc_differences(const TwoStage& stage)
     DccDifferences differences{reported_total(stage.base, stage.spec, stage.theta), {}, {}};
     for (const std::size_t position : stage.free)
     {
-        const double step = hessian_step(stage.theta[position]);
+        const double step = rmgarch_step(stage.theta[position]);
         differences.steps.push_back(step);
         differences.shifted.push_back(reported_total(stage.base, stage.spec, moved(stage.theta, position, step)));
     }
@@ -264,13 +265,26 @@ void dcc_block(const TwoStage& stage, const DccDifferences& differences, Matrix&
     }
 }
 
+// The step of a univariate parameter in the DCC rows. Rmgarch: rmgarch's, absolute below 1. Standard: the univariate
+// Hessian's, relative to the parameter's scale, so that the cross rows do not depend on the units of the returns.
+double univariate_step(const TwoStage& stage, const Series& series, std::size_t entry)
+{
+    const double x = series.estimate[entry];
+    if (stage.spec.convention == Convention::Rmgarch)
+    {
+        return rmgarch_step(x);
+    }
+    const double step = fit::hessian_step(series.problem.layout, series.standardization, series.estimate, entry);
+    return (x + step) - x;
+}
+
 // Column `column` of the DCC rows, a univariate parameter: its series is refiltered once, the others are kept.
 void cross_column(const TwoStage& stage, const DccDifferences& differences, std::size_t column, Matrix& a)
 {
     const auto [index, entry] = stage.univariate[column];
     const Series& series = stage.series[index];
     std::vector<double> estimate = series.estimate;
-    const double step = hessian_step(estimate[entry]);
+    const double step = univariate_step(stage, series, entry);
     estimate[entry] += step;
     Point point = stage.base;
     filter_into(series, estimate, index, point);
@@ -370,6 +384,19 @@ std::vector<double> hessian_errors(const TwoStagePieces& pieces, std::size_t dcc
 
 }
 
+std::optional<std::string> standard_errors_problem(std::span<const FitResult* const> fits)
+{
+    for (std::size_t i = 0; i < fits.size(); ++i)
+    {
+        if (fits[i]->spec.mxreg != 0 || fits[i]->spec.vxreg != 0)
+        {
+            return "series " + std::to_string(i + 1) +
+                   " has regressors, which its fit does not keep, so the two-stage standard errors cannot refilter it";
+        }
+    }
+    return std::nullopt;
+}
+
 std::optional<std::string> fits_problem(const DccFitResult& fit, std::span<const FitResult* const> fits)
 {
     if (fits.size() != fit.series)
@@ -405,12 +432,11 @@ std::expected<TwoStagePieces, std::string> two_stage_pieces(const DccFitResult& 
     {
         return std::unexpected(std::string("the DCC fit has no finite estimate"));
     }
-    std::expected<std::vector<Series>, std::string> series = series_of(fits);
-    if (!series)
+    if (std::optional<std::string> problem = standard_errors_problem(fits))
     {
-        return std::unexpected(std::move(series.error()));
+        return std::unexpected(std::move(*problem));
     }
-    const TwoStage stage = two_stage_of(fit, std::move(*series));
+    const TwoStage stage = two_stage_of(fit, series_of(fits));
     const std::size_t n = stage.parameters();
     TwoStagePieces pieces{n, Matrix(n * n, 0.0), Matrix(fit.nobs * n, 0.0)};
     std::size_t offset = 0;
