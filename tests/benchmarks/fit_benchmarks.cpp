@@ -877,6 +877,74 @@ std::string thread_label(int threads)
     return std::to_string(threads);
 }
 
+// The ARFIMA series of the unit tests under its own model, at the parameters of the process: the O(T^2) fractional
+// difference dominates.
+struct ArfimaCase
+{
+    ve::Spec spec;
+    ve::testing::ArfimaProcess process;
+    std::vector<double> r;
+    std::vector<double> theta;
+};
+
+const ArfimaCase& arfima_case()
+{
+    static const ArfimaCase item = [] {
+        const ve::testing::ArfimaProcess process = ve::testing::arfima_processes().front();
+        ve::Spec spec = variant_spec(process.variance.model, process.variance.dist);
+        spec.arfima = true;
+        const ve::model::Layout layout = ve::model::layout_of(spec);
+        std::vector<double> theta = reference_theta(layout);
+        apply_process(theta, layout, process.variance);
+        theta[layout.mu()] = process.mu;
+        theta[layout.arfima_index()] = process.d;
+        return ArfimaCase{spec, process, ve::testing::simulate_arfima(process, 1, kObservations), theta};
+    }();
+    return item;
+}
+
+void run_arfima_loglik(benchmark::State& state, bool with_gradient)
+{
+    const ArfimaCase& item = arfima_case();
+    const ve::model::Layout layout = ve::model::layout_of(item.spec);
+    if (!with_gradient)
+    {
+        const ve::model::LoglikOutputs<double> none{};
+        time_evaluations(state, layout.count(), [&] {
+            return ve::model::loglik<double>(item.r, item.theta, layout, ve::VarInit::Sample, none);
+        });
+        return;
+    }
+    const auto seeds = dual_seeds<8>(item.theta);
+    const ve::model::LoglikOutputs<ve::ad::Dual<8>> none{};
+    time_evaluations(state, layout.count(), [&] {
+        const std::span<const ve::ad::Dual<8>> parameters(seeds);
+        return ve::model::loglik<ve::ad::Dual<8>>(item.r, parameters, layout, ve::VarInit::Sample, none).value;
+    });
+}
+
+void run_arfima_fit_one(benchmark::State& state)
+{
+    const ArfimaCase& item = arfima_case();
+    const ve::FitConfig config;
+    StatusCounts counts;
+    for (auto _ : state)
+    {
+        ve::FitResult result = ve::fit_one(item.r, item.spec, config);
+        counts = StatusCounts{};
+        counts.add(static_cast<int32_t>(result.status));
+        if (counts.other != 0)
+        {
+            state.SkipWithError("the fit ended neither CONVERGED nor MAX_ITER");
+            return;
+        }
+        benchmark::DoNotOptimize(result.loglik);
+    }
+    report_status(state, counts);
+    state.counters["fits_per_s"] =
+        benchmark::Counter(static_cast<double>(state.iterations()), benchmark::Counter::kIsRate);
+}
+
 void register_all()
 {
     for (const NamedSpec& named : named_specs())
@@ -893,6 +961,9 @@ void register_all()
         benchmark::RegisterBenchmark("BM_FitOne/" + item.name, run_regressor_fit_one, item)
             ->Unit(benchmark::kMillisecond);
     }
+    benchmark::RegisterBenchmark("BM_Loglik/arfima_sgarch11_norm/double", run_arfima_loglik, false);
+    benchmark::RegisterBenchmark("BM_Loglik/arfima_sgarch11_norm/dual", run_arfima_loglik, true);
+    benchmark::RegisterBenchmark("BM_FitOne/arfima_sgarch11_norm", run_arfima_fit_one)->Unit(benchmark::kMillisecond);
     static const std::vector<ve::Spec> single{named_specs().front().spec};
     for (const int threads : {1, 2, 4, 8, 0})
     {
