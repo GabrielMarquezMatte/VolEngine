@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <expected>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -28,7 +29,9 @@ struct Start
     double presample_sigma = 0.0;
 };
 
-// The final state of the fit at its estimate; fit has a finite point (the caller checks).
+// The final state of a fit at its estimate: start_of_fit(fit) == start_of(fit.spec, fit.estimate, fit.state). The
+// estimate is finite and the state non-empty (the caller checks).
+Start start_of(const Spec& spec, std::span<const double> estimate, const forecast::ForecastState& state);
 Start start_of_fit(const FitResult& fit);
 
 // rugarch's ugarchpath: the unconditional state of a spec with every parameter fixed, no variance targeting, not

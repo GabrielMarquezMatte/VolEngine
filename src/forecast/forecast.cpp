@@ -134,14 +134,20 @@ std::vector<double> mean_forecast(const Inputs& in, std::span<const double> sigm
 
 Forecast forecast(const FitResult& fit, std::size_t horizon, const FutureRegressors& future)
 {
-    model::Layout layout = model::layout_of(fit.spec);
-    assert(horizon > 0 && !fit.state.residuals.empty());
+    return forecast(fit.spec, fit.estimate, fit.state, horizon, future);
+}
+
+Forecast forecast(const Spec& spec, std::span<const double> estimate, const ForecastState& state,
+                  std::size_t horizon, const FutureRegressors& future)
+{
+    model::Layout layout = model::layout_of(spec);
+    assert(horizon > 0 && !state.residuals.empty());
     assert(future.mean.columns == static_cast<std::size_t>(layout.mxreg));
     assert(future.mean.values.size() == horizon * future.mean.columns);
     assert(future.variance.columns == static_cast<std::size_t>(layout.vxreg));
     assert(future.variance.values.size() == horizon * future.variance.columns);
-    detail::Moments moments = detail::moments_of(layout, fit.estimate);
-    Inputs in{fit.state, layout, fit.estimate, future, horizon, moments};
+    detail::Moments moments = detail::moments_of(layout, estimate);
+    Inputs in{state, layout, estimate, future, horizon, moments};
     Forecast result;
     result.sigma = detail::variance_forecast(in);
     std::ranges::transform(result.sigma, result.sigma.begin(), [](double variance) { return std::sqrt(variance); });

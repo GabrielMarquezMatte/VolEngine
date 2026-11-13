@@ -518,4 +518,31 @@ TEST(Forecast, FirstStepIsForecastOfOne)
     expect_first_step_is_forecast_of_one(ve::Spec{.ar = 1, .ma = 1, .arfima = true});
 }
 
+// The overload on (spec, estimate, state) is the one the FitResult overload calls.
+TEST(Forecast, FromKeptState)
+{
+    constexpr std::size_t horizon = 10;
+    for (const ve::Spec& spec : {ve::Spec{.model = Model::SGarch, .ar = 1, .ma = 1, .mxreg = 1, .vxreg = 1},
+                                 ve::Spec{.model = Model::CsGarch}, ve::Spec{.ar = 1, .ma = 1, .arfima = true},
+                                 ve::Spec{.model = Model::GjrGarch, .dist = Dist::Sstd}})
+    {
+        std::vector<double> r = ve::testing::simulate_garch_series(5, kObservations);
+        std::size_t k_mean = static_cast<std::size_t>(spec.mxreg);
+        std::size_t k_variance = static_cast<std::size_t>(spec.vxreg);
+        std::vector<double> x = columns(kObservations + horizon, k_mean, -0.25);
+        std::vector<double> v = columns(kObservations + horizon, k_variance, 0.5);
+        ve::model::Data sample{r,
+                               {std::span<const double>(x.data(), kObservations * k_mean), k_mean},
+                               {std::span<const double>(v.data(), kObservations * k_variance), k_variance}};
+        ve::FitResult fit = ve::fit_one(sample, spec, ve::FitConfig{});
+        ASSERT_FALSE(fit.sigma.empty());
+        ve::forecast::FutureRegressors future{{std::span<const double>(x).last(horizon * k_mean), k_mean},
+                                              {std::span<const double>(v).last(horizon * k_variance), k_variance}};
+        Forecast whole = ve::forecast::forecast(fit, horizon, future);
+        Forecast kept = ve::forecast::forecast(fit.spec, fit.estimate, fit.state, horizon, future);
+        EXPECT_EQ(whole.sigma, kept.sigma);
+        EXPECT_EQ(whole.mean, kept.mean);
+    }
+}
+
 }
