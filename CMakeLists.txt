@@ -65,6 +65,7 @@ add_library(volengine_core STATIC
     src/dcc/likelihood.cpp
     src/dcc/panel.cpp
     src/dcc/parameter_map.cpp
+    src/dcc/standard_errors.cpp
     src/diagnostics/portmanteau.cpp
     src/diagnostics/sign_bias.cpp
     src/diagnostics/tails.cpp
@@ -81,6 +82,7 @@ add_library(volengine_core STATIC
     src/forecast/variance_forecast.cpp
     src/linalg/cholesky.cpp
     src/linalg/least_squares.cpp
+    src/linalg/lu.cpp
     src/linalg/symmetric_eigen.cpp
     src/model/layout.cpp
     src/model/likelihood.cpp
@@ -146,6 +148,7 @@ if(VE_BUILD_TESTS)
         tests/unit/dcc/panel_test.cpp
         tests/unit/dcc/parameter_map_test.cpp
         tests/unit/dcc/recursion_test.cpp
+        tests/unit/dcc/standard_errors_test.cpp
         tests/unit/dist/cdf_test.cpp
         tests/unit/diagnostics/portmanteau_test.cpp
         tests/unit/diagnostics/sign_bias_test.cpp
@@ -167,6 +170,7 @@ if(VE_BUILD_TESTS)
         tests/unit/garch/sgarch_test.cpp
         tests/unit/garch/step_test.cpp
         tests/unit/linalg/least_squares_test.cpp
+        tests/unit/linalg/lu_test.cpp
         tests/unit/linalg/symmetric_eigen_test.cpp
         tests/unit/mean/arma_test.cpp
         tests/unit/mean/fractional_test.cpp

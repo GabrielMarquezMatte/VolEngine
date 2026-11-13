@@ -51,7 +51,8 @@ struct DccFitResult
 // spec_problem(spec, panel->m).
 DccFitResult fit_dcc(std::shared_ptr<const StandardizedPanel> panel, const DccSpec& spec, const FitConfig& config);
 
-// standard_errors asks the batch for the two-stage tables (se_hessian, se_robust); until then they stay NaN.
+// standard_errors asks the batch for the two-stage tables (se_hessian, se_robust) of each converged spec, those of
+// dcc_standard_errors to the bit; the other specs, and every spec when a univariate fit has regressors, keep NaN.
 struct DccOptions
 {
     FitConfig config{};

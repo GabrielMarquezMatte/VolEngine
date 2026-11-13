@@ -96,19 +96,6 @@ bool shrinking_difference_column(const Problem& problem, std::span<const double>
     return false;
 }
 
-Indices interior_indices(const model::Layout& layout, std::span<const double> theta)
-{
-    Indices interior;
-    for (std::size_t i = 0; i < theta.size(); ++i)
-    {
-        if (layout.is_estimated(i) && !model::on_boundary(layout, theta, i))
-        {
-            interior.push_back(i);
-        }
-    }
-    return interior;
-}
-
 void symmetrize(Matrix& matrix, std::size_t m)
 {
     for (std::size_t i = 0; i < m; ++i)
@@ -123,8 +110,8 @@ void symmetrize(Matrix& matrix, std::size_t m)
 }
 
 // The Hessian block over `interior`, m x m row-major.
-std::optional<Matrix> numerical_hessian(const Problem& problem, std::span<const double> theta,
-                                        const Indices& interior)
+std::optional<Matrix> hessian_block(const Problem& problem, std::span<const double> theta,
+                                    std::span<const std::size_t> interior)
 {
     std::size_t m = interior.size();
     std::optional<Matrix> hessian(std::in_place, m * m);
@@ -228,6 +215,27 @@ StandardErrors from_hessian(const Matrix& hessian, const Matrix& middle, std::si
 
 }
 
+std::vector<std::size_t> interior_indices(const model::Layout& layout, std::span<const double> theta)
+{
+    std::vector<std::size_t> interior;
+    for (std::size_t i = 0; i < theta.size(); ++i)
+    {
+        if (layout.is_estimated(i) && !model::on_boundary(layout, theta, i))
+        {
+            interior.push_back(i);
+        }
+    }
+    return interior;
+}
+
+std::optional<std::vector<double>> numerical_hessian(const GradientFn& gradient, std::span<const double> theta,
+                                                     std::span<const std::size_t> indices,
+                                                     const model::Layout& layout,
+                                                     const model::Standardization& standardization)
+{
+    return hessian_block(Problem{gradient, layout, standardization}, theta, indices);
+}
+
 StandardErrors standard_errors(const GradientFn& gradient, std::span<const double> theta,
                                std::span<const double> scores, const model::Layout& layout,
                                const model::Standardization& standardization)
@@ -235,7 +243,7 @@ StandardErrors standard_errors(const GradientFn& gradient, std::span<const doubl
     std::size_t k = theta.size();
     Problem problem{gradient, layout, standardization};
     Indices interior = interior_indices(layout, theta);
-    std::optional<Matrix> hessian = numerical_hessian(problem, theta, interior);
+    std::optional<Matrix> hessian = hessian_block(problem, theta, interior);
     StandardErrors errors = unavailable(k);
     if (!hessian)
     {

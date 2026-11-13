@@ -5,7 +5,10 @@
 #include "model/data.hpp"
 #include "model/layout.hpp"
 
+#include <cstddef>
+#include <optional>
 #include <span>
+#include <vector>
 
 namespace ve
 {
@@ -27,6 +30,15 @@ struct LikelihoodProblem
     model::Layout layout;
     VarInit var_init;
 };
+
+// The univariate problem of a fit without regressors, rebuilt from its result: r = fitted + residuals, written to
+// storage, which the problem views. nullopt with mxreg or vxreg, which the result does not keep.
+std::optional<LikelihoodProblem> problem_of(const FitResult& fit, std::vector<double>& storage);
+
+// The Hessian of the log-likelihood over `indices` of the natural-space theta, row-major, by the differences of the
+// fit's standard errors; nullopt when some gradient on the way is not finite.
+std::optional<std::vector<double>> loglik_hessian(const LikelihoodProblem& problem, std::span<const double> theta,
+                                                  std::span<const std::size_t> indices);
 
 // Writes the natural-space gradient of the log-likelihood at theta to grad (k entries). Returns false when
 // theta is not valid or the log-likelihood or its gradient is not finite.
