@@ -4,6 +4,8 @@
 #include "core/blocks.hpp"
 #include "core/context.hpp"
 #include "dcc/copula/fit.hpp"
+#include "dcc/copula/scores.hpp"
+#include "dcc/future/state.hpp"
 #include "dcc/likelihood.hpp"
 #include "dcc/parameter_map.hpp"
 #include "dcc/standard_errors.hpp"
@@ -235,6 +237,7 @@ struct SpecBatch
     std::span<const FitResult* const> fits;
     const UnivariateStage& stage;
     const copula::CopulaInputs& copula;
+    const std::shared_ptr<const std::vector<future::SeriesEnd>>& series_end;
 };
 
 DccFitResult fit_one_spec(const SpecBatch& batch, const DccSpec& spec)
@@ -246,6 +249,32 @@ DccFitResult fit_one_spec(const SpecBatch& batch, const DccSpec& spec)
     return fit_dcc(batch.panel, spec, batch.options.config);
 }
 
+// The final state of the correlation recursion of a result with a finite point (its r exists): on the panel of the
+// DCC or on the scores of the copula at the estimated shape; a static copula keeps its constant R.
+future::DccEnd end_of(const SpecBatch& batch, const DccFitResult& result)
+{
+    const DccSpec& spec = result.spec;
+    const DccLayout layout = layout_of(spec, result.series);
+    const std::vector<double> theta = full_parameters(layout, result.estimate);
+    future::DccEnd end;
+    if (spec.model == DccModel::Static)
+    {
+        end.theta = theta;
+        end.static_r.assign(result.r->begin(), result.r->begin() + static_cast<std::ptrdiff_t>(result.series * result.series));
+        return end;
+    }
+    if (spec.copula == DccCopula::None)
+    {
+        end = future::dcc_end(*batch.panel, spec, theta, batch.panel->t);
+        return end;
+    }
+    const double shape = layout.has_shape ? theta[layout.shape()] : 0.0;
+    const copula::CopulaPanel scores =
+        copula::copula_panel(batch.copula.uniforms_of(spec), *batch.copula.univariate, spec.dist, shape);
+    end = future::dcc_end(*scores.panel, spec, theta, scores.panel->t);
+    return end;
+}
+
 // With the option, a converged spec gets the standard errors of dcc_standard_errors, which check_dcc_batch made
 // sure the fits can give; the others keep NaN.
 DccFitResult fit_in_batch(const SpecBatch& batch, std::size_t index)
@@ -253,6 +282,11 @@ DccFitResult fit_in_batch(const SpecBatch& batch, std::size_t index)
     DccFitResult result = fit_one_spec(batch, batch.specs[index]);
     result.univariate_parameters = batch.stage.parameters;
     result.univariate_estimates = batch.stage.estimates;
+    if (result.r != nullptr)
+    {
+        result.series_end = batch.series_end;
+        result.end = end_of(batch, result);
+    }
     if (!batch.options.standard_errors || result.status != FitStatus::Converged)
     {
         return result;
@@ -340,7 +374,13 @@ std::vector<DccFitResult> fit_dcc_batch(Context& context, std::span<const FitRes
     const UnivariateStage stage = univariate_stage(fits);
     std::vector<DccFitResult> results(specs.size());
     const copula::CopulaInputs copula = copula::copula_inputs(fits, specs);
-    const SpecBatch batch{panel, specs, options, fits, stage, copula};
+    std::vector<future::SeriesEnd> ends;
+    for (const FitResult* fit : fits)
+    {
+        ends.push_back({fit->spec, fit->estimate, fit->state});
+    }
+    const auto series_end = std::make_shared<const std::vector<future::SeriesEnd>>(std::move(ends));
+    const SpecBatch batch{panel, specs, options, fits, stage, copula, series_end};
     context.with_pool([&](BS::light_thread_pool& pool, int threads) { run_specs(pool, threads, batch, results); });
     return results;
 }
