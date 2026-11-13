@@ -2,6 +2,7 @@
 
 #include "core/spec.hpp"
 #include "dcc/copula/margins.hpp"
+#include "dcc/copula/scores.hpp"
 #include "dcc/fit.hpp"
 #include "dcc/panel.hpp"
 #include "dcc/spec.hpp"
@@ -27,6 +28,10 @@ struct CopulaInputs
     // then fails) or no spec reads it.
     std::array<std::optional<std::vector<double>>, 4> kendall;
     double univariate_loglik = 0.0;
+    // The scores of the one spec these inputs were built for (inputs_at), at the shape scores_shape; copula_terms
+    // reuses them when theta's shape has the same bits, which every step but one on the shape does.
+    std::shared_ptr<const CopulaPanel> scores;
+    double scores_shape = 0.0;
 
     // The u of spec (spec.copula is not None, and copula_inputs saw a spec like it).
     std::span<const double> uniforms_of(const DccSpec& spec) const;
@@ -50,8 +55,9 @@ std::vector<double> copula_terms(const CopulaInputs& inputs, const DccSpec& spec
 // for the two-stage standard errors. Standard keeps the empirical ranks and the Kendall matrix of base (ranks are
 // piecewise constant in theta); Rmgarch recomputes both, as rmgarch's finite differences do (plan 4b notes,
 // section 6). univariate_loglik is 0.
+// The scores are computed once there, at shape (unused without the mvt).
 CopulaInputs inputs_at(std::shared_ptr<const StandardizedPanel> univariate, std::span<const Margin> margins,
-                       const DccSpec& spec, const CopulaInputs& base);
+                       const DccSpec& spec, const CopulaInputs& base, double shape);
 
 // A DccFitResult like fit_dcc's: names, estimate and status of spec, loglik = copula_loglik at the estimate, r,
 // and the univariate panel (H_t from its sigma). A free mvt shape is the Brent maximum of the profile over

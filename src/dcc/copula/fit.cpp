@@ -10,6 +10,7 @@
 #include <boost/math/tools/minima.hpp>
 
 #include <algorithm>
+#include <bit>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -257,7 +258,16 @@ std::vector<double> copula_terms(const CopulaInputs& inputs, const DccSpec& spec
     {
         return terms;
     }
-    const CopulaPanel scores = copula_panel(inputs.uniforms_of(spec), *inputs.univariate, spec.dist, nu);
+    const bool cached = inputs.scores != nullptr &&
+                        (spec.dist != DccDist::MvT || std::bit_cast<std::uint64_t>(nu) ==
+                                                          std::bit_cast<std::uint64_t>(inputs.scores_shape));
+    std::shared_ptr<const CopulaPanel> fresh;
+    if (!cached)
+    {
+        fresh = std::make_shared<const CopulaPanel>(
+            copula_panel(inputs.uniforms_of(spec), *inputs.univariate, spec.dist, nu));
+    }
+    const CopulaPanel& scores = cached ? *inputs.scores : *fresh;
     terms = spec.model == DccModel::Static ? static_dependence(inputs, spec, theta, scores, r)
                                            : dynamic_terms(*scores.panel, spec, theta, r);
     for (std::size_t t = 0; t < terms.size(); ++t)
@@ -275,7 +285,7 @@ double copula_loglik(const CopulaInputs& inputs, const DccSpec& spec, std::span<
 }
 
 CopulaInputs inputs_at(std::shared_ptr<const StandardizedPanel> univariate, std::span<const Margin> margins,
-                       const DccSpec& spec, const CopulaInputs& base)
+                       const DccSpec& spec, const CopulaInputs& base, double shape)
 {
     const std::size_t index = uniform_index(spec.copula, spec.convention);
     CopulaInputs inputs;
@@ -288,6 +298,12 @@ CopulaInputs inputs_at(std::shared_ptr<const StandardizedPanel> univariate, std:
     if (reads_kendall(spec) && !fixed_ranks)
     {
         inputs.kendall[index] = kendall_correlation(inputs.u[index], inputs.univariate->t, inputs.univariate->m);
+    }
+    if (spec.dist != DccDist::MvT || shape > 2.0)
+    {
+        inputs.scores = std::make_shared<const CopulaPanel>(
+            copula_panel(inputs.u[index], *inputs.univariate, spec.dist, shape));
+        inputs.scores_shape = shape;
     }
     return inputs;
 }
@@ -302,7 +318,13 @@ DccFitResult fit_copula(const CopulaInputs& inputs, const DccSpec& spec, const F
     {
         std::tie(nu, ran_out) = profile_shape(inputs, spec, config);
     }
-    DccFitResult result = result_of(inputs, spec, layout, point_at(inputs, spec, nu, config));
+    // A fixed shape outside (4, 50) fails the spec, as on the plain DCC, for the static copula too.
+    ProfilePoint point;
+    if (!layout.has_shape || (nu > kShapeFloor && nu < kShapeCeiling))
+    {
+        point = point_at(inputs, spec, nu, config);
+    }
+    DccFitResult result = result_of(inputs, spec, layout, point);
     if (ran_out && result.status == FitStatus::Converged)
     {
         result.status = FitStatus::MaxIter;

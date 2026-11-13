@@ -207,6 +207,35 @@ TEST(CopulaFit, ShapeAtTheCeiling)
     EXPECT_TRUE(std::isfinite(fit.loglik));
 }
 
+TEST(CopulaFit, FixedShapeOutsideTheBoundsFailsItsSpecOnly)
+{
+    // Final review 1-2: a fixed copula shape outside (4, 50) fails that spec, static or dynamic, like the plain DCC,
+    // and never throws out of the batch.
+    const std::vector<FitResult> fits = ve::testing::copula3_fits();
+    const std::vector<const FitResult*> pointers = pointers_of(fits);
+    std::vector<DccSpec> specs{copula_spec(DccModel::Dcc, DccDist::MvNorm, DccCopula::None)};
+    for (const double nu : {0.0, 3.0, 60.0})
+    {
+        for (const DccModel model : {DccModel::Dcc, DccModel::Static})
+        {
+            DccSpec spec = copula_spec(model, DccDist::MvT, DccCopula::Parametric);
+            spec.fixed = {{"mshape", nu}};
+            specs.push_back(spec);
+        }
+    }
+    const DccOptions options{FitConfig{}, false};
+    ASSERT_FALSE(ve::dcc::check_dcc_batch(pointers, specs, options).has_value());
+    ve::Context context;
+    const std::vector<DccFitResult> results = ve::dcc::fit_dcc_batch(context, pointers, specs, options);
+    EXPECT_EQ(results[0].status, FitStatus::Converged);
+    for (std::size_t i = 1; i < results.size(); ++i)
+    {
+        SCOPED_TRACE(i);
+        EXPECT_EQ(results[i].status, FitStatus::Failed);
+        EXPECT_TRUE(std::isnan(results[i].loglik));
+    }
+}
+
 TEST(CopulaFit, CriteriaUseTheDccK)
 {
     const std::vector<FitResult> fits = ve::testing::copula3_fits();
