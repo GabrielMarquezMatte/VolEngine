@@ -83,8 +83,9 @@ Cada subplano fecha com oráculo, documentação em `docs/guide/validation.md` e
 - **Erros-padrão por opção e por função explícita** (decisão do autor, 2026-11-13):
   - **Opção ligada no ajuste DCC** (equivale ao `eval.se` do `rmgarch`): o cálculo acontece no ajuste, sobre os
     `Fit` univariados que o ajuste já recebe, e os erros-padrão ficam guardados no `DccFit`.
-  - **Opção desligada:** o `DccFit` fica leve, com estimativas, ℓ, critérios, Rₜ e Hₜ. Ele não guarda dados dos
-    univariados, e os acessores de erro-padrão, t e p-valor dão NaN.
+  - **Opção desligada:** o `DccFit` fica leve, com estimativas, ℓ, critérios, Rₜ e Hₜ. Ele não guarda os dados que
+    os erros-padrão exigem (retornos, regressores), e os acessores de erro-padrão, t e p-valor dão NaN. Emenda do
+    4c (seção 11): ele guarda o estado final de forecast de cada série, como o `Fit` do 3a.
   - **Depois do ajuste:** uma função explícita recebe o `DccFit` e os mesmos N `Fit` univariados do ajuste e
     devolve os erros-padrão, t e p-valores (Hessiana e robusto). Ela não altera o `DccFit`, que continua imutável.
     - Confere que os `Fit` são os do ajuste (N, T e as estimativas univariadas, que o `DccFit` guarda como
@@ -289,4 +290,130 @@ O autor não usa a Copula-DCC. Ela entra para a biblioteca ficar completa, como 
 - A escala dos escores da cópula sobre os quais corre a recursão: Φ⁻¹(u), e t_ν⁻¹(u) na mvt, que depende de ν e
   por isso é recalculado a cada avaliação. Fica pelos papers, conferido contra o oráculo.
 - Em que momento cada combinação inválida é recusada (setter ou lote), desde que seja antes de qualquer ajuste.
+- Casos exatos do oráculo e a divisão de tarefas.
+
+## 11. Plano 4c — forecast e simulação do DCC e da Copula-DCC (design, 2026-11-13)
+
+### 11.1 Intenção
+
+O autor não usa forecast nem simulação do DCC. Eles entram para a biblioteca ficar completa, como pede a spec-mãe.
+O sucesso é ter os contratos do 3a/3b no multivariado:
+- `d.forecast(h)` e `ctx.simulate(d, ...)` sobre qualquer `DccFit` do 4a e do 4b;
+- o mesmo Philox, a mesma bit-identidade entre números de threads e a mesma regra de semente do 3b (reprodutível
+  só dentro da mesma versão);
+- paridade com o `dccforecast` do `rmgarch` onde ele existe e segue o paper (regra da seção 8a). O `rmgarch` é uma
+  referência entre outras: paper e outras implementações vêm antes quando divergem (decisão do autor, 2026-11-13).
+
+### 11.2 Abordagens
+
+Onde fica o estado univariado de que forecast e simulação precisam (o `DccFit` do 4a guarda só z, σ e as
+estimativas univariadas como identificação):
+- **A. O `DccFit` guarda, no ajuste, o estado final de forecast de cada série (escolhida pelo autor, 2026-11-13).**
+  Guarda, por série, o `ForecastState`, o layout e o θ, compartilhados entre as specs do lote via `shared_ptr`, como
+  o painel. São as últimas L observações por série; o ARFIMA guarda o histórico inteiro (~0,8 MB para N = 21,
+  T = 5.000, uma vez por lote). A API fica `d.forecast(h)`, como a seção 3 pede, e o `DccFit` continua válido sem
+  os `Fit`.
+- **B. Passar os `Fit` de novo** (`d.forecast(h, univariate=fits)`, com a checagem de `fits_problem`). Descartada:
+  obriga a manter os `Fit` vivos e diverge da seção 3.
+
+Não há conflito com os erros-padrão: eles refiltram a amostra inteira em θ perturbado e continuam pedindo os `Fit`;
+forecast e simulação leem só o fim da amostra no θ estimado. A docstring diz isso.
+
+### 11.3 O que as fontes fazem (sondado pelo Claude no dcc3, univariados sGARCH(1,1)-norm)
+
+- **Engle–Sheppard (2001, §7)** comparam duas aproximações para h > 1, porque Eₜ[zz′] = Eₜ[R] e R = Q*⁻¹QQ*⁻¹ não
+  se resolvem para frente: prever Q e normalizar, ou supor Q̄ ≈ R̄ e Eₜ[Q] ≈ Eₜ[R] e prever R direto,
+  Eₜ[Rₜ₊ᵣ] = Σᵢ₌₀^{r−2} (1−a−b)R̄(a+b)ⁱ + (a+b)^{r−1}Rₜ₊₁. No Monte Carlo deles, a segunda tem menos viés e o
+  erro quadrático médio praticamente igual, e os autores a recomendam.
+- **`rmgarch` 1.4.3, `dccforecast`:** para h = 2..6 bate com a segunda fórmula com erro 0, com R̄ = Q̄ normalizado.
+  Hₜ₊ₕ = DRD com D = diag(sigmaFor) dos univariados (erro 4e-16). Aceita h > 1 com DCC(2,1), FDCC e mvt. **Recusa
+  aDCC com `n.ahead > 1`** ("asymmetric DCC specification only support n.ahead = 1 currently").
+- **No h = 1, o Qₜ₊₁ refeito pelo Claude difere 5,6e-3 do Qₜ₊₁ do `rmgarch`.** A causa provável é uma das convenções
+  da seção 8a (pré-amostra ou Q̄); o builder identifica e registra numa nota, como no 4a.
+- **O `rmgarch` não tem `cgarchforecast`**, só `cgarchsim`. O `dccsim` e o `cgarchsim` aceitam partir do ajuste
+  ou de uma spec.
+
+### 11.4 Decisões
+
+- **Estado no `DccFit`:** abordagem A (11.2). Nenhum número de um ajuste do 4a ou do 4b muda.
+- **Forecast** (`n.roll = 0`), h = 1..horizon depois da última observação:
+  - univariados: o forecast do 3a de cada série, com as mesmas regras (o σ é o `sigmaFor` do 3a, que no eGARCH,
+    apARCH e fGARCH não é √E[σ²] para h > 1, como no `rmgarch`);
+  - h = 1: a recursão exata do modelo com zₜ, nₜ e Qₜ observados;
+  - h > 1: a aproximação de Engle–Sheppard que prevê R direto (11.3), na convenção da spec. Nas ordens (a, b), a
+    mesma ideia termo a termo: os zz′ e Q já observados entram como na recursão, e os futuros viram E[R];
+  - **aDCC h > 1 (decisão do autor, 2026-11-13):** estende a mesma aproximação com Eₜ[nₜ₊ᵢnₜ₊ᵢ′] ≈ N̄. O −gN̄ e o
+    gE[nn′] se cancelam do passo 2 em diante, e a persistência fica a + b. Sem oráculo; `validation.md` registra a
+    aproximação e a validação interna (11.5);
+  - FDCC: a mesma fórmula com (11′ − A − B) e (A + B) por elemento (Hadamard), como na recursão;
+  - Copula-DCC: Rₜ₊ₕ das mesmas fórmulas sobre os escores da cópula; na estática, R fixo. Hₜ₊ₕ = DRD pelos σ
+    univariados, como o Hₜ do 4b. Sem oráculo (11.3);
+  - saídas: R e H `(horizon, N, N)`, σ e média `(horizon, N)`.
+- **Simulação**, como o `dccsim`/`cgarchsim` a partir do ajuste:
+  - em cada passo: R do modelo pelo estado do caminho, choque multivariado com essa correlação, e o passo
+    univariado do 3b de cada série com o seu zᵢ (o 3b sorteia o choque dentro do passo; o builder separa o
+    sorteio do passo);
+  - choques: mvnorm pelo Cholesky próprio (spec-mãe), mvt e mvlaplace como misturas de escala da normal,
+    padronizados para covariância R;
+  - Copula-DCC: u da cópula (mvnorm ou mvt) e zᵢ = Fᵢ⁻¹(uᵢ) com a marginal do ajuste. Na paramétrica é a função
+    quantil da distribuição univariada; na empírica é o quantil empírico dos zᵢ do ajuste. A recursão do caminho
+    corre sobre os escores da cópula (Φ⁻¹(u) ou t_ν⁻¹(u), como no 4b), não sobre os zᵢ;
+  - **função quantil das distribuições univariadas, interna** (decisão do Claude): forma fechada ou pela simétrica
+    nas norm, std, ged, sstd, sged e jsu; inversão numérica da CDF do 3c na nig e na ghyp. Sem interface C nem
+    Python, porque ninguém pediu VaR e seria superfície congelada sem uso;
+  - o caminho p lê só `Stream(seed, p)`, e as N séries consomem dele numa ordem fixa, de modo que o resultado não
+    depende do número de threads;
+  - regressores futuros: as mesmas linhas para todos os caminhos, por série, como no 3b;
+  - **saídas (decisão do autor, 2026-11-13):** retornos e σ `(paths, horizon, N)` sempre. R e H
+    `(paths, horizon, N, N)` só com a opção pedida (Python `correlations=True`; no C, um setter novo em
+    `ve_sim_options_*`). Sem ela, os acessores de R e H dão erro de argumento. Para N = 21, h = 60 e 1.000
+    caminhos, são ~10 MB por saída sem a opção e ~212 MB por matriz com ela.
+- **Regressores:** o estado já guarda os desvios sem o termo dos regressores. Por isso forecast e simulação aceitam
+  séries com mxreg/vxreg, desde que recebam as linhas futuras de cada uma, ao contrário dos erros-padrão. Python:
+  `mxreg=`/`vxreg=` como sequência de N entradas, `None` para a série sem regressor; o formato exato fica com o
+  builder.
+- **API:**
+  - Python: `d.forecast(horizon, *, mxreg=None, vxreg=None) -> DccForecast` (R, H, sigma, mean) e
+    `ctx.simulate(d, *, horizon, paths, seed, mxreg=None, vxreg=None, correlations=False) -> DccSimulation`
+    (returns, sigma, R, H), como arrays zero-copy de leitura;
+  - C: handles próprios para o forecast e a simulação do DCC, acessores por saída, no máximo 5 parâmetros por
+    função, nomes com o builder;
+  - erro de argumento quando o `DccFit` não tem ponto finito, quando faltam ou sobram regressores futuros e quando
+    horizon ou paths são 0.
+
+### 11.5 Validação e benchmark
+
+- **Oráculo `dccforecast`** (`rmgarch` 1.4.3), nos testes C++ com o interruptor `Rmgarch`: DCC(1,1), DCC(2,1), FDCC
+  e mvt com h = 1..H, e aDCC com h = 1. Na convenção pública, no Python, a fórmula de 11.4 avaliada direto.
+- **aDCC h > 1 e Copula-DCC:** validação interna. O forecast de h = 1 é conferido contra a recursão; para h > 1, a
+  média de Rₜ₊ₕ em muitos caminhos simulados fica perto do forecast, com folga, porque a aproximação tem viés
+  pequeno. Com g = 0, o aDCC é igual ao DCC.
+- **Simulação:** sem oráculo de caminhos (sementes diferentes). Testes:
+  - bit-identidade entre números de threads;
+  - a mesma semente dá os mesmos caminhos;
+  - momentos: covariância empírica dos choques perto de R, média dos σ² simulados perto do forecast;
+  - Copula-DCC: uniformidade dos uᵢ e marginais com a distribuição do ajuste;
+  - função quantil: F(F⁻¹(u)) = u em todas as distribuições, inclusive nas formas extremas que o 3b já testa.
+- **Benchmark:** N = 21, T = 5.000. Forecast h = 60 e simulação de 1.000 caminhos × 60 passos, com e sem
+  `correlations`, com 1 thread e com todas, para DCC, aDCC e Copula-DCC mvt.
+
+### 11.6 Não-objetivos e anti-objetivos
+
+- **Não-objetivos:**
+  - simulação a partir de uma spec com tudo fixo, porque exige N specs fixas e Q̄ e ninguém pediu;
+  - `n.roll > 0` e `dccroll`;
+  - `startMethod = "sample"`, `preQ`, `preZ` e afins;
+  - função quantil, VaR ou densidade preditiva na interface pública.
+- **Anti-objetivos:** os do 4a e do 4b, mais:
+  - simulação que muda com o número de threads;
+  - forecast que diverge do `dccforecast` sem explicação documentada nos casos que ele cobre;
+  - mudar qualquer número de um `DccFit`, `Fit`, forecast ou simulação existentes.
+
+### 11.7 Deixado ao builder
+
+- Nomes no C e no Python, além do que 11.4 fixa.
+- A causa da diferença no h = 1 (11.3) e a nota de convenções, como `2026-11-13-volengine-04a-rmgarch-notes.md`.
+- Como o passo univariado do 3b recebe o choque de fora sem mudar nenhum número do 3b.
+- O quantil empírico (definição e interpolação), coerente com o `rank/(T+1)` da convenção pública.
+- A inversão numérica da nig e da ghyp (bracket e tolerância), desde que bit-idêntica entre threads.
 - Casos exatos do oráculo e a divisão de tarefas.
