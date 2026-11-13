@@ -2,6 +2,8 @@
 
 #include "linalg/symmetric_eigen.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 
 namespace ve::dcc
@@ -57,7 +59,14 @@ std::vector<double> second_moment(std::span<const double> x, std::size_t t, std:
 
 bool has_estimate(const FitResult* fit)
 {
-    return fit != nullptr && !fit->sigma.empty() && fit->residuals.size() == fit->sigma.size();
+    if (fit == nullptr || fit->estimate.empty() || fit->sigma.empty() || fit->residuals.size() != fit->sigma.size())
+    {
+        return false;
+    }
+    const auto finite = [](double v) { return std::isfinite(v); };
+    const auto positive = [](double v) { return std::isfinite(v) && v > 0.0; };
+    return std::ranges::all_of(fit->estimate, finite) && std::ranges::all_of(fit->sigma, positive) &&
+           std::ranges::all_of(fit->residuals, finite);
 }
 
 }

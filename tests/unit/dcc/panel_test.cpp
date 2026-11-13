@@ -8,6 +8,7 @@
 #include <bit>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <optional>
 #include <string>
@@ -138,7 +139,7 @@ TEST(DccPanel, Problems)
     std::vector<const FitResult*> ptrs = pointers(fits);
     EXPECT_FALSE(ve::dcc::panel_problem(ptrs).has_value());
 
-    EXPECT_TRUE(ve::dcc::panel_problem(std::vector<const FitResult*>{&fits[0]}).has_value());
+    EXPECT_TRUE(mentions(ve::dcc::panel_problem(std::vector<const FitResult*>{&fits[0]}), "at least 2 series"));
 
     const FitResult longer = two_simulated_fits(130)[0];
     ptrs[1] = &longer;
@@ -146,6 +147,16 @@ TEST(DccPanel, Problems)
 
     const FitResult empty;
     ptrs[1] = &empty;
+    EXPECT_TRUE(mentions(ve::dcc::panel_problem(ptrs), "finite"));
+
+    FitResult nan_estimate = fits[1];
+    nan_estimate.estimate.assign(nan_estimate.estimate.size(), std::nan(""));
+    ptrs[1] = &nan_estimate;
+    EXPECT_TRUE(mentions(ve::dcc::panel_problem(ptrs), "finite"));
+
+    FitResult zero_sigma = fits[1];
+    zero_sigma.sigma[3] = 0.0;
+    ptrs[1] = &zero_sigma;
     EXPECT_TRUE(mentions(ve::dcc::panel_problem(ptrs), "finite"));
 
     const std::vector<FitResult> short_fits = two_simulated_fits(99);
