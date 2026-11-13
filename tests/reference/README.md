@@ -29,6 +29,10 @@ that `python/tests/oracles/test_oracles.py` compares VolEngine against. Conventi
 | `data/grid_2c.csv` | Skewed-distribution series, T = 3000 each (`gjrgarch11_sstd`, `aparch11_sged`, `egarch11_jsu`, `sgarch11_nig`, `sgarch11_ghyp`), 17 significant digits |
 | `data/grid_2e.csv` | Regressor and ARCH-in-mean series, T = 3000 each (`arx_sgarch11_norm`, `sgarch11_vx_std`, `archm_gjrgarch11_norm`, `archm2_egarch11_std`), 17 significant digits |
 | `data/regressors_2e.csv` | The regressors the cases name, T = 3000 rows aligned with `grid_2e.csv` and every other series: `x1` = sin(t/40), `x2` ~ N(0, 1), `v1` = \|cos(t/25)\|, t = 1..T |
+| `copula_probe.R` | Writes `data/copula3.csv` once (seed 20261113) and prints rmgarch's Copula-DCC numbers beside an independent evaluation (the plan 4b notes) |
+| `copula_rmgarch.R` | Fits the 13 Copula-DCC cases with `cgarchfit` on `copula3.csv` and writes `fixtures/rmgarch_copula.json` |
+| `data/copula3.csv` | Three sGARCH(1,1) series with standardized-t(7) margins and a Student-t(6) DCC(0.04, 0.93) copula, T = 2000, 15 significant digits (`write.csv`) |
+| `fixtures/rmgarch_copula.json` | `rmgarch` Copula-DCC results |
 | `fixtures/rugarch.json` | `rugarch` results |
 | `fixtures/arch.json` | `arch` results |
 | `fixtures/arch_forecast.json` | `arch` forecasts, in the format of `rugarch_forecast.json` |
@@ -169,3 +173,18 @@ the public paper convention against a separate NumPy recursion and density, with
 and explicit oracle initial values. Laplace evaluation is covered by C++, since NumPy has no
 Bessel K function. See `docs/guide/validation.md` for bounds, weak identification and optimizer
 limitations; regeneration must not silently loosen tolerances or replace those disclosures.
+
+### Copula-DCC oracle
+
+From the repository root, run `Rscript tests/reference/copula_rmgarch.R` (R 4.6.2, `rugarch` 1.5.6, `rmgarch`
+1.4.3, `jsonlite`). It reads `data/copula3.csv` without regenerating it, fits sGARCH(1,1)-std margins with
+`multifit`/`solnp` (tol 1e-10) and passes them to `cgarchfit` with `eval.se = TRUE`. For each of the 13 cases
+(static mvnorm Kendall/ML, static mvt Kendall/ML, DCC and aDCC with mvnorm and mvt, parametric and empirical
+margins, and DCC-t with `mshape` fixed at 8) it writes the `[Joint]` estimates and robust errors,
+`likelihood(fit)` and R at observations 1, T/2 and T. `copula_probe.R` wrote the data once and checks every
+formula of `docs/superpowers/plans/2026-11-13-volengine-04b-rmgarch-copula-notes.md`; rerunning it does not
+overwrite the CSV.
+
+`tests/unit/dcc/oracles/copula_oracle_test.cpp` holds a table copied from the fixture; the point-parity tables of
+`tests/unit/dcc/copula/` hold the same numbers. Update them after regeneration. Python reads the JSON and checks the
+public convention against NumPy.

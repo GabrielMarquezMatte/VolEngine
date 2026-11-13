@@ -1456,6 +1456,89 @@ On grid5, even a tight internal DCC-t fit can finish about `0.00357` above the o
 objective. These are optimizer limitations; exact evaluation parity must not be
 read as a guarantee that default estimates reach the same optimum.
 
+### `rmgarch`, Copula-DCC
+
+The oracle is `cgarchfit` of `rmgarch` 1.4.3 on `copula3.csv` (three sGARCH(1,1)-std series joined by a Student-t(6)
+DCC copula, T = 2000), with 13 cases: static mvnorm (Kendall, ML parametric and empirical), static mvt (Kendall
+parametric and empirical, ML parametric), DCC and aDCC with mvnorm and mvt, parametric and empirical margins, and
+DCC-t with `mshape` fixed at 8. dcc3 is not used: its near-normal margins push the copula shape to its ceiling.
+The conventions, read from `cgarchfit` and reproduced by an independent evaluation to 9e-12, are in
+`docs/superpowers/plans/2026-11-13-volengine-04b-rmgarch-copula-notes.md`.
+
+The same in both conventions:
+- the reported likelihood is the joint one, `sum_i l_i + sum_t c_t`, with
+  `c_t = log f(epsilon_t; R_t) - sum_i log f1(epsilon_it)` and every constant, also with empirical margins;
+- the mvt scores are standardized-t quantiles, so Qbar = cov(epsilon) and the Kendall matrix are recomputed at each
+  shape; the shape lies in [4, 50];
+- the static ML correlation is R = cov2cor(A A') of the free entries C1.. of A, which the table reports (as rmgarch
+  does; the correlations are in `R`). rmgarch boxes C in [-0.99, 0.99] and VolEngine does not; every oracle case is
+  interior;
+- `cgarchfit` has no information criteria. VolEngine uses the DCC's k, counting the correlation matrix once, so
+  that the BIC compares DCC and Copula-DCC fits on the same univariate fits.
+
+The public convention departs from rmgarch where rmgarch departs from the papers. `Convention::Rmgarch` reproduces
+each of these points in the C++ tests:
+
+| Point | rmgarch | Public | Why |
+| --- | --- | --- | --- |
+| empirical u | ecdf, rank/T | rank/(T+1), ties by order of t | Genest, Ghoudi and Rivest (1995): pseudo-observations stay inside (0, 1); rank/T puts the largest at 1 |
+| cut of u | u > 0.99999 becomes 0.99999, u < 1.5 eps becomes eps | [2^-53, 1 - 2^-53] | the asymmetric cut at 1 - 1e-5 changes every upper tail value it touches; a cut at the double limit only avoids infinite quantiles |
+| presample | epsilon_s = n_s = 0, also in what is reported | plan 4a's (epsilon_s epsilon_s' = Qbar) | plan 4a, `rmgarch`, DCC |
+| Nbar | centred | uncentred | plan 4a |
+| sandwich | A^-1 B A^-1 / T | A^-1 B A^-T / T | plan 4a |
+| static mvnorm "Kendall" | cor(epsilon), Pearson | sin(pi tau_b / 2) | for every elliptical copula tau = (2/pi) arcsin(rho) (Lindskog, McNeil and Schmock 2003) |
+| empirical standard errors | finite differences through recomputed ranks | ranks held fixed: the cross block is 0 | ranks are piecewise constant in theta, so their differences are 0 or spikes |
+
+The empirical standard errors are those of the second stage alone: they do not carry the Chen and Fan (2006)
+semiparametric correction, which VolEngine does not implement. They understate the uncertainty of empirical-margin
+copula parameters. A static Kendall matrix that is not positive definite makes the spec `failed`; rmgarch projects
+it to the nearest positive semidefinite matrix with a warning. No oracle case hits it.
+
+The C++ oracle (`tests/unit/dcc/oracles/copula_oracle_test.cpp`) checks, at rmgarch's convention:
+- at rmgarch's point (also in `tests/unit/dcc/copula/`): likelihood and R at relative 1e-10, robust errors at
+  relative 5e-3 for every case with a `[Joint]` row;
+- estimated, with tolerance 1e-10 and up to 2,000 iterations: likelihood no worse than rmgarch's by 1e-7 and within
+  relative 1e-7, estimates within relative 1e-3 (absolute 1e-6 for aDCC-t's g of 4.8e-8). A free shape is the Brent
+  maximum of the profile likelihood, each point a fit with the shape fixed.
+
+Python, at the public convention:
+- the empirical mvnorm cases (DCC and static ML) match an independent NumPy evaluation (ranks, `NormalDist`, the
+  public recursion) at relative 1e-10 in likelihood and R; NumPy has no Student quantile or univariate cdfs, so
+  the other cases rely on the C++ checks;
+- estimates within relative 5e-2 of rmgarch's, with three strict expected failures caused by the convention, each
+  confirmed by refitting from rmgarch's point, which reaches the same public optimum (or, for aDCC-t, a worse one):
+
+| Case | rmgarch | Public | Cause |
+| --- | ---: | ---: | --- |
+| dcc_mvt_emp, mshape | 6.393 | 5.771 | rank/(T+1) and the symmetric cut move the empirical tails |
+| adcc_mvnorm_param, dccg1 | 0.0049 | 0.0160 | uncentred Nbar |
+| adcc_mvt_param, dccg1 | 4.8e-8 | 0.0153 | uncentred Nbar; the public likelihood there beats rmgarch's start by 0.90 |
+
+- robust errors finite and positive for every case with parameters.
+
+Likelihood and BIC (per observation, k with the 15 univariate parameters) at each convention's own estimate:
+
+| Case | rmgarch likelihood | Public likelihood | rmgarch BIC | Public BIC |
+| --- | ---: | ---: | ---: | ---: |
+| static_mvnorm_kendall_param | -8117.1869 | -8117.3297 | 8.185595 | 8.185738 |
+| static_mvnorm_ml_param | -8117.1869 | -8117.1869 | 8.185595 | 8.185595 |
+| static_mvnorm_ml_emp | -8115.7481 | -8119.7728 | 8.184156 | 8.188181 |
+| static_mvt_kendall_param | -8012.1841 | -8012.1841 | 8.084393 | 8.084393 |
+| static_mvt_kendall_emp | -8015.1511 | -8017.9768 | 8.087360 | 8.090185 |
+| static_mvt_ml_param | -8012.0737 | -8012.0737 | 8.084282 | 8.084282 |
+| dcc_mvnorm_param | -7999.2558 | -7999.2439 | 8.075265 | 8.075253 |
+| dcc_mvnorm_emp | -8000.3388 | -8005.7295 | 8.076348 | 8.081739 |
+| dcc_mvt_param | -7916.6410 | -7916.6268 | 7.996450 | 7.996436 |
+| dcc_mvt_emp | -7922.6219 | -7925.9106 | 8.002431 | 8.005720 |
+| adcc_mvnorm_param | -7999.0810 | -7998.2040 | 8.078891 | 8.078014 |
+| adcc_mvt_param | -7916.6410 | -7915.7288 | 8.000251 | 7.999339 |
+| dcc_mvt_param_shape8 | -7921.3163 | -7921.3014 | 7.997325 | 7.997310 |
+
+The empirical cases move most (rank/(T+1) and the cut). The BIC choice is the same in both conventions (DCC-t
+parametric first, then DCC-t with the shape fixed, then aDCC-t), but the empirical cases fall in the ranking:
+dcc_mvnorm_emp drops behind adcc_mvnorm_param, and static_mvnorm_ml_emp from first to last of the static mvnorm
+cases.
+
 ## Regenerating
 
 See [`tests/reference/README.md`](../../tests/reference/README.md). When an oracle version changes, regenerate
