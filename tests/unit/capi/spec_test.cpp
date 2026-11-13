@@ -179,6 +179,39 @@ TEST(CapiSpec, RegressorSetters)
     ve_spec_free(spec);
 }
 
+TEST(CapiSpec, ArfimaSetter)
+{
+    ve_spec* spec = nullptr;
+    ASSERT_EQ(ve_spec_create(VE_MODEL_SGARCH, &spec), VE_OK);
+    EXPECT_EQ(ve_spec_set_arfima(spec, 1), VE_OK);
+    EXPECT_TRUE(spec->spec.arfima);
+    EXPECT_EQ(ve_spec_set_arfima(spec, 0), VE_OK);
+    EXPECT_FALSE(spec->spec.arfima);
+    ASSERT_EQ(ve_spec_set_arfima(spec, 1), VE_OK);
+    for (int32_t bad : {2, -1})
+    {
+        EXPECT_EQ(ve_spec_set_arfima(spec, bad), VE_INVALID_ARGUMENT);
+        EXPECT_TRUE(error_mentions("arfima"));
+        EXPECT_TRUE(spec->spec.arfima);
+    }
+    EXPECT_EQ(ve_spec_set_arfima(nullptr, 1), VE_INVALID_HANDLE);
+    ve_spec_free(spec);
+}
+
+// Review Focus 3.
+TEST(CapiSpec, ArfimaWithArchmInvalid)
+{
+    ve_spec* spec = nullptr;
+    ASSERT_EQ(ve_spec_create(VE_MODEL_SGARCH, &spec), VE_OK);
+    ASSERT_EQ(ve_spec_set_arfima(spec, 1), VE_OK);
+    EXPECT_EQ(ve_spec_validate(spec), VE_OK);
+    ASSERT_EQ(ve_spec_set_archm(spec, 1), VE_OK);
+    EXPECT_EQ(ve_spec_validate(spec), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(error_mentions("arfima"));
+    EXPECT_TRUE(error_mentions("archm"));
+    ve_spec_free(spec);
+}
+
 TEST(CapiSpec, NewDistributions)
 {
     ve_spec* spec = nullptr;

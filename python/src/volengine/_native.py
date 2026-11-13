@@ -48,6 +48,7 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_spec_set_mxreg": (_STATUS, [_HANDLE, _I32]),
     "ve_spec_set_vxreg": (_STATUS, [_HANDLE, _I32]),
     "ve_spec_set_archm": (_STATUS, [_HANDLE, _I32]),
+    "ve_spec_set_arfima": (_STATUS, [_HANDLE, _I32]),
     "ve_spec_set_fixed": (_STATUS, [_HANDLE, ctypes.c_char_p, _DOUBLE]),
     "ve_spec_set_start": (_STATUS, [_HANDLE, ctypes.c_char_p, _DOUBLE]),
     "ve_spec_set_variance_targeting": (_STATUS, [_HANDLE, _I32]),

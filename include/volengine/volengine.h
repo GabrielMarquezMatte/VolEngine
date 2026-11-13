@@ -56,8 +56,9 @@ VE_API void ve_context_free(ve_context* ctx);
    Only the iGARCH beta_q is derived (1 - sum alpha - the other betas): it has a name and a value,
    it is not estimated, its standard error is NaN, and the information criteria count the estimated
    parameters only. Each fGARCH submodel is a model value.
-   ARCH-in-mean (ve_spec_set_archm) adds archm after ma, and the regressors add mxreg1..mxregK after archm and
-   vxreg1..vxregJ after the variance block (before skew), as in rugarch. */
+   ARFIMA (ve_spec_set_arfima) adds arfima after ma, ARCH-in-mean (ve_spec_set_archm) adds archm after ma (a spec
+   has one or the other), and the regressors add mxreg1..mxregK after them and vxreg1..vxregJ after the variance
+   block (before skew), as in rugarch. */
 #define VE_MODEL_SGARCH 0
 #define VE_MODEL_EGARCH 1 /* gamma1..gammap */
 #define VE_MODEL_GJRGARCH 2 /* gamma1..gammap */
@@ -126,6 +127,11 @@ VE_API ve_status ve_spec_set_vxreg(ve_spec* s, int32_t count);
 /* ARCH-in-mean: 0 none (default), 1 adds xi sigma_t to the mean, 2 adds xi sigma_t^2. Else
    VE_INVALID_ARGUMENT and the spec is unchanged. */
 VE_API ve_status ve_spec_set_archm(ve_spec* s, int32_t power);
+/* ARFIMA mean (rugarch's arfima = TRUE), 0 or 1 (default 0); other values are VE_INVALID_ARGUMENT and leave the
+   spec unchanged. Cannot be combined with ve_spec_set_archm: ve_spec_validate and the batch reject the spec.
+   The parameter arfima is d in the open interval (1e-8, 0.5) (rugarch: [1e-8, 0.5]); see ve_batch_set_regressors
+   for where it enters the mean. */
+VE_API ve_status ve_spec_set_arfima(ve_spec* s, int32_t on);
 /* Parameter roles. Every parameter is estimated, fixed or derived. A fixed parameter (set_fixed) keeps
    the given value, is not optimized, has NaN standard errors and does not count in the criteria. A
    derived parameter is a function of the others that the model defines: the iGARCH beta_q and, under
@@ -223,8 +229,11 @@ VE_API ve_status ve_batch_set_options(ve_batch* b, const ve_fit_options* options
    s. A regressor is present if and only if the count of the spec is > 0, and its rows used by the job must be
    finite; ve_fit_batch reports any breach as VE_INVALID_ARGUMENT with "job <i>: ...". Copies the pointers only.
    Mean: m_t = mu + sum_k delta_k x_t,k + xi sigma_t^p (xi only with archm), d_t = r_t - m_t, and the ARMA acts
-   on d_t: e_t = d_t - sum phi_i d_(t-i) - sum theta_j e_(t-j) (e_t = d_t for t < m). The pre-sample residuals
-   (var_init sample mean, variance targeting target) are those of the same recursion with xi = 0.
+   on d_t: e_t = d_t - sum phi_i d_(t-i) - sum theta_j e_(t-j) (e_t = d_t for t < m). With arfima, the residuals
+   become y_t = sum_{k=0}^{t} pi_k e_(t-k), pi_0 = 1, pi_k = pi_(k-1) (k - 1 - d) / k: the (1 - L)^d of rugarch,
+   truncated at the first row of the series, at a cost of O(T^2). y_t replaces e_t everywhere after. The
+   pre-sample residuals (var_init sample mean, variance targeting target) are those of the same recursion with
+   xi = 0.
    Variance: omega becomes omega + sum_k zeta_k v_t,k at each t, in the scale of the model (sigma^2, log sigma^2
    or sigma^delta); csGARCH adds it to q_t, whose pre-sample stays omega / (1 - rho). Persistence P < 1 is always
    enforced, unlike rugarch, which drops it with vxreg. A sigma^2 <= 0 makes the log-likelihood -inf.
