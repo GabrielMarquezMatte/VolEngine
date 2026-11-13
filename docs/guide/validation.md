@@ -664,7 +664,10 @@ fits below confirm the convention again. No core change was needed.
 - **Domain.** `rugarch` bounds d to the closed interval [1e-8, 0.5]. VolEngine maps it to the open interval
   (1e-8, 0.5), with d = 1e-8 + (0.5 − 1e-8)·logistic(u). A d within 1e-8 of either end is reported on the
   boundary, with a NaN standard error. A start or fixed d outside the open interval ends `VE_FIT_FAILED`. On a
-  series without long memory, d goes to the lower end (the C++ test `FitArfima.NoMemoryNestsPlain`).
+  series without long memory, d goes to the lower end (the C++ test `FitArfima.NoMemoryNestsPlain`). The logistic
+  map is flat there, so the optimizer can stop short of the 1e-8 band. On the first 2000 observations of the plan-1
+  series d̂ = 1.1e-7, which is not on the boundary and keeps a finite standard error; on all 5000, d̂ = 1.2e-8 and the
+  standard error is NaN.
 - **Start.** VolEngine starts d at 0.25. `rugarch` starts it at a Hurst estimate less 0.5 (`.absHmom`). The start
   did not change the optimum in any case: on the csGARCH case, starts from 0.05 to 0.4 end at the same point.
 - **Backcast.** `VE_VARINIT_BACKCAST` ignores d, as it ignores the ARMA: it stays the OLS of r on [1, X] of plan 2e.

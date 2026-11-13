@@ -1677,6 +1677,7 @@ TEST(FitArfima, NoMemoryNestsPlain)
     FitResult plain = ve::fit_one(r, Spec{}, ve::FitConfig{});
     ASSERT_EQ(plain.status, FitStatus::Converged);
     EXPECT_GE(result.loglik, plain.loglik - 1e-6 * std::abs(plain.loglik));
+    EXPECT_LT(estimate_of(result, "arfima"), 1e-4);
     ve::model::Layout layout = ve::model::layout_of(spec);
     std::size_t index = layout.arfima_index();
     if (ve::model::on_boundary(layout, result.estimate, index))
