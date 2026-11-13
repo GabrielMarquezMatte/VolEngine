@@ -176,8 +176,10 @@ in the commit after it), 5 repetitions; medians, with the standard deviation.
 | ghyp | 10.8 | 0.03 |
 | jsu | 5.08 | 0.02 |
 
-- A step costs about 0.2 µs in sGARCH: the forecast of one step from a state that grows by one entry per step, plus
-  one draw. eGARCH pays a log of its state per step.
+- A step costs about 0.2 µs in sGARCH: the forecast of one step from the state of the path, plus one draw. eGARCH
+  pays a log of its state per step. These medians predate `274735f`, which keeps that state at a bounded size: before
+  it, eGARCH, apARCH and fGARCH cost O(H) per step (apARCH 33 µs a step at H = 4000); after it, the cost per step
+  does not grow with the horizon (`Simulate.LongHorizonCostsLinearTime`: 10⁵ apARCH steps in well under a second).
 - The 16 threads give about 6×; the paths are independent, so the remainder is the fixed cost of the fit's state
   and of the pool.
 - The samplers cost 30–120 ns a draw; ghyp and nig spend it in the GIG. Box-Muller and the state of a step dominate
