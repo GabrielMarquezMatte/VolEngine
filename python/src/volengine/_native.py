@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from pathlib import Path
 from types import TracebackType
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -178,7 +178,7 @@ lib = load_library(os.environ, LIBRARY_DIRECTORY)
 
 
 def last_error() -> str:
-    message = lib.ve_last_error()
+    message = cast(bytes | None, lib.ve_last_error())
     if message is None:
         return ""
     return message.decode("utf-8", errors="replace")
@@ -268,6 +268,7 @@ def native_view(owner: object, function: Callable[..., int], pointer: int) -> ND
     if length.value == 0:
         return read_only(np.empty(0, dtype=np.float64))
     address = ctypes.cast(data, ctypes.c_void_p).value
+    assert address is not None
     buffer = (ctypes.c_double * length.value).from_address(address)
-    buffer._owner = owner
+    setattr(buffer, "_owner", owner)
     return read_only(np.frombuffer(buffer, dtype=np.float64))
