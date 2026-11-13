@@ -1,12 +1,15 @@
 #include "dist/cdf.hpp"
 #include "dist/moments.hpp"
 
+#include <boost/math/distributions/normal.hpp>
 #include <boost/math/special_functions/beta.hpp>
 #include <boost/math/special_functions/gamma.hpp>
 #include <boost/math/policies/policy.hpp>
+#include <boost/math/tools/roots.hpp>
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <variant>
 #include <cmath>
 #include <limits>
@@ -153,6 +156,109 @@ bool needs_quadrature(Dist dist)
     return dist == Dist::Nig || dist == Dist::Ghyp;
 }
 
+
+// Below this gamma_q_inv has underflowed (it returns 0 or a denormal).
+constexpr double kTinyArgument = 1e-290;
+
+using NormalDistribution = boost::math::normal_distribution<double, DoublePolicy>;
+
+// A solve that returns its last bracket instead of throwing when it runs out of iterations.
+using RootPolicy = boost::math::policies::policy<boost::math::policies::promote_double<false>,
+                                                 boost::math::policies::evaluation_error<boost::math::policies::ignore_error>>;
+
+double normal_quantile(double u)
+{
+    return boost::math::quantile(NormalDistribution{}, u);
+}
+
+// The z <= 0 with kernel_cdf(z) == tail, tail in (0, 1/2]: the inverse of the formulas of kernel_cdf.
+double kernel_lower_quantile(const LogDensity<double>& density, double tail)
+{
+    if (density.dist == Dist::Norm)
+    {
+        return normal_quantile(tail);
+    }
+    if (density.dist == Dist::Std)
+    {
+        double nu = 2.0 * density.power - 1.0;
+        double complement = 0.0;
+        double ratio = boost::math::ibeta_inv(nu / 2.0, 0.5, 2.0 * tail, &complement, DoublePolicy{});
+        return -std::sqrt(density.scale * complement / ratio);
+    }
+    double order = 1.0 / density.power;
+    double argument = boost::math::gamma_q_inv(order, 2.0 * tail, DoublePolicy{});
+    if (argument > kTinyArgument)
+    {
+        return -density.scale * std::pow(2.0 * argument, order);
+    }
+    // A large power puts the argument of the central quantiles below the double range (P(a, x) ~ x^a / Gamma(a + 1)
+    // for a = 1/power): the same root, in logs.
+    double log_argument = (std::log1p(-2.0 * tail) + std::lgamma(order + 1.0)) * density.power;
+    return -density.scale * std::exp(order * (std::numbers::ln2 + log_argument));
+}
+
+double kernel_quantile(const LogDensity<double>& density, double u)
+{
+    if (u < 0.5)
+    {
+        return kernel_lower_quantile(density, u);
+    }
+    return -kernel_lower_quantile(density, 1.0 - u);
+}
+
+// skewed_cdf inverted on each side of y = 0, where P(y < 0) = 1 / (1 + skew^2). The upper side goes through the
+// upper tail, 1 - u, so it keeps its digits as u tends to 1.
+double skewed_quantile(const SkewedLogDensity<double>& density, double u)
+{
+    double skew_squared = density.skew * density.skew;
+    double denominator = 1.0 + skew_squared;
+    if (u * denominator < 1.0)
+    {
+        double y = kernel_quantile(density.kernel, 0.5 * u * denominator) / density.skew;
+        return (y - density.shift) / density.stretch;
+    }
+    double y = -density.skew * kernel_lower_quantile(density.kernel, 0.5 * (1.0 - u) * denominator / skew_squared);
+    return (y - density.shift) / density.stretch;
+}
+
+constexpr int kRootIterations = 60;
+constexpr int kBracketDoublings = 60;
+
+// The root of cdf(z) - u by toms748 on a bracket grown from [-1, 1] (mean 0, variance 1) until the sign changes.
+double solved_quantile(const detail::DensityIntegrand<double>& integrand, double u)
+{
+    auto residual = [&](double z) { return quadrature_cdf(integrand, z) - u; };
+    double lower = -1.0;
+    double upper = 1.0;
+    for (int i = 0; i < kBracketDoublings && residual(lower) > 0.0; ++i)
+    {
+        lower *= 2.0;
+    }
+    for (int i = 0; i < kBracketDoublings && residual(upper) < 0.0; ++i)
+    {
+        upper *= 2.0;
+    }
+    double at_lower = residual(lower);
+    double at_upper = residual(upper);
+    if (at_lower == 0.0)
+    {
+        return lower;
+    }
+    if (at_upper == 0.0)
+    {
+        return upper;
+    }
+    if (!(at_lower < 0.0 && at_upper > 0.0))
+    {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    auto iterations = static_cast<std::uintmax_t>(kRootIterations);
+    auto bracket = boost::math::tools::toms748_solve(residual, lower, upper, at_lower, at_upper,
+                                                     boost::math::tools::eps_tolerance<double>(48), iterations,
+                                                     RootPolicy{});
+    return 0.5 * (bracket.first + bracket.second);
+}
+
 }
 
 double cdf(Dist dist, const ShapeParameters<double>& parameters, double z)
@@ -201,6 +307,33 @@ std::vector<double> sorted_cdf(Dist dist, const ShapeParameters<double>& paramet
         }
     }
     return result;
+}
+
+double quantile(Dist dist, const ShapeParameters<double>& parameters, double u)
+{
+    if (!in_domain(dist, parameters) || !(u >= 0.0 && u <= 1.0))
+    {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    if (u == 0.0 || u == 1.0)
+    {
+        return u == 0.0 ? -std::numeric_limits<double>::infinity() : std::numeric_limits<double>::infinity();
+    }
+    if (detail::is_symmetric(dist))
+    {
+        return kernel_quantile(make_log_density(dist, parameters.shape), u);
+    }
+    if (is_fernandez_steel(dist))
+    {
+        return skewed_quantile(skewed_log_density(dist, parameters.skew, parameters.shape), u);
+    }
+    if (dist == Dist::Jsu)
+    {
+        auto density = johnson_log_density(parameters.skew, parameters.shape);
+        double x = std::sinh((normal_quantile(u) + density.skew) / density.shape);
+        return density.center + density.scale * x;
+    }
+    return solved_quantile({make_density(dist, parameters)}, u);
 }
 
 }
