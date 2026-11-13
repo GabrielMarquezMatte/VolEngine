@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, overload
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from ._diagnostics import Nyblom, SignBias, TestResult
 from ._fit import CoefTable, Fit, future_panel
 from ._forecast import Forecast
 from ._native import (
@@ -30,6 +31,9 @@ if TYPE_CHECKING:
     from typing import Unpack
 
 __all__ = [
+    "Nyblom",
+    "SignBias",
+    "TestResult",
     "CoefTable",
     "Context",
     "Fit",
@@ -312,12 +316,12 @@ class Context:
             mean = open_regressors(stack, regressors[0], [spec.mxreg for spec in specs])
             variance = open_regressors(stack, regressors[1], [spec.vxreg for spec in specs])
             set_regressors(batch, mean, variance)
-            return self._fit_batch(batch)
+            return self._fit_batch(batch, specs, series_count)
 
-    def _fit_batch(self, batch: Handle) -> list[Fit]:
+    def _fit_batch(self, batch: Handle, specs: list[Spec], series_count: int) -> list[Fit]:
         count = ctypes.c_size_t()
         check(lib.ve_batch_job_count(batch.pointer, ctypes.byref(count)))
         pointers = (ctypes.c_void_p * count.value)()
         check(lib.ve_fit_batch(self._handle.pointer, batch.pointer, pointers))
         handles = [Handle(pointer, lib.ve_fit_free) for pointer in pointers]
-        return [Fit(handle) for handle in handles]
+        return [Fit(handle, specs[index // series_count]) for index, handle in enumerate(handles)]

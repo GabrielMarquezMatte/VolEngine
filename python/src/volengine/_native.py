@@ -38,6 +38,12 @@ _VIEW = [_HANDLE, _OUT_VIEW, _OUT_SIZE]
 _SE_VALUES = [_HANDLE, _I32, _HANDLE]
 
 PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
+    "ve_fit_ljung_box": (_STATUS, [_HANDLE, _I32, _SIZE, _SIZE, _HANDLE]),
+    "ve_fit_arch_lm": (_STATUS, [_HANDLE, _SIZE, _SIZE, _HANDLE]),
+    "ve_fit_nyblom": (_STATUS, [_HANDLE, _HANDLE, _OUT_DOUBLE]),
+    "ve_nyblom_critical": (_STATUS, [_SIZE, _HANDLE]),
+    "ve_fit_sign_bias": (_STATUS, [_HANDLE, _HANDLE]),
+    "ve_fit_gof": (_STATUS, [_HANDLE, _SIZE, _HANDLE]),
     "ve_abi_version": (_I32, []),
     "ve_last_error": (ctypes.c_char_p, []),
     "ve_context_create": (_STATUS, [_OUT_HANDLE]),
