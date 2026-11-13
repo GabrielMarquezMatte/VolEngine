@@ -356,6 +356,62 @@ VE_API ve_status ve_sim_returns(const ve_sim* sim, const double** data, size_t* 
 VE_API ve_status ve_sim_sigma(const ve_sim* sim, const double** data, size_t* len);
 VE_API void ve_sim_free(ve_sim* sim);
 
+/* ---- DCC ----
+   Batches copy the specs, options and univariate fits. Results and their views remain valid independently.
+   The public convention follows the papers. At least two finite fits of the same length >= 100 are required. */
+typedef struct ve_dcc_spec ve_dcc_spec;
+typedef struct ve_dcc_options ve_dcc_options;
+typedef struct ve_dcc_batch ve_dcc_batch;
+typedef struct ve_dcc_fit ve_dcc_fit;
+#define VE_DCC_MODEL_DCC 0
+#define VE_DCC_MODEL_ADCC 1
+#define VE_DCC_MODEL_FDCC 2
+#define VE_DCC_DIST_MVNORM 0
+#define VE_DCC_DIST_MVT 1
+#define VE_DCC_DIST_MVLAPLACE 2
+#define VE_DCC_CRITERION_AIC 0
+#define VE_DCC_CRITERION_BIC 1
+#define VE_DCC_CRITERION_HQIC 2
+#define VE_DCC_CRITERION_SIC 3
+VE_API ve_status ve_dcc_spec_create(int32_t model, ve_dcc_spec** out);
+VE_API ve_status ve_dcc_spec_set_order(ve_dcc_spec* s, int32_t p, int32_t q);
+VE_API ve_status ve_dcc_spec_set_dist(ve_dcc_spec* s, int32_t dist);
+VE_API ve_status ve_dcc_spec_set_groups(ve_dcc_spec* s, const int32_t* groups, size_t count);
+VE_API ve_status ve_dcc_spec_set_fixed(ve_dcc_spec* s, const char* name, double value);
+VE_API ve_status ve_dcc_spec_set_start(ve_dcc_spec* s, const char* name, double value);
+VE_API void ve_dcc_spec_free(ve_dcc_spec* s);
+/* Standard errors are enabled by default; regressors make them VE_UNSUPPORTED. */
+VE_API ve_status ve_dcc_options_create(ve_dcc_options** out);
+VE_API ve_status ve_dcc_options_set_standard_errors(ve_dcc_options* o, int32_t on);
+VE_API void ve_dcc_options_free(ve_dcc_options* o);
+VE_API ve_status ve_dcc_batch_create(ve_dcc_batch** out);
+VE_API ve_status ve_dcc_batch_set_specs(ve_dcc_batch* b, const ve_dcc_spec* const* specs, size_t n);
+VE_API ve_status ve_dcc_batch_set_fits(ve_dcc_batch* b, const ve_fit* const* fits, size_t m);
+VE_API ve_status ve_dcc_batch_set_options(ve_dcc_batch* b, const ve_dcc_options* o);
+VE_API ve_status ve_dcc_batch_spec_count(const ve_dcc_batch* b, size_t* out);
+VE_API void ve_dcc_batch_free(ve_dcc_batch* b);
+/* out holds spec_count handles in spec order. Nonconvergence is a per-fit status. */
+VE_API ve_status ve_dcc_fit_batch(ve_context* ctx, const ve_dcc_batch* b, ve_dcc_fit** out);
+VE_API ve_status ve_dcc_fit_status(const ve_dcc_fit* f, int32_t* out);
+VE_API ve_status ve_dcc_fit_nobs(const ve_dcc_fit* f, size_t* out);
+VE_API ve_status ve_dcc_fit_series(const ve_dcc_fit* f, size_t* out);
+VE_API ve_status ve_dcc_fit_param_count(const ve_dcc_fit* f, size_t* out);
+VE_API ve_status ve_dcc_fit_param_name(const ve_dcc_fit* f, size_t i, const char** out);
+VE_API ve_status ve_dcc_fit_estimates(const ve_dcc_fit* f, double* out);
+VE_API ve_status ve_dcc_fit_std_errors(const ve_dcc_fit* f, int32_t se_kind, double* out);
+VE_API ve_status ve_dcc_fit_t_values(const ve_dcc_fit* f, int32_t se_kind, double* out);
+VE_API ve_status ve_dcc_fit_p_values(const ve_dcc_fit* f, int32_t se_kind, double* out);
+VE_API ve_status ve_dcc_fit_loglik(const ve_dcc_fit* f, double* out);
+/* scale is VE_IC_PER_OBS or VE_IC_TOTAL; which is VE_DCC_CRITERION_*. */
+VE_API ve_status ve_dcc_fit_criterion(const ve_dcc_fit* f, int32_t which, int32_t scale, double* out);
+/* Zero-copy T x m x m row-major views, valid until f is freed. H is computed once, on first access. */
+VE_API ve_status ve_dcc_fit_correlation(const ve_dcc_fit* f, const double** data, size_t* len);
+VE_API ve_status ve_dcc_fit_covariance(const ve_dcc_fit* f, const double** data, size_t* len);
+/* Returns a new immutable fit sharing R; fits must match the original univariate estimates and order. */
+VE_API ve_status ve_dcc_fit_standard_errors(ve_context* ctx, const ve_dcc_fit* f,
+                                          const ve_fit* const* fits, size_t m, ve_dcc_fit** out);
+VE_API void ve_dcc_fit_free(ve_dcc_fit* f);
+
 #ifdef __cplusplus
 }
 #endif
