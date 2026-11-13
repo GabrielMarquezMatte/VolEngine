@@ -69,6 +69,24 @@ inline std::vector<FitResult> dcc3_fits()
     return fits;
 }
 
+// The same fits estimated rather than fixed, so that their Hessians and scores exist: started at rugarch's
+// estimates with tol 1, which stops the optimiser there.
+inline std::vector<FitResult> dcc3_estimated_fits()
+{
+    const std::vector<std::vector<double>> columns = read_dcc3();
+    std::vector<FitResult> fits;
+    FitConfig config;
+    config.tol = 1.0;
+    for (std::size_t i = 0; i < kDcc3Series; ++i)
+    {
+        const std::array<double, 4>& c = kDcc3Coefficients[i];
+        Spec spec;
+        spec.start = {{"mu", c[0]}, {"omega", c[1]}, {"alpha1", c[2]}, {"beta1", c[3]}};
+        fits.push_back(fit_one(columns[i], spec, config));
+    }
+    return fits;
+}
+
 inline dcc::StandardizedPanel dcc3_panel()
 {
     const std::vector<FitResult> fits = dcc3_fits();

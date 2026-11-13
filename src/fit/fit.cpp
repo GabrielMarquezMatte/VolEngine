@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <functional>
 #include <limits>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -348,6 +349,34 @@ bool loglik_gradient(const LikelihoodProblem& problem, std::span<const double> t
     assert(theta.size() == problem.layout.count() && grad.size() == theta.size());
     return with_dual_width(theta.size(),
                            [&]<std::size_t N>() { return LoglikGradient<N>(problem)(theta, grad); });
+}
+
+std::optional<LikelihoodProblem> problem_of(const FitResult& fit, std::vector<double>& storage)
+{
+    std::optional<LikelihoodProblem> problem;
+    if (fit.spec.mxreg != 0 || fit.spec.vxreg != 0)
+    {
+        return problem;
+    }
+    storage.resize(fit.fitted.size());
+    std::ranges::transform(fit.fitted, fit.residuals, storage.begin(), std::plus<>{});
+    problem.emplace(model::Data{storage}, model::layout_of(fit.spec), fit.config.var_init);
+    return problem;
+}
+
+std::optional<std::vector<double>> loglik_hessian(const LikelihoodProblem& problem, std::span<const double> theta,
+                                                  std::span<const std::size_t> indices)
+{
+    const model::Standardization standardization = model::standardization_of(problem.data);
+    return with_dual_width(problem.layout.count(),
+                           [&]<std::size_t N>()
+                           {
+                               LoglikGradient<N> loglik_gradient(problem);
+                               const GradientFn gradient = [&loglik_gradient](std::span<const double> point,
+                                                                              std::span<double> grad)
+                               { return loglik_gradient(point, grad); };
+                               return numerical_hessian(gradient, theta, indices, problem.layout, standardization);
+                           });
 }
 
 double loglik_with_scores(const LikelihoodProblem& problem, std::span<const double> theta,

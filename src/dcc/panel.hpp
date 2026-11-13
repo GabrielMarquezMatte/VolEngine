@@ -32,6 +32,14 @@ struct StandardizedPanel
 // The caller checked the fits with panel_problem.
 StandardizedPanel standardize(std::span<const FitResult* const> fits);
 
+// Recomputes Qbar, Nbar and the deltas from panel.z, after its columns changed.
+void refresh_moments(StandardizedPanel& panel);
+
+// Of row-major T x m data x: the sum over t of (x_t - mean)(x_t - mean)' / divisor, m x m, with mean = 0 unless
+// centred.
+std::vector<double> second_moment(std::span<const double> x, std::size_t t, std::size_t m, bool centred,
+                                  double divisor);
+
 // Why the fits cannot form a panel (at least 2 series, each with a finite estimate, one common T >= 100), or nullopt.
 // Series are numbered from 1.
 std::optional<std::string> panel_problem(std::span<const FitResult* const> fits);

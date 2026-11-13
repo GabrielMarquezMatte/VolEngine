@@ -5,6 +5,7 @@
 #include "core/context.hpp"
 #include "dcc/likelihood.hpp"
 #include "dcc/parameter_map.hpp"
+#include "dcc/standard_errors.hpp"
 #include "fit/optimizer.hpp"
 #include "model/layout.hpp"
 #include "optim/lbfgs.hpp"
@@ -15,6 +16,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <expected>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -45,19 +47,6 @@ struct DccProblem
     double delta;
     std::vector<std::size_t> free;
 };
-
-std::vector<std::size_t> estimated_positions(const DccLayout& layout)
-{
-    std::vector<std::size_t> free;
-    for (std::size_t index = 0; index < layout.count(); ++index)
-    {
-        if (layout.is_estimated(index))
-        {
-            free.push_back(index);
-        }
-    }
-    return free;
-}
 
 // objective / T over the free unconstrained parameters, so that the tolerances do not depend on the sample size.
 // The fixed positions of u stay 0: to_natural does not read them.
@@ -198,13 +187,35 @@ UnivariateStage univariate_stage(std::span<const FitResult* const> fits)
 
 constexpr std::size_t kBlocksPerThread = 4;
 
-// The specs to fit on one panel, all with one config.
+// The specs to fit on one panel, all with one config, and the fits and univariate stage of the panel.
 struct SpecBatch
 {
     const std::shared_ptr<const StandardizedPanel>& panel;
     std::span<const DccSpec> specs;
-    const FitConfig& config;
+    const DccOptions& options;
+    std::span<const FitResult* const> fits;
+    const UnivariateStage& stage;
 };
+
+// With the option, a converged spec gets the standard errors of dcc_standard_errors; the others keep NaN, as does
+// every spec when the fits have regressors.
+DccFitResult fit_in_batch(const SpecBatch& batch, std::size_t index)
+{
+    DccFitResult result = fit_dcc(batch.panel, batch.specs[index], batch.options.config);
+    result.univariate_parameters = batch.stage.parameters;
+    result.univariate_estimates = batch.stage.estimates;
+    if (!batch.options.standard_errors || result.status != FitStatus::Converged)
+    {
+        return result;
+    }
+    std::expected<DccStandardErrors, std::string> errors = dcc_standard_errors(result, batch.fits);
+    if (errors)
+    {
+        result.se_hessian = std::move(errors->hessian);
+        result.se_robust = std::move(errors->robust);
+    }
+    return result;
+}
 
 // Every spec writes only its own slot of results.
 void run_specs(BS::light_thread_pool& pool, int threads, const SpecBatch& batch, std::vector<DccFitResult>& results)
@@ -213,7 +224,7 @@ void run_specs(BS::light_thread_pool& pool, int threads, const SpecBatch& batch,
     {
         for (std::size_t index = first; index < last; ++index)
         {
-            results[index] = fit_dcc(batch.panel, batch.specs[index], batch.config);
+            results[index] = fit_in_batch(batch, index);
         }
     };
     run_in_blocks(pool, threads, results.size(), kBlocksPerThread, run_block);
@@ -274,15 +285,10 @@ std::vector<DccFitResult> fit_dcc_batch(Context& context, std::span<const FitRes
 {
     assert(!check_dcc_batch(fits, specs));
     const auto panel = std::make_shared<const StandardizedPanel>(standardize(fits));
-    std::vector<DccFitResult> results(specs.size());
-    const SpecBatch batch{panel, specs, options.config};
-    context.with_pool([&](BS::light_thread_pool& pool, int threads) { run_specs(pool, threads, batch, results); });
     const UnivariateStage stage = univariate_stage(fits);
-    for (DccFitResult& result : results)
-    {
-        result.univariate_parameters = stage.parameters;
-        result.univariate_estimates = stage.estimates;
-    }
+    std::vector<DccFitResult> results(specs.size());
+    const SpecBatch batch{panel, specs, options, fits, stage};
+    context.with_pool([&](BS::light_thread_pool& pool, int threads) { run_specs(pool, threads, batch, results); });
     return results;
 }
 

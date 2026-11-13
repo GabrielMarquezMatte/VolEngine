@@ -82,6 +82,9 @@ void to_unconstrained(std::span<const double> theta, std::span<double> u, const 
 // aDCC); FDCC: a_g, b_g > 0 with a_g^2 + b_g^2 < (1 - 1e-8)^2; shape in (4, 50).
 bool is_valid(std::span<const double> theta, const DccLayout& layout, double delta);
 
+// The positions of the estimated parameters, in order.
+std::vector<std::size_t> estimated_positions(const DccLayout& layout);
+
 // The estimated entries of a full theta, in order, and back (the fixed ones from layout.given).
 std::vector<double> estimated_part(const DccLayout& layout, std::span<const double> theta);
 std::vector<double> full_parameters(const DccLayout& layout, std::span<const double> estimated);

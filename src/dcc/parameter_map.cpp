@@ -574,6 +574,19 @@ bool is_valid(std::span<const double> theta, const DccLayout& layout, double del
     return weights_valid(theta, layout, delta);
 }
 
+std::vector<std::size_t> estimated_positions(const DccLayout& layout)
+{
+    std::vector<std::size_t> free;
+    for (std::size_t index = 0; index < layout.count(); ++index)
+    {
+        if (layout.is_estimated(index))
+        {
+            free.push_back(index);
+        }
+    }
+    return free;
+}
+
 std::vector<double> estimated_part(const DccLayout& layout, std::span<const double> theta)
 {
     assert(theta.size() == layout.count());
