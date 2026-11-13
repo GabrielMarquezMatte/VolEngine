@@ -11,10 +11,10 @@ from typing import TYPE_CHECKING, Any, TypedDict, overload
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ._dcc import DccFit, DccSpec, fit_dcc
+from ._dcc import DccFit, DccSpec, fit_dcc, open_future
 from ._diagnostics import DiagnosticResult, Nyblom, SignBias
 from ._fit import CoefTable, Fit, future_panel
-from ._forecast import Forecast
+from ._forecast import DccForecast, Forecast
 from ._native import (
     ELEMENT_BYTES,
     Handle,
@@ -25,7 +25,7 @@ from ._native import (
     lib,
     open_panel,
 )
-from ._simulation import Simulation
+from ._simulation import DccSimulation, Simulation
 from ._spec import FitOptions, Spec
 
 if TYPE_CHECKING:
@@ -35,6 +35,8 @@ __all__ = [
     "CoefTable",
     "Context",
     "DccFit",
+    "DccForecast",
+    "DccSimulation",
     "DccSpec",
     "DiagnosticResult",
     "Fit",
@@ -66,6 +68,15 @@ class FutureKeywords(TypedDict, total=False):
 
     mxreg: ArrayLike | None
     vxreg: ArrayLike | None
+
+
+class DccSimulateKeywords(TypedDict, total=False):
+    """The optional keywords of `Context.simulate` from a DccFit: `correlations` and one entry per series of each
+    regressor kind, as in `DccFit.forecast`."""
+
+    correlations: bool
+    mxreg: Sequence[ArrayLike | None] | None
+    vxreg: Sequence[ArrayLike | None] | None
 
 
 def panel_array(data: ArrayLike) -> tuple[NDArray[np.float64], bool]:
@@ -276,6 +287,7 @@ class Context:
             return results[0]
         return results
 
+    @overload
     def simulate(
         self,
         source: Fit | Spec,
@@ -284,7 +296,28 @@ class Context:
         paths: int,
         seed: int,
         **regressors: Unpack[FutureKeywords],
-    ) -> Simulation:
+    ) -> Simulation: ...
+
+    @overload
+    def simulate(
+        self,
+        source: DccFit,
+        *,
+        horizon: int,
+        paths: int,
+        seed: int,
+        **options: Unpack[DccSimulateKeywords],
+    ) -> DccSimulation: ...
+
+    def simulate(
+        self,
+        source: Fit | Spec | DccFit,
+        *,
+        horizon: int,
+        paths: int,
+        seed: int,
+        **regressors: Any,
+    ) -> Simulation | DccSimulation:
         """Simulate `paths` paths of `horizon` steps from a fit or from a spec with every parameter fixed.
 
         From a Fit the paths continue after its last observation (rugarch's ugarchsim, startMethod = "sample");
@@ -293,13 +326,22 @@ class Context:
         `vxreg` are the regressors of the horizon, as in `Fit.forecast`, the same for every path. The threads of the
         context share the paths; the same seed gives the same paths for any thread count, within one version of
         the library. `seed` is an integer in [0, 2**64).
+
+        From a DccFit (a result of `fit_dcc`, which keeps the final state of each series and needs no univariate
+        `Fit`) the paths are multivariate and give a DccSimulation: `mxreg` and `vxreg` are sequences with one entry
+        per series, as in `DccFit.forecast`, and `correlations=True` keeps R and H of every path and step (memory:
+        paths x horizon x N^2 x 2 doubles). Path p reads only the stream (seed, p), with the same version rule.
         """
-        unknown = sorted(regressors.keys() - FutureKeywords.__annotations__.keys())
-        if unknown:
-            raise TypeError(f"simulate() got an unexpected keyword argument {unknown[0]!r}")
         horizon = bounded(horizon, "horizon", 1)
         paths = bounded(paths, "paths", 1)
         seed = bounded(seed, "seed", 0)
+        if isinstance(source, DccFit):
+            return self._simulate_dcc(source, horizon, paths, seed, regressors)
+        if "correlations" in regressors:
+            raise TypeError("correlations is only for a DccFit")
+        unknown = sorted(regressors.keys() - FutureKeywords.__annotations__.keys())
+        if unknown:
+            raise TypeError(f"simulate() got an unexpected keyword argument {unknown[0]!r}")
         counts = regressor_counts(source)
         with ExitStack() as stack:
             mean = future_panel(stack, regressors.get("mxreg"), "mxreg", counts[0], horizon)
@@ -318,6 +360,29 @@ class Context:
             return Simulation(
                 create_handle(
                     lib.ve_simulate_fit, lib.ve_sim_free, self._handle.pointer, source._handle.pointer, options.pointer
+                )
+            )
+
+    def _simulate_dcc(
+        self, source: DccFit, horizon: int, paths: int, seed: int, options: dict[str, Any]
+    ) -> DccSimulation:
+        unknown = sorted(options.keys() - DccSimulateKeywords.__annotations__.keys())
+        if unknown:
+            raise TypeError(f"simulate() got an unexpected keyword argument {unknown[0]!r}")
+        with ExitStack() as stack:
+            future = open_future(stack, horizon, options.get("mxreg"), options.get("vxreg"))
+            handle = stack.enter_context(
+                create_handle(lib.ve_sim_options_create, lib.ve_sim_options_free, horizon, paths, seed)
+            )
+            check(lib.ve_sim_options_set_correlations(handle.pointer, int(bool(options.get("correlations", False)))))
+            return DccSimulation(
+                create_handle(
+                    lib.ve_simulate_dcc,
+                    lib.ve_dcc_sim_free,
+                    self._handle.pointer,
+                    source._handle.pointer,
+                    handle.pointer,
+                    future,
                 )
             )
 
