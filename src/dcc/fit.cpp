@@ -140,11 +140,48 @@ DccFitResult empty_result(std::shared_ptr<const StandardizedPanel> panel, const 
     return result;
 }
 
+// Uncentred downside moments can give delta >= 1; then the nominal default g exceeds the remaining budget.
+// Reduce only unspecified g starts, leaving every fixed and user-started parameter untouched.
+std::vector<double> panel_start(const DccProblem& problem)
+{
+    const DccLayout& layout = problem.layout;
+    std::vector<double> theta = start_values(layout);
+    if (is_valid(theta, layout, problem.delta) || layout.g_count == 0 || !(problem.delta > 0.0))
+    {
+        return theta;
+    }
+    double room = kPersistenceCeiling;
+    std::size_t defaults = 0;
+    for (std::size_t i = 0; i < layout.shape(); ++i)
+    {
+        if (i >= layout.g_begin() && layout.is_estimated(i) && !layout.started[i])
+        {
+            ++defaults;
+            continue;
+        }
+        const double scale = i >= layout.g_begin() ? problem.delta : 1.0;
+        room -= scale * theta[i];
+    }
+    if (!(room > 0.0) || defaults == 0)
+    {
+        return theta;
+    }
+    const double g = 0.5 * room / (problem.delta * static_cast<double>(defaults));
+    for (std::size_t i = layout.g_begin(); i < layout.shape(); ++i)
+    {
+        if (layout.is_estimated(i) && !layout.started[i])
+        {
+            theta[i] = g;
+        }
+    }
+    return theta;
+}
+
 // Fills result, which arrives as empty_result, and returns its status. Unless the reported loglik at the estimate
 // is finite, the estimate stays NaN.
 FitStatus estimate(const DccProblem& problem, const FitConfig& config, DccFitResult& result)
 {
-    std::vector<double> theta = start_values(problem.layout);
+    std::vector<double> theta = panel_start(problem);
     if (!is_valid(theta, problem.layout, problem.delta))
     {
         return FitStatus::Failed;

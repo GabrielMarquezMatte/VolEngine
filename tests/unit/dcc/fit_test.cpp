@@ -39,6 +39,32 @@ std::shared_ptr<const StandardizedPanel> dcc3()
     return panel;
 }
 
+TEST(DccFit, AdccDefaultStartRespectsPanelAsymmetry)
+{
+    auto panel = std::make_shared<StandardizedPanel>();
+    panel->t = 500;
+    panel->m = 5;
+    panel->sigma.assign(panel->t * panel->m, 1.0);
+    std::mt19937_64 random(42);
+    std::normal_distribution<double> normal;
+    panel->z.resize(panel->sigma.size());
+    for (double& value : panel->z)
+    {
+        value = normal(random);
+    }
+    ve::dcc::refresh_moments(*panel);
+    ASSERT_GT(panel->delta, 1.0);
+    DccSpec spec;
+    spec.model = DccModel::ADcc;
+    const auto fit = ve::dcc::fit_dcc(panel, spec, FitConfig{});
+    EXPECT_TRUE(std::isfinite(fit.loglik));
+    EXPECT_NE(fit.r, nullptr);
+    spec.start = {{"dccg1", 1.0}};
+    const auto invalid = ve::dcc::fit_dcc(panel, spec, FitConfig{});
+    EXPECT_EQ(invalid.status, FitStatus::Failed);
+    EXPECT_TRUE(std::isnan(invalid.loglik));
+}
+
 DccSpec spec_of(DccModel model, DccDist dist, Convention convention)
 {
     DccSpec spec;
