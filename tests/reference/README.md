@@ -188,3 +188,18 @@ overwrite the CSV.
 `tests/unit/dcc/oracles/copula_oracle_test.cpp` holds a table copied from the fixture; the point-parity tables of
 `tests/unit/dcc/copula/` hold the same numbers. Update them after regeneration. Python reads the JSON and checks the
 public convention against NumPy.
+
+### DCC forecast oracle
+
+From the repository root, run `Rscript tests/reference/dcc_forecast_rmgarch.R` (R 4.6.2, `rugarch` 1.5.6, `rmgarch`
+1.4.3, `jsonlite`). It reads `data/dcc3.csv` without regenerating it, fits sGARCH(1,1)-normal margins with
+`multifit`/`solnp` (tol 1e-10), fits the DCC and calls `dccforecast` (`n.roll = 0`) for five cases: DCC(1,1) mvnorm,
+DCC(2,1) mvnorm and DCC(1,1) mvt with `n.ahead = 10`, and aDCC and FDCC (groups 1, 1, 2) mvnorm with `n.ahead = 1`,
+because `rmgarch` refuses `n.ahead > 1` for the aDCC and gives no Q from h = 2 for the FDCC. It writes
+`fixtures/rmgarch_dcc_forecast.json` with the univariate estimates of the multifit, the DCC estimates (17 digits) and
+`rcor`, `rcov` and `sigma` for h = 1..n.ahead.
+
+`tests/unit/dcc/future/forecast_oracle_test.cpp` holds a table copied from the fixture (the univariate estimates, the
+DCC estimates and R, H and sigma at h = 1, 5 and 10): it fixes the univariate fits and every DCC parameter at the
+`rmgarch` values, runs the `Rmgarch` convention and compares to 1e-8. Update the table after regeneration; the
+univariate estimates of this fixture differ from `dcc3_fits()` in the sixth digit, so the test does not use it.
