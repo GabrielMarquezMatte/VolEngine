@@ -388,7 +388,7 @@ added to both fixtures.
 | Every parameter fixed (`fit.loglik`, `fit.sigma`, criteria) | `ugarchfilter(spec, y)`: `likelihood`, `sigma`, `infocriteria` (k = 0) | `arch_model(...).fix(params)`: `.loglikelihood`, `.conditional_volatility` |
 
 Two numerical settings differ from the defaults, one on each side: `rugarch`'s Hessian step (`hess.d = 1e-3`,
-1e-4 for sged) and VolEngine's `tol = 1e-7`. Both are explained in [Numerical settings](#numerical-settings).
+1e-4 for sged) and VolEngine's `tol = 1e-7` (`1e-10` for the apARCH variance-regressor comparison). Both are explained in [Numerical settings](#numerical-settings).
 
 ## Conventions
 
@@ -940,6 +940,17 @@ unconstrained parametrization, is below `tol` = 1e-6 by default. On the ill-cond
 (1e-8, 1e-9) changes no estimate. The default is unchanged: the 4.7e-3 relative error in β̂₁ = 0.21 is
 9.7e-4 in absolute terms, 0.5% of its standard error (0.20).
 
+The `rugarch-sgarch11_vx_std/aparch11_vx_std` comparison uses `tol=1e-10`. At `1e-7`,
+VolEngine reports convergence with gamma1 `0.009081260685865455`, versus the oracle's
+`0.008940997509538143`: the absolute difference `1.40e-4` exceeds the unchanged `1e-5`
+criterion for a small coefficient, even though log-likelihood differs by only `-2.61e-6`.
+Tolerances `1e-8` and `1e-9` give the same point; at `1e-10`, with the default 500-iteration
+limit, gamma1 is `0.008935613373222129` (difference `5.38e-6`) and log-likelihood is
+`3.77e-8` above the oracle. Parameters, standard errors, sigma and criteria pass their
+original checks. This is a stricter optimizer setting for this oracle comparison only;
+the library default and assertion tolerances are unchanged. The case no longer needs to
+be excluded from the Python test suite.
+
 ### VolEngine: Student-t near the normal limit
 
 On data with normal innovations the std likelihood keeps rising as ν → ∞, and the fit stops wherever the
@@ -1259,9 +1270,10 @@ and keep fitdf zero. ARCH–LM uses `f+1`, `f+3`, `f+5`, with `f=ARCH+GARCH`.
 Pearson uses 20, 30, 40 and 50 groups. Residual statistics have relative tolerance `1e-7`
 (`1e-4` for fGARCH's smoothed absolute value), p-values absolute tolerance `1e-7`, and Pearson
 counts agree exactly. Nyblom uses relative tolerance `1e-3` because the scores are numerical in
-rugarch. The fixture covers all 108 rugarch cases. With the prescribed exclusion of
-`sgarch11_vx_std/aparch11_vx_std`, the diagnostic oracle suite reports 631 passed, seven strict
-expected failures and six deselected comparisons.
+rugarch. The fixture covers all 108 rugarch cases. Without excluding any case, the diagnostic
+oracle suite has 637 passing comparisons and seven strict expected failures. The complete Python
+suite reports 1,217 passed and 12 strict expected failures (five pre-existing optimizer/quadrature
+divergences and the seven diagnostic comparisons below).
 
 `egarch11_jsu/egarch11_sstd` has three strict expected failures: squared Ljung–Box, ARCH–LM and
 sign bias. Rugarch centers its eGARCH shocks with `E|z|=0.75570508637826894`, exactly its default
