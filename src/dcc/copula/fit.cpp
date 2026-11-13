@@ -250,16 +250,14 @@ std::vector<double> copula_terms(const CopulaInputs& inputs, const DccSpec& spec
     const DccLayout layout = layout_of(spec, inputs.univariate->m);
     assert(theta.size() == layout.count());
     std::vector<double> terms(inputs.univariate->t, kNaN);
+    // Like the plan 4a recursion, the terms are evaluated off the constraints too (the standard errors' differences
+    // step there around a weight at 0 or a shape at its ceiling); only the scores need nu > 2.
     const double nu = shape_of(spec, theta, layout);
-    if (layout.has_shape && !(nu > kShapeFloor && nu < kShapeCeiling))
+    if (layout.has_shape && !(nu > 2.0))
     {
         return terms;
     }
     const CopulaPanel scores = copula_panel(inputs.uniforms_of(spec), *inputs.univariate, spec.dist, nu);
-    if (!is_valid(theta, layout, constraint_delta(*scores.panel, spec)))
-    {
-        return terms;
-    }
     terms = spec.model == DccModel::Static ? static_dependence(inputs, spec, theta, scores, r)
                                            : dynamic_terms(*scores.panel, spec, theta, r);
     for (std::size_t t = 0; t < terms.size(); ++t)
