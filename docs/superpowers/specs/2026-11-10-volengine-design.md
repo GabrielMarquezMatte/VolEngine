@@ -218,8 +218,8 @@ d  = ctx.fit_dcc(dcc_spec, univariate)   # 1 DccSpec    → DccFit
 ds = ctx.fit_dcc(dcc_specs, univariate)  # lista         → lista de DccFit
 # univariate: N ajustes escolhidos pelo usuário, um por série
 
-fc   = ve.forecast(f, horizon=10)
-sims = ve.simulate(f, horizon=250, paths=10_000, seed=42)
+fc   = f.forecast(10)                                       # membro do Fit (usuário, 2026-11-13)
+sims = ctx.simulate(f, horizon=250, paths=10_000, seed=42)  # do contexto: usa as threads
 ```
 
 - Sobrecargas por spec única / lista existem no Python e no `volengine.hpp`, nunca na interface C.
