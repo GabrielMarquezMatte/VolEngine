@@ -8,7 +8,9 @@ behind a decision (measurements, rejected approaches); that lives in `docs/`, an
 This document describes what exists today: ARMA(m,n)-GARCH(p,q) log-likelihoods for sGARCH, eGARCH, gjrGARCH,
 apARCH, iGARCH, csGARCH and fGARCH (eight submodels) with normal, Student-t, GED and skewed innovations, fixed parameters, start values and variance
 targeting, a template over the scalar type so that automatic differentiation gives their gradients; and, on top of
-them, those models fitted in batches behind a C API and a Python package.
+them, those models fitted in batches behind a C API and a Python package. A second-stage DCC module estimates
+DCC, aDCC and grouped FDCC correlations from selected univariate fits, with multivariate normal, Student-t or
+Laplace likelihoods and optional two-stage standard errors.
 
 ## Layers
 
@@ -49,6 +51,14 @@ Diagnostics form a separate branch, `fit` <- `diagnostics` <- `capi`: residual t
 `dist` for CDFs and `linalg` for regression. The Nyblom computation lives in `fit`, where the final score matrix
 already exists; only its individual and joint statistics survive that evaluation.
 
+DCC forms another branch, `fit` <- `dcc` <- `capi`. `src/dcc/` standardizes the selected univariate fits
+once per batch and shares their panel (z, sigma, sample covariances) among DCC, aDCC and FDCC specifications.
+Its templated recursion and multivariate likelihood run with `double` or dual numbers through the existing
+L-BFGS optimizer. Each result owns its correlation path; the immutable C handle computes and caches the
+covariance path on demand, safely across readers. Two-stage standard errors refilter the univariates under
+parameter perturbations and may be requested during fitting or explicitly afterward. Public calls always use
+the standard paper conventions; the internal `Rmgarch` convention is reserved for oracle tests.
+
 ## Where each responsibility lives
 
 | Path | Responsibility |
@@ -60,12 +70,19 @@ already exists; only its individual and joint statistics survive that evaluation
 | `src/capi/results/fit_api.cpp`, `forecast_api.cpp`, `sim_api.cpp` | The `extern "C"` functions over results: the accessors of `ve_fit`, `ve_forecast`, and `ve_sim_options` / `ve_simulate_*` / `ve_sim` |
 | `src/capi/results/regressor_rows.*` | The checks and copies of the regressors of a horizon, shared by the forecast and the simulation |
 | `src/capi/results/diagnostics_api.cpp` | Diagnostic argument checks and caller-owned result arrays over immutable fits |
+| `src/capi/dcc/` | DCC spec/options, batch fitting, immutable result accessors, lazy covariance cache and deferred standard-error handles |
 | `src/core/context.hpp`, `context.cpp` | `ve::Context`: the thread pool and thread count |
 | `src/core/spec.hpp` | `ve::Spec` (model, order, distribution, mean, fixed and start values, variance targeting) and `ve::FitConfig` (iterations, tolerance, variance initialization): copyable values |
 | `src/core/panel.hpp` | `ve::PanelView`: a borrowed pointer, T, N, element strides and optional per-series start and length |
 | `src/core/var_init.hpp` | The variance initialization enum (`Sample`, `Backcast`) |
 | `src/ad/dual.hpp`, `special.hpp`, `special.cpp` | `ve::ad::Dual<N>`: forward-mode dual numbers and their elementary functions; `digamma` |
 | `src/linalg/cholesky.*`, `least_squares.*` | Cholesky factor and solve; minimum-norm least squares by the normal equations, with a Jacobi pseudo-inverse when they are singular |
+| `src/linalg/symmetric_eigen.*` | Largest relative eigenvalue for the aDCC stationarity constraint, by power iteration after a Cholesky transform |
+| `src/linalg/lu.*` | Pivoted LU solves for the nonsymmetric two-stage standard-error system |
+| `src/dcc/spec.hpp`, `panel.*` | DCC models, distributions and internal conventions; standardized panel, covariance moments and aDCC stationarity bound |
+| `src/dcc/recursion.hpp`, `likelihood.*` | DCC/aDCC/FDCC correlation paths and multivariate normal, Student-t and Laplace log-densities, templated for AD |
+| `src/dcc/parameter_map.*`, `fit.*` | Parameter layout and constraints, L-BFGS estimation, deterministic batches, full likelihood criteria and covariance paths |
+| `src/dcc/standard_errors.*` | Two-stage Hessian and sandwich standard errors, with univariate refiltering and source-estimate validation |
 | `src/mean/arma.hpp` | ARMA(m,n) residuals over the returns or over the deviations from the mean (regressors included), a template over the scalar type |
 | `src/mean/fractional.hpp` | The ARFIMA fractional difference (1 - L)^d of the mean residuals, truncated at the first observation, in place, O(T^2) |
 | `src/garch/presample.hpp` | The pre-sample rule shared by the recursions: a state held at a value up to a time, and the expected value of a term before the first observation |
@@ -100,6 +117,7 @@ already exists; only its individual and joint statistics survive that evaluation
 | `python/src/volengine/_native.py` | Library discovery (`VOLENGINE_LIB`), ABI check, prototypes, handle ownership |
 | `python/src/volengine/_spec.py`, `_fit.py`, `api.py` | `Spec` and `FitOptions`, `Fit` and the criteria, `Context.fit` |
 | `python/src/volengine/_diagnostics.py` | `DiagnosticResult`, `SignBias`, `Nyblom` and native diagnostic result readers |
+| `python/src/volengine/_dcc.py` | `DccSpec`, immutable `DccFit`, read-only correlation/covariance views and deferred standard errors |
 | `tests/unit/{ad,capi,dist,fit,garch,mean,model,optim}` | GoogleTest suites mirroring `src/`; `c_header_check.c` compiles the header as C11 |
 | `tests/style/check_style.py` | Style rules that can be checked without a compiler; runs as the `style` ctest |
 | `python/benchmarks/bench_vs_arch.py` | Timing against `arch` on matched work; writes `docs/performance/python-vs-arch.md` |

@@ -1,9 +1,9 @@
 # VolEngine
 
-VolEngine estimates GARCH volatility models. The numerical core is C++23; its only stable contract is a C API
+VolEngine estimates GARCH volatility models and DCC conditional correlations. The numerical core is C++23; its only stable contract is a C API
 (`include/volengine/volengine.h`), so other languages can bind to it, and a Python package, `volengine`, is the
 first consumer. Many series and many specifications are fitted in one call on a thread pool, with results that do
-not depend on the thread count. Default conventions follow R's `rugarch`; those of Python's `arch` are an option.
+not depend on the thread count. Univariate default conventions follow R's `rugarch`; those of Python's `arch` are an option.
 
 ## Status
 
@@ -18,6 +18,11 @@ standard errors and the usual information criteria. Any estimated parameter can 
 simulated paths and the diagnostics reported by `rugarch`'s `show()`. More features come in
 later releases.
 Until 1.0 the C ABI may change between releases. See [CHANGELOG.md](CHANGELOG.md).
+
+DCC and asymmetric DCC (aDCC) support orders 1 to 6; flexible DCC (FDCC) uses order (1,1) and user-defined
+groups. All three support `mvnorm`, `mvt` and `mvlaplace`, fixed parameters, start values and optional two-stage
+Hessian and robust standard errors. Public DCC conventions follow the papers; the internal `rmgarch` convention
+exists for numerical validation.
 
 ## Python example
 
@@ -35,6 +40,30 @@ print(fit.coef("robust"))         # CoefTable: names, estimate, std_error, t_val
 print(fit.loglik, fit.aic())
 print(fit.sigma[:5])              # conditional standard deviation, a read-only view
 ```
+
+A DCC grid uses one selected univariate fit per series. Here the 21 columns share T = 5000 observations:
+
+```python
+panel = np.random.default_rng(3).standard_t(8, size=(5000, 21))
+fits = ctx.fit(ve.Spec(dist="std"), panel)
+groups = [1] * 7 + [2] * 7 + [3] * 7
+specs = [
+    ve.DccSpec(model=model, dist=dist, groups=groups if model == "fdcc" else None)
+    for model in ("dcc", "adcc", "fdcc")
+    for dist in ("mvnorm", "mvt", "mvlaplace")
+]
+grid = ctx.fit_dcc(specs, fits, standard_errors=False)
+best = min((fit for fit in grid if fit.status == "converged"), key=lambda fit: fit.bic())
+print(best.standard_errors(fits).coef("robust"))
+print(best.R.shape)               # (5000, 21, 21), read-only, zero-copy
+print(best.H.shape)               # covariance path, calculated on first access
+```
+
+The univariate fits must have the same T (at least 100) and finite estimates; at least two series are required.
+Information criteria count the estimated univariate and DCC parameters and the sample correlation entries.
+Each DCC result has its own convergence status. Standard errors can be deferred until after model selection;
+the explicit call requires the original univariate estimates in the original order. Standard errors with
+univariate external regressors are currently unsupported. DCC forecast and simulation are planned separately.
 
 An ARMA mean and another innovation distribution are part of the spec:
 
