@@ -61,6 +61,7 @@ target_compile_definitions(ve_boost_math INTERFACE BOOST_MATH_STANDALONE)
 add_library(volengine_core STATIC
     src/ad/special.cpp
     src/core/context.cpp
+    src/diagnostics/portmanteau.cpp
     src/dist/cdf.cpp
     src/dist/bessel.cpp
     src/dist/moments.cpp
@@ -130,6 +131,7 @@ if(VE_BUILD_TESTS)
         tests/unit/capi/results/sim_test.cpp
         tests/unit/capi/spec_test.cpp
         tests/unit/dist/cdf_test.cpp
+        tests/unit/diagnostics/portmanteau_test.cpp
         tests/unit/dist/bessel_test.cpp
         tests/unit/dist/densities_test.cpp
         tests/unit/dist/moments_test.cpp
