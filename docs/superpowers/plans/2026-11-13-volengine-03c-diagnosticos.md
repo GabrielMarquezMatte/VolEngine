@@ -458,3 +458,35 @@ def test_diagnostics_bad_arguments_raise(ctx, series): ...   # lag -1 → ValueE
 - [ ] **Step 3: Documentar.**
 - [ ] **Step 4: Rodar** — suíte release inteira, `pytest` e `check_style.py` → PASS.
 - [ ] **Step 5: Commit** — `git commit -m "bench: add diagnostics benchmarks and document plan 3c"`
+
+
+## Execução — 2026-11-13
+
+Implementado diretamente em `master`, sem worktree. O usuário autorizou a skill `implement`
+no lugar das skills Superpowers ausentes. O núcleo foi dividido em frentes independentes;
+a integração, a revisão e a validação final aconteceram sobre a mesma branch.
+
+- [x] Task 1: CDFs das oito distribuições e testes.
+- [x] Task 2: Ljung–Box e ARCH–LM ponderados, caudas diretas e validação de argumentos.
+- [x] Task 3: sign bias e Pearson ajustado.
+- [x] Task 4: Nyblom calculado sobre os scores existentes, com exclusão de fixos/derivados.
+- [x] Task 5: interface C, resultados Python e testes de borda.
+- [x] Task 6: fixture dos 108 casos rugarch, testes e diferenças documentadas.
+- [x] Task 7: cinco repetições dos benchmarks, comparação controlada e documentação.
+
+Validação final: 3.557 testes C++ Release passaram; Python teve 1.208 passes, 9 casos
+excluídos pelo filtro prescrito e 12 xfails strict (cinco preexistentes e sete comparações
+em dois casos eGARCH, por aproximação de E|z| do rugarch). `check_style.py` passou.
+O `mypy --strict` mantém os mesmos seis erros do commit anterior, confirmados sobre uma
+cópia dos arquivos originais; nenhum erro novo. Nenhuma constante ou tolerância de teste
+existente foi alterada. Os resultados anteriores do ajuste foram preservados.
+
+A comparação de Nyblom usa os parâmetros estimados no ponto do oráculo, aceito antes que
+o otimizador os desloque (`tol=1` apenas nesse teste), e verifica sua identidade numérica.
+As tolerâncias estatísticas originais foram mantidas. As exceções eGARCH, os máximos
+observados e suas causas estão em `docs/guide/validation.md`. O benchmark controlado
+não distinguiu desaceleração do ruído: 5,72 ms antes e 5,62 ms com Nyblom (medianas CPU).
+
+Os passos de implementação e validação acima estão concluídos; a sequência operacional
+foi adaptada ao trabalho paralelo, sem repetir artificialmente cada falha de compilação
+descrita no roteiro. Os commits seguem as sete unidades do plano.

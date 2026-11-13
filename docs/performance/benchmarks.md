@@ -186,6 +186,50 @@ in the commit after it), 5 repetitions; medians, with the standard deviation.
   over the RNG. `ponytail:` a ziggurat and a step without allocations are the upgrades if a simulation ever needs
   them (plan 5).
 
+## Diagnostics (plan 3c)
+
+Measured on the machine above on 2026-11-13, starting from `f671fae` plus the diagnostics implementation.
+`BM_Diagnostics/<series>/<test>` fits 5000 observations once outside the timed loop. Ljung-Box uses lag 5,
+ARCH-LM uses lag 5 and fitdf 2, sign bias computes all four tests, and GOF uses 50 groups. Each case ran
+5 repetitions; all statistics and p-values were finite. These are CPU-time medians and standard deviations:
+
+| Series | Diagnostic | Median (us) | sd (us) |
+| --- | --- | ---: | ---: |
+| `s11_norm` | Ljung-Box | 27.87 | 1.06 |
+| `s11_norm` | ARCH-LM | 22.95 | 0.27 |
+| `s11_norm` | Sign bias | 38.50 | 0.92 |
+| `s11_norm` | Pearson GOF | 256.70 | 10.44 |
+| `sgarch11_ghyp` | Pearson GOF | 351562.50 | 3493.86 |
+
+The ghyp GOF integrates its density between sorted residuals; it is substantially more expensive than
+the closed normal CDF. It does not repeat an integral from negative infinity for every observation.
+
+Reproduce with `/c/msys64/ucrt64/bin` first on PATH:
+
+```
+cmake --preset gcc-bench
+cmake --build --preset gcc-bench
+build/gcc-bench/volengine_benchmarks --benchmark_filter="BM_Diagnostics|^BM_FitOne/s11_norm$" --benchmark_repetitions=5 --benchmark_out=build/diagnostics_bench.json --benchmark_out_format=json
+```
+
+The original before-Nyblom `BM_FitOne/s11_norm` measurement had a CPU median of 5.30 ms (sd 0.15 ms).
+After runs concurrent with the release tests and R oracle varied enough to obscure the cost, so a control
+executable was built from the original `src/fit/fit.cpp` at `f671fae`, using the same current headers,
+benchmark object and other core objects. The control and the new executable then ran consecutively,
+5 repetitions each:
+
+| `BM_FitOne/s11_norm` | CPU median (ms) | sd (ms) | Wall median (ms) | sd (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Original fit driver (control) | 5.72 | 0.20 | 5.87 | 0.22 |
+| With Nyblom | 5.62 | 0.27 | 5.64 | 0.27 |
+
+There is no slowdown distinguishable from this run's noise; the lower median is not evidence of a speedup.
+An isolated-kernel check on 5000 x 4 synthetic scores took 61 us per `nyblom_statistics` call over 10000
+iterations, below the spread of the full-fit measurements. It reuses the score matrix produced for the
+standard errors and adds O(T k²) accumulation and a small Cholesky solve. The singular-score guard rejects
+Cholesky pivots at roundoff scale relative to their original diagonal: exact duplicate score columns can
+otherwise leave a tiny positive pivot and a finite, invalid joint statistic.
+
 ## Batch scaling
 
 `BM_Batch/threads:N` is one `ve_fit_batch` call with 20 series of T = 5000 and one spec (`s11_norm`), through the C API.
