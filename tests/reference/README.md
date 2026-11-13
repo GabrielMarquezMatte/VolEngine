@@ -1,5 +1,16 @@
 # Reference data and oracle fixtures
 
+Diagnostics are regenerated with `Rscript tests/reference/diagnostics_rugarch.R` (R 4.6.2,
+`rugarch` 1.5.6, `jsonlite`). The script sources the case/specification helpers from
+`oracle_rugarch.R`, fits every rugarch case, and writes `fixtures/rugarch_diagnostics.json`.
+It calls `nyblom`, `signbias`, `gof`, and the package's callable `Weighted.Box.test` and
+`Weighted.LM.test` (the latter two are not exported, so are obtained with `getFromNamespace`).
+No package implementation is copied. All-fixed cases use `ugarchfilter` and have no Nyblom statistic.
+The fixture includes the coefficients of each new fit: the residual tests evaluate VolEngine at
+those exact points, while the Nyblom tests estimate parameters starting from them. Run
+`python/.venv/Scripts/python -m pytest python/tests/oracles/test_diagnostics_oracles.py`
+after building the release DLL; the tests themselves require neither R nor rugarch.
+
 This directory holds the simulated series and the results of two independent oracles, R's
 [`rugarch`](https://cran.r-project.org/package=rugarch) and Python's [`arch`](https://pypi.org/project/arch/),
 that `python/tests/oracles/test_oracles.py` compares VolEngine against. Conventions and tolerances are documented in

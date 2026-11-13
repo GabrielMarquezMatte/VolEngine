@@ -1203,6 +1203,100 @@ Evaluation case (every parameter fixed, `fix()`; `arch`'s criteria count every p
 |------|-----------------|-------|-----------|
 | `sgarch21_std/sgarch11_std_allfixed` | +3.0e-12 | 1.8e-15 | 1.1e-16 |
 
+### `rugarch`, diagnostics
+
+`tests/reference/diagnostics_rugarch.R` generates `rugarch_diagnostics.json` with R 4.6.2 and
+`rugarch` 1.5.6. `python/tests/oracles/test_diagnostics_oracles.py` checks every case at the
+coefficients stored in that fixture. Variance targeting is disabled for this evaluation and omega
+is fixed to the oracle's value; the iGARCH final beta remains derived. This separates the residual
+diagnostics from optimizer differences. Nyblom uses an estimated fit started at the oracle's
+coefficients and excludes the optimizer/quadrature divergences already listed above. Its test uses
+`tol=1` to accept the supplied point before optimization moves it, while retaining the estimated
+parameter mask, and asserts that every estimated coefficient agrees within `1e-12`. This isolates
+the score calculation: at the usual `tol=1e-7`, coefficient movements of `9e-6` (GED) to `9.5e-4`
+(GHYP) caused individual-statistic differences of `0.14%` to `0.53%`. At the unchanged oracle point,
+those three investigated cases agree in their individual statistics to `1.8e-8` relative.
+Derived variance-targeting omega may still differ by about `1e-10` from rugarch's numerical moment.
+
+The formulas follow Fisher and Gallagher (2012), Nyblom (1989), Hansen (1990, 1992),
+Engle and Ng (1993), and Vlaar and Palm (1993), with the following rugarch conventions:
+
+- Non-finite standardized residuals are replaced with zero. Autocorrelations subtract the sample
+  mean and divide every lagged product sum by the full centered sum of squares, as R's `acf` does.
+  A constant series has undefined autocorrelations and produces NaN.
+- Weighted Ljung–Box uses weights `(L-k+1)/L` and statistic
+  `n(n+2) sum(w[k] rho[k]^2/(n-k))`. Its gamma approximation has shape
+  `3(L+1)^2 L/(4D)`, scale `2D/(3L(L+1))`, and `D=2L^2+3L+1-6Lf`.
+  For squared residuals rugarch forces `f=0`, regardless of the requested fit degrees of freedom.
+- Weighted ARCH–LM (Li–Mak) uses standardized squared residuals, lags `f+1..L`, weights
+  `(L-k+f+1)/L`, and statistic `n sum(w[k] rho[k]^2)`. Its gamma shape is
+  `3(L+f+1)^2(L-f)/(4D)`, scale `2D/(3L(L+f+1))`, and
+  `D=2L^2+3L+2Lf+2f^2+3f+1`.
+- Gamma and chi-square p-values use the direct upper tail (`gamma_q`). Rugarch subtracts its lower
+  CDF from one, returning zero for tails below about `1e-16`; VolEngine retains the small positive
+  tail. The absolute difference is below `1e-15`.
+- Nyblom uses the per-observation natural-parameter scores of estimated parameters only. For their
+  cumulative sums `S[t]`, `A=sum(S[t] S[t]')` and `B=sum(g[t] g[t]')`, the individual statistic is
+  `A[i,i]/(n B[i,i])` and the joint statistic is `trace(A solve(B,I))/n`, computed with Cholesky
+  solves. A singular B gives a NaN joint; a zero diagonal gives a NaN individual. There is no
+  rugarch-style Hessian fallback. Fixed and derived parameters have no individual statistic;
+  zero estimated parameters gives a NaN joint. Hansen's 10%, 5%, 1% critical values are available
+  for 1–20 estimated parameters; individual critical values use one parameter.
+- Sign bias regresses `z[t]^2` on an intercept, the negative sign indicator of `e[t-1]`, and its
+  negative and positive sign interactions with `e[t-1]`, for observations 2..n. Rugarch uses the
+  **raw residual e** in these regressors, whereas Engle–Ng uses z. Individual statistics are
+  absolute t-values with `n-5` degrees of freedom. The joint statistic is the three-coefficient
+  Wald statistic with chi-square(3) p-value.
+- Adjusted Pearson uses the fitted distribution CDF, equal-probability bins, expected count `n/g`,
+  and chi-square(`g-1`). The last bin contains CDF=1. Rugarch's `tabulate` discards empty bins
+  above the last occupied bin; VolEngine reproduces this instead of adding those bins' expected
+  counts. Norm, std, GED, skewed std/GED and JSU use closed CDF forms; NIG and GHYP accumulate
+  density quadrature over sorted residuals.
+
+The tests use the lags printed by `show()`: for residuals, `1`, `max(2,3d-1)`, `max(5,5d-1)`
+with `d=AR+MA` (fitdf 0 at lag 1 and d otherwise); for squared residuals replace d with ARCH+GARCH
+and keep fitdf zero. ARCH–LM uses `f+1`, `f+3`, `f+5`, with `f=ARCH+GARCH`.
+Pearson uses 20, 30, 40 and 50 groups. Residual statistics have relative tolerance `1e-7`
+(`1e-4` for fGARCH's smoothed absolute value), p-values absolute tolerance `1e-7`, and Pearson
+counts agree exactly. Nyblom uses relative tolerance `1e-3` because the scores are numerical in
+rugarch. The fixture covers all 108 rugarch cases. With the prescribed exclusion of
+`sgarch11_vx_std/aparch11_vx_std`, the diagnostic oracle suite reports 631 passed, seven strict
+expected failures and six deselected comparisons.
+
+`egarch11_jsu/egarch11_sstd` has three strict expected failures: squared Ljung–Box, ARCH–LM and
+sign bias. Rugarch centers its eGARCH shocks with `E|z|=0.75570508637826894`, exactly its default
+`integrate(abs(z)*ddist(...), -Inf, Inf)` result. Integrating the two half-lines with tight tolerance
+gives `0.75570512913971755`, agreeing with VolEngine's `0.7557051291397796`. The resulting standardized
+residual difference reaches `2.78e-7`; the tiny squared lag-1 statistic differs by `4.51e-9` absolute
+(`9.30e-6` relative). ARCH–LM differs by up to `1.81e-7` relative, and sign bias by `4.23e-7` relative
+(`1.04e-7` in p-value). Unsquared Ljung–Box and every Pearson group count still pass unchanged.
+
+`egarch11_jsu/egarch11_sged` has four strict expected failures: both Ljung–Box families, ARCH–LM and
+sign bias. Rugarch uses `E|z|=0.75925235404038049`, again exactly its default integral; a tight split
+integral gives `0.75925328839642847`, agreeing with VolEngine's `0.7592532884114136`. The standardized
+residual difference reaches `6.20e-6`. The largest squared-statistic relative difference is `7.02e-4`
+because its lag-1 statistic is small; sign-bias p-values differ by up to `2.28e-6`. Pearson's counts
+still agree exactly. As an independent check of the cause, shifting only the evaluation intercept
+by `gamma1*(Eabs_VE-Eabs_R)` makes both affected cases' entire residual paths agree within `1.78e-15`
+and sigma within `8.88e-16`. The oracle tests keep the unmodified coefficients and original
+tolerances, with explicit strict expected failures, and the library's existing fit numbers stay intact.
+
+Observed maxima over the checked fixture, including these two documented moment differences:
+
+| Diagnostic | Statistic relative difference | p-value absolute difference |
+|---|---:|---:|
+| Weighted Ljung–Box | `8.97e-7` | `3.13e-7` |
+| Weighted Ljung–Box, squared | `7.02e-4` | `1.80e-6` |
+| Weighted ARCH–LM | `4.04e-6` | `9.05e-7` |
+| Sign bias, individual and joint | `8.40e-6` | `2.28e-6` |
+| Pearson GOF, exact bin counts | `6.67e-16` | `1.61e-15` |
+| Nyblom individual, same estimated point | `2.24e-4` | — |
+| Nyblom joint, same estimated point | `6.95e-5` | — |
+
+The largest Nyblom differences occur in the fGARCH Student-t variance-targeting case, whose moment
+and score approximations remain within the original `1e-3` tolerance. GOF's statistic comparison
+sets relative tolerance to zero and allows only `1e-12` absolute summation roundoff.
+
 ## Regenerating
 
 See [`tests/reference/README.md`](../../tests/reference/README.md). When an oracle version changes, regenerate
