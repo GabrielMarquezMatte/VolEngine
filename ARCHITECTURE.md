@@ -59,6 +59,11 @@ covariance path on demand, safely across readers. Two-stage standard errors refi
 parameter perturbations and may be requested during fitting or explicitly afterward. Public calls always use
 the standard paper conventions; the internal `Rmgarch` convention is reserved for oracle tests.
 
+`src/dcc/copula/` turns the univariate margins into uniforms (each fit's cdf from `dist`, or ranks) and then into
+normal or Student scores, and runs the single-spec DCC fit of `src/dcc/` on them, or a static correlation (Kendall,
+or ML with an analytic gradient). The batch in `src/dcc/fit.cpp` dispatches copula specs there, so the folder
+depends on `dcc` and `dcc` on it for that dispatch only: `dist` <- `dcc/copula` <-> `dcc`.
+
 ## Where each responsibility lives
 
 | Path | Responsibility |
@@ -82,6 +87,7 @@ the standard paper conventions; the internal `Rmgarch` convention is reserved fo
 | `src/dcc/spec.hpp`, `panel.*` | DCC models, distributions and internal conventions; standardized panel, covariance moments and aDCC stationarity bound |
 | `src/dcc/recursion.hpp`, `likelihood.*` | DCC/aDCC/FDCC correlation paths and multivariate normal, Student-t and Laplace log-densities, templated for AD |
 | `src/dcc/parameter_map.*`, `fit.*` | Parameter layout and constraints, L-BFGS estimation, deterministic batches, full likelihood criteria and covariance paths |
+| `src/dcc/copula/` | Copula-DCC: margins to uniforms (`margins.*`), scores (`scores.*`), static Kendall/ML correlation (`static_fit.*`), profile fit and copula likelihood (`fit.*`) |
 | `src/dcc/standard_errors.*` | Two-stage Hessian and sandwich standard errors, with univariate refiltering and source-estimate validation |
 | `src/mean/arma.hpp` | ARMA(m,n) residuals over the returns or over the deviations from the mean (regressors included), a template over the scalar type |
 | `src/mean/fractional.hpp` | The ARFIMA fractional difference (1 - L)^d of the mean residuals, truncated at the first observation, in place, O(T^2) |

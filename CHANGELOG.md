@@ -11,6 +11,10 @@ library whose ABI version differs).
 
 ### Changed
 
+- The cdf of the univariate distributions computes in `double` rather than Boost's promoted `long double`, so that
+  it gives the same bits on every thread (on MinGW the Python main thread runs the x87 unit at 53 bits and the pool
+  threads at 64). Values can move by an ulp.
+
 - Python: `Context.fit` takes its optional arguments as `**keywords` (a `TypedDict`), to carry `mxreg` and `vxreg`
   without a longer signature. The call syntax is the same (`options=`, `starts=`, `lengths=` by name); an unknown
   keyword is a `TypeError`.
@@ -31,6 +35,13 @@ library whose ABI version differs).
   Public conventions follow the papers; an internal `rmgarch` convention supports reference validation.
   Standard errors with univariate external regressors are unsupported. Benchmarks: `BM_DccFit`, `BM_DccGrid`,
   `BM_DccStandardErrors`.
+- Copula-DCC as an option of the DCC spec: Gaussian and Student copulas with static (Kendall or ML), DCC or aDCC
+  correlation, on parametric (each fit's cdf) or empirical (rank) margins, in the same batches and results as the
+  DCC. The Student shape is the maximum of a profile likelihood. Two-stage standard errors cover the copula rows.
+  C API: `VE_DCC_MODEL_STATIC`, `ve_dcc_spec_set_copula`, `ve_dcc_spec_set_static_method`. Python:
+  `DccSpec(model="static", copula=..., static_method=...)`. Validated against `rmgarch`'s `cgarchfit`, with the
+  public convention following the papers (see `docs/guide/validation.md`). Benchmarks: `BM_CopulaFit`,
+  `BM_CopulaGrid`, `BM_CopulaStandardErrors`.
 - Diagnostics reported by `rugarch`'s `show()`: weighted Ljung-Box on standardized residuals or their squares,
   weighted ARCH-LM, Nyblom stability with individual and joint critical values, Engle-Ng sign bias and adjusted
   Pearson goodness of fit for all eight distributions. C API: `ve_fit_ljung_box`, `ve_fit_arch_lm`,

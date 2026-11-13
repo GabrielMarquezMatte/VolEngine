@@ -238,11 +238,11 @@ Cada diferença em relação às "Regras da cópula" deste plano é classificada
 
 O script da sonda fica em `tests/reference/` para regenerar as notas.
 
-- [ ] **Step 1: Escrever o script** e rodar: `Rscript tests/reference/copula_probe.R` termina com sucesso e imprime
+- [x] **Step 1: Escrever o script** e rodar: `Rscript tests/reference/copula_probe.R` termina com sucesso e imprime
   os números de cada item.
-- [ ] **Step 2: Escrever as notas**, com a tabela final "regra do plano / `[Rmgarch]` / evidência". Se um item
+- [x] **Step 2: Escrever as notas**, com a tabela final "regra do plano / `[Rmgarch]` / evidência". Se um item
   mudar uma regra deste plano, editar a regra aqui mesmo, na seção "Regras da cópula".
-- [ ] **Step 3: Commit** — `git commit -m "docs: rmgarch Copula-DCC conventions for plan 4b"`
+- [x] **Step 3: Commit** — `git commit -m "docs: rmgarch Copula-DCC conventions for plan 4b"`
 
 ---
 
@@ -281,7 +281,7 @@ O script da sonda fica em `tests/reference/` para regenerar as notas.
   - `mshape` com a mvt;
   - mvnorm estática: layout vazio.
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 ```cpp
 TEST(CopulaMargins, ParametricIsTheFitCdf) {
@@ -306,12 +306,12 @@ TEST(DccParameterMap, CopulaCombinations) {
 }
 ```
 
-- [ ] **Step 2: Rodar e ver falhar** — `ctest --preset gcc-release -R "Copula(Margins|Scores)|DccParameterMap"` →
+- [x] **Step 2: Rodar e ver falhar** — `ctest --preset gcc-release -R "Copula(Margins|Scores)|DccParameterMap"` →
   não compila.
-- [ ] **Step 3: Implementar.** Quantis por `boost::math::quantile(normal/students_t)` em `scores.cpp`. Os `[Rmgarch]`
+- [x] **Step 3: Implementar.** Quantis por `boost::math::quantile(normal/students_t)` em `scores.cpp`. Os `[Rmgarch]`
   da Task 1 que tocam u ou ε ficam aqui, lidos de `spec.convention` passado pelo chamador.
-- [ ] **Step 4: Rodar e ver passar** — suíte release inteira PASS.
-- [ ] **Step 5: Commit** — `git commit -m "feat: transform DCC margins into copula scores"`
+- [x] **Step 4: Rodar e ver passar** — suíte release inteira PASS.
+- [x] **Step 5: Commit** — `git commit -m "feat: transform DCC margins into copula scores"`
 
 ---
 
@@ -348,7 +348,7 @@ TEST(DccParameterMap, CopulaCombinations) {
   - `MaxIter` se o Brent esgota as 100 iterações;
   - senão, o status do ajuste interno no ν̂ (um ajuste final em ν̂, que dá estimativa, ℓ e R).
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 ```cpp
 // copula3 + univariados sGARCH(1,1)-std nos coeficientes das notas da Task 1.
@@ -374,10 +374,10 @@ TEST(DccBatch, MixedBatchSameAsAlone) {
 }
 ```
 
-- [ ] **Step 2: Rodar e ver falhar** — `ctest --preset gcc-release -R "CopulaFit|DccBatch"` → não compila.
-- [ ] **Step 3: Implementar.** O Brent fica em `copula/fit.cpp` (Boost só em `.cpp`).
-- [ ] **Step 4: Rodar e ver passar** — suíte release inteira PASS, sem mudar nenhum teste do 4a.
-- [ ] **Step 5: Commit** — `git commit -m "feat: fit dynamic copula DCC models in mixed batches"`
+- [x] **Step 2: Rodar e ver falhar** — `ctest --preset gcc-release -R "CopulaFit|DccBatch"` → não compila.
+- [x] **Step 3: Implementar.** O Brent fica em `copula/fit.cpp` (Boost só em `.cpp`).
+- [x] **Step 4: Rodar e ver passar** — suíte release inteira PASS, sem mudar nenhum teste do 4a.
+- [x] **Step 5: Commit** — `git commit -m "feat: fit dynamic copula DCC models in mixed batches"`
 
 ---
 
@@ -413,7 +413,7 @@ TEST(DccBatch, MixedBatchSameAsAlone) {
 
   Os Cᵢⱼ reportados são os Rᵢⱼ naturais, na ordem da Task 1.
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 ```cpp
 TEST(CopulaStatic, FreeParametersGiveCorrelations) {
@@ -435,10 +435,10 @@ TEST(CopulaStatic, NonPositiveDefiniteKendallFails) {
 TEST(CopulaStatic, RepeatedR) { /* r tem T blocos iguais a R; H_t == D_t R D_t */ }
 ```
 
-- [ ] **Step 2: Rodar e ver falhar** — `ctest --preset gcc-release -R "CopulaStatic"` → não compila.
-- [ ] **Step 3: Implementar.**
-- [ ] **Step 4: Rodar e ver passar** — suíte release inteira PASS.
-- [ ] **Step 5: Commit** — `git commit -m "feat: fit static Gaussian and Student copulas"`
+- [x] **Step 2: Rodar e ver falhar** — `ctest --preset gcc-release -R "CopulaStatic"` → não compila.
+- [x] **Step 3: Implementar.**
+- [x] **Step 4: Rodar e ver passar** — suíte release inteira PASS.
+- [x] **Step 5: Commit** — `git commit -m "feat: fit static Gaussian and Student copulas"`
 
 ---
 
@@ -457,7 +457,7 @@ TEST(CopulaStatic, RepeatedR) { /* r tem T blocos iguais a R; H_t == D_t R D_t *
   - mvnorm estática: tabelas vazias;
   - nenhuma assinatura pública muda.
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 ```cpp
 TEST(CopulaStandardErrors, MatchRmgarch) {
@@ -470,10 +470,10 @@ TEST(CopulaStandardErrors, EmpiricalHasNoCrossBlock) {
 TEST(CopulaStandardErrors, OptionMatchesExplicit) { /* opção ligada == função explícita (bit a bit) em 4 specs de cópula */ }
 ```
 
-- [ ] **Step 2: Rodar e ver falhar** — `ctest --preset gcc-release -R "CopulaStandardErrors"` → falha.
-- [ ] **Step 3: Implementar.**
-- [ ] **Step 4: Rodar e ver passar** — suíte release inteira PASS.
-- [ ] **Step 5: Commit** — `git commit -m "feat: add two-stage standard errors to copula DCC fits"`
+- [x] **Step 2: Rodar e ver falhar** — `ctest --preset gcc-release -R "CopulaStandardErrors"` → falha.
+- [x] **Step 3: Implementar.**
+- [x] **Step 4: Rodar e ver passar** — suíte release inteira PASS.
+- [x] **Step 5: Commit** — `git commit -m "feat: add two-stage standard errors to copula DCC fits"`
 
 ---
 
@@ -503,7 +503,7 @@ TEST(CopulaStandardErrors, OptionMatchesExplicit) { /* opção ligada == funçã
   - No Python, `DccSpec` ganha `model="static"`, `copula: str | None = None` (`"parametric"`, `"empirical"`) e
     `static_method: str | None = None` (`"kendall"`, `"ml"`). Ambos entram no `__hash__`.
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 ```cpp
 TEST(CapiDcc, CopulaMatchesCore) { /* lote misto de 4 specs: acessores == fit_dcc_batch (bit a bit); R e H zero-copy */ }
@@ -517,11 +517,11 @@ def test_copula_bad_combinations_raise(ctx, series): ...  # VolEngineError com a
 def test_copula_standard_errors_later(ctx, series): ...
 ```
 
-- [ ] **Step 2: Rodar e ver falhar.**
-- [ ] **Step 3: Implementar.**
-- [ ] **Step 4: Rodar e ver passar** — suíte release, `pytest python/tests`, `check_style.py`, `mypy --strict`
+- [x] **Step 2: Rodar e ver falhar.**
+- [x] **Step 3: Implementar.**
+- [x] **Step 4: Rodar e ver passar** — suíte release, `pytest python/tests`, `check_style.py`, `mypy --strict`
   (limpo).
-- [ ] **Step 5: Commit** — `git commit -m "feat: expose copula DCC fits through the C API and Python"`
+- [x] **Step 5: Commit** — `git commit -m "feat: expose copula DCC fits through the C API and Python"`
 
 ---
 
@@ -554,11 +554,11 @@ def test_copula_standard_errors_later(ctx, series): ...
   - o perfil em ν.
 - Uma divergência passa por systematic-debugging, e um xfail exige um parágrafo em `validation.md`.
 
-- [ ] **Step 1: Gerar a fixture** — `Rscript tests/reference/copula_rmgarch.R` termina e grava 13 casos.
-- [ ] **Step 2: Escrever os testes** e rodar → PASS.
-- [ ] **Step 3: Documentar.**
-- [ ] **Step 4: Rodar** — suíte release e `pytest python/tests` PASS.
-- [ ] **Step 5: Commit** — `git commit -m "test: validate copula DCC fits against rmgarch"`
+- [x] **Step 1: Gerar a fixture** — `Rscript tests/reference/copula_rmgarch.R` termina e grava 13 casos.
+- [x] **Step 2: Escrever os testes** e rodar → PASS.
+- [x] **Step 3: Documentar.**
+- [x] **Step 4: Rodar** — suíte release e `pytest python/tests` PASS.
+- [x] **Step 5: Commit** — `git commit -m "test: validate copula DCC fits against rmgarch"`
 
 ---
 
@@ -583,8 +583,8 @@ def test_copula_standard_errors_later(ctx, series): ...
   - `CHANGELOG.md`: entrada "Added";
   - `ARCHITECTURE.md`: `src/dcc/copula/` e a dependência `dist` <- `dcc/copula` <- `dcc`.
 
-- [ ] **Step 1: Escrever os benchmarks** e rodar com `--benchmark_filter="BM_Copula"` → termina.
-- [ ] **Step 2: Medir** e publicar.
-- [ ] **Step 3: Documentar.**
-- [ ] **Step 4: Rodar** — suíte release, `pytest`, `check_style.py` → PASS.
-- [ ] **Step 5: Commit** — `git commit -m "bench: add copula DCC benchmarks and document plan 4b"`
+- [x] **Step 1: Escrever os benchmarks** e rodar com `--benchmark_filter="BM_Copula"` → termina.
+- [x] **Step 2: Medir** e publicar.
+- [x] **Step 3: Documentar.**
+- [x] **Step 4: Rodar** — suíte release, `pytest`, `check_style.py` → PASS.
+- [x] **Step 5: Commit** — `git commit -m "bench: add copula DCC benchmarks and document plan 4b"`

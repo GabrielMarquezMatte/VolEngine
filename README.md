@@ -65,6 +65,23 @@ Each DCC result has its own convergence status. Standard errors can be deferred 
 the explicit call requires the original univariate estimates in the original order. Standard errors with
 univariate external regressors are currently unsupported. DCC forecast and simulation are planned separately.
 
+A Copula-DCC is the same spec with `copula="parametric"` (each fit's cdf) or `"empirical"` (ranks), and a static
+copula is `model="static"`. Both kinds go in one grid, and their BIC uses the same parameter count:
+
+```python
+specs = [ve.DccSpec("dcc", dist="mvt")] + [
+    ve.DccSpec(model, dist="mvt", copula=copula)
+    for model in ("static", "dcc", "adcc")
+    for copula in ("parametric", "empirical")
+]
+grid = ctx.fit_dcc(specs, fits, standard_errors=False)
+best = min(grid, key=lambda fit: fit.bic())
+```
+
+The copula's mvt shape comes from a profile search (each point a full DCC fit), so a Copula-DCC-t costs some
+30 DCC fits. A static ML copula reports the free entries C1.. of A in R = cov2cor(A A'), as `rmgarch` does; the
+correlations are in `R`.
+
 An ARMA mean and another innovation distribution are part of the spec:
 
 ```python

@@ -1276,6 +1276,90 @@ void register_dcc()
         ->Iterations(1);
 }
 
+ve::dcc::DccSpec copula_spec(ve::dcc::DccModel model, ve::dcc::DccDist dist, ve::dcc::StaticMethod method,
+                             ve::dcc::DccCopula copula)
+{
+    ve::dcc::DccSpec spec = dcc_spec(model, dist);
+    spec.copula = copula;
+    spec.static_method = method;
+    return spec;
+}
+
+// The seven copula forms: static mvnorm (Kendall), static mvt Kendall and ML, then dcc and adcc with mvnorm and mvt.
+std::vector<ve::dcc::DccSpec> copula_forms(ve::dcc::DccCopula copula)
+{
+    using ve::dcc::DccDist;
+    using ve::dcc::DccModel;
+    using ve::dcc::StaticMethod;
+    std::vector<ve::dcc::DccSpec> specs{
+        copula_spec(DccModel::Static, DccDist::MvNorm, StaticMethod::Default, copula),
+        copula_spec(DccModel::Static, DccDist::MvT, StaticMethod::Default, copula),
+        copula_spec(DccModel::Static, DccDist::MvT, StaticMethod::Ml, copula),
+    };
+    for (const auto model : {DccModel::Dcc, DccModel::ADcc})
+    {
+        for (const auto dist : {DccDist::MvNorm, DccDist::MvT})
+        {
+            specs.push_back(copula_spec(model, dist, StaticMethod::Default, copula));
+        }
+    }
+    return specs;
+}
+
+void run_copula_standard_errors(benchmark::State& state)
+{
+    const auto fits = dcc_fit_pointers();
+    ve::Context context;
+    context.set_threads(1);
+    ve::dcc::DccOptions options;
+    options.standard_errors = false;
+    const std::vector<ve::dcc::DccSpec> specs{copula_spec(
+        ve::dcc::DccModel::Dcc, ve::dcc::DccDist::MvNorm, ve::dcc::StaticMethod::Default, ve::dcc::DccCopula::Parametric)};
+    const auto fitted = ve::dcc::fit_dcc_batch(context, fits, specs, options);
+    for (auto _ : state)
+    {
+        const auto result = ve::dcc::dcc_standard_errors(fitted.front(), fits);
+        if (!result)
+        {
+            state.SkipWithError(result.error().c_str());
+            return;
+        }
+        benchmark::DoNotOptimize(result->robust.data());
+    }
+}
+
+void register_copula()
+{
+    const std::vector<ve::dcc::DccSpec> forms = copula_forms(ve::dcc::DccCopula::Parametric);
+    const std::array<std::string, 7> names{"static_mvnorm_kendall", "static_mvt_kendall", "static_mvt_ml",
+                                           "dcc_mvnorm", "dcc_mvt", "adcc_mvnorm", "adcc_mvt"};
+    for (std::size_t i = 0; i < forms.size(); ++i)
+    {
+        const std::string name = "BM_CopulaFit/" + names[i] + "_param/m:21";
+        benchmark::RegisterBenchmark(name, run_dcc, std::vector<ve::dcc::DccSpec>{forms[i]}, 1)
+            ->Unit(benchmark::kSecond)
+            ->UseRealTime()
+            ->Iterations(1);
+    }
+    std::vector<ve::dcc::DccSpec> grid = forms;
+    for (const auto& spec : copula_forms(ve::dcc::DccCopula::Empirical))
+    {
+        grid.push_back(spec);
+    }
+    for (const int threads : {1, 0})
+    {
+        const std::string name = "BM_CopulaGrid/m:21/T:5000/threads:" + thread_label(threads);
+        benchmark::RegisterBenchmark(name, run_dcc, grid, threads)
+            ->Unit(benchmark::kSecond)
+            ->UseRealTime()
+            ->Iterations(1);
+    }
+    benchmark::RegisterBenchmark("BM_CopulaStandardErrors/dcc_mvnorm_param/m:21", run_copula_standard_errors)
+        ->Unit(benchmark::kSecond)
+        ->UseRealTime()
+        ->Iterations(1);
+}
+
 void register_all()
 {
     for (const NamedSpec& named : named_specs())
@@ -1299,6 +1383,7 @@ void register_all()
     register_simulations();
     register_diagnostics();
     register_dcc();
+    register_copula();
     static const std::vector<ve::Spec> single{named_specs().front().spec};
     for (const int threads : {1, 2, 4, 8, 0})
     {
