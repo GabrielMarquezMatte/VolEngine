@@ -17,10 +17,9 @@ from typing import Literal, NamedTuple
 
 import arch
 import numpy as np
+import volengine as ve
 from arch import arch_model
 from numpy.typing import NDArray
-
-import volengine as ve
 
 ArchDist = Literal["normal", "t", "ged", "skewt"]
 ArchVolatility = Literal["GARCH", "EGARCH"]
