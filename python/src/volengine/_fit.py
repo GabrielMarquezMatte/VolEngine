@@ -12,7 +12,16 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from ._forecast import Forecast
-from ._native import ELEMENT_BYTES, Handle, check, create_handle, lib, native_view, open_panel, read_scalar
+from ._native import (
+    ELEMENT_BYTES,
+    Handle,
+    check,
+    create_handle,
+    lib,
+    native_view,
+    open_panel,
+    read_scalar,
+)
 from ._spec import code_of
 
 STATUS_NAMES = {0: "converged", 1: "max_iter", 2: "failed", 3: "insufficient_data"}
@@ -134,17 +143,22 @@ class Fit:
     def _future(self, stack: ExitStack, values: ArrayLike | None, name: str, horizon: int) -> int | None:
         """The native panel of the regressors of the horizon, or None for a spec without them."""
         count = sum(1 for parameter in self.names if parameter.startswith(name))
-        if count == 0:
-            if values is not None:
-                raise ValueError(f"{name} was given but the spec has no {name}")
-            return None
-        if values is None:
-            raise ValueError(f"the spec has {name} = {count}, so {name} is required")
-        array = np.asarray(values, dtype=np.float64)
-        if array.ndim == 1 and count == 1:
-            array = array[:, None]
-        if array.shape != (horizon, count):
-            raise ValueError(f"{name} must have shape {(horizon, count)}, got {array.shape}")
-        if any(stride % ELEMENT_BYTES for stride in array.strides):
-            array = np.ascontiguousarray(array)
-        return open_panel(stack, array).pointer
+        return future_panel(stack, values, name, count, horizon)
+
+
+def future_panel(stack: ExitStack, values: ArrayLike | None, name: str, count: int, horizon: int) -> int | None:
+    """The native panel of `count` regressors over the horizon, or None when the spec has none."""
+    if count == 0:
+        if values is not None:
+            raise ValueError(f"{name} was given but the spec has no {name}")
+        return None
+    if values is None:
+        raise ValueError(f"the spec has {name} = {count}, so {name} is required")
+    array = np.asarray(values, dtype=np.float64)
+    if array.ndim == 1 and count == 1:
+        array = array[:, None]
+    if array.shape != (horizon, count):
+        raise ValueError(f"{name} must have shape {(horizon, count)}, got {array.shape}")
+    if any(stride % ELEMENT_BYTES for stride in array.strides):
+        array = np.ascontiguousarray(array)
+    return open_panel(stack, array).pointer

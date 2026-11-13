@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 
 import volengine as ve
 
-REFERENCE = Path(__file__).resolve().parents[2] / "tests" / "reference"
+REFERENCE = Path(__file__).resolve().parents[3] / "tests" / "reference"
 DATA_FILES = ("sgarch11_norm.csv", "grid.csv", "grid_2b.csv", "grid_2c.csv", "grid_2e.csv", "grid_2f.csv")
 CRITERIA = ("aic", "bic", "hqic", "sic")
 SYMMETRIC = ("norm", "std", "ged")

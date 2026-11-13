@@ -6,7 +6,7 @@ distributions (`sstd`, `sged`, `nig`, `ghyp`, `jsu`), with fixed parameters and 
 regressors (`mxreg`), variance regressors (`vxreg`) and ARCH-in-mean (`archm`), are
 validated against two independent oracles: [`rugarch`](https://cran.r-project.org/package=rugarch) (R) for the default
 conventions and [`arch`](https://pypi.org/project/arch/) (Python) for the `arch` options. The test is
-`python/tests/test_oracles.py`; it reads committed fixtures, so it needs neither R nor `arch`. How the data and
+`python/tests/oracles/test_oracles.py`; it reads committed fixtures, so it needs neither R nor `arch`. How the data and
 fixtures are produced is described in [`tests/reference/README.md`](../../tests/reference/README.md).
 
 ## Data
@@ -327,7 +327,7 @@ between 0.25 and 0.31. Two planned cases moved, and one is kept as a known diver
   lower (9.5e-6 relative), and the start of d (0.05 to 0.4) does not change it. Both programs compute the same
   likelihood: at `rugarch`'s estimates VolEngine's ℓ equals `rugarch`'s to 9.1e-13, absolute, and σₜ to 2.2e-15,
   relative, and VolEngine started there stays there. This is the csGARCH weight corner, not the fractional
-  difference. The case is marked `xfail(strict=True)` in `python/tests/test_oracles.py`.
+  difference. The case is marked `xfail(strict=True)` in `python/tests/oracles/test_oracles.py`.
 
 ## Oracle versions
 
@@ -713,7 +713,7 @@ residuals, variances, csGARCH trends and mean deviations, every deviation with A
 
 **Comparison.** `tests/reference/forecast_rugarch.R` takes `rugarch`'s estimate of every `rugarch` case from
 `fixtures/rugarch.json` and fixes the model there, on the first n = T − 25 observations. Then `ugarchforecast` runs
-with `n.ahead = 25` and the last 25 rows of the regressors as `external.forecasts`. `python/tests/test_forecast_oracles.py`
+with `n.ahead = 25` and the last 25 rows of the regressors as `external.forecasts`. `python/tests/oracles/test_forecast_oracles.py`
 fixes VolEngine at the same point (an evaluation, no optimizer) and forecasts. Comparing at the oracle's point
 separates the forecast rules from the optimizers.
 
@@ -1147,4 +1147,4 @@ Evaluation case (every parameter fixed, `fix()`; `arch`'s criteria count every p
 ## Regenerating
 
 See [`tests/reference/README.md`](../../tests/reference/README.md). When an oracle version changes, regenerate
-both fixtures, run `python/tests/test_oracles.py`, and update the version and observed-difference tables here.
+both fixtures, run `python/tests/oracles/test_oracles.py`, and update the version and observed-difference tables here.

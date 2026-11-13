@@ -1,5 +1,6 @@
 #include "capi/error.hpp"
 #include "capi/handles.hpp"
+#include "capi/results/regressor_rows.hpp"
 #include "forecast/forecast.hpp"
 
 #include <cstddef>
@@ -7,46 +8,12 @@
 #include <string>
 #include <vector>
 
+using ve::capi::future_rows;
 using ve::capi::guard;
 using ve::capi::set_error;
 
 namespace
 {
-
-// The panel of the horizon copied row-major into rows, or why it does not fit the `columns` the spec has.
-ve_status future_rows(const ve_panel* panel, int columns, std::size_t horizon, const std::string& name,
-                      std::vector<double>& rows)
-{
-    if (columns == 0)
-    {
-        if (panel != nullptr)
-        {
-            return set_error(VE_INVALID_ARGUMENT, name + " was given but the spec has no " + name);
-        }
-        return VE_OK;
-    }
-    if (panel == nullptr)
-    {
-        return set_error(VE_INVALID_ARGUMENT,
-                         name + " must not be null: the spec has " + std::to_string(columns) + " " + name);
-    }
-    const ve::PanelView& view = panel->view;
-    std::size_t count = static_cast<std::size_t>(columns);
-    if (view.has_ranges() || view.t != horizon || view.n != count)
-    {
-        return set_error(VE_INVALID_ARGUMENT, name + " must be a panel of " + std::to_string(horizon) + " rows x " +
-                                                  std::to_string(count) + " columns without ranges");
-    }
-    rows.resize(horizon * count);
-    for (std::size_t t = 0; t < horizon; ++t)
-    {
-        for (std::size_t k = 0; k < count; ++k)
-        {
-            rows[t * count + k] = view.at(t, k);
-        }
-    }
-    return VE_OK;
-}
 
 ve_status check_request(const ve_fit* f, std::size_t horizon)
 {
