@@ -6,7 +6,7 @@ import ctypes
 import operator
 from collections.abc import Callable
 from contextlib import ExitStack
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -75,7 +75,7 @@ class Fit:
 
     def _param_name(self, index: int) -> str:
         text = read_scalar(ctypes.c_char_p, lib.ve_fit_param_name, self._handle.pointer, index)
-        return text.decode("utf-8")
+        return cast(bytes, text).decode("utf-8")
 
     @property
     def sigma(self) -> NDArray[np.float64]:
@@ -95,7 +95,7 @@ class Fit:
 
     @property
     def loglik(self) -> float:
-        return read_scalar(ctypes.c_double, lib.ve_loglik, self._handle.pointer)
+        return cast(float, read_scalar(ctypes.c_double, lib.ve_loglik, self._handle.pointer))
 
     def aic(self, *, per_obs: bool = True) -> float:
         return self._criterion(lib.ve_aic, per_obs)
@@ -111,7 +111,7 @@ class Fit:
 
     def _criterion(self, function: Callable[..., int], per_obs: bool) -> float:
         scale = IC_PER_OBS if per_obs else IC_TOTAL
-        return read_scalar(ctypes.c_double, function, self._handle.pointer, scale)
+        return cast(float, read_scalar(ctypes.c_double, function, self._handle.pointer, scale))
 
     def coef(self, se: str = "hessian") -> CoefTable:
         kind = code_of(SE_KINDS, "se", se)
