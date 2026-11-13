@@ -84,7 +84,7 @@ TEST(DccLikelihood, MatchesRmgarchAtItsPoint)
 
     std::vector<double> terms(kDcc3Rows);
     const auto parameters = ve::dcc::split_parameters(spec, std::span<const double>(theta));
-    ve::dcc::correlation_terms<double>(panel, spec, parameters, ve::dcc::Stage::Reported, terms);
+    ve::dcc::correlation_terms<double>(panel, spec, parameters, ve::dcc::Stage::Reported, {terms});
     const std::array<double, 3> first{-3.87527571695479, -2.9806184777153, -5.51904233840933};
     for (std::size_t t = 0; t < first.size(); ++t)
     {

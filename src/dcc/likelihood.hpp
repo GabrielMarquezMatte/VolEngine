@@ -5,6 +5,7 @@
 #include "dcc/spec.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <span>
 
@@ -28,6 +29,8 @@ DccParameters<T> split_parameters(const DccSpec& spec, std::span<const T> theta)
         p = static_cast<std::size_t>(std::ranges::max(spec.groups));
         q = p;
     }
+    [[maybe_unused]] const auto shape_count = static_cast<std::size_t>(spec.dist == DccDist::MvT);
+    assert(theta.size() == p + q + asymmetric + shape_count);
     DccParameters<T> parameters{theta.subspan(0, p), theta.subspan(p, q), theta.subspan(p + q, asymmetric), T{0.0}};
     if (spec.dist == DccDist::MvT)
     {
@@ -36,12 +39,20 @@ DccParameters<T> split_parameters(const DccSpec& spec, std::span<const T> theta)
     return parameters;
 }
 
-// Writes R_t (T x m x m) when r is not empty, and log f(z_t; R_t) of each observation (without - sum_i log
-// sigma_it) into terms. spec.convention picks Nbar and the presample. Outside the domain of correlation_path every
-// term and every R_t is NaN. Instantiated for T = double, ad::Dual<8>, 16, 32 and kMaxParameterCount.
+// terms: log f(z_t; R_t) of each observation, without - sum_i log sigma_it (size T); r: R_t, T x m x m, written
+// unless empty.
+template <class T>
+struct CorrelationOutput
+{
+    std::span<T> terms;
+    std::span<double> r = {};
+};
+
+// Fills out. spec.convention picks Nbar and the presample. Outside the domain of correlation_path every term and
+// every R_t is NaN. Instantiated for T = double, ad::Dual<8>, 16, 32 and kMaxParameterCount.
 template <class T>
 void correlation_terms(const StandardizedPanel& panel, const DccSpec& spec, const DccParameters<T>& theta,
-                       Stage stage, std::span<T> terms, std::span<double> r = {});
+                       Stage stage, const CorrelationOutput<T>& out);
 
 // sum_t (log f(z_t; R_t) - sum_i log sigma_it) at Stage::Reported, writing R_t as correlation_terms does.
 double reported_loglik(const StandardizedPanel& panel, const DccSpec& spec, std::span<const double> theta,
