@@ -2,6 +2,7 @@
 #include "fit/fit.hpp"
 #include "model/layout.hpp"
 #include "model/likelihood.hpp"
+#include "model/parameter_map.hpp"
 #include "model/start_values.hpp"
 #include "simulated_garch.hpp"
 
@@ -1613,6 +1614,112 @@ TEST(FitRegressors, ReportedTargetedOmegaIsTheOneTheLikelihoodUsed)
                                              ve::VarInit::Sample, {});
     EXPECT_NEAR(again, result.loglik, 1e-12 * std::abs(result.loglik));
     EXPECT_EQ(result.estimate[layout.omega()], ve::model::targeted_omega_at(data, result.estimate, layout));
+}
+
+constexpr std::size_t kArfimaObservations = 3000;
+
+// The spec and the true parameters of ve::testing::arfima_processes()[index].
+RegressorFit arfima_fit(std::size_t index)
+{
+    Spec spec;
+    spec.arfima = true;
+    if (index == 0)
+    {
+        return {spec, {{"mu", 0.05}, {"arfima", 0.3}, {"omega", 0.02}, {"alpha1", 0.08}, {"beta1", 0.9}}};
+    }
+    spec.ar = 1;
+    spec.model = ve::Model::GjrGarch;
+    spec.dist = ve::Dist::Std;
+    return {spec,
+            {{"mu", 0.02}, {"ar1", 0.2}, {"arfima", 0.25}, {"omega", 0.02}, {"alpha1", 0.03}, {"beta1", 0.9},
+             {"gamma1", 0.09}, {"shape", 6.0}}};
+}
+
+const std::vector<double>& arfima_series(std::size_t index)
+{
+    static const std::vector<std::vector<double>> all = []
+    {
+        std::vector<std::vector<double>> series;
+        std::vector<ve::testing::ArfimaProcess> processes = ve::testing::arfima_processes();
+        for (std::size_t i = 0; i < processes.size(); ++i)
+        {
+            series.push_back(ve::testing::simulate_arfima(processes[i], 81 + i, kArfimaObservations));
+        }
+        return series;
+    }();
+    return all[index];
+}
+
+TEST(FitArfima, BeatsTrueParameters)
+{
+    for (std::size_t i = 0; i < 2; ++i)
+    {
+        RegressorFit setup = arfima_fit(i);
+        SCOPED_TRACE(ve::testing::arfima_processes()[i].name);
+        FitResult result = ve::fit_one(arfima_series(i), setup.spec, ve::FitConfig{});
+        ASSERT_EQ(result.status, FitStatus::Converged);
+        double at_truth = loglik_at(arfima_series(i), setup.spec, theta_of(result, setup.truth));
+        EXPECT_GE(result.loglik, at_truth - 1e-6 * std::abs(at_truth));
+        EXPECT_NEAR(estimate_of(result, "arfima"), ve::testing::arfima_processes()[i].d, 0.05);
+    }
+}
+
+// Review Focus 1: a series without long memory sends d to its floor. The first 2000 observations of the plan 1
+// series keep the O(T^2) difference cheap in the debug build.
+TEST(FitArfima, NoMemoryNestsPlain)
+{
+    std::span<const double> r = std::span(simulated()).first(2000);
+    Spec spec;
+    spec.arfima = true;
+    FitResult result;
+    ASSERT_NO_THROW(result = ve::fit_one(r, spec, ve::FitConfig{}));
+    ASSERT_TRUE(result.status == FitStatus::Converged || result.status == FitStatus::MaxIter);
+    FitResult plain = ve::fit_one(r, Spec{}, ve::FitConfig{});
+    ASSERT_EQ(plain.status, FitStatus::Converged);
+    EXPECT_GE(result.loglik, plain.loglik - 1e-6 * std::abs(plain.loglik));
+    ve::model::Layout layout = ve::model::layout_of(spec);
+    std::size_t index = layout.arfima_index();
+    if (ve::model::on_boundary(layout, result.estimate, index))
+    {
+        EXPECT_TRUE(std::isnan(result.se_hessian[index]));
+        EXPECT_TRUE(std::isnan(result.se_robust[index]));
+        return;
+    }
+    EXPECT_TRUE(std::isfinite(result.se_hessian[index]));
+    EXPECT_TRUE(std::isfinite(result.se_robust[index]));
+}
+
+// Review Focus 5: d has no unit.
+TEST(FitArfima, UnitEquivariance)
+{
+    RegressorFit setup = arfima_fit(0);
+    FitResult base = ve::fit_one(arfima_series(0), setup.spec, ve::FitConfig{});
+    std::vector<double> r100 = scaled(arfima_series(0), 100.0);
+    FitResult other = ve::fit_one(r100, setup.spec, ve::FitConfig{});
+    ASSERT_EQ(base.status, FitStatus::Converged);
+    ASSERT_EQ(other.status, FitStatus::Converged);
+    EXPECT_NEAR(estimate_of(other, "arfima"), estimate_of(base, "arfima"), 1e-5);
+    double shift = static_cast<double>(kArfimaObservations) * std::log(100.0);
+    EXPECT_NEAR(other.loglik, base.loglik - shift, 1e-8 * std::abs(base.loglik - shift));
+}
+
+// Review Focus 2.
+TEST(FitArfima, StartOutsideDomainFails)
+{
+    for (double d : {0.6, 0.5, 0.0, -0.1})
+    {
+        for (bool fixed : {false, true})
+        {
+            RegressorFit setup = arfima_fit(0);
+            std::vector<ve::ParameterValue>& role = fixed ? setup.spec.fixed : setup.spec.start;
+            role = {{"arfima", d}};
+            FitResult result;
+            ASSERT_NO_THROW(result = ve::fit_one(arfima_series(0), setup.spec, ve::FitConfig{})) << d;
+            EXPECT_EQ(result.status, FitStatus::Failed) << d << " fixed " << fixed;
+            EXPECT_TRUE(all_nan(result.estimate)) << d << " fixed " << fixed;
+            EXPECT_TRUE(std::isnan(result.loglik)) << d << " fixed " << fixed;
+        }
+    }
 }
 
 }

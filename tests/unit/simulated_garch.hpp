@@ -592,6 +592,75 @@ inline RegressorSeries simulate_regressor_process(const RegressorProcess& proces
     return series;
 }
 
+// An ARFIMA(m, d, 0)-GARCH series, written apart from the library: the GARCH shocks eps_t of `variance`, then the
+// truncated fractional integration e_t = sum_{k=0}^{t} psi_k eps_(t-k), with psi_0 = 1 and
+// psi_k = psi_(k-1) (k - 1 + d) / k, then d_t = ar d_(t-1) + e_t and r_t = mu + d_t.
+struct ArfimaProcess
+{
+    const char* name;
+    VariantProcess variance;
+    double mu = 0.05;
+    double ar = 0.0;
+    double d = 0.0;
+};
+
+inline std::vector<ArfimaProcess> arfima_processes()
+{
+    using ve::Dist;
+    using ve::Model;
+    return {
+        {.name = "arfima_sgarch11_norm",
+         .variance = {.name = "", .model = Model::SGarch, .omega = 0.02, .alpha = 0.08, .beta = 0.9},
+         .mu = 0.05,
+         .d = 0.3},
+        {.name = "arfima1_gjrgarch11_std",
+         .variance = {.name = "", .model = Model::GjrGarch, .omega = 0.02, .alpha = 0.03, .beta = 0.9,
+                      .gamma = 0.09, .dist = Dist::Std, .shape = 6.0},
+         .mu = 0.02,
+         .ar = 0.2,
+         .d = 0.25},
+    };
+}
+
+// Starts at sigma^2 = 1, truncates the integration at the first burn-in draw and drops the 1000 burn-in
+// observations.
+inline std::vector<double> simulate_arfima(const ArfimaProcess& process, std::uint64_t seed, std::size_t count)
+{
+    constexpr std::size_t kBurnIn = 1000;
+    const VariantProcess& base = process.variance;
+    const double mean_abs = expected_abs_shock(base.dist, base.skew, base.shape);
+    PortableShocks shocks(seed);
+    VariantState state;
+    std::vector<double> shock(kBurnIn + count);
+    for (double& value : shock)
+    {
+        const double z = shocks.draw(base.dist, base.skew, base.shape);
+        value = std::sqrt(state.sigma2) * z;
+        state = next_variant_state(base, state, z, mean_abs);
+    }
+    std::vector<double> psi(shock.size(), 1.0);
+    for (std::size_t k = 1; k < psi.size(); ++k)
+    {
+        psi[k] = psi[k - 1] * (static_cast<double>(k) - 1.0 + process.d) / static_cast<double>(k);
+    }
+    std::vector<double> r;
+    double deviation = 0.0;
+    for (std::size_t t = 0; t < shock.size(); ++t)
+    {
+        double integrated = 0.0;
+        for (std::size_t k = 0; k <= t; ++k)
+        {
+            integrated += psi[k] * shock[t - k];
+        }
+        deviation = process.ar * deviation + integrated;
+        if (t >= kBurnIn)
+        {
+            r.push_back(process.mu + deviation);
+        }
+    }
+    return r;
+}
+
 // C-order count x n matrix whose column j is the series simulated with seed j + 1.
 inline std::vector<double> simulate_garch_matrix(std::size_t count, std::size_t n)
 {
