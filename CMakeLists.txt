@@ -61,6 +61,7 @@ target_compile_definitions(ve_boost_math INTERFACE BOOST_MATH_STANDALONE)
 add_library(volengine_core STATIC
     src/ad/special.cpp
     src/core/context.cpp
+    src/dcc/panel.cpp
     src/diagnostics/portmanteau.cpp
     src/diagnostics/sign_bias.cpp
     src/diagnostics/tails.cpp
@@ -77,6 +78,7 @@ add_library(volengine_core STATIC
     src/forecast/variance_forecast.cpp
     src/linalg/cholesky.cpp
     src/linalg/least_squares.cpp
+    src/linalg/symmetric_eigen.cpp
     src/model/layout.cpp
     src/model/likelihood.cpp
     src/model/parameter_map.cpp
@@ -135,6 +137,7 @@ if(VE_BUILD_TESTS)
         tests/unit/capi/panel_test.cpp
         tests/unit/capi/results/sim_test.cpp
         tests/unit/capi/spec_test.cpp
+        tests/unit/dcc/panel_test.cpp
         tests/unit/dist/cdf_test.cpp
         tests/unit/diagnostics/portmanteau_test.cpp
         tests/unit/diagnostics/sign_bias_test.cpp
@@ -156,6 +159,7 @@ if(VE_BUILD_TESTS)
         tests/unit/garch/sgarch_test.cpp
         tests/unit/garch/step_test.cpp
         tests/unit/linalg/least_squares_test.cpp
+        tests/unit/linalg/symmetric_eigen_test.cpp
         tests/unit/mean/arma_test.cpp
         tests/unit/mean/fractional_test.cpp
         tests/unit/model/layout_test.cpp
