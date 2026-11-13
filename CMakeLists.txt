@@ -112,6 +112,8 @@ add_library(volengine SHARED
     src/capi/dcc/dcc_batch_api.cpp
     src/capi/dcc/dcc_standard_errors_api.cpp
     src/capi/dcc/dcc_fit_api.cpp
+src/capi/dcc/dcc_forecast_api.cpp
+src/capi/dcc/dcc_sim_api.cpp
     src/capi/dcc/dcc_spec_api.cpp
     src/capi/results/diagnostics_api.cpp
     src/capi/results/fit_api.cpp

@@ -32,6 +32,10 @@ ve_status check_handles(const ve_context* ctx, const void* source, const char* s
     {
         return set_error(VE_INVALID_HANDLE, std::string("ctx, ") + source_name + " and o must not be null");
     }
+    if (o->correlations)
+    {
+        return set_error(VE_INVALID_ARGUMENT, "correlations are only for ve_simulate_dcc");
+    }
     return VE_OK;
 }
 
@@ -159,6 +163,20 @@ extern "C" ve_status ve_sim_options_set_regressors(ve_sim_options* o, const ve_p
             }
             o->mxreg = std::move(mean);
             o->vxreg = std::move(variance);
+            return VE_OK;
+        });
+}
+
+extern "C" ve_status ve_sim_options_set_correlations(ve_sim_options* o, int32_t on)
+{
+    return guard(
+        [&]
+        {
+            if (o == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "o must not be null");
+            }
+            o->correlations = on != 0;
             return VE_OK;
         });
 }

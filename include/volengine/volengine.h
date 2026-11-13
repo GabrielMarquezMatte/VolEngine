@@ -426,6 +426,58 @@ VE_API ve_status ve_dcc_fit_standard_errors(ve_context* ctx, const ve_dcc_fit* f
                                           const ve_fit* const* fits, size_t m, ve_dcc_fit** out);
 VE_API void ve_dcc_fit_free(ve_dcc_fit* f);
 
+/* ---- DCC forecast and simulation ----
+   The DCC forecast of a fit h = 1..horizon steps after its last observation, as rmgarch's dccforecast (n.roll = 0):
+   sigma and mean of each series are the univariate forecasts of the series (as ve_forecast_*), R_1 is the exact
+   recursion one step after the last observation, and R_h = (1 - k^(h-1)) Rbar + k^(h-1) R_1 for h >= 2, with k the
+   total persistence (the aDCC g does not enter; the FDCC takes k per element; a static copula keeps its R) and
+   Rbar the correlation of Qbar. H_h = D R_h D with D = diag(sigma_h). A DCC fit keeps the final state of each series
+   and of its recursion: it forecasts and simulates after the univariate fits are freed, but only a fit made by
+   ve_dcc_fit_batch has it (VE_INVALID_ARGUMENT otherwise, and for a fit with no finite point, whose message says
+   "no finite point"). A VE_FIT_FAILED fit that has a finite point forecasts from it.
+   ve_dcc_future holds the regressors of the horizon of each series: series from 0, panels of `horizon` rows without
+   ranges, NULL for none. They are checked against each series' spec when used (the error names the series from 1).
+   A NULL ve_dcc_future means no series has regressors. */
+typedef struct ve_dcc_future ve_dcc_future;
+typedef struct ve_dcc_forecast ve_dcc_forecast;
+typedef struct ve_dcc_sim ve_dcc_sim;
+VE_API ve_status ve_dcc_future_create(size_t series, size_t horizon, ve_dcc_future** out);
+VE_API ve_status ve_dcc_future_set(ve_dcc_future* x, size_t series, const ve_panel* mxreg, const ve_panel* vxreg);
+VE_API void ve_dcc_future_free(ve_dcc_future* x);
+/* x must have the series of f and `horizon` rows. The forecast copies what it needs. */
+VE_API ve_status ve_dcc_forecast_create(const ve_dcc_fit* f, size_t horizon, const ve_dcc_future* x,
+                                        ve_dcc_forecast** out);
+VE_API ve_status ve_dcc_forecast_horizon(const ve_dcc_forecast* fc, size_t* out);
+VE_API ve_status ve_dcc_forecast_series(const ve_dcc_forecast* fc, size_t* out);
+/* Row-major views valid until fc is freed: horizon x m x m (R, H) and horizon x m (sigma, mean). */
+VE_API ve_status ve_dcc_forecast_correlation(const ve_dcc_forecast* fc, const double** data, size_t* len);
+VE_API ve_status ve_dcc_forecast_covariance(const ve_dcc_forecast* fc, const double** data, size_t* len);
+VE_API ve_status ve_dcc_forecast_sigma(const ve_dcc_forecast* fc, const double** data, size_t* len);
+VE_API ve_status ve_dcc_forecast_mean(const ve_dcc_forecast* fc, const double** data, size_t* len);
+VE_API void ve_dcc_forecast_free(ve_dcc_forecast* fc);
+/* Paths of a DCC fit, as ve_simulate_fit does for one series (the seed rule included). Each step takes R from the
+   exact recursion and draws a shock of covariance R (a Gaussian scale mixture for the mvt and the mvlaplace); the
+   shock of a series is its standardized z (plain DCC), or goes through the copula and the quantile function of the
+   series' margin (Copula-DCC); each series steps from its own state and the recursion takes the scores. Path p reads
+   only the stream (seed, p). Keep R and H per path in a DCC simulation with correlations on; ve_simulate_fit and
+   ve_simulate_spec refuse options with it on. */
+VE_API ve_status ve_sim_options_set_correlations(ve_sim_options* o, int32_t on);
+/* o's own regressors must be unset (VE_INVALID_ARGUMENT): a DCC takes them per series in x. VE_INVALID_ARGUMENT
+   "too large" when paths x horizon x m x 2 doubles, or with correlations paths x horizon x m^2 x 2, exceed what
+   memory addresses. */
+VE_API ve_status ve_simulate_dcc(ve_context* ctx, const ve_dcc_fit* f, const ve_sim_options* o,
+                                 const ve_dcc_future* x, ve_dcc_sim** out);
+VE_API ve_status ve_dcc_sim_paths(const ve_dcc_sim* sim, size_t* out);
+VE_API ve_status ve_dcc_sim_horizon(const ve_dcc_sim* sim, size_t* out);
+VE_API ve_status ve_dcc_sim_series(const ve_dcc_sim* sim, size_t* out);
+/* paths x horizon x m (returns, sigma) and paths x horizon x m x m (correlation, covariance), row-major, valid until
+   sim is freed. The correlation and covariance views are VE_INVALID_ARGUMENT unless the options had correlations on. */
+VE_API ve_status ve_dcc_sim_returns(const ve_dcc_sim* sim, const double** data, size_t* len);
+VE_API ve_status ve_dcc_sim_sigma(const ve_dcc_sim* sim, const double** data, size_t* len);
+VE_API ve_status ve_dcc_sim_correlation(const ve_dcc_sim* sim, const double** data, size_t* len);
+VE_API ve_status ve_dcc_sim_covariance(const ve_dcc_sim* sim, const double** data, size_t* len);
+VE_API void ve_dcc_sim_free(ve_dcc_sim* sim);
+
 #ifdef __cplusplus
 }
 #endif

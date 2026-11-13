@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import ctypes
+import operator
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import KW_ONLY, dataclass, field
 from typing import Any, cast
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from ._fit import IC_PER_OBS, IC_TOTAL, SE_KINDS, CoefTable, Fit, status_name
-from ._native import Handle, check, create_handle, int32, lib, native_view, read_scalar
+from ._forecast import DccForecast
+from ._native import ELEMENT_BYTES, Handle, check, create_handle, int32, lib, native_view, open_panel, read_scalar
 from ._spec import code_of, encoded_name, frozen_values
 
 MODELS = {"dcc": 0, "adcc": 1, "fdcc": 2, "static": 3}
@@ -114,11 +116,64 @@ def fit_dcc(context: Handle, spec: DccSpec | Sequence[DccSpec], univariate: Sequ
         return [DccFit(handle) for handle in owned]
 
 
+def future_panel_of(stack: ExitStack, values: ArrayLike | None) -> int | None:
+    """The native panel of one series' regressors of the horizon (T x k, or (T,) for one), None for none."""
+    if values is None:
+        return None
+    array = np.asarray(values, dtype=np.float64)
+    if array.ndim == 1:
+        array = array[:, None]
+    if array.ndim != 2:
+        raise ValueError(f"the regressors of a series must be 1D or 2D, got {array.ndim} dimensions")
+    if any(stride % ELEMENT_BYTES for stride in array.strides):
+        array = np.ascontiguousarray(array)
+    return open_panel(stack, array).pointer
+
+
+def listed(entries: Sequence[ArrayLike | None] | None) -> list[ArrayLike | None] | None:
+    if entries is None:
+        return None
+    return list(entries)
+
+
+def entry_of(entries: list[ArrayLike | None] | None, series: int) -> ArrayLike | None:
+    if entries is None:
+        return None
+    return entries[series]
+
+
+def open_future(
+    stack: ExitStack,
+    horizon: int,
+    mxreg: Sequence[ArrayLike | None] | None,
+    vxreg: Sequence[ArrayLike | None] | None,
+) -> int | None:
+    """The native regressors of the horizon, one entry per series, or None when no series has any."""
+    if mxreg is None and vxreg is None:
+        return None
+    mean = listed(mxreg)
+    variance = listed(vxreg)
+    if mean is not None and variance is not None and len(mean) != len(variance):
+        raise ValueError(f"mxreg and vxreg must have one entry per series, got {len(mean)} and {len(variance)}")
+    entries = mean if mean is not None else variance
+    assert entries is not None
+    future = stack.enter_context(create_handle(lib.ve_dcc_future_create, lib.ve_dcc_future_free, len(entries), horizon))
+    for series in range(len(entries)):
+        mean_panel = future_panel_of(stack, entry_of(mean, series))
+        variance_panel = future_panel_of(stack, entry_of(variance, series))
+        check(lib.ve_dcc_future_set(future.pointer, series, mean_panel, variance_panel))
+    return future.pointer
+
+
 class DccFit:
     """One DCC result. R and H are read-only views that keep the result alive.
 
     H is computed once on first access. Standard errors can be added to a new
     result using the original ordered univariate fits; regressor fits are unsupported.
+
+    A fit made by `Context.fit_dcc` keeps the final state of each series and of its correlation recursion, so
+    `forecast` and `Context.simulate` do not need the univariate `Fit` objects, which `standard_errors` does need
+    because it refilters the whole sample.
     """
 
     def __init__(self, handle: Handle) -> None:
@@ -175,6 +230,30 @@ class DccFit:
         out = np.empty(len(self.names), dtype=np.float64)
         check(function(self._handle.pointer, *args, out.ctypes.data))
         return out
+
+    def forecast(
+        self,
+        horizon: int,
+        *,
+        mxreg: Sequence[ArrayLike | None] | None = None,
+        vxreg: Sequence[ArrayLike | None] | None = None,
+    ) -> DccForecast:
+        """R, H, sigma and mean for h = 1..horizon after the last observation, as rmgarch's dccforecast (n.roll = 0).
+
+        `mxreg` and `vxreg` hold, for each series, the regressors of the horizon ((horizon, k), or (horizon,) for
+        one) or None for a series without; a series' regressors must match its spec (VolEngineError naming the
+        series, from 1, otherwise). A fit with no finite point raises VolEngineError. The fit keeps what it needs:
+        the univariate `Fit` objects can be freed. See `DccForecast` for the rules of R.
+        """
+        horizon = operator.index(horizon)
+        if horizon < 1:
+            raise ValueError(f"horizon must be at least 1, got {horizon}")
+        with ExitStack() as stack:
+            future = open_future(stack, horizon, mxreg, vxreg)
+            handle = create_handle(
+                lib.ve_dcc_forecast_create, lib.ve_dcc_forecast_free, self._handle.pointer, horizon, future
+            )
+        return DccForecast(handle)
 
     def standard_errors(self, univariate: Sequence[Fit]) -> DccFit:
         fits = fit_pointers(univariate)

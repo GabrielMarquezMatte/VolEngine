@@ -3,6 +3,8 @@
 #include "core/context.hpp"
 #include "dcc/dcc3_panel.hpp"
 #include "dcc/fit.hpp"
+#include "dcc/future/forecast.hpp"
+#include "dcc/future/simulate.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -1015,4 +1017,205 @@ TEST(CapiDcc, CopulaInvalidCombinations)
     ASSERT_EQ(ve_dcc_spec_set_start(started.get(), "mshape", 8.0), VE_OK);
     EXPECT_EQ(attempt(one_dcc(started, univariate)).status, VE_INVALID_ARGUMENT);
     EXPECT_TRUE(mentions("mshape takes no start"));
+}
+
+namespace
+{
+
+using SimOptionsPtr = std::unique_ptr<ve_sim_options, Release<ve_sim_options, ve_sim_options_free>>;
+using DccFuturePtr = std::unique_ptr<ve_dcc_future, Release<ve_dcc_future, ve_dcc_future_free>>;
+using DccForecastPtr = std::unique_ptr<ve_dcc_forecast, Release<ve_dcc_forecast, ve_dcc_forecast_free>>;
+using DccSimPtr = std::unique_ptr<ve_dcc_sim, Release<ve_dcc_sim, ve_dcc_sim_free>>;
+
+// A DCC(1,1) with the normal fitted through the C API (no standard errors) on the plain univariate fits.
+struct FittedDcc
+{
+    FitSet univariate = univariate_fits(false);
+    DccFits fits{1};
+
+    FittedDcc()
+    {
+        std::vector<DccSpecPtr> specs;
+        specs.push_back(make_dcc_spec(VE_DCC_MODEL_DCC, VE_DCC_DIST_MVNORM));
+        DccOptionsPtr options = make_dcc_options(false);
+        DccBatchPtr batch = build_dcc_batch({raw_specs(specs), handles_of(univariate), options.get()});
+        ve::testing::ContextPtr context = ve::testing::make_context(2);
+        EXPECT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    }
+};
+
+std::vector<double> view_of(ve_status (*read)(const ve_dcc_forecast*, const double**, size_t*),
+                            const ve_dcc_forecast* fc)
+{
+    const double* data = nullptr;
+    std::size_t len = 0;
+    EXPECT_EQ(read(fc, &data, &len), VE_OK) << ve_last_error();
+    return std::vector<double>(data, data + len);
+}
+
+std::vector<double> sim_view_of(ve_status (*read)(const ve_dcc_sim*, const double**, size_t*), const ve_dcc_sim* sim)
+{
+    const double* data = nullptr;
+    std::size_t len = 0;
+    EXPECT_EQ(read(sim, &data, &len), VE_OK) << ve_last_error();
+    return std::vector<double>(data, data + len);
+}
+
+SimOptionsPtr make_sim_options(std::size_t horizon, std::size_t paths, std::uint64_t seed, bool correlations)
+{
+    ve_sim_options* raw = nullptr;
+    EXPECT_EQ(ve_sim_options_create(horizon, paths, seed, &raw), VE_OK) << ve_last_error();
+    SimOptionsPtr options(raw);
+    EXPECT_EQ(ve_sim_options_set_correlations(raw, correlations ? 1 : 0), VE_OK);
+    return options;
+}
+
+}
+
+TEST(CapiDcc, ForecastMatchesCore)
+{
+    FittedDcc fitted;
+    ve_dcc_forecast* raw = nullptr;
+    ASSERT_EQ(ve_dcc_forecast_create(fitted.fits[0], 12, nullptr, &raw), VE_OK) << ve_last_error();
+    DccForecastPtr forecast(raw);
+    const ve::dcc::future::DccForecast expected =
+        ve::dcc::future::forecast_dcc(fitted.fits[0]->result, 12, ve::dcc::future::SeriesRegressors(kSeries));
+    std::size_t horizon = 0;
+    std::size_t series = 0;
+    ASSERT_EQ(ve_dcc_forecast_horizon(raw, &horizon), VE_OK);
+    ASSERT_EQ(ve_dcc_forecast_series(raw, &series), VE_OK);
+    EXPECT_EQ(horizon, 12U);
+    EXPECT_EQ(series, kSeries);
+    EXPECT_TRUE(same_bits(view_of(ve_dcc_forecast_correlation, raw), expected.r));
+    EXPECT_TRUE(same_bits(view_of(ve_dcc_forecast_covariance, raw), expected.h));
+    EXPECT_TRUE(same_bits(view_of(ve_dcc_forecast_sigma, raw), expected.sigma));
+    EXPECT_TRUE(same_bits(view_of(ve_dcc_forecast_mean, raw), expected.mean));
+    ve_dcc_forecast* none = nullptr;
+    EXPECT_EQ(ve_dcc_forecast_create(nullptr, 12, nullptr, &none), VE_INVALID_HANDLE);
+    EXPECT_EQ(none, nullptr);
+    EXPECT_EQ(ve_dcc_forecast_create(fitted.fits[0], 12, nullptr, nullptr), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_forecast_create(fitted.fits[0], 0, nullptr, &none), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_forecast_horizon(nullptr, &horizon), VE_INVALID_HANDLE);
+    const double* data = nullptr;
+    EXPECT_EQ(ve_dcc_forecast_sigma(raw, &data, nullptr), VE_INVALID_ARGUMENT);
+}
+
+TEST(CapiDcc, ForecastChecksTheFutureRegressors)
+{
+    FittedDcc fitted;
+    ve_dcc_future* raw = nullptr;
+    ASSERT_EQ(ve_dcc_future_create(2, 12, &raw), VE_OK);
+    DccFuturePtr two_series(raw);
+    ve_dcc_forecast* out = nullptr;
+    EXPECT_EQ(ve_dcc_forecast_create(fitted.fits[0], 12, two_series.get(), &out), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(mentions("series"));
+    ASSERT_EQ(ve_dcc_future_create(kSeries, 11, &raw), VE_OK);
+    DccFuturePtr short_horizon(raw);
+    EXPECT_EQ(ve_dcc_forecast_create(fitted.fits[0], 12, short_horizon.get(), &out), VE_INVALID_ARGUMENT);
+    ASSERT_EQ(ve_dcc_future_create(kSeries, 12, &raw), VE_OK);
+    DccFuturePtr given(raw);
+    std::vector<double> x(12, 0.5);
+    ve::testing::PanelPtr panel = ve::testing::make_panel(x.data(), 12, 1);
+    ASSERT_EQ(ve_dcc_future_set(given.get(), 1, panel.get(), nullptr), VE_OK) << ve_last_error();
+    EXPECT_EQ(ve_dcc_forecast_create(fitted.fits[0], 12, given.get(), &out), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(mentions("series 2"));
+    EXPECT_EQ(ve_dcc_future_set(given.get(), kSeries, nullptr, nullptr), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_future_set(nullptr, 0, nullptr, nullptr), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_dcc_future_create(0, 12, &raw), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_future_create(kSeries, 0, &raw), VE_INVALID_ARGUMENT);
+}
+
+TEST(CapiDcc, ForecastNeedsAFinitePoint)
+{
+    FitSet univariate = univariate_fits(false);
+    DccSpecPtr outside = make_dcc_spec(VE_DCC_MODEL_DCC, VE_DCC_DIST_MVNORM);
+    ASSERT_EQ(ve_dcc_spec_set_fixed(outside.get(), "dccb1", 1.2), VE_OK);
+    DccOptionsPtr options = make_dcc_options(false);
+    DccBatchPtr batch = build_dcc_batch({{outside.get()}, handles_of(univariate), options.get()});
+    ve::testing::ContextPtr context = ve::testing::make_context(1);
+    DccFits fits(1);
+    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    ve_dcc_forecast* out = nullptr;
+    EXPECT_EQ(ve_dcc_forecast_create(fits[0], 5, nullptr, &out), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(mentions("no finite point"));
+    SimOptionsPtr sim_options = make_sim_options(5, 10, 1, false);
+    ve_dcc_sim* sim = nullptr;
+    EXPECT_EQ(ve_simulate_dcc(context.get(), fits[0], sim_options.get(), nullptr, &sim), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(mentions("no finite point"));
+}
+
+TEST(CapiDcc, SimulationMatchesCore)
+{
+    FittedDcc fitted;
+    ve::testing::ContextPtr context = ve::testing::make_context(3);
+    SimOptionsPtr options = make_sim_options(8, 40, 99, true);
+    ve_dcc_sim* raw = nullptr;
+    ASSERT_EQ(ve_simulate_dcc(context.get(), fitted.fits[0], options.get(), nullptr, &raw), VE_OK) << ve_last_error();
+    DccSimPtr sim(raw);
+    ve::Context core_context;
+    ve::dcc::future::DccRequest request{8, 40, 99, true, ve::dcc::future::SeriesRegressors(kSeries)};
+    const ve::dcc::future::DccSimulation expected =
+        ve::dcc::future::simulate_dcc(core_context, fitted.fits[0]->result, request);
+    std::size_t paths = 0;
+    std::size_t horizon = 0;
+    std::size_t series = 0;
+    ASSERT_EQ(ve_dcc_sim_paths(raw, &paths), VE_OK);
+    ASSERT_EQ(ve_dcc_sim_horizon(raw, &horizon), VE_OK);
+    ASSERT_EQ(ve_dcc_sim_series(raw, &series), VE_OK);
+    EXPECT_EQ(paths, 40U);
+    EXPECT_EQ(horizon, 8U);
+    EXPECT_EQ(series, kSeries);
+    EXPECT_TRUE(same_bits(sim_view_of(ve_dcc_sim_returns, raw), expected.returns));
+    EXPECT_TRUE(same_bits(sim_view_of(ve_dcc_sim_sigma, raw), expected.sigma));
+    EXPECT_TRUE(same_bits(sim_view_of(ve_dcc_sim_correlation, raw), expected.r));
+    EXPECT_TRUE(same_bits(sim_view_of(ve_dcc_sim_covariance, raw), expected.h));
+}
+
+TEST(CapiDcc, SimulationRefusesWhatItCannotDo)
+{
+    FittedDcc fitted;
+    ve::testing::ContextPtr context = ve::testing::make_context(1);
+    ve_dcc_sim* sim = nullptr;
+    SimOptionsPtr off = make_sim_options(4, 10, 1, false);
+    ASSERT_EQ(ve_simulate_dcc(context.get(), fitted.fits[0], off.get(), nullptr, &sim), VE_OK) << ve_last_error();
+    DccSimPtr kept(sim);
+    const double* data = nullptr;
+    std::size_t len = 0;
+    EXPECT_EQ(ve_dcc_sim_correlation(sim, &data, &len), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_sim_covariance(sim, &data, &len), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_sim_returns(sim, &data, &len), VE_OK);
+    EXPECT_EQ(len, 4U * 10U * kSeries);
+
+    std::vector<double> x(4, 0.1);
+    ve::testing::PanelPtr panel = ve::testing::make_panel(x.data(), 4, 1);
+    SimOptionsPtr own = make_sim_options(4, 10, 1, false);
+    ASSERT_EQ(ve_sim_options_set_regressors(own.get(), panel.get(), nullptr), VE_OK);
+    ve_dcc_sim* refused = nullptr;
+    EXPECT_EQ(ve_simulate_dcc(context.get(), fitted.fits[0], own.get(), nullptr, &refused), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(refused, nullptr);
+
+    SimOptionsPtr correlations = make_sim_options(4, 10, 1, true);
+    ve_sim* univariate = nullptr;
+    EXPECT_EQ(ve_simulate_fit(context.get(), fitted.univariate[0], correlations.get(), &univariate),
+              VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(mentions("correlations"));
+    EXPECT_EQ(ve_simulate_dcc(context.get(), nullptr, off.get(), nullptr, &refused), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_simulate_dcc(context.get(), fitted.fits[0], off.get(), nullptr, nullptr), VE_INVALID_ARGUMENT);
+}
+
+// Review focus 4: paths x horizon x m^2 would overflow size_t; the answer is an error, not bad_alloc or a crash.
+TEST(CapiDcc, SimulationRejectsSizesThatOverflow)
+{
+    FittedDcc fitted;
+    ve::testing::ContextPtr context = ve::testing::make_context(1);
+    const std::size_t huge = std::numeric_limits<std::size_t>::max();
+    ve_dcc_sim* sim = nullptr;
+    SimOptionsPtr plain = make_sim_options(1, huge / 20, 1, false);
+    EXPECT_EQ(ve_simulate_dcc(context.get(), fitted.fits[0], plain.get(), nullptr, &sim), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(mentions("too large"));
+    SimOptionsPtr with_correlations = make_sim_options(2, huge / 128, 1, true);
+    EXPECT_EQ(ve_simulate_dcc(context.get(), fitted.fits[0], with_correlations.get(), nullptr, &sim),
+              VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(mentions("too large"));
+    EXPECT_EQ(sim, nullptr);
 }

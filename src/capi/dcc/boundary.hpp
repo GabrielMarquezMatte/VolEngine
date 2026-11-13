@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace ve::capi::dcc
@@ -61,6 +62,39 @@ inline ve_status fit_pointers(const ve_fit* const* fits, std::size_t count,
     for (std::size_t i = 0; i < count; ++i)
     {
         out.push_back(&fits[i]->result);
+    }
+    return VE_OK;
+}
+
+// The regressors of x as one entry per series of f (none for a NULL x), or why x does not fit f and the horizon.
+inline ve_status series_regressors(const ve_dcc_fit* f, std::size_t horizon, const ve_dcc_future* x,
+                                   ve::dcc::future::SeriesRegressors& out)
+{
+    const std::size_t series = f->result.series;
+    out.assign(series, {});
+    if (x == nullptr)
+    {
+        return VE_OK;
+    }
+    if (x->series != series || x->horizon != horizon)
+    {
+        return set_error(VE_INVALID_ARGUMENT, "x holds " + std::to_string(x->series) + " series of " +
+                                                  std::to_string(x->horizon) + " rows, the fit needs " +
+                                                  std::to_string(series) + " series of " + std::to_string(horizon));
+    }
+    for (std::size_t i = 0; i < series; ++i)
+    {
+        out[i] = {{x->mxreg[i].values, x->mxreg[i].columns}, {x->vxreg[i].values, x->vxreg[i].columns}};
+    }
+    return VE_OK;
+}
+
+// What forecast_problem says about f, the horizon and the regressors of x, as an error.
+inline ve_status check_future(const ve_dcc_fit* f, std::size_t horizon, const ve::dcc::future::SeriesRegressors& future)
+{
+    if (const auto problem = ve::dcc::future::forecast_problem(f->result, horizon, future))
+    {
+        return set_error(VE_INVALID_ARGUMENT, *problem);
     }
     return VE_OK;
 }

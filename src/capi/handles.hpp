@@ -3,6 +3,8 @@
 #include "capi/results/regressor_rows.hpp"
 #include "core/context.hpp"
 #include "dcc/fit.hpp"
+#include "dcc/future/forecast.hpp"
+#include "dcc/future/simulate.hpp"
 #include "core/panel.hpp"
 #include "core/spec.hpp"
 #include "fit/batch.hpp"
@@ -57,6 +59,7 @@ struct ve_sim_options
     std::uint64_t seed = 0;
     ve::capi::StoredRows mxreg{};
     ve::capi::StoredRows vxreg{};
+    bool correlations = false;
 };
 
 struct ve_sim
@@ -86,4 +89,24 @@ struct ve_dcc_fit
     ve::dcc::DccFitResult result;
     mutable std::once_flag covariance_once;
     mutable std::vector<double> covariance;
+};
+
+// The regressors of the horizon of each series of a DCC fit.
+struct ve_dcc_future
+{
+    std::size_t series = 0;
+    std::size_t horizon = 0;
+    std::vector<ve::capi::StoredRows> mxreg;
+    std::vector<ve::capi::StoredRows> vxreg;
+};
+
+struct ve_dcc_forecast
+{
+    ve::dcc::future::DccForecast forecast;
+};
+
+struct ve_dcc_sim
+{
+    ve::dcc::future::DccSimulation simulation;
+    bool correlations = false;
 };
