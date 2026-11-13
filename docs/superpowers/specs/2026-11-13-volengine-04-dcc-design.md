@@ -215,14 +215,14 @@ O autor não usa a Copula-DCC. Ela entra para a biblioteca ficar completa, como 
 - O `matcoef` traz as linhas univariadas, com erros-padrão conjuntos, mais as linhas `[Joint]`:
   - mvt estática por ML: `C1..C{m(m−1)/2}` e `mshape`;
   - mvt estática por Kendall: só `mshape`;
-  - mvnorm estática: nenhuma linha. O `method` é ignorado: Kendall e ML dão a mesma ℓ;
+  - mvnorm estática: nenhuma linha com Kendall, `C1..C{m(m−1)/2}` com ML. A ℓ igual nos dois métodos no dcc3 foi
+    coincidência de arredondamento na impressão (corrigido na Task 1 do plano 4b);
   - DCC e aDCC: `dcca`, `dccb`, `dccg` e `mshape`.
 - A forma da mvt tem teto 50: o dcc3 estima 49,99999.
 - O `Rt` é uma matriz única na estática e uma lista de T matrizes no DCC.
-- **Não identificado:** o estimador da correlação da mvnorm estática. No dcc3 paramétrico, R₁₂ = 0,4745106, enquanto
-  `cor(qnorm(u))` dá 0,474867, `cov2cor(crossprod(qnorm(u)))` 0,4748661 e Kendall 0,4828968. No empírico, R₁₂ =
-  0,4727703 contra 0,4739724 com `rank/(T+1)`. Pode ser ML numérica ou um u truncado. O script da sonda não fica no
-  repositório.
+- **Identificado na Task 1 do plano 4b:** a mvnorm estática por ML estima os C (o R₁₂ = 0,4745106 que não batia);
+  com "Kendall", usa cor(Φ⁻¹(u)). As convenções completas estão em
+  `docs/superpowers/plans/2026-11-13-volengine-04b-rmgarch-copula-notes.md`.
 
 ### 10.4 Decisões
 
@@ -233,7 +233,7 @@ O autor não usa a Copula-DCC. Ela entra para a biblioteca ficar completa, como 
   - `model="static"` só existe com cópula;
   - com cópula, só `static`, `dcc` e `adcc` e só `mvnorm` e `mvt`. O FDCC-cópula e a cópula mvlaplace ficam fora: o
     `rmgarch` não os tem e ninguém os pediu;
-  - `static_method` só vale para a mvt estática, com padrão `kendall`, como no `rmgarch`;
+  - `static_method` vale para as duas cópulas estáticas, com padrão `kendall`, como no `rmgarch` (Task 1 do 4b);
   - C: um `VE_DCC_MODEL_STATIC` novo, um setter da transformação (nenhuma, paramétrica ou empírica) e um setter do
     método estático. Combinação inválida é `VE_INVALID_ARGUMENT` antes de qualquer ajuste, com mensagem que nomeia
     a combinação.
@@ -249,7 +249,7 @@ O autor não usa a Copula-DCC. Ela entra para a biblioteca ficar completa, como 
   **uma vez só**: os Cᵢⱼ da mvt estática por ML são os m(m−1)/2 e não somam de novo. Kendall e mvnorm estática também
   contam m(m−1)/2.
 - **Tabela de coeficientes:** só as linhas da cópula, como no 4a: `dcca`, `dccb`, `dccg`, `mshape` e os Cᵢⱼ da
-  estática por ML. A mvnorm estática tem tabela vazia, e a estática por Kendall só `mshape`.
+  estática por ML. A mvnorm por Kendall tem tabela vazia, e a mvt por Kendall só `mshape`.
   - Erros-padrão em dois estágios pelo mesmo mecanismo do 4a: opção no ajuste ou função explícita depois, com os
     mesmos N `Fit`.
   - Com marginais paramétricas, o bloco cruzado passa pela CDF de cada univariado.
