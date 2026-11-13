@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import operator
 from collections.abc import Sequence
 from contextlib import ExitStack
 from typing import TYPE_CHECKING, Any, TypedDict, overload
@@ -10,7 +11,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, overload
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ._fit import CoefTable, Fit
+from ._fit import CoefTable, Fit, future_panel
 from ._forecast import Forecast
 from ._native import (
     ELEMENT_BYTES,
@@ -22,6 +23,7 @@ from ._native import (
     lib,
     open_panel,
 )
+from ._simulation import Simulation
 from ._spec import FitOptions, Spec
 
 if TYPE_CHECKING:
@@ -33,11 +35,13 @@ __all__ = [
     "Fit",
     "FitOptions",
     "Forecast",
+    "Simulation",
     "Spec",
     "VolEngineError",
 ]
 
 Series1D = Sequence[float]
+UINT64_END = 2**64
 
 
 class FitKeywords(TypedDict, total=False):
@@ -46,6 +50,13 @@ class FitKeywords(TypedDict, total=False):
     options: FitOptions | None
     starts: ArrayLike | None
     lengths: ArrayLike | None
+    mxreg: ArrayLike | None
+    vxreg: ArrayLike | None
+
+
+class FutureKeywords(TypedDict, total=False):
+    """The optional keywords of `Context.simulate`: the regressors of the horizon."""
+
     mxreg: ArrayLike | None
     vxreg: ArrayLike | None
 
@@ -152,6 +163,22 @@ def shaped(fits: list[Fit], shape: tuple[int, ...]) -> NDArray[np.object_]:
     return grid.reshape(shape)
 
 
+def bounded(value: int, name: str, low: int) -> int:
+    """value as an integer in [low, 2**64), the range of the size_t and uint64_t of the C API."""
+    value = operator.index(value)
+    if not low <= value < UINT64_END:
+        raise ValueError(f"{name} must be an integer in [{low}, 2**64), got {value}")
+    return value
+
+
+def regressor_counts(source: Fit | Spec) -> tuple[int, int]:
+    if isinstance(source, Spec):
+        return source.mxreg, source.vxreg
+    mean = sum(1 for name in source.names if name.startswith("mxreg"))
+    variance = sum(1 for name in source.names if name.startswith("vxreg"))
+    return mean, variance
+
+
 class Context:
     """Execution context owning the native thread pool; fits do not depend on it afterwards.
 
@@ -219,6 +246,51 @@ class Context:
         if one_dimensional:
             return shaped(fits, (len(specs),))
         return shaped(fits, (len(specs), series_count))
+
+    def simulate(
+        self,
+        source: Fit | Spec,
+        *,
+        horizon: int,
+        paths: int,
+        seed: int,
+        **regressors: Unpack[FutureKeywords],
+    ) -> Simulation:
+        """Simulate `paths` paths of `horizon` steps from a fit or from a spec with every parameter fixed.
+
+        From a Fit the paths continue after its last observation (rugarch's ugarchsim, startMethod = "sample");
+        from a Spec they start at its unconditional state (rugarch's ugarchpath), which needs every parameter
+        fixed, no variance targeting, a stationary model and not iGARCH (VolEngineError otherwise). `mxreg` and
+        `vxreg` are the regressors of the horizon, as in `Fit.forecast`, the same for every path. The threads of the
+        context share the paths; the same seed gives the same paths for any thread count, within one version of
+        the library. `seed` is an integer in [0, 2**64).
+        """
+        unknown = sorted(regressors.keys() - FutureKeywords.__annotations__.keys())
+        if unknown:
+            raise TypeError(f"simulate() got an unexpected keyword argument {unknown[0]!r}")
+        horizon = bounded(horizon, "horizon", 1)
+        paths = bounded(paths, "paths", 1)
+        seed = bounded(seed, "seed", 0)
+        counts = regressor_counts(source)
+        with ExitStack() as stack:
+            mean = future_panel(stack, regressors.get("mxreg"), "mxreg", counts[0], horizon)
+            variance = future_panel(stack, regressors.get("vxreg"), "vxreg", counts[1], horizon)
+            options = stack.enter_context(
+                create_handle(lib.ve_sim_options_create, lib.ve_sim_options_free, horizon, paths, seed)
+            )
+            check(lib.ve_sim_options_set_regressors(options.pointer, mean, variance))
+            if isinstance(source, Spec):
+                spec = stack.enter_context(source.native_handle())
+                return Simulation(
+                    create_handle(
+                        lib.ve_simulate_spec, lib.ve_sim_free, self._handle.pointer, spec.pointer, options.pointer
+                    )
+                )
+            return Simulation(
+                create_handle(
+                    lib.ve_simulate_fit, lib.ve_sim_free, self._handle.pointer, source._handle.pointer, options.pointer
+                )
+            )
 
     def _run(
         self,

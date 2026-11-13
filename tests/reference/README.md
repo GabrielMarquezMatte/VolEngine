@@ -2,7 +2,7 @@
 
 This directory holds the simulated series and the results of two independent oracles, R's
 [`rugarch`](https://cran.r-project.org/package=rugarch) and Python's [`arch`](https://pypi.org/project/arch/),
-that `python/tests/test_oracles.py` compares VolEngine against. Conventions and tolerances are documented in
+that `python/tests/oracles/test_oracles.py` compares VolEngine against. Conventions and tolerances are documented in
 [`docs/guide/validation.md`](../../docs/guide/validation.md).
 
 | Path | Content |

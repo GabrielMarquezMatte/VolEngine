@@ -85,7 +85,7 @@ like any other wrapper would be.
 | `tests/style/check_style.py` | Style rules that can be checked without a compiler; runs as the `style` ctest |
 | `python/benchmarks/bench_vs_arch.py` | Timing against `arch` on matched work; writes `docs/performance/python-vs-arch.md` |
 | `tests/benchmarks` | Google Benchmark suite (preset `gcc-bench`) |
-| `python/tests` | Python tests, including `test_oracles.py` |
+| `python/tests` | Python tests; the oracle comparisons in `python/tests/oracles/` |
 | `tests/reference` | Data generator, oracle scripts and the committed fixtures; see [its README](tests/reference/README.md) |
 | `docs/guide/validation.md` | Oracle conventions, tolerances and observed differences |
 

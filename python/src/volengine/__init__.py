@@ -1,6 +1,15 @@
 """VolEngine: GARCH estimation over the VolEngine C API."""
 
-from .api import CoefTable, Context, Fit, FitOptions, Forecast, Spec, VolEngineError
+from .api import (
+    CoefTable,
+    Context,
+    Fit,
+    FitOptions,
+    Forecast,
+    Simulation,
+    Spec,
+    VolEngineError,
+)
 
 __all__ = [
     "CoefTable",
@@ -8,6 +17,7 @@ __all__ = [
     "Fit",
     "FitOptions",
     "Forecast",
+    "Simulation",
     "Spec",
     "VolEngineError",
 ]

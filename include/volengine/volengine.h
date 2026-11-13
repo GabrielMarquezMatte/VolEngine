@@ -303,6 +303,40 @@ VE_API ve_status ve_forecast_sigma(const ve_forecast* fc, const double** data, s
 VE_API ve_status ve_forecast_mean(const ve_forecast* fc, const double** data, size_t* len);
 VE_API void ve_forecast_free(ve_forecast* fc);
 
+/* ---- Simulation ----
+   Paths of `horizon` steps from a fit (continuing after its last observation, as rugarch's ugarchsim with
+   startMethod = "sample") or from a spec with every parameter fixed (from its unconditional state, as rugarch's
+   ugarchpath). Each step draws z from the distribution of the spec, e = sigma z and r = the conditional mean + e.
+   The same seed, source and library version give the same paths on every machine with the same ISA and for any
+   number of threads; a new version may change them (see the CHANGELOG). The first k paths of a simulation are
+   those of any simulation of the same seed with more paths, and its steps the first of any longer one. */
+typedef struct ve_sim_options ve_sim_options;
+typedef struct ve_sim ve_sim;
+/* horizon >= 1 steps and paths >= 1, any seed. VE_INVALID_ARGUMENT when paths x horizon values do not fit in
+   memory addresses ("too large"). */
+VE_API ve_status ve_sim_options_create(size_t horizon, size_t paths, uint64_t seed, ve_sim_options** out);
+/* Copies the regressors of the horizon, the same for every path: panels of exactly `horizon` rows without
+   ranges, NULL for none. Their columns are checked against the spec by ve_simulate_*: the spec's mxreg / vxreg
+   count, NULL when it has none. Replaces what an earlier call set. */
+VE_API ve_status ve_sim_options_set_regressors(ve_sim_options* o, const ve_panel* mxreg, const ve_panel* vxreg);
+VE_API void ve_sim_options_free(ve_sim_options* o);
+/* VE_INVALID_ARGUMENT for a fit with no finite point (see ve_fit_status) or regressors that do not match its spec;
+   a VE_FIT_FAILED fit that has a finite point simulates from it. */
+VE_API ve_status ve_simulate_fit(ve_context* ctx, const ve_fit* f, const ve_sim_options* o, ve_sim** out);
+/* VE_INVALID_ARGUMENT, with the reason in ve_last_error, for a spec with a free parameter, variance targeting,
+   iGARCH (no unconditional variance), parameters outside their domain, persistence >= 1, or regressors that do not
+   match it. The presample holds the unconditional sigma2 (with the first row of vxreg), the unconditional mean
+   and residuals drawn from the paths themselves. */
+VE_API ve_status ve_simulate_spec(ve_context* ctx, const ve_spec* s, const ve_sim_options* o, ve_sim** out);
+VE_API ve_status ve_sim_paths(const ve_sim* sim, size_t* out);
+VE_API ve_status ve_sim_horizon(const ve_sim* sim, size_t* out);
+/* paths x horizon values, row-major (row p is path p), valid until sim is freed: the simulated series and its
+   conditional standard deviation. The simulation copies what it needs: it stays valid after its context, fit,
+   spec and options are freed. */
+VE_API ve_status ve_sim_returns(const ve_sim* sim, const double** data, size_t* len);
+VE_API ve_status ve_sim_sigma(const ve_sim* sim, const double** data, size_t* len);
+VE_API void ve_sim_free(ve_sim* sim);
+
 #ifdef __cplusplus
 }
 #endif

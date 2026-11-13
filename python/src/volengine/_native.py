@@ -99,6 +99,16 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_forecast_sigma": (_STATUS, _VIEW),
     "ve_forecast_mean": (_STATUS, _VIEW),
     "ve_forecast_free": (None, [_HANDLE]),
+    "ve_sim_options_create": (_STATUS, [_SIZE, _SIZE, ctypes.c_uint64, _OUT_HANDLE]),
+    "ve_sim_options_set_regressors": (_STATUS, [_HANDLE, _HANDLE, _HANDLE]),
+    "ve_sim_options_free": (None, [_HANDLE]),
+    "ve_simulate_fit": (_STATUS, [_HANDLE, _HANDLE, _HANDLE, _OUT_HANDLE]),
+    "ve_simulate_spec": (_STATUS, [_HANDLE, _HANDLE, _HANDLE, _OUT_HANDLE]),
+    "ve_sim_paths": (_STATUS, [_HANDLE, _OUT_SIZE]),
+    "ve_sim_horizon": (_STATUS, [_HANDLE, _OUT_SIZE]),
+    "ve_sim_returns": (_STATUS, _VIEW),
+    "ve_sim_sigma": (_STATUS, _VIEW),
+    "ve_sim_free": (None, [_HANDLE]),
 }
 
 
