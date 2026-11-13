@@ -76,6 +76,29 @@ double residual_variance(std::span<const double> z, std::span<const double> resi
     return rss / static_cast<double>(z.size() - 5);
 }
 
+// A pivot whose square is below kRelativePivot of its column's diagonal marks a design collinear to rounding (one
+// negative lagged residual makes 1(e < 0) e a multiple of 1(e < 0)): its Cholesky goes through on a rounding
+// residue and would turn it into finite statistics.
+constexpr double kRelativePivot = 1e-10;
+
+bool factor_design(const std::array<double, 16>& gram, std::array<double, 16>& factor)
+{
+    factor = gram;
+    if (!linalg::cholesky_factor(factor, kColumns))
+    {
+        return false;
+    }
+    for (std::size_t i = 0; i < kColumns; ++i)
+    {
+        double pivot = factor[i * kColumns + i];
+        if (!(pivot * pivot > kRelativePivot * gram[i * kColumns + i]))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 TestResult coefficient_test(const std::array<double, 16>& factor, std::size_t index,
                             double coefficient, double variance, double degrees)
 {
@@ -107,8 +130,8 @@ TestResult joint_test(const Regression& regression, const std::array<double, 4>&
 SignBias sign_bias(std::span<const double> z, std::span<const double> residuals)
 {
     Regression regression = normal_equations(z, residuals);
-    std::array<double, 16> factor = regression.gram;
-    if (!linalg::cholesky_factor(factor, kColumns))
+    std::array<double, 16> factor{};
+    if (!factor_design(regression.gram, factor))
     {
         return {{kNaN, kNaN}, {kNaN, kNaN}, {kNaN, kNaN}, {kNaN, kNaN}};
     }
