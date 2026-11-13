@@ -4,6 +4,7 @@
 #include "dcc/dcc3_panel.hpp"
 #include "dcc/fit.hpp"
 #include "dcc/future/state.hpp"
+#include "dcc/future/mixed_panel.hpp"
 #include "dcc/spec.hpp"
 #include "fit/fit.hpp"
 #include "fit/fit_result.hpp"
@@ -180,47 +181,17 @@ TEST(DccForecast, OneGroupFdccIsDcc)
     }
 }
 
-// A panel of an ARFIMA series, a series with a mean regressor and a csGARCH series on the 1500 rows of dcc3.
-struct MixedPanel
-{
-    std::vector<FitResult> fits;
-    std::vector<double> x;
-    SeriesRegressors future;
-};
-
-const MixedPanel& mixed_panel()
-{
-    static const MixedPanel panel = []
-    {
-        MixedPanel out;
-        const std::vector<std::vector<double>> columns = ve::testing::read_dcc3();
-        const std::size_t rows = ve::testing::kDcc3Rows;
-        out.x.resize(rows + kHorizon);
-        for (std::size_t t = 0; t < out.x.size(); ++t)
-        {
-            out.x[t] = 0.1 * std::sin(0.3 * static_cast<double>(t));
-        }
-        out.fits.push_back(ve::fit_one(columns[0], ve::Spec{.ar = 1, .ma = 1, .arfima = true}, FitConfig{}));
-        ve::model::Data with_mean{columns[1], {std::span<const double>(out.x).first(rows), 1}, {}};
-        out.fits.push_back(ve::fit_one(with_mean, ve::Spec{.mxreg = 1}, FitConfig{}));
-        out.fits.push_back(ve::fit_one(columns[2], ve::Spec{.model = Model::CsGarch}, FitConfig{}));
-        out.future.resize(kSeries);
-        out.future[1].mean = {std::span<const double>(out.x).last(kHorizon), 1};
-        return out;
-    }();
-    return panel;
-}
-
 TEST(DccForecast, SeriesAreTheirOwnForecast)
 {
-    const MixedPanel& panel = mixed_panel();
+    const ve::testing::MixedPanel& panel = ve::testing::mixed_panel();
+    const SeriesRegressors future = ve::testing::mixed_future(panel, kHorizon);
     const std::vector<DccFitResult> results = run_batch(panel.fits, {dcc_spec(DccModel::Dcc)});
-    ASSERT_FALSE(ve::dcc::future::forecast_problem(results[0], kHorizon, panel.future).has_value());
-    const DccForecast forecast = ve::dcc::future::forecast_dcc(results[0], kHorizon, panel.future);
+    ASSERT_FALSE(ve::dcc::future::forecast_problem(results[0], kHorizon, future).has_value());
+    const DccForecast forecast = ve::dcc::future::forecast_dcc(results[0], kHorizon, future);
     for (std::size_t i = 0; i < kSeries; ++i)
     {
         ASSERT_FALSE(panel.fits[i].state.residuals.empty()) << i;
-        const ve::forecast::Forecast own = ve::forecast::forecast(panel.fits[i], kHorizon, panel.future[i]);
+        const ve::forecast::Forecast own = ve::forecast::forecast(panel.fits[i], kHorizon, future[i]);
         for (std::size_t h = 0; h < kHorizon; ++h)
         {
             EXPECT_EQ(forecast.sigma[h * kSeries + i], own.sigma[h]) << i << " " << h;
@@ -286,17 +257,17 @@ TEST(DccForecast, Problems)
     EXPECT_NE(few->find("series"), std::string::npos);
     EXPECT_TRUE(ve::dcc::future::forecast_problem(failed[1], 0, none).has_value());
 
-    const std::vector<DccFitResult> mixed = run_batch(mixed_panel().fits, {dcc_spec(DccModel::Dcc)});
+    const std::vector<DccFitResult> mixed = run_batch(ve::testing::mixed_panel().fits, {dcc_spec(DccModel::Dcc)});
     const std::optional<std::string> missing = ve::dcc::future::forecast_problem(mixed[0], kHorizon, none);
     ASSERT_TRUE(missing.has_value());
     EXPECT_NE(missing->find("series 2"), std::string::npos);
-    SeriesRegressors short_rows = mixed_panel().future;
+    SeriesRegressors short_rows = ve::testing::mixed_future(ve::testing::mixed_panel(), kHorizon);
     short_rows[1].mean.values = short_rows[1].mean.values.first(kHorizon - 1);
     const std::optional<std::string> short_problem = ve::dcc::future::forecast_problem(mixed[0], kHorizon, short_rows);
     ASSERT_TRUE(short_problem.has_value());
     EXPECT_NE(short_problem->find("series 2"), std::string::npos);
-    SeriesRegressors extra = mixed_panel().future;
-    extra[0].mean = mixed_panel().future[1].mean;
+    SeriesRegressors extra = ve::testing::mixed_future(ve::testing::mixed_panel(), kHorizon);
+    extra[0].mean = extra[1].mean;
     const std::optional<std::string> extra_problem = ve::dcc::future::forecast_problem(mixed[0], kHorizon, extra);
     ASSERT_TRUE(extra_problem.has_value());
     EXPECT_NE(extra_problem->find("series 1"), std::string::npos);

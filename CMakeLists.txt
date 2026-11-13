@@ -67,6 +67,7 @@ add_library(volengine_core STATIC
     src/dcc/copula/static_fit.cpp
     src/dcc/fit.cpp
     src/dcc/future/forecast.cpp
+    src/dcc/future/simulate.cpp
     src/dcc/future/state.cpp
     src/dcc/likelihood.cpp
     src/dcc/panel.cpp
@@ -161,6 +162,7 @@ if(VE_BUILD_TESTS)
         tests/unit/dcc/copula/static_fit_test.cpp
         tests/unit/dcc/future/forecast_oracle_test.cpp
         tests/unit/dcc/future/forecast_test.cpp
+        tests/unit/dcc/future/simulate_test.cpp
         tests/unit/dcc/future/state_test.cpp
         tests/unit/dcc/batch_test.cpp
         tests/unit/dcc/fit_test.cpp
