@@ -3,6 +3,10 @@
 #include "forecast/forecast.hpp"
 #include "model/layout.hpp"
 #include "model/likelihood.hpp"
+#include "sim/philox.hpp"
+#include "sim/samplers.hpp"
+#include "sim/simulate.hpp"
+#include "sim/start.hpp"
 #include "simulated_panel.hpp"
 #include "volengine/volengine.h"
 
@@ -990,6 +994,88 @@ void register_forecasts()
     benchmark::RegisterBenchmark("BM_Forecast/arfima_sgarch11_norm/h:60", run_arfima_forecast);
 }
 
+// 10 000 paths x 60 steps from a fit made once, outside the timing: the cost of sim::simulate alone.
+constexpr std::size_t kSimulatedPaths = 10000;
+constexpr std::size_t kSimulatedSteps = 60;
+
+void run_simulate(benchmark::State& state, const NamedSpec& named, int threads)
+{
+    const ve::FitResult fit = ve::fit_one(series_of(named), named.spec, ve::FitConfig{});
+    if (fit.state.residuals.empty())
+    {
+        state.SkipWithError("the fit has no finite point to simulate from");
+        return;
+    }
+    ve::Context context;
+    context.set_threads(threads);
+    const ve::sim::Start start = ve::sim::start_of_fit(fit);
+    const ve::sim::Request request{kSimulatedSteps, kSimulatedPaths, 42, {}};
+    for (auto _ : state)
+    {
+        ve::sim::Simulation simulation = ve::sim::simulate(context, start, request);
+        benchmark::DoNotOptimize(simulation.returns.data());
+    }
+}
+
+// 1e5 draws of one distribution, at the parameters of Samplers.StandardizedMoments.
+constexpr int kSamplerDraws = 100000;
+
+void run_sampler(benchmark::State& state, ve::Dist dist, ve::dist::ShapeParameters<double> parameters)
+{
+    const ve::sim::Sampler sampler(dist, parameters);
+    ve::sim::Stream stream(1, 0);
+    for (auto _ : state)
+    {
+        double sum = 0.0;
+        for (int i = 0; i < kSamplerDraws; ++i)
+        {
+            sum += sampler.draw(stream);
+        }
+        benchmark::DoNotOptimize(sum);
+    }
+}
+
+void register_simulations()
+{
+    for (const NamedSpec& named : named_specs())
+    {
+        const bool measured =
+            named.name == "s11_norm" || named.name == "egarch11_std" || named.name == "sgarch11_ghyp";
+        if (!measured)
+        {
+            continue;
+        }
+        for (const int threads : {1, 0})
+        {
+            const std::string name =
+                "BM_Simulate/" + named.name + "/paths:10000/h:60/threads:" + thread_label(threads);
+            benchmark::RegisterBenchmark(name, run_simulate, named, threads)
+                ->Unit(benchmark::kMillisecond)
+                ->UseRealTime();
+        }
+    }
+    struct SamplerCase
+    {
+        const char* name;
+        ve::Dist dist;
+        ve::dist::ShapeParameters<double> parameters;
+    };
+    const std::array<SamplerCase, 8> samplers{{{"norm", ve::Dist::Norm, {}},
+                                               {"std", ve::Dist::Std, {0.0, 8.0, 0.0}},
+                                               {"ged", ve::Dist::Ged, {0.0, 1.3, 0.0}},
+                                               {"sstd", ve::Dist::Sstd, {1.4, 8.0, 0.0}},
+                                               {"sged", ve::Dist::Sged, {0.7, 1.5, 0.0}},
+                                               {"nig", ve::Dist::Nig, {-0.4, 1.5, 0.0}},
+                                               {"ghyp", ve::Dist::Ghyp, {0.3, 2.0, -1.5}},
+                                               {"jsu", ve::Dist::Jsu, {0.8, 1.5, 0.0}}}};
+    for (const SamplerCase& item : samplers)
+    {
+        benchmark::RegisterBenchmark(std::string("BM_Sampler/") + item.name + "/draws:100000", run_sampler, item.dist,
+                                     item.parameters)
+            ->Unit(benchmark::kMillisecond);
+    }
+}
+
 void register_all()
 {
     for (const NamedSpec& named : named_specs())
@@ -1010,6 +1096,7 @@ void register_all()
     benchmark::RegisterBenchmark("BM_Loglik/arfima_sgarch11_norm/dual", run_arfima_loglik, true);
     benchmark::RegisterBenchmark("BM_FitOne/arfima_sgarch11_norm", run_arfima_fit_one)->Unit(benchmark::kMillisecond);
     register_forecasts();
+    register_simulations();
     static const std::vector<ve::Spec> single{named_specs().front().spec};
     for (const int threads : {1, 2, 4, 8, 0})
     {

@@ -14,7 +14,7 @@ Student-t (`std`) or GED (`ged`) innovations, or the skewed ones: skewed Student
 normal inverse Gaussian (`nig`), generalized hyperbolic (`ghyp`) and Johnson SU (`jsu`), with Hessian and robust
 standard errors and the usual information criteria. Any estimated parameter can be fixed or given a start value
 (the derived ones cannot), the variance can be targeted, and the mean and the variance take external regressors
-(`mxreg`, `vxreg`), ARCH-in-mean (`archm`) and an ARFIMA mean (`arfima`), as in `rugarch`, and forecasts from a fit. More features come in
+(`mxreg`, `vxreg`), ARCH-in-mean (`archm`) and an ARFIMA mean (`arfima`), as in `rugarch`, forecasts from a fit and simulated paths. More features come in
 later releases.
 Until 1.0 the C ABI may change between releases. See [CHANGELOG.md](CHANGELOG.md).
 
@@ -119,6 +119,18 @@ forecast = fit.forecast(10)       # forecast.sigma, forecast.mean: arrays of sha
 In eGARCH, apARCH and fGARCH, `sigma` for h > 1 is `rugarch`'s forecast of log σ² or σ^δ taken back to σ, not
 √E[σ²]. The rules and the checks against `rugarch` and `arch` are in
 [docs/guide/validation.md](docs/guide/validation.md#rugarch-forecast).
+
+The context simulates paths from a fit, continuing after its last observation, or from a spec with every parameter
+fixed, starting at its unconditional state. The threads of the context share the paths, and the same seed gives the
+same paths for any number of threads (within one version of the library):
+
+```python
+sims = ctx.simulate(fit, horizon=60, paths=10_000, seed=42)   # sims.returns, sims.sigma: (10_000, 60)
+cumulative = sims.returns.sum(axis=1)
+np.percentile(cumulative, [5, 50, 95])
+```
+
+How the samplers and the paths are checked is in [docs/guide/validation.md](docs/guide/validation.md#simulation).
 
 `ctx.fit` also takes a `(T, N)` array (one fit per column), a list of specs, `starts` and `lengths` for series of
 different lengths, and `options=ve.FitOptions(var_init="backcast")` for the `arch` convention.

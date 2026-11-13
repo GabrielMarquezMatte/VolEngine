@@ -814,6 +814,65 @@ centers the backcast on the sample mean of the series (or zero without a mean) a
 not depend on any parameter. The analytic gradient remains exact; the unit tests compare it with central
 differences and check that σ²₀ does not depend on μ.
 
+## Simulation
+
+Simulated paths cannot be compared draw by draw with `rugarch`, whose RNG is another one. The checks are statistical,
+against the forecast of plan 3a and against the distributions themselves, plus reproducibility. All of them are C++
+tests in `tests/unit/sim/` with a fixed seed, so they are deterministic; "5 SE" below means |mean − target| ≤ 5 sd/√P
+over the paths (or draws).
+
+**Random numbers.** Philox4x32-10 (Salmon, Moraes, Dror and Shaw, 2011), as in Random123, checked against three of
+its known-answer vectors (`Philox.KnownAnswers`). The key is the seed; the counter is (block, path), so each path
+has its own stream and reads only it, in time order: presample shocks first (from a spec), then one z per step. That
+gives the guarantees of `ve_simulate_*`: the same paths for any number of threads (`Simulate.SameForAnyThreadCount`,
+1, 3 and 16 threads, bit for bit), the first k paths of a longer run and the first steps of a longer horizon
+(`Simulate.Prefixes`). A uniform is ((u >> 11) + 1/2) 2⁻⁵³, in the open interval (0, 1). The same seed reproduces
+paths only within one version of the library: the generator, the streams and the samplers may change, and the
+CHANGELOG says when.
+
+**Samplers.** Each one draws from the standardized density of the fit (`make_density`), so its parameters are those
+of the estimate:
+
+| Distribution | Draw |
+| --- | --- |
+| norm | Box–Muller, the cosine branch |
+| std | N √((ν − 2) / (2G)), G ~ Gamma(ν/2) |
+| ged | ±λ (2G)^(1/ν), G ~ Gamma(1/ν) |
+| sstd, sged | Fernandez–Steel over a kernel draw x: ξ\|x\| with probability ξ²/(1 + ξ²), else −\|x\|/ξ, then standardized by the shift and stretch of the density |
+| nig, ghyp | location + βW + √W N, W ~ GIG(λ, δ², α² − β²) |
+| jsu | center + scale · sinh((N + ν)/τ) |
+
+Gamma is Marsaglia and Tsang (2000); GIG is Hörmann and Leydold (2014), in its three regions (ratio of uniforms with
+and without the mode shift, and the non-T-concave case). `Samplers.StandardizedMoments` draws 4·10⁵ values of each
+distribution, at two parameter points for ged and ghyp, and checks to 5 SE: mean 0, variance 1, P(z < 0), E|z| and
+E(|z − 0.2| − 0.3(z − 0.2))^1.5 against the quadratures of `dist/moments.hpp` (the ones the fits use).
+`Samplers.GammaMoments` and `Samplers.GigMoments` check the building blocks (GIG against the Bessel ratios of
+E W and E 1/W, in all three regions), and `Samplers.FiniteAtDomainEdges` draws 10⁵ values near the edges of the
+domains (std ν = 2.05, ged ν = 0.25, nig ζ = 10⁴, ghyp λ = −3 with ζ = 0.3, jsu τ = 0.2): all finite.
+
+**Paths against the forecast.** A step is the forecast of one step from the state of the path, with a drawn shock,
+so step 1 equals the forecast bit for bit (`Simulate.FirstStepIsTheForecast`). From step 2 on, the mean over 20 000
+paths of the quantity each model is linear in matches the forecast of plan 3a to 5 SE for h = 1..10:
+
+| Model | Quantity | Note |
+| --- | --- | --- |
+| sGARCH, iGARCH, gjrGARCH | σ² | gjrGARCH with norm and std only: `rugarch` takes π = P(z < 0) for E[z² 1(z < 0)], which is exact only for a symmetric density |
+| eGARCH | log σ² | exact for every h, since E z = 0 and E(\|z\| − E\|z\|) = 0 |
+| apARCH, fGARCH | σ^δ | κ = E(\|z − η₂\| − η₁(z − η₂))^δ is the exact expectation |
+| csGARCH | σ² | against the recursion with the shocks at their expectation, E q_h = ω + ρ E q_{h−1}, not `rugarch`'s closed form, which leaves out the last shock |
+| ARMA with `mxreg`, ARFIMA | r | the mean forecast is linear in the shocks |
+
+So for gjrGARCH with a skewed distribution and for csGARCH the mean of simulated σ² differs from `ugarchforecast`'s
+σ² by construction: the simulation follows the model, the forecast follows `rugarch`.
+
+**From a spec.** The paths start at the unconditional state (as `ugarchpath`): σ̄² from ω + c₁ (c₁ with the first
+row of the future `vxreg`) over 1 − P (eGARCH in log σ², apARCH and fGARCH in σ^δ, csGARCH with q̄ = (ω + c₁)/(1 − ρ)),
+deviations 0 (the mean at its level) and presample residuals σ̄ z drawn from each path's own stream.
+`SimulateSpec.StationaryInExpectation` checks that the mean over paths stays at that level at every step (5 SE), for
+sGARCH, gjrGARCH, eGARCH, apARCH, csGARCH and an ARMA mean. A spec with a free parameter, variance targeting, iGARCH
+(no unconditional variance), parameters outside their domain or persistence ≥ 1 is refused, with the reason in
+`ve_last_error`.
+
 ## Numerical settings
 
 ### `rugarch`: Hessian step (`hess.d = 1e-3`)
