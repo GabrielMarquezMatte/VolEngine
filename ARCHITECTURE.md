@@ -19,6 +19,8 @@ them, those models fitted in batches behind a C API and a Python package.
                  |
         src/capi   handles, error boundary
                  |
+        src/diagnostics   weighted portmanteau, sign bias, Pearson GOF
+                 |
         src/sim    simulated paths: Philox, samplers, start states
                  |
         src/forecast   forecast of a fit, h steps ahead
@@ -43,6 +45,10 @@ backcast with mean regressors) and `fit` (the standard errors) use it. Nothing i
 internal and may change in any release; only the header is a contract, and the Python package is a consumer of it
 like any other wrapper would be.
 
+Diagnostics form a separate branch, `fit` <- `diagnostics` <- `capi`: residual tests consume arrays and use
+`dist` for CDFs and `linalg` for regression. The Nyblom computation lives in `fit`, where the final score matrix
+already exists; only its individual and joint statistics survive that evaluation.
+
 ## Where each responsibility lives
 
 | Path | Responsibility |
@@ -53,6 +59,7 @@ like any other wrapper would be.
 | `src/capi/context_api.cpp`, `spec_api.cpp`, `panel_api.cpp`, `batch_api.cpp`, `version_api.cpp` | The `extern "C"` functions, one file per handle family |
 | `src/capi/results/fit_api.cpp`, `forecast_api.cpp`, `sim_api.cpp` | The `extern "C"` functions over results: the accessors of `ve_fit`, `ve_forecast`, and `ve_sim_options` / `ve_simulate_*` / `ve_sim` |
 | `src/capi/results/regressor_rows.*` | The checks and copies of the regressors of a horizon, shared by the forecast and the simulation |
+| `src/capi/results/diagnostics_api.cpp` | Diagnostic argument checks and caller-owned result arrays over immutable fits |
 | `src/core/context.hpp`, `context.cpp` | `ve::Context`: the thread pool and thread count |
 | `src/core/spec.hpp` | `ve::Spec` (model, order, distribution, mean, fixed and start values, variance targeting) and `ve::FitConfig` (iterations, tolerance, variance initialization): copyable values |
 | `src/core/panel.hpp` | `ve::PanelView`: a borrowed pointer, T, N, element strides and optional per-series start and length |
@@ -66,8 +73,10 @@ like any other wrapper would be.
 | `src/garch/power_garch.hpp` | The recursion in sigma^power shared by apARCH and the eight fGARCH submodels |
 | `src/dist/densities.hpp` | `Density<T>`, a `std::variant` of the log-density families, and `make_density`, `log_density`, `density_kink`: the one entry point the likelihood uses |
 | `src/dist/symmetric.hpp`, `skewed.hpp`, `hyperbolic.hpp`, `johnson.hpp` | The families of the variant: norm, std and ged; sstd and sged (Fernandez-Steel); nig and ghyp; jsu. Templates over the scalar type |
-| `src/dist/bessel.hpp`, `bessel.cpp` | `log_bessel_k` and its derivatives. Boost.Math is included only in `bessel.cpp`, so no other file sees it |
+| `src/dist/bessel.hpp`, `bessel.cpp` | `log_bessel_k` and its derivatives, using Boost.Math |
 | `src/dist/moments.hpp`, `moments.cpp` | Expected absolute shock, P(z < 0) and the fGARCH news moments (Gauss-Legendre quadrature for the shifted and the asymmetric ones) |
+| `src/dist/cdf.*` | Standardized CDFs of all eight distributions; sorted accumulation of density quadrature for nig and ghyp |
+| `src/diagnostics/` | Upper probability tails, weighted Ljung-Box and ARCH-LM, sign-bias regression and adjusted Pearson GOF |
 | `src/model/data.hpp` | `Data`: the series and its row-major regressor matrices (mean and variance) |
 | `src/model/layout.hpp`, `layout.cpp` | `Layout`: parameter blocks (gamma, eta1, eta2, power), offsets, count, `ParameterKind` of each parameter, rugarch names of a `Spec`, and the role of each parameter (estimated, fixed or derived; `estimated_count`) |
 | `src/model/likelihood.hpp`, `likelihood.cpp` | `loglik<T>`: the log-likelihood (under variance targeting it computes omega from the current residuals, so the AD carries the dependence) with its per-observation terms, residuals and variances, and the backcast (from the least squares of r on the mean regressors, when there are any); dispatches by model to the recursion; instantiated for `double` and `Dual<8>`, `Dual<16>`, `Dual<32>`, `Dual<59>` |
@@ -76,9 +85,10 @@ like any other wrapper would be.
 | `src/optim/lbfgs.hpp` (+ `curvature_memory.hpp`, `line_search.hpp`, `vector_math.hpp`) | L-BFGS minimizer, a template over the objective |
 | `src/fit/fit.hpp`, `fit.cpp` | `fit_one`: one series, one spec; with no estimated parameter it evaluates the model at the fixed point and skips the optimizer |
 | `src/fit/standard_errors.*` | Hessian and robust standard errors; Cholesky solves, no explicit inverse |
+| `src/fit/nyblom.*` | Individual and joint score-stability statistics, excluding fixed and derived parameters; Hansen critical values |
 | `src/fit/criteria.*` | Log-likelihood, AIC, BIC, HQIC, SIC |
 | `src/fit/batch.hpp`, `batch.cpp` | `check_batch` and `run_batch`: jobs on the thread pool |
-| `src/fit/fit_result.hpp` | `ve::FitResult`: status, estimates, standard errors, series and the forecast state, all by value |
+| `src/fit/fit_result.hpp` | `ve::FitResult`: status, estimates, standard errors, series, forecast state and Nyblom statistics, all by value |
 | `src/forecast/state.hpp` | `ForecastState`: the last max(m, n, p, q) residuals, variances, csGARCH trends and mean deviations of a fit (every deviation with ARFIMA), filled by the final evaluation of `fit_one` through the `deviations` and `permanent` outputs of `loglik` |
 | `src/forecast/forecast.hpp`, `forecast.cpp` | `forecast`: the mean (ARMA, regressors, `archm`, `rugarch`'s ARFIMA rule) over the variance forecast |
 | `src/forecast/variance_forecast.*`, `inputs.hpp` | The variance forecast of each family, in sigma2, log sigma2 or sigma^delta, with future shocks at their expectation; csGARCH by `rugarch`'s closed form from h = 2. The shock moments (pi, E\|z\|, kappa) are computed once per call (`moments_of`) |
@@ -89,6 +99,7 @@ like any other wrapper would be.
 | `src/sim/simulate.*` | `simulate`: each path repeats `first_step` with a drawn shock; the paths are split among the threads of the context |
 | `python/src/volengine/_native.py` | Library discovery (`VOLENGINE_LIB`), ABI check, prototypes, handle ownership |
 | `python/src/volengine/_spec.py`, `_fit.py`, `api.py` | `Spec` and `FitOptions`, `Fit` and the criteria, `Context.fit` |
+| `python/src/volengine/_diagnostics.py` | `TestResult`, `SignBias`, `Nyblom` and native diagnostic result readers |
 | `tests/unit/{ad,capi,dist,fit,garch,mean,model,optim}` | GoogleTest suites mirroring `src/`; `c_header_check.c` compiles the header as C11 |
 | `tests/style/check_style.py` | Style rules that can be checked without a compiler; runs as the `style` ctest |
 | `python/benchmarks/bench_vs_arch.py` | Timing against `arch` on matched work; writes `docs/performance/python-vs-arch.md` |

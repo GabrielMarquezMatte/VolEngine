@@ -1,4 +1,7 @@
 #include "dist/bessel.hpp"
+#include "diagnostics/gof.hpp"
+#include "diagnostics/portmanteau.hpp"
+#include "diagnostics/sign_bias.hpp"
 #include "fit/fit.hpp"
 #include "forecast/forecast.hpp"
 #include "model/layout.hpp"
@@ -1076,6 +1079,67 @@ void register_simulations()
     }
 }
 
+ve::diagnostics::TestResult diagnostic_of(const ve::FitResult& fit, const std::string& test)
+{
+    if (test == "ljung_box")
+    {
+        return ve::diagnostics::weighted_ljung_box(fit.std_residuals, 5, 0, false);
+    }
+    if (test == "arch_lm")
+    {
+        return ve::diagnostics::weighted_arch_lm(fit.residuals, fit.sigma, 5, 2);
+    }
+    if (test == "sign_bias")
+    {
+        return ve::diagnostics::sign_bias(fit.std_residuals, fit.residuals).joint;
+    }
+    const ve::model::Layout layout = ve::model::layout_of(fit.spec);
+    const auto parameters = ve::model::shape_parameters_of<double>(fit.estimate, layout);
+    return ve::diagnostics::pearson_gof(fit.std_residuals, fit.spec.dist, parameters, 50);
+}
+
+void run_diagnostic(benchmark::State& state, const NamedSpec& named, const std::string& test)
+{
+    const ve::FitResult fit = ve::fit_one(series_of(named), named.spec, ve::FitConfig{});
+    if (fit.std_residuals.empty())
+    {
+        state.SkipWithError("the fit has no finite point to diagnose");
+        return;
+    }
+    const auto reference = diagnostic_of(fit, test);
+    if (!std::isfinite(reference.statistic) || !std::isfinite(reference.p_value))
+    {
+        state.SkipWithError("the diagnostic is not finite");
+        return;
+    }
+    for (auto _ : state)
+    {
+        auto result = diagnostic_of(fit, test);
+        benchmark::DoNotOptimize(result.statistic);
+        benchmark::DoNotOptimize(result.p_value);
+    }
+}
+
+void register_diagnostics()
+{
+    for (const NamedSpec& named : named_specs())
+    {
+        if (named.name == "s11_norm")
+        {
+            for (const std::string test : {"ljung_box", "arch_lm", "sign_bias", "gof"})
+            {
+                benchmark::RegisterBenchmark("BM_Diagnostics/" + named.name + "/" + test,
+                                             run_diagnostic, named, test);
+            }
+        }
+        if (named.name == "sgarch11_ghyp")
+        {
+            benchmark::RegisterBenchmark("BM_Diagnostics/" + named.name + "/gof", run_diagnostic,
+                                         named, std::string("gof"));
+        }
+    }
+}
+
 void register_all()
 {
     for (const NamedSpec& named : named_specs())
@@ -1097,6 +1161,7 @@ void register_all()
     benchmark::RegisterBenchmark("BM_FitOne/arfima_sgarch11_norm", run_arfima_fit_one)->Unit(benchmark::kMillisecond);
     register_forecasts();
     register_simulations();
+    register_diagnostics();
     static const std::vector<ve::Spec> single{named_specs().front().spec};
     for (const int threads : {1, 2, 4, 8, 0})
     {

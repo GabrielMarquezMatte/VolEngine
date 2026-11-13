@@ -14,7 +14,8 @@ Student-t (`std`) or GED (`ged`) innovations, or the skewed ones: skewed Student
 normal inverse Gaussian (`nig`), generalized hyperbolic (`ghyp`) and Johnson SU (`jsu`), with Hessian and robust
 standard errors and the usual information criteria. Any estimated parameter can be fixed or given a start value
 (the derived ones cannot), the variance can be targeted, and the mean and the variance take external regressors
-(`mxreg`, `vxreg`), ARCH-in-mean (`archm`) and an ARFIMA mean (`arfima`), as in `rugarch`, forecasts from a fit and simulated paths. More features come in
+(`mxreg`, `vxreg`), ARCH-in-mean (`archm`) and an ARFIMA mean (`arfima`), as in `rugarch`, forecasts from a fit,
+simulated paths and the diagnostics reported by `rugarch`'s `show()`. More features come in
 later releases.
 Until 1.0 the C ABI may change between releases. See [CHANGELOG.md](CHANGELOG.md).
 
@@ -131,6 +132,25 @@ np.percentile(cumulative, [5, 50, 95])
 ```
 
 How the samplers and the paths are checked is in [docs/guide/validation.md](docs/guide/validation.md#simulation).
+
+Diagnostics are functions on a fit, returning statistics and p-values; Nyblom returns individual and joint
+stability statistics with Hansen's critical values at 10%, 5% and 1%:
+
+```python
+f = ctx.fit(ve.Spec(arma=(1, 1)), returns)
+print(f.ljung_box(1))                  # weighted Ljung-Box of standardized residuals
+print(f.ljung_box(5, fitdf=2))          # ARMA(1,1): two fitted mean coefficients
+print(f.ljung_box(5, squared=True))    # squared standardized residuals; fitdf is forced to zero
+print(f.arch_lm(3, fitdf=2))           # weighted ARCH-LM; p+q = 2
+print(f.nyblom())
+print(f.sign_bias())                  # sign, negative, positive and joint
+print(f.gof(20))                      # adjusted Pearson goodness of fit
+```
+
+For mean order sum d = m+n, `show()` uses residual Ljung-Box lags 1 (fitdf 0), max(2, 3d-1) and max(5, 5d-1)
+(fitdf d). For squares, d = p+q gives the same lags with fitdf 0. ARCH-LM uses fitdf = p+q and lags fitdf+1,
+fitdf+3 and fitdf+5. Pearson uses 20, 30, 40 and 50 groups. The formulas and conventions are in
+[docs/guide/validation.md](docs/guide/validation.md#rugarch-diagnostics).
 
 `ctx.fit` also takes a `(T, N)` array (one fit per column), a list of specs, `starts` and `lengths` for series of
 different lengths, and `options=ve.FitOptions(var_init="backcast")` for the `arch` convention.

@@ -23,6 +23,13 @@ library whose ABI version differs).
 
 ### Added
 
+- Diagnostics reported by `rugarch`'s `show()`: weighted Ljung-Box on standardized residuals or their squares,
+  weighted ARCH-LM, Nyblom stability with individual and joint critical values, Engle-Ng sign bias and adjusted
+  Pearson goodness of fit for all eight distributions. C API: `ve_fit_ljung_box`, `ve_fit_arch_lm`,
+  `ve_fit_nyblom`, `ve_nyblom_critical`, `ve_fit_sign_bias`, `ve_fit_gof`. Python: `Fit.ljung_box`, `Fit.arch_lm`,
+  `Fit.nyblom`, `Fit.sign_bias`, `Fit.gof` and the `TestResult`, `SignBias`, `Nyblom` result types.
+  Fits retain only the Nyblom statistics, using the scores already computed for standard errors.
+  Benchmarks: `BM_Diagnostics/<series>/<test>`.
 - Forecast: sigma and the conditional mean h = 1..H steps after the last observation of a fit, for every model,
   distribution and option, as `rugarch`'s `ugarchforecast` (`n.roll = 0`), regressors over the horizon included.
   C API: `ve_forecast_create`, `ve_forecast_horizon`, `ve_forecast_sigma`, `ve_forecast_mean`, `ve_forecast_free`.
