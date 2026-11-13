@@ -124,6 +124,7 @@ if(VE_BUILD_TESTS)
         tests/unit/fit/criteria_test.cpp
         tests/unit/fit/fit_test.cpp
         tests/unit/fit/standard_errors_test.cpp
+        tests/unit/forecast/state_test.cpp
         tests/unit/garch/csgarch_test.cpp
         tests/unit/garch/egarch_test.cpp
         tests/unit/garch/gjrgarch_test.cpp

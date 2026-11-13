@@ -4,6 +4,7 @@
 #include "model/likelihood_terms.hpp"
 #include "model/parameter_map.hpp"
 
+#include "garch/csgarch.hpp"
 #include "model/start_values.hpp"
 #include "simulated_garch.hpp"
 
@@ -1142,6 +1143,69 @@ TEST(Likelihood, ArchInMeanNonPositiveVarianceIsInvalid)
     double ll = 0.0;
     EXPECT_NO_THROW(ll = loglik<double>(ve::model::Data{r, {}, {v, 1}}, theta, layout, VarInit::Sample, {}));
     EXPECT_EQ(ll, -std::numeric_limits<double>::infinity());
+}
+
+// The forecast state: the deviations d the ARMA acts on and the csGARCH trend q, written only when asked for.
+TEST(Likelihood, OutputsDeviationsAndPermanent)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(7, 8);
+    std::vector<double> x = regressor_columns(r.size(), 1);
+    Layout layout = ve::model::layout_of({.model = Model::CsGarch, .ar = 1, .dist = Dist::Norm, .mxreg = 1});
+    std::vector<double> theta(layout.count());
+    theta[layout.mu()] = 0.04;
+    theta[layout.ar_begin()] = 0.3;
+    theta[layout.mxreg_begin()] = 0.2;
+    theta[layout.omega()] = 0.02;
+    theta[layout.alpha_begin()] = 0.08;
+    theta[layout.beta_begin()] = 0.85;
+    theta[layout.eta1_begin()] = 0.95;
+    theta[layout.eta2_begin()] = 0.03;
+    ve::model::Data data{r, {x, 1}};
+    std::vector<double> residuals(r.size());
+    std::vector<double> sigma2(r.size());
+    std::vector<double> deviations(r.size());
+    std::vector<double> permanent(r.size());
+    double plain = loglik<double>(data, theta, layout, VarInit::Sample, {});
+    double ll = loglik<double>(data, theta, layout, VarInit::Sample,
+                               {.residuals = residuals, .sigma2 = sigma2, .deviations = deviations,
+                                .permanent = permanent});
+    ASSERT_TRUE(std::isfinite(ll));
+    EXPECT_EQ(ll, plain);
+    for (std::size_t t = 0; t < r.size(); ++t)
+    {
+        EXPECT_EQ(deviations[t], r[t] - 0.04 - 0.2 * x[t]) << "t = " << t;
+    }
+    std::vector<double> squares(r.size());
+    std::ranges::transform(residuals, squares.begin(), [](double e) { return e * e; });
+    std::vector<double> alone_sigma2(r.size());
+    std::vector<double> alone_permanent(r.size());
+    std::vector<double> alpha{0.08};
+    std::vector<double> beta{0.85};
+    ve::garch::csgarch_variance<double>(squares, {0.02, alpha, beta, 0.95, 0.03}, {mean_square_of(residuals), 1},
+                                        alone_sigma2, alone_permanent);
+    EXPECT_EQ(permanent, alone_permanent);
+    EXPECT_EQ(sigma2, alone_sigma2);
+}
+
+TEST(Likelihood, ArchmDeviationsIncludeArchmTerm)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(42, 50);
+    Layout layout = ve::model::layout_of({.model = Model::GjrGarch, .dist = Dist::Norm, .archm = 1});
+    std::vector<double> theta(layout.count());
+    theta[layout.mu()] = 0.04;
+    theta[layout.archm_index()] = 0.1;
+    theta[layout.omega()] = 0.02;
+    theta[layout.alpha_begin()] = 0.05;
+    theta[layout.beta_begin()] = 0.85;
+    theta[layout.gamma_begin()] = 0.06;
+    std::vector<double> sigma2(r.size());
+    std::vector<double> deviations(r.size());
+    double ll = loglik<double>(r, theta, layout, VarInit::Sample, {.sigma2 = sigma2, .deviations = deviations});
+    ASSERT_TRUE(std::isfinite(ll));
+    for (std::size_t t = 0; t < r.size(); ++t)
+    {
+        EXPECT_NEAR(deviations[t], r[t] - 0.04 - 0.1 * std::sqrt(sigma2[t]), 1e-15) << "t = " << t;
+    }
 }
 
 // y_t = sum_{k=0}^{t} pi_k e_{t-k}, pi_0 = 1, pi_k = pi_{k-1} (k - 1 - d) / k.

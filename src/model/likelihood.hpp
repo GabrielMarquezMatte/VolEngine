@@ -10,13 +10,17 @@
 namespace ve::model
 {
 
-// Each span is either empty (not computed) or has the size of the series.
+// Each span is either empty (not computed) or has the size of the series. deviations: d_t, the series the ARMA
+// acts on (r_t - mu - sum_k delta_k x_t,k, less the ARCH-in-mean term); permanent: the csGARCH trend q_t, left
+// untouched by the other models.
 template <class T>
 struct LoglikOutputs
 {
     std::span<T> terms{};
     std::span<T> residuals{};
     std::span<T> sigma2{};
+    std::span<T> deviations{};
+    std::span<T> permanent{};
 };
 
 // theta is in natural space, in Layout order; data.mean has layout.mxreg columns and data.variance layout.vxreg.
