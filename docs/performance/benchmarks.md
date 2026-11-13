@@ -14,9 +14,9 @@ this library. No other library is measured, so no comparison with one is made.
 | Compiler | g++ 16.2.0 (MSYS2 UCRT64, Rev4), `-O3 -DNDEBUG -ffp-contract=off -std=c++23` (preset `gcc-bench`, Release) |
 | CMake | 4.4.2, Ninja |
 | Google Benchmark | v1.9.1 |
-| Date | 2026-11-11 |
-| Code commit | `af6deb8` (the commit benchmarked; the results were recorded in the commit after it) |
-| Repetitions | 5 for every benchmark, including `BM_TccGrid`; values are the median over repetitions, with the standard deviation |
+| Date | 2026-11-13 |
+| Code commit | `d4b3fae` (the commit benchmarked; the results were recorded in a later commit) |
+| Repetitions | 5 for every benchmark in the tables; values are the median over repetitions, with the standard deviation |
 
 Reproduce:
 
@@ -27,142 +27,159 @@ build/gcc-bench/volengine_benchmarks --benchmark_out=build/gcc-bench/bench.json 
 ```
 
 The run was not isolated: a normal desktop session, no pinned cores and no fixed frequency. The standard
-deviations in the tables are the measured spread over the 5 repetitions: under 5% of the median for nearly every
-benchmark, 12% for the `arma11_s11_ged` `Dual` evaluation. Differences smaller than that spread are not results. Runs on
-different days on this machine moved some medians by more than the spread (for example `s21_std` `double`), so
-re-measure before and after a change instead of comparing against this table.
+deviations in the tables are the measured spread over the 5 repetitions:
+- under 5% of the median for nearly every benchmark;
+- 14% for the `Dual` evaluations of `arma22_s33_std` and `arx_sgarch11_norm`;
+- 7% for the `double` evaluation of `s21_std`.
 
-## Plan 2b cases: not measured yet
+Differences smaller than that spread are not results. Runs on different days on this machine moved some medians by
+more than the spread. Re-measure before and after a change instead of comparing against these tables, or against the
+plan 2a numbers (`af6deb8`, 2026-11-11) that this page showed before.
 
-The GARCH variants have their own cases in `tests/benchmarks/fit_benchmarks.cpp`: `BM_Loglik/<spec>/{double,dual}`
-and `BM_FitOne/<spec>` for `egarch11_std`, `gjrgarch11_norm`, `aparch11_ged`, `igarch11_norm`, `csgarch11_std`,
-`fgarch_tgarch11_norm` and `fgarch_allgarch11_norm` (T = 5000), and `BM_TccGridAllModels/threads:hw`, the TCC grid
-over the 14 models (15120 fits in one `ve_fit_batch` call). None of them appears in the tables below: they have
-not been run on the machine of this page yet, so this page publishes no number for them. The same run is to
-record the profile of `BM_TccGridAllModels` and `BM_FitOne/fgarch_allgarch11_norm` and the assembly of the new
-recursions here. The tables below are those of plan 2a and describe sGARCH only.
+## Not measured
 
-## Plan 2c cases: not measured yet
+The run was stopped before its last cases. Not measured:
+- `BM_TccGridAllModels/threads:hw`: the TCC grid over the 14 models, 15120 fits.
+- `BM_TccGridFull/threads:hw`: 14 models × orders × ARMA × the 8 distributions, 40320 fits.
+- `BM_LogBesselK/{fixed_order,free_order}`.
 
-The skewed distributions have their own cases: `BM_Loglik/<series>/{double,dual}` and `BM_FitOne/<series>` for
-`gjrgarch11_sstd`, `aparch11_sged`, `egarch11_jsu`, `sgarch11_nig` and `sgarch11_ghyp` (T = 5000; the ghyp case
-fits the nig series, since the C++ helper does not simulate ghyp); `BM_LogBesselK/{fixed_order,free_order}`, the
-double-order overload at order -1 (nig) and the two-`Dual` overload at the ghyp order 1/2, over 5000 arguments
-alpha * sqrt(delta^2 + (z - mu)^2) of the nig series at its true parameters, with z standardised by the sample
-moments; and `BM_TccGridFull/threads:hw`, the TCC panel over 14 models, orders (1..3, 1..3), ARMA (0,0) and (1,1)
-and the 8 distributions: 40320 fits in one `ve_fit_batch` call. None of them has been run on the machine of this
-page, so this page publishes no number for them. The run is also to record the profile of `BM_TccGridFull` and of
-`BM_FitOne` for nig and ghyp, to decide whether a Bessel K of our own or an analytic derivative in the ghyp
-lambda is worth it. The tables below are those of plan 2a and describe sGARCH only.
+With 5 repetitions the two grids take hours on this machine, so the author decided to leave them out. This page
+publishes no number for them.
 
-## Plan 2f case: not measured yet
+Also not done:
+- The profiles that plans 2b and 2c asked for: `BM_TccGridAllModels`, `BM_TccGridFull`, and `BM_FitOne` for
+  `fgarch_allgarch11_norm`, nig and ghyp.
+- The assembly of the step-form recursions.
+- Settling the before/after effect of plan 2e's step form on the existing cases. This run measures the code after
+  the step form, and no A/B run was made.
 
-ARFIMA is `BM_Loglik/arfima_sgarch11_norm/{double,dual}` and `BM_FitOne/arfima_sgarch11_norm` (T = 5000), on the
-`arfima_sgarch11_norm` process of `tests/unit/simulated_garch.hpp` at its parameters. The fractional difference is a
-direct O(T^2) sum (marked `ponytail:` in `src/mean/fractional.hpp`, with an FFT convolution as the way out), so at
-T = 5000 it dominates the evaluation. The case was only built and run briefly on the plan's machine, to check that it
-runs; the measurement is left to the benchmark machine, and this page publishes no number for it.
-
-## Plan 2e cases: not measured yet
-
-The regressor and ARCH-in-mean cases are `BM_Loglik/<series>/{double,dual}` and `BM_FitOne/<series>` (T = 5000) for
-`arx_sgarch11_norm` (AR(1) with 2 mean regressors, sGARCH), `sgarch11_vx_std` (1 variance regressor, sGARCH, std),
-`archm_gjrgarch11_norm` (`archm` with the standard deviation, gjrGARCH) and `archm2_egarch11_std` (`archm` with the
-variance, eGARCH, std), each on the series of the oracle suite simulated by `tests/unit/simulated_garch.hpp`, at the
-parameters of the process. None has been run on the machine of this page, so this page publishes no number for them.
-The `archm` cases use the joint loop of the variance and the mean, which the sequential cases do not.
-
-### Effect on the existing cases (task 4 of plan 2e)
-
-The variance recursions were rewritten in step form for the joint loop. Compared before and after, interleaved A/B
-runs of the existing `BM_Loglik` cases on a noisy machine: on this (noisy) machine, the non-archm path stayed within
-about 5-7% of before. The minimum-time ratios (after over before) ranged from 0.87 to 1.07 with no systematic
-direction, but `s11_norm/dual` and `gjrgarch11_norm/dual` hinted at about 5% for `Dual`. Sub-5% resolution needs the
-benchmark machine; re-run the existing cases there before and after to settle it. No table is given: the machine was
-shared and each series of runs moved more than that.
-
-## Plan 2d: no new benchmark
-
-Fixed parameters, start values and variance targeting add branches only when the `Layout` has fixed or start
-values or variance targeting; a spec without them takes the same path and the same arithmetic as in plan 2c, which
-the existing `BM_*` cases measure. No benchmark was created for plan 2d and none was run.
+Plan 2d added no benchmark. Fixed parameters, start values and variance targeting add branches only when the `Layout`
+has them, and a spec without them takes the path of plan 2c.
 
 ## Cost of the log-likelihood and of its gradient by AD
 
-`BM_Loglik/<spec>/double` is one evaluation of `loglik<double>`, `BM_Loglik/<spec>/dual` one of `loglik<Dual<N>>`
-(N = 8 up to 8 parameters, 16 up to 16), both for T = 5000 observations. The `dual` evaluation returns the value and the
-full gradient. The ratio is between two measurements from this run.
+`BM_Loglik/<series>/double` is one evaluation of `loglik<double>`, `BM_Loglik/<series>/dual` one of
+`loglik<Dual<N>>`, with N = 8 up to 8 parameters and 16 up to 16. Both use T = 5000 observations, at the parameters of
+the process that simulated the series. The `dual` evaluation returns the value and the full gradient. The ratio is
+between two measurements from this run.
 
-| Spec | Parameters | `double` (us) | sd | `Dual<N>` (us) | sd | Dual / double |
+| Series | Parameters | `double` (us) | sd | `Dual<N>` (us) | sd | Dual / double |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `s11_norm` | 4 | 51.0 | 1.6 | 177.2 | 2.0 | 3.5 |
-| `s21_std` | 6 | 119.3 | 1.9 | 264.1 | 7.1 | 2.2 |
-| `arma11_s11_ged` | 7 | 175.7 | 4.7 | 459.8 | 55.2 | 2.6 |
-| `arma22_s33_std` | 13 | 172.5 | 0.6 | 1013.0 | 8.2 | 5.9 |
+| `s11_norm` | 4 | 49.8 | 0.4 | 151.5 | 1.2 | 3.0 |
+| `s21_std` | 6 | 105.3 | 7.8 | 288.9 | 7.7 | 2.7 |
+| `arma11_s11_ged` | 7 | 174.4 | 3.7 | 436.5 | 15.4 | 2.5 |
+| `arma22_s33_std` | 13 | 156.3 | 2.6 | 755.6 | 107.5 | 4.8 |
+| `egarch11_std` | 6 | 182.2 | 4.4 | 391.5 | 29.1 | 2.1 |
+| `gjrgarch11_norm` | 5 | 49.4 | 0.1 | 169.6 | 0.5 | 3.4 |
+| `aparch11_ged` | 7 | 416.0 | 8.7 | 1025.9 | 50.5 | 2.5 |
+| `igarch11_norm` | 4 | 49.7 | 0.1 | 151.6 | 1.0 | 3.0 |
+| `csgarch11_std` | 7 | 114.9 | 1.5 | 384.7 | 1.9 | 3.3 |
+| `fgarch_tgarch11_norm` | 5 | 88.2 | 0.8 | 356.1 | 1.5 | 4.0 |
+| `fgarch_allgarch11_norm` | 7 | 628.2 | 2.2 | 1207.2 | 5.2 | 1.9 |
+| `gjrgarch11_sstd` | 7 | 160.3 | 0.7 | 359.1 | 0.7 | 2.2 |
+| `aparch11_sged` | 8 | 452.4 | 2.2 | 1104.7 | 10.3 | 2.4 |
+| `egarch11_jsu` | 7 | 314.4 | 5.4 | 566.6 | 3.1 | 1.8 |
+| `sgarch11_nig` | 6 | 585.5 | 1.5 | 2248.9 | 10.0 | 3.8 |
+| `sgarch11_ghyp` | 7 | 591.2 | 4.5 | 22585.9 | 199.3 | 38.2 |
+| `arx_sgarch11_norm` | 7 | 66.4 | 1.5 | 210.1 | 46.2 | 3.2 |
+| `sgarch11_vx_std` | 6 | 104.6 | 2.0 | 280.8 | 1.1 | 2.7 |
+| `archm_gjrgarch11_norm` | 6 | 124.7 | 0.8 | 607.8 | 6.8 | 4.9 |
+| `archm2_egarch11_std` | 7 | 190.9 | 1.1 | 778.3 | 20.5 | 4.1 |
+| `arfima_sgarch11_norm` | 5 | 2632.5 | 6.3 | 8006.8 | 25.2 | 3.0 |
+
+- **ghyp:** the gradient costs 38 `double` evaluations. Its Bessel K takes the order lambda as a `Dual`, which the
+  other distributions do not need (nig fixes the order at −1). Plan 2c named this case for a Bessel K of our own or an
+  analytic derivative in lambda (plan 5).
+- **`archm`:** these cases run the joint loop of the variance and the mean, which keeps the steps from being
+  vectorised over t. Their `Dual` costs about 5 `double` evaluations, against 2 or 3 for the sequential cases.
+- **ARFIMA:** almost all of the 2.6 ms of a `double` evaluation at T = 5000 is the O(T²) fractional difference in
+  `src/mean/fractional.hpp`, marked `ponytail:` with the FFT as the way out. Its gradient costs 3 evaluations because
+  only d and the residual lanes that move get a convolution of their own.
 
 ## Single fits
 
-`BM_FitOne/<spec>`: `ve::fit_one` on one series of T = 5000, default `FitConfig`, without the C layer. Every series is
-simulated from a model with the structure of the spec (see below). All fits ended `CONVERGED` (the `converged` counter of `bench.json` is 1 and `max_iter` is 0 for the four specs).
+`BM_FitOne/<series>`: `ve::fit_one` on one series of T = 5000, default `FitConfig`, without the C layer. Every fit
+ended `CONVERGED` (the `converged` counter of `bench.json` is 1 and `max_iter` is 0), except `arma22_s33_std`. That fit
+ended `MAX_ITER` in this run, while at `af6deb8` it ended `CONVERGED`.
 
-| Spec | Median (ms) | sd (ms) | Fits per second |
+| Series | Median (ms) | sd (ms) | Fits per second |
 | --- | ---: | ---: | ---: |
-| `s11_norm` | 5.88 | 0.09 | 170.7 |
-| `s21_std` | 15.19 | 0.04 | 65.3 |
-| `arma11_s11_ged` | 22.03 | 0.04 | 45.5 |
-| `arma22_s33_std` | 353.73 | 13.80 | 2.8 |
+| `s11_norm` | 4.69 | 0.29 | 211.9 |
+| `s21_std` | 16.4 | 0.50 | 61.0 |
+| `arma11_s11_ged` | 21.8 | 1.29 | 46.3 |
+| `arma22_s33_std` (`MAX_ITER`) | 377 | 6.5 | 2.7 |
+| `egarch11_std` | 17.6 | 0.16 | 57.0 |
+| `gjrgarch11_norm` | 5.76 | 0.05 | 174.8 |
+| `aparch11_ged` | 63.0 | 0.28 | 16.0 |
+| `igarch11_norm` | 3.55 | 0.15 | 283.6 |
+| `csgarch11_std` | 30.8 | 0.07 | 32.7 |
+| `fgarch_tgarch11_norm` | 13.0 | 0.06 | 78.0 |
+| `fgarch_allgarch11_norm` | 83.9 | 0.09 | 12.1 |
+| `gjrgarch11_sstd` | 22.2 | 0.14 | 44.5 |
+| `aparch11_sged` | 87.4 | 0.58 | 11.5 |
+| `egarch11_jsu` | 40.5 | 0.45 | 24.7 |
+| `sgarch11_nig` | 103 | 2.95 | 9.7 |
+| `sgarch11_ghyp` | 2248 | 21.3 | 0.44 |
+| `arx_sgarch11_norm` | 9.53 | 0.22 | 104.3 |
+| `sgarch11_vx_std` | 29.2 | 0.74 | 34.1 |
+| `archm_gjrgarch11_norm` | 12.5 | 0.08 | 79.6 |
+| `archm2_egarch11_std` | 36.5 | 0.95 | 27.6 |
+| `arfima_sgarch11_norm` | 224 | 0.93 | 4.5 |
+
+The ghyp case fits the nig series, since the C++ helper does not simulate ghyp.
 
 ## Batch scaling
 
-`BM_Batch/threads:N`: one `ve_fit_batch` call with 20 series of T = 5000 and one spec (`s11_norm`), through the C API,
-on a context with N threads (`hw` is `ve_context_set_threads(ctx, 0)`, that is 16 here). Time is wall-clock time. All
-20 fits ended `CONVERGED` in every repetition. The speedup column is the single-thread time over the row's time, both
-from this run.
+`BM_Batch/threads:N` is one `ve_fit_batch` call with 20 series of T = 5000 and one spec (`s11_norm`), through the C API.
+It runs on a context with N threads; `hw` is `ve_context_set_threads(ctx, 0)`, which is 16 here. Time is wall-clock
+time. All 20 fits ended `CONVERGED` in every repetition. The speedup column is the single-thread time over the row's
+time, both from this run.
 
 | Threads | Median (ms) | sd (ms) | Fits per second | Speedup over 1 thread |
 | --- | ---: | ---: | ---: | ---: |
-| 1 | 109.8 | 0.8 | 182.2 | 1.0 |
-| 2 | 58.8 | 1.0 | 339.9 | 1.9 |
-| 4 | 32.4 | 0.9 | 616.8 | 3.4 |
-| 8 | 21.9 | 1.0 | 911.8 | 5.0 |
-| hw (16) | 20.1 | 0.8 | 993.8 | 5.5 |
+| 1 | 89.9 | 0.4 | 222.5 | 1.0 |
+| 2 | 47.4 | 1.4 | 421.8 | 1.9 |
+| 4 | 27.5 | 0.9 | 728.6 | 3.3 |
+| 8 | 20.5 | 0.3 | 974.4 | 4.4 |
+| hw (16) | 17.9 | 0.5 | 1117.4 | 5.0 |
 
 Only 20 jobs are available, so the tail of the batch limits the gain beyond 8 threads.
 
 ## TCC workload
 
-`BM_TccGrid/threads:N`: 20 series of T = 5000 and the grid {p, q in 1..3} x {ARMA(0,0), ARMA(1,1)} x {norm, std, ged}
-= 54 specs, 1080 fits in a single `ve_fit_batch` call. This is the reference for the spec goal of under 10 s on an
-8-core CPU, which belongs to plan 5; here it is only measured.
+`BM_TccGrid/threads:N` runs 20 series of T = 5000 against the grid {p, q in 1..3} × {ARMA(0,0), ARMA(1,1)} ×
+{norm, std, ged}. That is 54 specs and 1080 fits in a single `ve_fit_batch` call. It is the reference for the spec goal
+of under 10 s on an 8-core CPU. The goal belongs to plan 5; here it is only measured.
 
 | Threads | Median (s) | sd (s) | Fits per second | `CONVERGED` | `MAX_ITER` |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | 80.6 | 0.61 | 13.4 | 1072 | 8 |
-| hw (16) | 12.5 | 0.08 | 86.3 | 1072 | 8 |
+| 1 | 68.5 | 0.88 | 15.8 | 1073 | 7 |
+| hw (16) | 10.7 | 0.22 | 101.2 | 1073 | 7 |
 
-On this machine the 1080-fit grid takes 12.5 s with all 16 hardware threads, which is above the 10 s goal.
+On this machine the 1080-fit grid takes 10.7 s with all 16 hardware threads, which is above the 10 s goal.
 
 ## What the benchmarks fit
 
-- The series are simulated by `tests/benchmarks/simulated_panel.hpp`, which reuses the portable generators of the unit
-  tests (Mersenne Twister with Box-Muller, no `std::normal_distribution`), so every standard library produces the
-  same data.
-- `BM_Loglik` and `BM_FitOne` use, for each spec, a model with that structure: persistence 0.98 split evenly over the
-  ARCH and GARCH lags, ARMA terms of moderate size, and the spec's distribution (std with nu = 8, ged with nu = 1.5).
+- The series are simulated by `tests/benchmarks/simulated_panel.hpp` and `tests/unit/simulated_garch.hpp`. They reuse
+  the portable generators of the unit tests (Mersenne Twister with Box-Muller, no `std::normal_distribution`), so every
+  standard library produces the same data.
+- The plan 2a cases (`s11_norm`, `s21_std`, `arma11_s11_ged`, `arma22_s33_std`) each use a model with the spec's
+  structure: persistence 0.98 split evenly over the ARCH and GARCH lags, ARMA terms of moderate size, and the spec's
+  distribution (std with nu = 8, ged with nu = 1.5). The later cases use the processes of the oracle suite at their
+  own parameters.
 - `BM_Batch` uses sGARCH(1,1) with normal innovations. The TCC grid uses sGARCH(1,1) with Student-t (nu = 8)
-  innovations, like returns, for every spec of the grid. When these numbers were measured, about half of the `std`
-  fits of the grid ended `FAILED` with normal innovations (nu runs to infinity), which would have stopped the benchmark
-  at its check that every fit ends `CONVERGED` or `MAX_ITER`. That was a precision defect in the Student-t density at
-  large nu, since fixed (see [Validation](../guide/validation.md#volengine-student-t-near-the-normal-limit)); the grid
-  keeps Student-t innovations so that the numbers stay comparable.
+  innovations, like returns, for every spec of the grid.
+  - In plan 2a, about half of the `std` fits of the grid ended `FAILED` with normal innovations, because nu ran to
+    infinity. That would have stopped the benchmark at its check that every fit ends `CONVERGED` or `MAX_ITER`.
+  - The cause was a precision defect in the Student-t density at large nu, since fixed (see
+    [Validation](../guide/validation.md#volengine-student-t-near-the-normal-limit)).
+  - The grid keeps Student-t innovations so that the numbers stay comparable.
 - `s21` means sGARCH(2, 1): ARCH order 2, GARCH order 1.
 - The two evaluations of `BM_Loglik` are separate benchmarks (`/double` and `/dual`) so each has its own time.
-- Google Benchmark appends `/real_time` and `/iterations:1` to the names of the benchmarks that use wall-clock time;
+- Google Benchmark appends `/real_time` and `/iterations:1` to the names of the benchmarks that use wall-clock time.
   `BM_TccGrid` runs one iteration per repetition because one iteration is already seconds long.
 - Each benchmark skips with an error if a fit ends neither `CONVERGED` nor `MAX_ITER`, or if the grid yields no jobs.
 - "Fits per second" is the median over the repetitions of the benchmark's rate counter (fits divided by the elapsed
   time of the run), not 1 over the median time.
 - The `converged`, `max_iter` and `other` counters are the status counts of the last iteration; every iteration
   repeats the same fits. A non-zero `other` skips the benchmark with an error.
-- With the Student-t fix in place a normal-innovation run of the grid no longer ends `FAILED`; the grid still uses
-  Student-t innovations so that the numbers stay comparable with the earlier ones.
