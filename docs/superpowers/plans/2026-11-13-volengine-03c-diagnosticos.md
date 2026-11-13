@@ -490,3 +490,20 @@ não distinguiu desaceleração do ruído: 5,72 ms antes e 5,62 ms com Nyblom (m
 Os passos de implementação e validação acima estão concluídos; a sequência operacional
 foi adaptada ao trabalho paralelo, sem repetir artificialmente cada falha de compilação
 descrita no roteiro. Os commits seguem as sete unidades do plano.
+
+### Depois da execução — revisão final (2026-11-13)
+
+A seção acima descreve o estado antes de dois commits fora do plano:
+- `a170b73` resolveu os 6 erros do `mypy --strict`, e `mypy` ficou limpo;
+- `09a8066` usa `tol=1e-10` só no oráculo `sgarch11_vx_std/aparch11_vx_std`, por decisão do usuário (2026-11-13). O caso deixou de ser excluído, e a causa (o L-BFGS aceita um passo parado com gradiente abaixo de √tol) está em `validation.md`.
+
+A revisão final (Opus) não encontrou nada crítico. Entraram as correções abaixo, por decisão do usuário:
+- `ve_fit_nyblom` informa os parâmetros estimados, e o Python deixou de reconstruir as regras pela spec;
+- o sign bias com desenho colinear dá NaN;
+- a CDF do nig e do ghyp ficou contínua em ±1 e precisa em densidades com pico estreito;
+- o GOF do ghyp caiu de 352 para 29 ms;
+- o oráculo do Nyblom cobre os 108 casos;
+- a Boost só aparece em `.cpp`;
+- `TestResult` passou a se chamar `DiagnosticResult` no Python;
+- o texto sobre não finitos em `validation.md` ficou preciso.
+

@@ -73,7 +73,7 @@ already exists; only its individual and joint statistics survive that evaluation
 | `src/garch/power_garch.hpp` | The recursion in sigma^power shared by apARCH and the eight fGARCH submodels |
 | `src/dist/densities.hpp` | `Density<T>`, a `std::variant` of the log-density families, and `make_density`, `log_density`, `density_kink`: the one entry point the likelihood uses |
 | `src/dist/symmetric.hpp`, `skewed.hpp`, `hyperbolic.hpp`, `johnson.hpp` | The families of the variant: norm, std and ged; sstd and sged (Fernandez-Steel); nig and ghyp; jsu. Templates over the scalar type |
-| `src/dist/bessel.hpp`, `bessel.cpp` | `log_bessel_k` and its derivatives, using Boost.Math |
+| `src/dist/bessel.hpp`, `bessel.cpp` | `log_bessel_k` and its derivatives. Boost.Math is included only in `.cpp` files (`bessel.cpp`, `dist/cdf.cpp`, `diagnostics/tails.cpp`), so no header exposes it |
 | `src/dist/moments.hpp`, `moments.cpp` | Expected absolute shock, P(z < 0) and the fGARCH news moments (Gauss-Legendre quadrature for the shifted and the asymmetric ones) |
 | `src/dist/cdf.*` | Standardized CDFs of all eight distributions; sorted accumulation of density quadrature for nig and ghyp |
 | `src/diagnostics/` | Upper probability tails, weighted Ljung-Box and ARCH-LM, sign-bias regression and adjusted Pearson GOF |
@@ -99,7 +99,7 @@ already exists; only its individual and joint statistics survive that evaluation
 | `src/sim/simulate.*` | `simulate`: each path repeats `first_step` with a drawn shock; the paths are split among the threads of the context |
 | `python/src/volengine/_native.py` | Library discovery (`VOLENGINE_LIB`), ABI check, prototypes, handle ownership |
 | `python/src/volengine/_spec.py`, `_fit.py`, `api.py` | `Spec` and `FitOptions`, `Fit` and the criteria, `Context.fit` |
-| `python/src/volengine/_diagnostics.py` | `TestResult`, `SignBias`, `Nyblom` and native diagnostic result readers |
+| `python/src/volengine/_diagnostics.py` | `DiagnosticResult`, `SignBias`, `Nyblom` and native diagnostic result readers |
 | `tests/unit/{ad,capi,dist,fit,garch,mean,model,optim}` | GoogleTest suites mirroring `src/`; `c_header_check.c` compiles the header as C11 |
 | `tests/style/check_style.py` | Style rules that can be checked without a compiler; runs as the `style` ctest |
 | `python/benchmarks/bench_vs_arch.py` | Timing against `arch` on matched work; writes `docs/performance/python-vs-arch.md` |

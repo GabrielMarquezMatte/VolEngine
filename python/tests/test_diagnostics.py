@@ -15,7 +15,7 @@ def fit(ctx, series):
 ])
 def test_diagnostic_result_shape(fit, method, args, kwargs):
     result = getattr(fit, method)(*args, **kwargs)
-    assert isinstance(result, ve.TestResult)
+    assert isinstance(result, ve.DiagnosticResult)
     assert np.isfinite(result).all()
     assert 0 <= result.p_value <= 1
 

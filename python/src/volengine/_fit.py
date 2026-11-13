@@ -11,7 +11,7 @@ from typing import Any, NamedTuple, cast
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ._diagnostics import Nyblom, SignBias, TestResult, critical_values, read_test, size_argument
+from ._diagnostics import DiagnosticResult, Nyblom, SignBias, critical_values, read_test, size_argument
 from ._forecast import Forecast
 from ._native import (
     ELEMENT_BYTES,
@@ -123,7 +123,7 @@ class Fit:
     def _view(self, function: Callable[..., int]) -> NDArray[np.float64]:
         return native_view(self, function, self._handle.pointer)
 
-    def ljung_box(self, lag: int, *, squared: bool = False, fitdf: int = 0) -> TestResult:
+    def ljung_box(self, lag: int, *, squared: bool = False, fitdf: int = 0) -> DiagnosticResult:
         """Weighted Ljung-Box. show() uses lags 1, max(2, 3*d-1), max(5, 5*d-1).
 
         d is the ARMA order sum (residuals) or p+q (squares). fitdf is forced to zero for squares.
@@ -133,7 +133,7 @@ class Fit:
         fitdf = size_argument(fitdf, "fitdf")
         return read_test(lib.ve_fit_ljung_box, self._handle.pointer, int(squared), lag, fitdf)
 
-    def arch_lm(self, lag: int, *, fitdf: int) -> TestResult:
+    def arch_lm(self, lag: int, *, fitdf: int) -> DiagnosticResult:
         """Weighted ARCH-LM. show() uses fitdf=p+q and lags fitdf+1, fitdf+3, fitdf+5."""
         lag = size_argument(lag, "lag")
         fitdf = size_argument(fitdf, "fitdf")
@@ -155,10 +155,10 @@ class Fit:
         """Engle-Ng tests with lagged raw residuals, as in rugarch."""
         out = np.empty(8, dtype=np.float64)
         check(lib.ve_fit_sign_bias(self._handle.pointer, out.ctypes.data))
-        tests = [TestResult(float(out[i]), float(out[i + 1])) for i in range(0, 8, 2)]
+        tests = [DiagnosticResult(float(out[i]), float(out[i + 1])) for i in range(0, 8, 2)]
         return SignBias(*tests)
 
-    def gof(self, groups: int = 20) -> TestResult:
+    def gof(self, groups: int = 20) -> DiagnosticResult:
         """Adjusted Pearson goodness of fit, 2 <= groups <= nobs. show() uses 20, 30, 40 and 50 groups."""
         return read_test(lib.ve_fit_gof, self._handle.pointer, size_argument(groups, "groups"))
 

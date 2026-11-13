@@ -951,6 +951,14 @@ original checks. This is a stricter optimizer setting for this oracle comparison
 the library default and assertion tolerances are unchanged. The case no longer needs to
 be excluded from the Python test suite.
 
+Why the point at `1e-7`, `1e-8` and `1e-9` is the same: L-BFGS (`src/optim/lbfgs.hpp`) also reports
+`Converged` when a step is flat (the decrease is below `ftol`) or its line search finds no decrease, provided the
+largest gradient entry is below `sqrt(tol)` times max(1, |f|), not `tol`. On this ridge the line search stalls
+there, so tightening `tol` changes nothing until `sqrt(tol)` drops below that gradient, at `1e-10`. A user at the
+default `tol` therefore gets gamma1 = 0.00908 labelled converged, 1.4e-4 from `rugarch`'s point, at a
+log-likelihood 2.6e-6 lower. Revisiting that stall acceptance is a plan-5 (optimizer) item; which commit made
+this case start to fail (it passed when the plan-2e table was written) was not bisected.
+
 ### VolEngine: Student-t near the normal limit
 
 On data with normal innovations the std likelihood keeps rising as ν → ∞, and the fit stops wherever the
@@ -1221,7 +1229,8 @@ Evaluation case (every parameter fixed, `fix()`; `arch`'s criteria count every p
 coefficients stored in that fixture. Variance targeting is disabled for this evaluation and omega
 is fixed to the oracle's value; the iGARCH final beta remains derived. This separates the residual
 diagnostics from optimizer differences. Nyblom uses an estimated fit started at the oracle's
-coefficients and excludes the optimizer/quadrature divergences already listed above. Its test uses
+coefficients, in all 108 cases: the optimizer/quadrature divergences listed above do not matter at the
+oracle's point. Its test uses
 `tol=1` to accept the supplied point before optimization moves it, while retaining the estimated
 parameter mask, and asserts that every estimated coefficient agrees within `1e-12`. This isolates
 the score calculation: at the usual `tol=1e-7`, coefficient movements of `9e-6` (GED) to `9.5e-4`
@@ -1232,7 +1241,10 @@ Derived variance-targeting omega may still differ by about `1e-10` from rugarch'
 The formulas follow Fisher and Gallagher (2012), Nyblom (1989), Hansen (1990, 1992),
 Engle and Ng (1993), and Vlaar and Palm (1993), with the following rugarch conventions:
 
-- Non-finite standardized residuals are replaced with zero. Autocorrelations subtract the sample
+- VolEngine replaces non-finite standardized residuals with zero in every test; the sign-bias regressors use
+  e as given. `rugarch` does this only in the Box tests and Nyblom: its Pearson test drops non-finite values
+  from the counts but keeps them in n, and its sign bias propagates them. A fit with a finite point has finite
+  residuals, so this matters only for degenerate input. Autocorrelations subtract the sample
   mean and divide every lagged product sum by the full centered sum of squares, as R's `acf` does.
   A constant series has undefined autocorrelations and produces NaN.
 - Weighted Ljung–Box uses weights `(L-k+1)/L` and statistic
@@ -1271,8 +1283,8 @@ Pearson uses 20, 30, 40 and 50 groups. Residual statistics have relative toleran
 (`1e-4` for fGARCH's smoothed absolute value), p-values absolute tolerance `1e-7`, and Pearson
 counts agree exactly. Nyblom uses relative tolerance `1e-3` because the scores are numerical in
 rugarch. The fixture covers all 108 rugarch cases. Without excluding any case, the diagnostic
-oracle suite has 637 passing comparisons and seven strict expected failures. The complete Python
-suite reports 1,217 passed and 12 strict expected failures (five pre-existing optimizer/quadrature
+oracle suite has 642 passing comparisons and seven strict expected failures. The complete Python
+suite reports 1,223 passed and 12 strict expected failures (five pre-existing optimizer/quadrature
 divergences and the seven diagnostic comparisons below).
 
 `egarch11_jsu/egarch11_sstd` has three strict expected failures: squared Ljung–Box, ARCH–LM and

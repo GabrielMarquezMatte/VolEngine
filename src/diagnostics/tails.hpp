@@ -1,34 +1,11 @@
 #pragma once
 
-#include <boost/math/special_functions/beta.hpp>
-#include <boost/math/special_functions/gamma.hpp>
-
-#include <cmath>
-
 namespace ve::diagnostics
 {
 
-inline double gamma_upper(double x, double shape, double scale)
-{
-    if (std::isnan(x))
-    {
-        return x;
-    }
-    return boost::math::gamma_q(shape, x / scale);
-}
-
-inline double chi_squared_upper(double x, double degrees)
-{
-    return gamma_upper(x, degrees / 2.0, 2.0);
-}
-
-inline double student_two_sided(double t, double degrees)
-{
-    if (std::isnan(t))
-    {
-        return t;
-    }
-    return boost::math::ibeta(degrees / 2.0, 0.5, degrees / (degrees + t * t));
-}
+// Upper tails taken directly (Boost.Math gamma_q and ibeta, in tails.cpp), never as 1 - cdf; NaN stays NaN.
+double gamma_upper(double x, double shape, double scale);
+double chi_squared_upper(double x, double degrees);
+double student_two_sided(double t, double degrees);
 
 }

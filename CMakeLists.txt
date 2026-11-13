@@ -63,6 +63,7 @@ add_library(volengine_core STATIC
     src/core/context.cpp
     src/diagnostics/portmanteau.cpp
     src/diagnostics/sign_bias.cpp
+    src/diagnostics/tails.cpp
     src/diagnostics/gof.cpp
     src/dist/cdf.cpp
     src/fit/nyblom.cpp

@@ -9,7 +9,6 @@ import numpy as np
 import pytest
 from test_oracles import (
     FIT_TOL,
-    KNOWN_DIVERGENCES,
     REFERENCE,
     case_regressors,
     case_spec,
@@ -53,12 +52,12 @@ def fixed_spec(case: dict[str, Any], result: dict[str, Any]) -> ve.Spec:
     return dataclasses.replace(case_spec(case), fixed=fixed, variance_targeting=False)
 
 
-def assert_test(actual: ve.TestResult, expected: list[float], rel: float) -> None:
+def assert_test(actual: ve.DiagnosticResult, expected: list[float], rel: float) -> None:
     assert actual.statistic == pytest.approx(expected[0], rel=rel, abs=0.0)
     assert actual.p_value == pytest.approx(expected[1], rel=0.0, abs=1e-7)
 
 
-def residual_tests(fit: ve.Fit, case: dict[str, Any], family: str) -> list[ve.TestResult]:
+def residual_tests(fit: ve.Fit, case: dict[str, Any], family: str) -> list[ve.DiagnosticResult]:
     d, f = sum(case["arma"]), case["p"] + case["q"]
     if family == "ljung_box":
         lags = ((1, 0), (max(2, 3 * d - 1), d), (max(5, 5 * d - 1), d))
@@ -119,13 +118,7 @@ def test_diagnostics_match_rugarch(ctx, diagnostic_fits, case_id, family):
         assert_test(actual, expected, rel)
 
 
-NYBLOM_IDS = [
-    case_id for case_id in diagnostic_ids()
-    if f"rugarch-{case_id}" not in KNOWN_DIVERGENCES
-]
-
-
-@pytest.mark.parametrize("case_id", NYBLOM_IDS)
+@pytest.mark.parametrize("case_id", diagnostic_ids())
 def test_nyblom_matches_rugarch(ctx, case_id):
     case, result = diagnostic_case(case_id)
     start = {name: value for name, value in result["params"].items() if name not in case.get("fixed", {})}
