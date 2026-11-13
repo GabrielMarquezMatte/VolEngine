@@ -263,6 +263,61 @@ of under 10 s on an 8-core CPU. The goal belongs to plan 5; here it is only meas
 
 On this machine the 1080-fit grid takes 10.7 s with all 16 hardware threads, which is above the 10 s goal.
 
+## DCC workload (plan 4a)
+
+Measured separately on 2026-11-13 at 17:05 (UTC-3), on the same machine and Release toolchain above, after the
+test and oracle processes finished. The source was `e1ee15e` plus the uncommitted plan 4a benchmark additions
+in `tests/benchmarks/fit_benchmarks.cpp`. These measurements do not replace the earlier univariate run.
+
+Reproduce, with `C:/msys64/ucrt64/bin` first on PATH on Windows:
+
+```
+cmake --preset gcc-bench
+cmake --build --preset gcc-bench
+build/gcc-bench/volengine_benchmarks --benchmark_filter=BM_Dcc --benchmark_repetitions=5 --benchmark_report_aggregates_only=true --benchmark_out=build/gcc-bench/bench_dcc.json --benchmark_out_format=json
+```
+
+The workload has m = 21 series and T = 5000 observations. Each series is independently simulated by
+`simulate_series`, with seeds 1 through 21, from sGARCH(1,1)-std (mu = 0.05, omega = 0.01, alpha = 0.08,
+beta = 0.9, nu = 8). Simulation and fitting the 21 univariates happen once, outside all timed loops.
+All DCC models use order (1,1), the standard paper convention, the default optimizer limit (500) and tolerance
+(1e-6), without fixed or start overrides. FDCC has three groups of seven consecutive series.
+
+The individual cases call the same batch fitting path with one spec and one thread; the grid calls it with
+DCC, aDCC and FDCC × mvnorm, mvt and mvlaplace. Timing includes standardizing one panel shared across
+the grid's specs and materializing each result's R; H is never requested. Standard errors are disabled for
+the fitting cases. Every case uses wall-clock time, one iteration per repetition, five repetitions.
+
+| Individual fit (`BM_DccFit`, one thread) | Median (s) | sd (s) |
+| --- | ---: | ---: |
+| `dcc_mvnorm` | 0.898 | 0.027 |
+| `dcc_mvt` | 1.045 | 0.050 |
+| `dcc_mvlaplace` | 1.008 | 0.007 |
+| `adcc_mvnorm` | 0.996 | 0.034 |
+| `adcc_mvt` | 1.744 | 0.129 |
+| `adcc_mvlaplace` | 1.036 | 0.015 |
+| `fdcc_mvnorm` | 1.615 | 0.020 |
+| `fdcc_mvt` | 1.572 | 0.095 |
+| `fdcc_mvlaplace` | 1.727 | 0.101 |
+
+| Nine-spec grid (`BM_DccGrid`) | Median (s) | sd (s) | `CONVERGED` | `MAX_ITER` | Other |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 thread | 11.274 | 0.264 | 9 | 0 | 0 |
+| hw (16 threads) | 2.354 | 0.157 | 9 | 0 | 0 |
+
+Every individual fit and every spec of both grids converged in every repetition. The ratio of the grid
+medians is 4.8; only nine specs are available to schedule across 16 hardware threads. These independently
+simulated series are a reproducible timing case, not evidence for the cost on every financial panel.
+
+| Deferred standard errors (`BM_DccStandardErrors`) | Median (s) | sd (s) |
+| --- | ---: | ---: |
+| `dcc_mvnorm`, m = 21, T = 5000 | 3.029 | 0.036 |
+
+The standard-error case fits DCC-mvnorm before timing, then computes both two-stage coefficient tables
+from the original univariates; its timing excludes the fit. The run completed without benchmark errors.
+Raw output is in the local build artifacts `build/gcc-bench/bench_dcc.json` and `bench_dcc.txt`.
+No DCC profile, assembly review or before/after optimization comparison was performed in this run.
+
 ## What the benchmarks fit
 
 - The series are simulated by `tests/benchmarks/simulated_panel.hpp` and `tests/unit/simulated_garch.hpp`. They reuse
@@ -283,8 +338,10 @@ On this machine the 1080-fit grid takes 10.7 s with all 16 hardware threads, whi
 - The two evaluations of `BM_Loglik` are separate benchmarks (`/double` and `/dual`) so each has its own time.
 - Google Benchmark appends `/real_time` and `/iterations:1` to the names of the benchmarks that use wall-clock time.
   `BM_TccGrid` runs one iteration per repetition because one iteration is already seconds long.
-- Each benchmark skips with an error if a fit ends neither `CONVERGED` nor `MAX_ITER`, or if the grid yields no jobs.
+- The univariate fit benchmarks skip with an error if a fit ends neither `CONVERGED` nor `MAX_ITER`, or if the
+  grid yields no jobs. DCC benchmarks require a finite fitted log-likelihood and report every status, including
+  finite points where the optimizer stopped with `FAILED`.
 - "Fits per second" is the median over the repetitions of the benchmark's rate counter (fits divided by the elapsed
   time of the run), not 1 over the median time.
 - The `converged`, `max_iter` and `other` counters are the status counts of the last iteration; every iteration
-  repeats the same fits. A non-zero `other` skips the benchmark with an error.
+  repeats the same fits. A non-zero `other` skips a univariate benchmark with an error.

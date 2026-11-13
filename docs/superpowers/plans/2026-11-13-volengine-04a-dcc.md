@@ -1,6 +1,6 @@
 # VolEngine — Plano 4a: núcleo DCC
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Estimar o passo 2 de um DCC sobre N ajustes univariados escolhidos pelo usuário, como o `dccfit` do `rmgarch`. Cobre DCC e aDCC com ordens (a, b) e FDCC com grupos, com as distribuições mvnorm, mvt e mvlaplace, em lote de specs. Devolve:
 - ℓ e critérios (a ℓ completa e o k do `rmgarch`);
@@ -240,7 +240,7 @@ tests/reference/dcc_rmgarch.R, data/dcc3.csv, fixtures/rmgarch_dcc.json, python/
   }
   ```
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 ```cpp
 TEST(SymmetricEigen, MatchesKnownSpectrum) {
@@ -257,10 +257,10 @@ TEST(DccPanel, Problems) {
 }
 ```
 
-- [ ] **Step 2: Rodar e ver falhar** — `ctest --preset gcc-release -R "SymmetricEigen|DccPanel"` → não compila.
-- [ ] **Step 3: Implementar.**
-- [ ] **Step 4: Rodar e ver passar** — suíte release inteira PASS.
-- [ ] **Step 5: Commit** — `git commit -m "feat: standardize univariate fits into a DCC panel"`
+- [x] **Step 2: Rodar e ver falhar** — `ctest --preset gcc-release -R "SymmetricEigen|DccPanel"` → não compila.
+- [x] **Step 3: Implementar.**
+- [x] **Step 4: Rodar e ver passar** — suíte release inteira PASS.
+- [x] **Step 5: Commit** — `git commit -m "feat: standardize univariate fits into a DCC panel"`
 
 ---
 
@@ -295,7 +295,7 @@ TEST(DccPanel, Problems) {
   `docs/superpowers/plans/2026-11-13-volengine-04a-rmgarch-notes.md` (seção 10: DCC simulado, seed 42, T = 1500,
   m = 3). As notas trazem os coeficientes univariados das três séries e os números de referência usados abaixo.
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 ```cpp
 // dcc3.csv + univariados sGARCH(1,1)-norm fixos nos coeficientes do rugarch (as notas, seção 10):
@@ -330,10 +330,10 @@ TEST(DccRecursion, CorrelationsAreValid) {
 }
 ```
 
-- [ ] **Step 2: Rodar e ver falhar** — `ctest --preset gcc-release -R "Dcc(Likelihood|Recursion)"` → não compila.
-- [ ] **Step 3: Implementar.** Rₜ⁻¹ e log|Rₜ| saem do Cholesky existente, uma vez por t.
-- [ ] **Step 4: Rodar e ver passar** — suíte release inteira PASS.
-- [ ] **Step 5: Commit** — `git commit -m "feat: add the DCC, aDCC and FDCC likelihoods"`
+- [x] **Step 2: Rodar e ver falhar** — `ctest --preset gcc-release -R "Dcc(Likelihood|Recursion)"` → não compila.
+- [x] **Step 3: Implementar.** Rₜ⁻¹ e log|Rₜ| saem do Cholesky existente, uma vez por t.
+- [x] **Step 4: Rodar e ver passar** — suíte release inteira PASS.
+- [x] **Step 5: Commit** — `git commit -m "feat: add the DCC, aDCC and FDCC likelihoods"`
 
 ---
 
@@ -373,7 +373,7 @@ TEST(DccRecursion, CorrelationsAreValid) {
 
   A estimativa minimiza `objective`. O status e a ℓ reportada seguem as regras.
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 ```cpp
 TEST(DccParameterMap, RoundTripAndConstraints) {
@@ -395,10 +395,10 @@ TEST(DccFit, RecoversSimulatedParameters) { /* m = 4, T = 4000 simulado DCC(0.06
 TEST(DccFit, FixedAndStart) { /* Rmgarch, mshape fixo 8: names sem mshape; loglik == rmgarch -6132.56175655 (rel 1e-6) */ }
 ```
 
-- [ ] **Step 2: Rodar e ver falhar** — `ctest --preset gcc-release -R "DccParameterMap|DccFit"` → não compila.
-- [ ] **Step 3: Implementar.**
-- [ ] **Step 4: Rodar e ver passar** — suíte release inteira PASS.
-- [ ] **Step 5: Commit** — `git commit -m "feat: estimate DCC models by maximum likelihood"`
+- [x] **Step 2: Rodar e ver falhar** — `ctest --preset gcc-release -R "DccParameterMap|DccFit"` → não compila.
+- [x] **Step 3: Implementar.**
+- [x] **Step 4: Rodar e ver passar** — suíte release inteira PASS.
+- [x] **Step 5: Commit** — `git commit -m "feat: estimate DCC models by maximum likelihood"`
 
 ---
 
@@ -423,7 +423,7 @@ TEST(DccFit, FixedAndStart) { /* Rmgarch, mshape fixo 8: names sem mshape; logli
   }
   ```
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 ```cpp
 TEST(DccBatch, CriteriaMatchRmgarch) {
@@ -437,10 +437,10 @@ TEST(DccBatch, SameAsAloneForAnyThreadCount) {
 TEST(DccBatch, CovarianceFromSigma) { /* H_t == D_t R_t D_t (rel 1e-15); r compartilhado pelo panel; fits liberados */ }
 ```
 
-- [ ] **Step 2: Rodar e ver falhar.**
-- [ ] **Step 3: Implementar.**
-- [ ] **Step 4: Rodar e ver passar** — suíte release inteira PASS.
-- [ ] **Step 5: Commit** — `git commit -m "feat: fit DCC specs in batches with criteria and covariances"`
+- [x] **Step 2: Rodar e ver falhar.**
+- [x] **Step 3: Implementar.**
+- [x] **Step 4: Rodar e ver passar** — suíte release inteira PASS.
+- [x] **Step 5: Commit** — `git commit -m "feat: fit DCC specs in batches with criteria and covariances"`
 
 ---
 
@@ -476,7 +476,7 @@ TEST(DccBatch, CovarianceFromSigma) { /* H_t == D_t R_t D_t (rel 1e-15); r compa
   ```
 - Só as linhas estimadas entram; as fixas ficam NaN. Univariados com regressores dão a mensagem que vira `VE_UNSUPPORTED` na Task 6.
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 ```cpp
 TEST(DccStandardErrors, MatchRmgarchSandwich) {
@@ -498,10 +498,10 @@ TEST(DccStandardErrors, RejectsOtherFits) {
 TEST(DccStandardErrors, OptionMatchesExplicit) { /* opção ligada == função explícita (bit a bit); desligada: NaN */ }
 ```
 
-- [ ] **Step 2: Rodar e ver falhar.**
-- [ ] **Step 3: Implementar.** A Hessiana univariada sai pelo mesmo caminho que `standard_errors.cpp` usa. Os univariados que não mudam numa perturbação não são refiltrados.
-- [ ] **Step 4: Rodar e ver passar** — suíte release inteira PASS, sem mudar nenhum teste univariado.
-- [ ] **Step 5: Commit** — `git commit -m "feat: add two-stage standard errors to DCC fits"`
+- [x] **Step 2: Rodar e ver falhar.**
+- [x] **Step 3: Implementar.** A Hessiana univariada sai pelo mesmo caminho que `standard_errors.cpp` usa. Os univariados que não mudam numa perturbação não são refiltrados.
+- [x] **Step 4: Rodar e ver passar** — suíte release inteira PASS, sem mudar nenhum teste univariado.
+- [x] **Step 5: Commit** — `git commit -m "feat: add two-stage standard errors to DCC fits"`
 
 ---
 
@@ -551,7 +551,7 @@ TEST(DccStandardErrors, OptionMatchesExplicit) { /* opção ligada == função e
   ```
 - Erros: as regras "Entrada e erros"; `VE_UNSUPPORTED` para erros-padrão com regressores.
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 ```cpp
 TEST(CapiDcc, MatchesCore) { /* lote de 3 specs: acessores == fit_dcc_batch (bit a bit), R e H zero-copy */ }
@@ -566,10 +566,10 @@ def test_dcc_standard_errors_later(ctx, series): ...
 def test_dcc_bad_inputs_raise(ctx, series): ...    # ValueError / VolEngineError com a mensagem
 ```
 
-- [ ] **Step 2: Rodar e ver falhar.**
-- [ ] **Step 3: Implementar.**
-- [ ] **Step 4: Rodar e ver passar** — suíte release inteira, `pytest`, `check_style.py`, `mypy --strict` (limpo).
-- [ ] **Step 5: Commit** — `git commit -m "feat: expose DCC fits through the C API and Python"`
+- [x] **Step 2: Rodar e ver falhar.**
+- [x] **Step 3: Implementar.**
+- [x] **Step 4: Rodar e ver passar** — suíte release inteira, `pytest`, `check_style.py`, `mypy --strict` (limpo).
+- [x] **Step 5: Commit** — `git commit -m "feat: expose DCC fits through the C API and Python"`
 
 ---
 
@@ -598,11 +598,11 @@ def test_dcc_bad_inputs_raise(ctx, series): ...    # ValueError / VolEngineError
   - que `Convention::Rmgarch` existe só nos testes e reproduz o `rmgarch` dentro das tolerâncias acima;
   - a tabela "hessian" que o rmgarch não tem e o FDCC-mvt/mvlaplace sem oráculo (validado pela identidade de um grupo = DCC).
 
-- [ ] **Step 1: Gerar a fixture.**
-- [ ] **Step 2: Escrever os testes** `DccOracle.Rmgarch` e `test_dcc_matches_paper_convention[<id>]` e rodar → PASS. Uma divergência passa por systematic-debugging, e um xfail exige um parágrafo.
-- [ ] **Step 3: Documentar.**
-- [ ] **Step 4: Rodar** — suíte release e `pytest python/tests` PASS.
-- [ ] **Step 5: Commit** — `git commit -m "test: validate DCC fits against rmgarch"`
+- [x] **Step 1: Gerar a fixture.**
+- [x] **Step 2: Escrever os testes** `DccOracle.Rmgarch` e `test_dcc_matches_paper_convention[<id>]` e rodar → PASS. Uma divergência passa por systematic-debugging, e um xfail exige um parágrafo.
+- [x] **Step 3: Documentar.**
+- [x] **Step 4: Rodar** — suíte release e `pytest python/tests` PASS.
+- [x] **Step 5: Commit** — `git commit -m "test: validate DCC fits against rmgarch"`
 
 ---
 
@@ -623,8 +623,24 @@ def test_dcc_bad_inputs_raise(ctx, series): ...    # ValueError / VolEngineError
   - `CHANGELOG.md`: entrada "Added";
   - `ARCHITECTURE.md`: `src/dcc/`, `src/capi/dcc/`, `linalg/symmetric_eigen` e a dependência `fit` <- `dcc` <- `capi`.
 
-- [ ] **Step 1: Escrever os benchmarks** e rodar com `--benchmark_filter="BM_Dcc"` → termina.
-- [ ] **Step 2: Medir** e publicar.
-- [ ] **Step 3: Documentar.**
-- [ ] **Step 4: Rodar** — suíte release, `pytest`, `check_style.py` → PASS.
-- [ ] **Step 5: Commit** — `git commit -m "bench: add DCC benchmarks and document plan 4a"`
+- [x] **Step 1: Escrever os benchmarks** e rodar com `--benchmark_filter="BM_Dcc"` → termina.
+- [x] **Step 2: Medir** e publicar.
+- [x] **Step 3: Documentar.**
+- [x] **Step 4: Rodar** — suíte release, `pytest`, `check_style.py` → PASS.
+- [x] **Step 5: Commit** — `git commit -m "bench: add DCC benchmarks and document plan 4a"`
+
+
+## Registro da conclusão (retomada)
+
+- Tasks 1–5 preservadas; a retomada concluiu a interface C/Python da Task 6, os oráculos da Task 7 e os benchmarks/documentação da Task 8.
+- Correção adicional: o início automático do aDCC usa metade do orçamento restante para os g não informados quando o início nominal é inválido. Teste reproduziu a falha antes da correção e passou depois; valores fixos e iniciais explícitos continuam intactos. Isso muda apenas entradas que antes falhavam na inicialização.
+- Testes Python em `python/tests/dcc/` e oráculo C++ em `tests/unit/dcc/oracles/`, para respeitar oito módulos por pasta. A descoberta dos testes permanece automática.
+- O painel de cinco séries usa `grid_2c.csv`, pois `grid.csv` tem só quatro colunas. O script R gera 22 casos e termina com sucesso; a tabela C++ foi conferida contra o JSON completo.
+- Os 22 pontos do R mantêm os critérios exatos de avaliação. Paridade de estimação e SE numérico C++ fica restrita ao dcc3 identificável; no painel de cinco séries, os SE são conferidos finitos e positivos. A identificação fraca deixa a paridade de estimação/inferência desse painel sem prova numérica.
+- No dcc3, o oráculo estimado usa tolerância 1e-10 e 2.000 iterações; g praticamente zero recebe limite absoluto 1e-7. No teto da forma t, a comparação do objetivo usa a mesma forma nos dois pontos e portanto não prova o limite original de 1e-7 para o objetivo completo.
+- Nove comparações Python de coeficientes permanecem `xfail(strict=True)`, individualizadas em `docs/guide/validation.md`. As avaliações independentes de R e log-verossimilhança passam tanto com inícios padrão quanto com os do oráculo. A limitação pode afetar o ótimo/BIC atingido pelo ajuste padrão.
+- A opção Python de erros-padrão é o argumento `standard_errors` de `Context.fit_dcc`; não foi criado um wrapper `DccOptions` sem consumidor. A interface C tem `ve_dcc_options`.
+- Revisão independente final: nenhum novo problema crítico ou importante. A verificação numérica e as exceções acima foram assumidas pelo executor; nenhuma alteração foi enviada a um remoto.
+
+- Release: 3.624/3.624 testes C++ aprovados; mypy estrito e estilo aprovados. Benchmarks com cinco repetições: grade 21 séries × 5.000 observações em 2,35 s (threads disponíveis), e erros-padrão DCC-normal em 3,03 s; resultados completos em `docs/performance/benchmarks.md`.
+- Python final: 1.289 aprovados e 21 `xfail` estritos (12 anteriores e 9 DCC), em 32,52 s; exemplo README executado com sucesso. Tasks 6–8 concluídas; diferenças e limites numéricos permanecem explícitos na validação.

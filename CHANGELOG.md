@@ -23,6 +23,14 @@ library whose ABI version differs).
 
 ### Added
 
+- DCC and aDCC of orders 1 to 6, and FDCC(1,1) with user-defined groups, with multivariate normal, Student-t
+  and Laplace innovations. Batched fits share the standardized univariate panel and are bit-identical across
+  thread counts. C API DCC handles and Python `DccSpec`, `DccFit`, `Context.fit_dcc` expose
+  fixed and start parameters, the full log-likelihood and information criteria, read-only `(T, m, m)`
+  correlation and lazy covariance paths, and optional or deferred two-stage Hessian and robust standard errors.
+  Public conventions follow the papers; an internal `rmgarch` convention supports reference validation.
+  Standard errors with univariate external regressors are unsupported. Benchmarks: `BM_DccFit`, `BM_DccGrid`,
+  `BM_DccStandardErrors`.
 - Diagnostics reported by `rugarch`'s `show()`: weighted Ljung-Box on standardized residuals or their squares,
   weighted ARCH-LM, Nyblom stability with individual and joint critical values, Engle-Ng sign bias and adjusted
   Pearson goodness of fit for all eight distributions. C API: `ve_fit_ljung_box`, `ve_fit_arch_lm`,

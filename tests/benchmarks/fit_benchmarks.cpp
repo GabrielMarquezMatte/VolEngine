@@ -1,4 +1,6 @@
 #include "dist/bessel.hpp"
+#include "dcc/fit.hpp"
+#include "dcc/standard_errors.hpp"
 #include "diagnostics/gof.hpp"
 #include "diagnostics/portmanteau.hpp"
 #include "diagnostics/sign_bias.hpp"
@@ -1140,6 +1142,140 @@ void register_diagnostics()
     }
 }
 
+constexpr std::size_t kDccSeries = 21;
+
+ve::dcc::DccSpec dcc_spec(ve::dcc::DccModel model, ve::dcc::DccDist dist)
+{
+    ve::dcc::DccSpec spec;
+    spec.model = model;
+    spec.dist = dist;
+    if (model == ve::dcc::DccModel::FDcc)
+    {
+        for (std::size_t i = 0; i < kDccSeries; ++i)
+        {
+            spec.groups.push_back(static_cast<int>(i / 7 + 1));
+        }
+    }
+    return spec;
+}
+
+std::vector<ve::dcc::DccSpec> dcc_specs()
+{
+    std::vector<ve::dcc::DccSpec> specs;
+    for (const auto model : {ve::dcc::DccModel::Dcc, ve::dcc::DccModel::ADcc, ve::dcc::DccModel::FDcc})
+    {
+        for (const auto dist : {ve::dcc::DccDist::MvNorm, ve::dcc::DccDist::MvT, ve::dcc::DccDist::MvLaplace})
+        {
+            specs.push_back(dcc_spec(model, dist));
+        }
+    }
+    return specs;
+}
+
+// Simulation and all 21 univariate fits are outside every timed loop, including repetitions.
+const std::vector<ve::FitResult>& dcc_univariates()
+{
+    static const std::vector<ve::FitResult> fits = [] {
+        const ve::Spec spec = make_spec(1, 1, 0, 0, ve::Dist::Std);
+        std::vector<ve::FitResult> results;
+        for (std::size_t i = 0; i < kDccSeries; ++i)
+        {
+            results.push_back(ve::fit_one(ve::bench::simulate_series(spec, i + 1, kObservations), spec, {}));
+        }
+        return results;
+    }();
+    return fits;
+}
+
+std::vector<const ve::FitResult*> dcc_fit_pointers()
+{
+    std::vector<const ve::FitResult*> pointers;
+    for (const auto& fit : dcc_univariates())
+    {
+        pointers.push_back(&fit);
+    }
+    return pointers;
+}
+
+void run_dcc(benchmark::State& state, const std::vector<ve::dcc::DccSpec>& specs, int threads)
+{
+    const auto fits = dcc_fit_pointers();
+    ve::Context context;
+    context.set_threads(threads);
+    ve::dcc::DccOptions options;
+    options.standard_errors = false;
+    if (const auto problem = ve::dcc::check_dcc_batch(fits, specs, options))
+    {
+        state.SkipWithError(problem->c_str());
+        return;
+    }
+    StatusCounts counts;
+    for (auto _ : state)
+    {
+        auto results = ve::dcc::fit_dcc_batch(context, fits, specs, options);
+        counts = {};
+        for (auto& result : results)
+        {
+            counts.add(static_cast<int32_t>(result.status));
+            if (!std::isfinite(result.loglik))
+            {
+                state.SkipWithError("the DCC fit has no finite point");
+                return;
+            }
+            benchmark::DoNotOptimize(result.loglik);
+        }
+    }
+    report_status(state, counts);
+}
+
+void run_dcc_standard_errors(benchmark::State& state)
+{
+    const auto fits = dcc_fit_pointers();
+    ve::Context context;
+    context.set_threads(1);
+    ve::dcc::DccOptions options;
+    options.standard_errors = false;
+    const std::vector<ve::dcc::DccSpec> specs{dcc_specs().front()};
+    const auto fitted = ve::dcc::fit_dcc_batch(context, fits, specs, options);
+    for (auto _ : state)
+    {
+        const auto result = ve::dcc::dcc_standard_errors(fitted.front(), fits);
+        if (!result)
+        {
+            state.SkipWithError(result.error().c_str());
+            return;
+        }
+        benchmark::DoNotOptimize(result->robust.data());
+    }
+}
+
+void register_dcc()
+{
+    const auto specs = dcc_specs();
+    const std::array<std::string, 3> models{"dcc", "adcc", "fdcc"};
+    const std::array<std::string, 3> distributions{"mvnorm", "mvt", "mvlaplace"};
+    for (std::size_t i = 0; i < specs.size(); ++i)
+    {
+        const std::string name = "BM_DccFit/" + models[i / 3] + "_" + distributions[i % 3] + "/m:21";
+        benchmark::RegisterBenchmark(name, run_dcc, std::vector<ve::dcc::DccSpec>{specs[i]}, 1)
+            ->Unit(benchmark::kSecond)
+            ->UseRealTime()
+            ->Iterations(1);
+    }
+    for (const int threads : {1, 0})
+    {
+        const std::string name = "BM_DccGrid/m:21/T:5000/threads:" + thread_label(threads);
+        benchmark::RegisterBenchmark(name, run_dcc, specs, threads)
+            ->Unit(benchmark::kSecond)
+            ->UseRealTime()
+            ->Iterations(1);
+    }
+    benchmark::RegisterBenchmark("BM_DccStandardErrors/dcc_mvnorm/m:21", run_dcc_standard_errors)
+        ->Unit(benchmark::kSecond)
+        ->UseRealTime()
+        ->Iterations(1);
+}
+
 void register_all()
 {
     for (const NamedSpec& named : named_specs())
@@ -1162,6 +1298,7 @@ void register_all()
     register_forecasts();
     register_simulations();
     register_diagnostics();
+    register_dcc();
     static const std::vector<ve::Spec> single{named_specs().front().spec};
     for (const int threads : {1, 2, 4, 8, 0})
     {
