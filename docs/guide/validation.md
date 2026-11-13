@@ -81,6 +81,18 @@ frequencies of z < 0 over 4·10⁵ draws (0.467, 0.475, 0.473, 0.458, 0.450) mat
 | `archm_gjrgarch11_norm` | μ = 0.02, `archm` p = 1 ξ = 0.1; gjrGARCH(1,1): ω = 0.02, α = 0.03, γ = 0.09, β = 0.9 | normal |
 | `archm2_egarch11_std` | μ = 0.02, `archm` p = 2 ξ = 0.05; eGARCH(1,1): ω = −0.01, α = −0.08, γ = 0.15, β = 0.97 | Student-t, ν = 6 |
 
+- `data/grid_2f.csv`: two T = 3000 ARFIMA series drawn in this order from one `numpy.random.default_rng(20261115)`
+  stream. Each starts at σ² = 1 and drops 1000 burn-in observations: first the GARCH shocks εₜ = σₜzₜ, then the
+  truncated fractional integration eₜ = Σₖ₌₀ᵗ ψₖ εₜ₋ₖ (ψ₀ = 1, ψₖ = ψₖ₋₁(k − 1 + d)/k), which starts at the first
+  burn-in draw, then dₜ = φdₜ₋₁ + eₜ and rₜ = μ + dₜ: the inverse of the rule in
+  [`rugarch`, ARFIMA](#rugarch-arfima). The C++ tests simulate the same processes apart
+  (`tests/unit/simulated_garch.hpp`):
+
+| Series | Process | Shocks |
+|--------|---------|--------|
+| `arfima_sgarch11_norm` | μ = 0.05, d = 0.3; sGARCH(1,1): ω = 0.02, α = 0.08, β = 0.9 | normal |
+| `arfima1_gjrgarch11_std` | μ = 0.02, AR(1) φ = 0.2, d = 0.25; gjrGARCH(1,1): ω = 0.02, α = 0.03, γ = 0.09, β = 0.9 | Student-t, ν = 6 |
+
 ## Cases
 
 `tests/reference/cases.json` lists every case: the series, the orders, the distribution and the oracles it
@@ -142,6 +154,10 @@ is compared with. Every case has a mean (`include_mean = true`). The id is `<ser
 | ARMA(0,0)-sGARCH(1,1)-norm, `mxreg` x1, x2 (`arch`'s `LS`) | `arx_sgarch11_norm` | no | yes |
 | sGARCH(1,1)-std, every parameter fixed (μ 0.05, ω 0.02, α₁ 0.08, β₁ 0.9, ν 6) | `sgarch21_std` | yes | yes |
 | gjrGARCH(1,1)-sstd, every parameter fixed (μ 0.05, ω 0.01, α₁ 0.03, β₁ 0.9, γ₁ 0.09, ξ 0.85, ν 6) | `gjrgarch11_sstd` | yes | no |
+| ARFIMA sGARCH(1,1)-norm, eGARCH(1,1)-norm, apARCH(1,1)-norm | `arfima_sgarch11_norm` | yes | no |
+| ARFIMA csGARCH(1,1)-norm (known divergence) | `arfima_sgarch11_norm` | yes | no |
+| ARFIMA sGARCH(1,1)-norm, `mxreg` x1; and with variance targeting | `arfima_sgarch11_norm` | yes | no |
+| ARFIMA AR(1) and ARMA(1,1), gjrGARCH(1,1)-std | `arfima1_gjrgarch11_std` | yes | no |
 
 ARMA is validated against `rugarch` only: `arch` has no MA term, and its AR mean drops the first m
 observations from the likelihood instead of keeping them. Of the variants, `arch` has gjrGARCH (`GARCH` with
@@ -160,6 +176,8 @@ variance, `archm = TRUE` with `archpow`). `arch` has `x` with `mean="LS"`: its c
 parameters (`Const`, `x0`, `x1` are `mu`, `mxreg1`, `mxreg2`). The `arch` case has no AR term: `arch`'s `ARX` applies
 the AR to y, not to y − mₜ (the regressors' mean included), so an AR with regressors is not the same model and is
 validated against `rugarch` only. `arch` has no variance regressors and no ARCH-in-mean.
+
+ARFIMA (plan 2f) is validated against `rugarch` only (`arfima = TRUE` in the mean model): `arch` has no ARFIMA.
 
 ### Case selection
 
@@ -290,6 +308,26 @@ The series simulated with a coefficient close to zero do not give the planned pr
 on `arx_sgarch11_norm` has μ̂ = −0.0072 (archm, μ and σ ≈ 1 are almost collinear), a parameter held to the absolute
 tolerance 1e-5, which `rugarch`'s default solver tolerance misses by 5% (1.05e-5); the tighter `solnp` tolerance
 reaches it (3.0e-6) and the case stays.
+
+For ARFIMA (plan 2f; `rugarch` 1.5-6) the interior rule gains `rugarch`'s bounds of d, [1e-8, 0.5]. `oracle_rugarch.R`
+checks them with the other bounded parameters, and the test checks again (1e-6 < d̂ < 0.5 − 1e-6). Every d̂ is
+between 0.25 and 0.31. Two planned cases moved, and one is kept as a known divergence:
+
+- **eGARCH-std moves to eGARCH-norm.** On `arfima_sgarch11_norm`, a normal series, `rugarch` puts the std shape at
+  99.9996, against its upper bound of 100 (the normal limit; see above).
+- **ARMA(1,1) moves to `arfima1_gjrgarch11_std` (gjrGARCH-std).** On `arfima_sgarch11_norm`, which has no ARMA term,
+  ARMA(1,1) with d has a ridge where the AR and MA roots cancel. `rugarch` stops on it at φ̂ = 0.940, θ̂ = −0.924,
+  d̂ = 0.276 (ℓ = −4140.840). VolEngine stops at φ̂ = 0.552, θ̂ = −0.647, d̂ = 0.393 (ℓ = −4139.916, 0.92 higher). At
+  `rugarch`'s estimates VolEngine's ℓ equals `rugarch`'s to 2.7e-12, absolute, and σₜ to 2.7e-15, relative.
+  VolEngine started there stays there: these are two local optima of the same likelihood. On the AR(1) series
+  (φ̂ = 0.279, θ̂ = −0.077, d̂ = 0.250) both reach the same optimum within the tolerances.
+- **Known divergence (VolEngine optimizer): ARFIMA csGARCH-norm on `arfima_sgarch11_norm`.** The series has no
+  component structure. `rugarch` ends at α̂ = 0.0068 (interior by the rule), ℓ = −4141.455. VolEngine ends
+  `CONVERGED` at the corner α̂ = 0, with β̂ = φ̂ = 0.087, where the transitory component vanishes. Its ℓ is 0.039
+  lower (9.5e-6 relative), and the start of d (0.05 to 0.4) does not change it. Both programs compute the same
+  likelihood: at `rugarch`'s estimates VolEngine's ℓ equals `rugarch`'s to 9.1e-13, absolute, and σₜ to 2.2e-15,
+  relative, and VolEngine started there stays there. This is the csGARCH weight corner, not the fractional
+  difference. The case is marked `xfail(strict=True)` in `python/tests/test_oracles.py`.
 
 ## Oracle versions
 
@@ -603,6 +641,41 @@ the fits below confirm them again. No core change was needed.
   VolEngine bounds none of them (σ² ≤ 0 gives ℓ = −∞). An estimate at a bound is not comparable, hence the rule in
   [Case selection](#case-selection).
 
+### `rugarch`, ARFIMA
+
+Read: the `ugarchspec` manual (`arfima` in the mean model), the `rugarch` vignette (section 2.1, the ARFIMA mean),
+and `.arfimaxfilter`, `.fracdiff`, `.sgarchLLH` and `.meqstart` (the start and the LB and UB of d), printed from the
+installed package. The convention was confirmed before the plan with `ugarchfilter` at fixed parameters (d = 0.3,
+sGARCH(1,1)-norm, T = 400), against an independent implementation in R. The cases were ARMA (0,0), (1,0), (0,1) and
+(1,1), each with and without `mxreg` 2. Residuals agreed within 4.4e-16, σ within 4.4e-16 and ℓ within 5e-13. The
+fits below confirm the convention again. No core change was needed.
+
+- **Fractional difference.** Let eₜ be the residual of the mean rule of
+  [plan 2e](#rugarch-and-arch-regressors-and-arch-in-mean). With ARFIMA the residual becomes
+  yₜ = Σₖ₌₀ᵗ πₖ eₜ₋ₖ, with π₀ = 1 and πₖ = πₖ₋₁(k − 1 − d)/k. This is `rugarch`'s (1 − L)ᵈ of the whole ARMA residual
+  series, truncated at the first observation, with no pre-sample. yₜ replaces eₜ everywhere after that:
+  - the pre-sample variance (`VE_VARINIT_SAMPLE`, the mean of y², or of |y|ᵟ in apARCH and fGARCH);
+  - the variance-targeting target;
+  - the density and the reported residuals.
+
+  The retained count stays max(m, n, p, q), and d does not add to it. The seven compared fits confirm the rule,
+  among them the ARMA(1,1), `mxreg` and variance-targeting fits: ℓ within 2.7e-10 and σₜ within 4.3e-5. Each series
+  of a panel truncates at its own first row (the C++ test `CapiFit.RaggedArfimaMatchesSlices`).
+- **Domain.** `rugarch` bounds d to the closed interval [1e-8, 0.5]. VolEngine maps it to the open interval
+  (1e-8, 0.5), with d = 1e-8 + (0.5 − 1e-8)·logistic(u). A d within 1e-8 of either end is reported on the
+  boundary, with a NaN standard error. A start or fixed d outside the open interval ends `VE_FIT_FAILED`. On a
+  series without long memory, d goes to the lower end (the C++ test `FitArfima.NoMemoryNestsPlain`).
+- **Start.** VolEngine starts d at 0.25. `rugarch` starts it at a Hurst estimate less 0.5 (`.absHmom`). The start
+  did not change the optimum in any case: on the csGARCH case, starts from 0.05 to 0.4 end at the same point.
+- **Backcast.** `VE_VARINIT_BACKCAST` ignores d, as it ignores the ARMA: it stays the OLS of r on [1, X] of plan 2e.
+  `arch` has no ARFIMA, so there is no convention to follow.
+- **ARCH-in-mean.** A spec with both `arfima` and `archm` is rejected ("arfima cannot be combined with archm").
+  The combination is outside the plan's scope, and the widest layout keeps 59 entries because of it.
+- **Cost.** The direct sum costs O(T²) per evaluation, in `double` and in the dual numbers. It is marked
+  `ponytail:` in `src/mean/fractional.hpp`, with an FFT convolution as the way out.
+- **Names and order.** `mu`, `ar1..`, `ma1..`, `arfima`, `mxreg1..`, `omega`, ...: `arfima` sits where `archm` would,
+  after `ma`.
+
 ### `arch` (`VE_VARINIT_BACKCAST`)
 
 Read: `arch/univariate/base.py` (`ARCHModel.fit`, `ARCHModel.compute_param_cov`, `ARCHModel._loglikelihood`),
@@ -711,6 +784,8 @@ plan-1/2a/2b fixtures are unchanged.
 
 `oracle_rugarch.R` fits the nine regressor and archm cases with `hess.d = 1e-2` and `solver.control = list(tol = 1e-10)`;
 the other cases keep `hess.d = 1e-3` (1e-4 for sged) and `rugarch`'s default solver tolerance, and their fixtures are unchanged.
+The ARFIMA cases (plan 2f) also take `hess.d = 1e-2`, with the default solver tolerance. At 1e-3 the standard error of
+the eGARCH α₁ (α̂₁ = −0.0013) was 8% off VolEngine's; at 1e-2 the case's worst standard error is within 2.1e-2.
 
 - **`hess.d`.** The first step of `numDeriv`'s Richardson Hessian is a fraction of each parameter, so a coefficient
   close to zero gets a step below the rounding noise of ℓ. On `arx_sgarch11_norm/arma11_sgarch11_archm_mx_norm`
@@ -768,9 +843,9 @@ remaining block. Below 1e8 the shape stays in H, with a standard error that grow
 
 Fixed in plan 1 before any comparison and unchanged for the grid, the variants, the skewed distributions and the
 fixed-parameter and variance-targeting cases; none was loosened. "Observed" is the worst value over all estimated
-cases of that oracle, except the four known divergences (see [Case selection](#case-selection)), which are marked
+cases of that oracle, except the five known divergences (see [Case selection](#case-selection)), which are marked
 `xfail`. The plan-2d cases do not move any of them; the plan-2e cases move only the one-sided
-log-likelihood row of `rugarch` (−1.4e-7, `sgarch11_vx_std/aparch11_vx_std`). The evaluation cases (every parameter fixed) are held to the last
+log-likelihood row of `rugarch` (−1.4e-7, `sgarch11_vx_std/aparch11_vx_std`), and the plan-2f cases move none. The evaluation cases (every parameter fixed) are held to the last
 row instead, and to the criteria row.
 
 | Quantity | Tolerance | Why | Observed, `rugarch` | Observed, `arch` |
@@ -924,6 +999,18 @@ Regressors and ARCH-in-mean (plan 2e). `rugarch`'s Newey-West `robust_se` is not
 | `arx_sgarch11_norm/arma11_sgarch11_archm_mx_norm` | -3.8e-9 | 1.2e-4 | 3.0e-6 | 4.7e-4 | 9.4e-4 | 1.1e-1 | 3.8e-6 | 2.5e-12 |
 | `sgarch11_vx_std/sgarch11_vx_std_vt` | +1.2e-8 | 4.4e-5 | — | 2.0e-5 | 2.5e-5 | 1.2e-1 | 6.5e-6 | 7.8e-12 |
 
+ARFIMA (plan 2f). `rugarch`'s Newey-West `robust_se` is not compared:
+
+| Case | ℓ_VE − ℓ_oracle | Max param rel | Small abs | Max SE rel | Max QML robust SE rel | Max NW robust SE rel (not compared) | Max σ rel | Max criteria abs |
+|------|-----------------|---------------|-----------|------------|-----------------------|-------------------------------------|-----------|------------------|
+| `arfima_sgarch11_norm/arfima_sgarch11_norm` | +9.9e-12 | 4.7e-5 | — | 3.4e-5 | 4.1e-5 | 3.9e-2 | 9.9e-6 | 2.7e-11 |
+| `arfima1_gjrgarch11_std/arfima1_gjrgarch11_std` | +2.7e-10 | 1.4e-4 | — | 1.4e-4 | 2.5e-4 | 1.3e-1 | 4.3e-5 | 6.0e-10 |
+| `arfima_sgarch11_norm/arfima_egarch11_norm` | +1.7e-11 | 1.0e-4 | 3.2e-6 | 2.1e-2 | 4.3e-2 | 4.0e-2 | 1.3e-5 | 4.7e-11 |
+| `arfima_sgarch11_norm/arfima_aparch11_norm` | +5.4e-12 | 1.0e-4 | — | 9.7e-4 | 2.0e-3 | 4.9e-2 | 7.5e-6 | 1.5e-11 |
+| `arfima1_gjrgarch11_std/arfima11_gjrgarch11_std` | +3.0e-11 | 1.6e-4 | — | 8.6e-5 | 1.1e-4 | 1.3e-1 | 1.5e-5 | 6.7e-11 |
+| `arfima_sgarch11_norm/arfima_sgarch11_mx_norm` | +4.1e-13 | 4.7e-5 | — | 4.1e-6 | 8.7e-6 | 4.5e-2 | 1.3e-6 | 1.1e-12 |
+| `arfima_sgarch11_norm/arfima_sgarch11_norm_vt` | −6.9e-14 | 6.1e-6 | — | 3.6e-6 | 8.2e-6 | 4.1e-2 | 1.7e-6 | 1.9e-13 |
+
 Evaluation cases (every parameter fixed; estimates equal by construction, standard errors NaN and NA):
 
 | Case | ℓ rel | Max σ rel | Max criteria abs |
@@ -932,8 +1019,8 @@ Evaluation cases (every parameter fixed; estimates equal by construction, standa
 | `gjrgarch11_sstd/gjrgarch11_sstd_allfixed` | 0 | 2.2e-16 | 0 |
 
 Known divergences (`xfail` in the test; see [Case selection](#case-selection)), left out of the
-"Observed" column of [Tolerances](#tolerances): the first three are VolEngine's optimizer, the last `rugarch`'s κ
-quadrature under variance targeting:
+"Observed" column of [Tolerances](#tolerances). The fourth is `rugarch`'s κ quadrature under variance targeting;
+the others are VolEngine's optimizer:
 
 | Case | ℓ_VE − ℓ_oracle | Max param rel | Small abs | Max SE rel | Max QML robust SE rel | Max NW robust SE rel (not compared) | Max σ rel | Max criteria abs |
 |------|-----------------|---------------|-----------|------------|-----------------------|-------------------------------------|-----------|------------------|
@@ -941,6 +1028,7 @@ quadrature under variance targeting:
 | `aparch11_sged/fgarch_allgarch11_jsu` | -6.2e-3 | 1.9e-2 | — | 4.2e-1 | 8.6e-1 | 9.3e-1 | 5.4e-3 | 4.1e-6 |
 | `egarch11_jsu/fgarch_allgarch11_sstd` | -4.6e-2 | 6.6e-1 | — | 6.9e-1 | 1.3 | 1.2 | 3.4e-2 | 3.1e-5 |
 | `fgarch_allgarch11_norm/fgarch_allgarch11_norm_vt` | +7.7e-5 | 1.1e-3 | — | 4.3e-3 | 9.6e-3 | 5.3e-2 | 1.6e-5 | 5.2e-8 |
+| `arfima_sgarch11_norm/arfima_csgarch11_norm` | −9.5e-6 | 9.8e-3 | 6.8e-3 | 5.1e-1 | 8.5e-1 | 1.2 | 1.8e-2 | 2.6e-5 |
 
 ### `arch`
 

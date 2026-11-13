@@ -9,7 +9,7 @@ suppressPackageStartupMessages({
 reference <- file.path("tests", "reference")
 cases_path <- file.path(reference, "cases.json")
 data_paths <- file.path(reference, "data", c("sgarch11_norm.csv", "grid.csv", "grid_2b.csv", "grid_2c.csv",
-                                                "grid_2e.csv"))
+                                                "grid_2e.csv", "grid_2f.csv"))
 regressors_path <- file.path(reference, "data", "regressors_2e.csv")
 fixture_path <- file.path(reference, "fixtures", "rugarch.json")
 
@@ -64,6 +64,7 @@ case_spec <- function(case, regressors) {
     ugarchspec(
         variance.model = variance,
         mean.model = list(armaOrder = unlist(case$arma), include.mean = case$include_mean, archm = archm,
+                          arfima = isTRUE(case$arfima),
                           archpow = if (archm) case$archm else 1,
                           external.regressors = regressor_matrix(case$mxreg, regressors)),
         distribution.model = case$dist,
@@ -155,8 +156,8 @@ interior_failures <- function(case, params, persistence, estimated) {
 }
 
 # The skewed distributions: |rho| < 0.999 (nig, ghyp), xi in (0.05, 20) (sstd, sged), 1 / shape > 1e-4 and
-# |ghlambda| < 10. A distribution, archm or regressor parameter must also stay off rugarch's own bounds (its LB and
-# UB columns; vxreg is bounded to [0, 100]).
+# |ghlambda| < 10. A distribution, archm, arfima or regressor parameter must also stay off rugarch's own bounds (its LB
+# and UB columns; vxreg is bounded to [0, 100], arfima to [1e-8, 0.5]).
 distribution_failures <- function(case, fit) {
     params <- coef(fit)
     params <- params[names(params) %in% estimated_names(fit)]
@@ -173,7 +174,7 @@ distribution_failures <- function(case, fit) {
     if ("ghlambda" %in% names(params)) {
         failures <- c(failures, params["ghlambda"][abs(params[["ghlambda"]]) >= 10])
     }
-    names_dist <- names(params)[grepl("^(skew|shape|ghlambda|archm|mxreg[0-9]+|vxreg[0-9]+)$", names(params))]
+    names_dist <- names(params)[grepl("^(skew|shape|ghlambda|archm|arfima|mxreg[0-9]+|vxreg[0-9]+)$", names(params))]
     bounds <- fit@model$pars[names_dist, c("LB", "UB"), drop = FALSE]
     on_bound <- abs(params[names_dist] - bounds[, "LB"]) <= 1e-6 * pmax(1, abs(bounds[, "LB"])) |
         abs(params[names_dist] - bounds[, "UB"]) <= 1e-6 * pmax(1, abs(bounds[, "UB"]))
@@ -195,12 +196,12 @@ check_interior <- function(case, fit, persistence) {
 # A first step of 0.1% removes that bias. sged, fitted with shape < 2 at a kink that is not at z = 0, needs 0.01%.
 # The regressor and archm cases take a first step of 1%: the step is a fraction of each parameter, and with a
 # coefficient near zero (mu next to archm, a mean regressor, an apARCH gamma) 0.1% is smaller than the numerical noise
-# (docs/guide/validation.md).
+# (docs/guide/validation.md). The ARFIMA cases take 1% for the same reason: the eGARCH alpha1 sits near zero.
 hessian_step <- function(case) {
     if (case$dist == "sged") {
         return(1e-4)
     }
-    if (uses_regressors(case)) {
+    if (uses_regressors(case) || isTRUE(case$arfima)) {
         return(1e-2)
     }
     1e-3

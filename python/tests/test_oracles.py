@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 import volengine as ve
 
 REFERENCE = Path(__file__).resolve().parents[2] / "tests" / "reference"
-DATA_FILES = ("sgarch11_norm.csv", "grid.csv", "grid_2b.csv", "grid_2c.csv", "grid_2e.csv")
+DATA_FILES = ("sgarch11_norm.csv", "grid.csv", "grid_2b.csv", "grid_2c.csv", "grid_2e.csv", "grid_2f.csv")
 CRITERIA = ("aic", "bic", "hqic", "sic")
 SYMMETRIC = ("norm", "std", "ged")
 # Tighter than the default gradient tolerance; docs/guide/validation.md says why.
@@ -100,6 +100,7 @@ def case_spec(case: dict[str, Any]) -> ve.Spec:
         mxreg=len(case.get("mxreg", [])),
         vxreg=len(case.get("vxreg", [])),
         archm=case.get("archm", 0),
+        arfima=case.get("arfima", False),
     )
 
 
@@ -168,6 +169,7 @@ KNOWN_DIVERGENCES = {
     "rugarch-aparch11_sged/fgarch_allgarch11_sstd": OPTIMIZER,
     "rugarch-aparch11_sged/fgarch_allgarch11_jsu": OPTIMIZER,
     "rugarch-egarch11_jsu/fgarch_allgarch11_sstd": OPTIMIZER,
+    "rugarch-arfima_sgarch11_norm/arfima_csgarch11_norm": OPTIMIZER,
     "rugarch-fgarch_allgarch11_norm/fgarch_allgarch11_norm_vt": QUADRATURE,
 }
 
@@ -301,6 +303,9 @@ def test_fixture_estimates_are_interior(oracle, case):
     assert_distribution_interior(case, estimated)
     # rugarch bounds a variance regressor's coefficient to [0, 100]: an estimate there is not an optimum.
     assert all(0.0 < value < 100.0 for value in named(estimated, "vxreg").values())
+    # rugarch bounds the ARFIMA d to [1e-8, 0.5].
+    if "arfima" in estimated:
+        assert 1e-6 < estimated["arfima"] < 0.5 - 1e-6
 
 
 def assert_distribution_interior(case: dict[str, Any], params: dict[str, float]) -> None:
