@@ -283,6 +283,22 @@ VE_API ve_status ve_fit_sigma(const ve_fit* f, const double** data, size_t* len)
 VE_API ve_status ve_fit_residuals(const ve_fit* f, const double** data, size_t* len);
 VE_API ve_status ve_fit_std_residuals(const ve_fit* f, const double** data, size_t* len);
 VE_API ve_status ve_fit_fitted(const ve_fit* f, const double** data, size_t* len);
+/* Diagnostics: caller-owned output arrays. A fit without a finite point is invalid.
+ * Ljung-Box requires 1 <= lag < nobs and lag >= 3*fitdf-1 (fitdf ignored for squares).
+ * ARCH-LM requires 1 <= fitdf < lag < nobs. Both return [statistic, p_value].
+ * Undefined statistics (constant autocorrelations or singular regressions) return NaN.
+ * See docs/guide/validation.md for formulas and rugarch conventions. */
+VE_API ve_status ve_fit_ljung_box(const ve_fit* f, int32_t squared, size_t lag, size_t fitdf, double* out);
+VE_API ve_status ve_fit_arch_lm(const ve_fit* f, size_t lag, size_t fitdf, double* out);
+/* individual has ve_fit_param_count entries, NaN for fixed and derived parameters. */
+VE_API ve_status ve_fit_nyblom(const ve_fit* f, double* individual, double* joint);
+/* Critical values at 10%, 5%, 1%, for 1..20 estimated parameters. */
+VE_API ve_status ve_nyblom_critical(size_t parameters, double* out);
+/* [statistic, p_value] for sign, negative, positive, joint, in that order. */
+VE_API ve_status ve_fit_sign_bias(const ve_fit* f, double* out); /* nobs >= 6 */
+/* [statistic, p_value], with 2 <= groups <= nobs. */
+VE_API ve_status ve_fit_gof(const ve_fit* f, size_t groups, double* out);
+
 VE_API void ve_fit_free(ve_fit* f);
 
 /* ---- Forecast ----

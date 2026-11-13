@@ -93,6 +93,7 @@ add_library(volengine SHARED
     src/capi/version_api.cpp
     src/capi/batch_api.cpp
     src/capi/context_api.cpp
+    src/capi/results/diagnostics_api.cpp
     src/capi/results/fit_api.cpp
     src/capi/results/forecast_api.cpp
     src/capi/results/regressor_rows.cpp
@@ -138,6 +139,7 @@ if(VE_BUILD_TESTS)
         tests/unit/diagnostics/sign_bias_test.cpp
         tests/unit/diagnostics/gof_test.cpp
         tests/unit/fit/nyblom_test.cpp
+        tests/unit/capi/results/diagnostics_test.cpp
         tests/unit/dist/bessel_test.cpp
         tests/unit/dist/densities_test.cpp
         tests/unit/dist/moments_test.cpp
