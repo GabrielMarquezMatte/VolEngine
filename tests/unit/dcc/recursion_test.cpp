@@ -31,27 +31,31 @@ struct EdgeCase
     std::vector<double> theta;
 };
 
-// The number of observations whose R_t is not a correlation matrix: unit diagonal, exactly symmetric, positive
-// definite.
+// A unit diagonal, exact symmetry, off-diagonals inside (-1, 1) and a successful Cholesky.
+bool is_correlation(std::span<const double> r, std::size_t m)
+{
+    std::vector<double> factor(r.begin(), r.end());
+    bool valid = ve::linalg::cholesky_factor(factor, m);
+    for (std::size_t i = 0; i < m; ++i)
+    {
+        valid = valid && r[i * m + i] == 1.0;
+        for (std::size_t j = 0; j < i; ++j)
+        {
+            valid = valid && r[i * m + j] == r[j * m + i] && std::fabs(r[i * m + j]) < 1.0;
+        }
+    }
+    return valid;
+}
+
+// The number of observations whose R_t is not a correlation matrix.
 std::size_t invalid_correlations(const ve::dcc::StandardizedPanel& panel, const DccSpec& spec,
                                  std::span<const double> theta, ve::dcc::Stage stage)
 {
-    const std::size_t m = panel.m;
     std::size_t invalid = 0;
     std::size_t visited = 0;
     const auto check = [&](std::size_t, std::span<const double> r) {
         ++visited;
-        std::vector<double> factor(r.begin(), r.end());
-        bool valid = ve::linalg::cholesky_factor(factor, m);
-        for (std::size_t i = 0; i < m; ++i)
-        {
-            valid = valid && r[i * m + i] == 1.0;
-            for (std::size_t j = 0; j < i; ++j)
-            {
-                valid = valid && r[i * m + j] == r[j * m + i] && std::fabs(r[i * m + j]) < 1.0;
-            }
-        }
-        invalid += valid ? 0 : 1;
+        invalid += is_correlation(r, panel.m) ? 0 : 1;
     };
     const auto parameters = ve::dcc::split_parameters(spec, theta);
     EXPECT_TRUE(ve::dcc::correlation_path<double>(panel, spec, parameters, stage, check));

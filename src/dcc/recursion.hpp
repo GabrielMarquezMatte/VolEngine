@@ -179,14 +179,14 @@ Weights<T> weights_of(const DccParameters<T>& theta, const DccSpec& spec, const 
     return dcc_weights(theta, moments);
 }
 
-// The aDCC needs the delta of a positive definite Qbar; the FDCC intercept must be positive definite, since
-// the reparametrisation does not impose it.
+// The aDCC needs a finite delta of its convention (NaN when Qbar is not positive definite); the FDCC intercept
+// must be positive definite, since the reparametrisation does not impose it.
 template <class T>
 bool in_domain(const StandardizedPanel& panel, const DccSpec& spec, const Weights<T>& weights)
 {
     if (spec.model == DccModel::ADcc)
     {
-        return !std::isnan(is_rmgarch(spec) ? panel.delta_centered : panel.delta);
+        return std::isfinite(is_rmgarch(spec) ? panel.delta_centered : panel.delta);
     }
     if (spec.model != DccModel::FDcc)
     {
@@ -335,8 +335,8 @@ private:
 }
 
 // Calls visit(t, R_t) for t = 0..T-1, R_t row-major m x m, under the convention of spec and the presample of
-// stage. Returns false, without visiting, when theta is outside the domain: an aDCC whose Qbar is not positive
-// definite, or an FDCC whose intercept is not.
+// stage. Returns false, without visiting, when theta is outside the domain: an aDCC whose delta (of the
+// convention) is not finite, or an FDCC whose intercept is not positive definite.
 template <class T, class Visit>
 bool correlation_path(const StandardizedPanel& panel, const DccSpec& spec, const DccParameters<T>& theta, Stage stage,
                       Visit&& visit)

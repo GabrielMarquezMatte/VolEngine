@@ -121,7 +121,7 @@ void store_correlation(std::span<const T> r_t, std::size_t t, std::span<double> 
 
 template <class T>
 void correlation_terms(const StandardizedPanel& panel, const DccSpec& spec, const DccParameters<T>& theta,
-                       Stage stage, std::span<T> terms, std::span<double> r)
+                       Stage stage, const CorrelationOutput<T>& out)
 {
     const std::size_t m = panel.m;
     const auto dimension = static_cast<double>(m);
@@ -129,22 +129,22 @@ void correlation_terms(const StandardizedPanel& panel, const DccSpec& spec, cons
     Workspace<T> work{std::vector<T>(m * m), std::vector<T>(m)};
     const auto visit = [&](std::size_t t, std::span<const T> r_t) {
         const std::span<const double> z(panel.z.data() + t * m, m);
-        terms[t] = observation_term(r_t, z, density, work);
-        store_correlation(r_t, t, r);
+        out.terms[t] = observation_term(r_t, z, density, work);
+        store_correlation(r_t, t, out.r);
     };
     if (correlation_path(panel, spec, theta, stage, visit))
     {
         return;
     }
-    std::ranges::fill(terms, T{kNaN});
-    std::ranges::fill(r, kNaN);
+    std::ranges::fill(out.terms, T{kNaN});
+    std::ranges::fill(out.r, kNaN);
 }
 
 double reported_loglik(const StandardizedPanel& panel, const DccSpec& spec, std::span<const double> theta,
                        std::span<double> r)
 {
     std::vector<double> terms(panel.t);
-    correlation_terms<double>(panel, spec, split_parameters(spec, theta), Stage::Reported, terms, r);
+    correlation_terms<double>(panel, spec, split_parameters(spec, theta), Stage::Reported, {terms, r});
     double loglik = 0.0;
     for (std::size_t t = 0; t < panel.t; ++t)
     {
@@ -162,7 +162,7 @@ template <class T>
 T objective(const StandardizedPanel& panel, const DccSpec& spec, std::span<const T> theta)
 {
     std::vector<T> terms(panel.t);
-    correlation_terms<T>(panel, spec, split_parameters(spec, theta), Stage::Objective, terms);
+    correlation_terms<T>(panel, spec, split_parameters(spec, theta), Stage::Objective, {terms});
     T total{0.0};
     if (spec.convention == Convention::Rmgarch && spec.dist == DccDist::MvNorm)
     {
@@ -181,20 +181,20 @@ T objective(const StandardizedPanel& panel, const DccSpec& spec, std::span<const
 }
 
 template void correlation_terms<double>(const StandardizedPanel&, const DccSpec&, const DccParameters<double>&, Stage,
-                                        std::span<double>, std::span<double>);
+                                        const CorrelationOutput<double>&);
 template void correlation_terms<ad::Dual<8>>(const StandardizedPanel&, const DccSpec&,
-                                             const DccParameters<ad::Dual<8>>&, Stage, std::span<ad::Dual<8>>,
-                                             std::span<double>);
+                                             const DccParameters<ad::Dual<8>>&, Stage,
+                                             const CorrelationOutput<ad::Dual<8>>&);
 template void correlation_terms<ad::Dual<16>>(const StandardizedPanel&, const DccSpec&,
-                                              const DccParameters<ad::Dual<16>>&, Stage, std::span<ad::Dual<16>>,
-                                              std::span<double>);
+                                              const DccParameters<ad::Dual<16>>&, Stage,
+                                              const CorrelationOutput<ad::Dual<16>>&);
 template void correlation_terms<ad::Dual<32>>(const StandardizedPanel&, const DccSpec&,
-                                              const DccParameters<ad::Dual<32>>&, Stage, std::span<ad::Dual<32>>,
-                                              std::span<double>);
+                                              const DccParameters<ad::Dual<32>>&, Stage,
+                                              const CorrelationOutput<ad::Dual<32>>&);
 template void correlation_terms<ad::Dual<kMaxParameterCount>>(const StandardizedPanel&, const DccSpec&,
                                                               const DccParameters<ad::Dual<kMaxParameterCount>>&,
-                                                              Stage, std::span<ad::Dual<kMaxParameterCount>>,
-                                                              std::span<double>);
+                                                              Stage,
+                                                              const CorrelationOutput<ad::Dual<kMaxParameterCount>>&);
 
 template double objective<double>(const StandardizedPanel&, const DccSpec&, std::span<const double>);
 template ad::Dual<8> objective<ad::Dual<8>>(const StandardizedPanel&, const DccSpec&, std::span<const ad::Dual<8>>);
