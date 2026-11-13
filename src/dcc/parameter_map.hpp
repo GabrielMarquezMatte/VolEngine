@@ -17,14 +17,17 @@ constexpr double kPersistenceCeiling = 1.0 - 1e-8;
 constexpr double kShapeFloor = 4.0;
 constexpr double kShapeCeiling = 50.0;
 
-// The positions of theta (and of u): a_1..a_A, b_1..b_B, g_1..g_G, then the mvt shape. DCC and aDCC: A = P,
-// B = Q, G = P (aDCC) or 0; FDCC: A = B = the number of groups, G = 0.
+// The positions of theta (and of u): a_1..a_A, b_1..b_B, g_1..g_G, c_1..c_C, then the mvt shape. DCC and aDCC:
+// A = P, B = Q, G = P (aDCC) or 0; FDCC: A = B = the number of groups, G = 0; C = 0 except on the static ML
+// copula, whose C = m (m - 1) / 2 free entries of A (R = cov2cor(A A'), copula/static_fit.hpp) have no bounds and
+// A = B = G = 0.
 struct DccLayout
 {
     DccModel model = DccModel::Dcc;
     std::size_t a_count = 0;
     std::size_t b_count = 0;
     std::size_t g_count = 0;
+    std::size_t c_count = 0;
     bool has_shape = false;
     std::vector<bool> fixed;
     std::vector<bool> started;
@@ -33,7 +36,8 @@ struct DccLayout
 
     std::size_t b_begin() const { return a_count; }
     std::size_t g_begin() const { return a_count + b_count; }
-    std::size_t shape() const { return g_begin() + g_count; }
+    std::size_t c_begin() const { return g_begin() + g_count; }
+    std::size_t shape() const { return c_begin() + c_count; }
     std::size_t count() const { return shape() + (has_shape ? 1 : 0); }
     bool is_fixed(std::size_t index) const { return fixed[index]; }
     bool is_estimated(std::size_t index) const { return !fixed[index]; }
@@ -43,16 +47,26 @@ struct DccLayout
 // The caller checked spec_problem(spec, m).
 DccLayout layout_of(const DccSpec& spec, std::size_t m);
 
-// Every parameter, fixed or not: dcca1.., dccb1.., dccg1.., mshape; fdcca1..G, fdccb1..G, mshape.
+// Every parameter, fixed or not: dcca1.., dccb1.., dccg1.., mshape; fdcca1..G, fdccb1..G, mshape; static: C1..,
+// mshape.
 std::vector<std::string> parameter_names(const DccLayout& layout);
 
 // The estimated ones: the names of a fit's table.
 std::vector<std::string> estimated_names(const DccLayout& layout);
 
-// Why spec cannot be fitted to m series, or nullopt: a model or dist out of range, orders outside 1..6, an FDCC
-// that is not (1, 1) or whose groups do not label the m series 1..G with no group empty, groups on another
-// model, an unknown fixed or start name, or more estimated parameters than kMaxParameterCount.
+// Why spec cannot be fitted to m series, or nullopt: a model, dist, copula or static method out of range, orders
+// outside 1..6, an FDCC or static model that is not (1, 1), FDCC groups that do not label the m series 1..G with
+// no group empty, groups on another model, a copula combination plan 4b rejects (static without a copula, a
+// copula on the FDCC or the mvlaplace, a static method off the static model, a start for a copula mshape), an
+// unknown fixed or start name, or more estimated parameters than kMaxParameterCount (except on the static model,
+// which is not differentiated with ad::Dual).
 std::optional<std::string> spec_problem(const DccSpec& spec, std::size_t m);
+
+// m (m - 1) / 2 on the static ML copula (its C1.. rows), else 0.
+std::size_t correlation_coefficients(const DccSpec& spec, std::size_t m);
+
+// The static method in effect: Kendall for Default.
+StaticMethod static_method_of(const DccSpec& spec);
 
 // The delta that scales the aDCC g weights in the persistence: of the uncentered Nbar (Standard) or of the
 // centered one (Rmgarch).

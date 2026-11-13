@@ -61,6 +61,8 @@ target_compile_definitions(ve_boost_math INTERFACE BOOST_MATH_STANDALONE)
 add_library(volengine_core STATIC
     src/ad/special.cpp
     src/core/context.cpp
+    src/dcc/copula/margins.cpp
+    src/dcc/copula/scores.cpp
     src/dcc/fit.cpp
     src/dcc/likelihood.cpp
     src/dcc/panel.cpp
@@ -147,6 +149,8 @@ if(VE_BUILD_TESTS)
         tests/unit/capi/panel_test.cpp
         tests/unit/capi/results/sim_test.cpp
         tests/unit/capi/spec_test.cpp
+        tests/unit/dcc/copula/margins_test.cpp
+        tests/unit/dcc/copula/scores_test.cpp
         tests/unit/dcc/batch_test.cpp
         tests/unit/dcc/fit_test.cpp
         tests/unit/dcc/oracles/oracle_test.cpp
