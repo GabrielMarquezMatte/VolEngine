@@ -904,6 +904,10 @@ u from 10⁻¹² to 1 − 10⁻¹², for every distribution including the extrem
 the same function with known values, monotonicity and the same bits on a second thread (std and sged; the cdf of
 nig and ghyp keeps the Bessel K open item of plan 4b).
 
+**Cost.** The quantile of a nig or ghyp margin is a root solve of about 20 evaluations of the quadrature cdf (~290 µs),
+so a Copula-DCC simulation with such margins is two orders of magnitude slower than with std margins; see
+`docs/performance/benchmarks.md`.
+
 **Tests.**
 
 - `DccSimulate.SameForAnyThreadCount`: 1, 3 and 16 threads, bit for bit, for the DCC-t, the aDCC, the Laplace DCC and

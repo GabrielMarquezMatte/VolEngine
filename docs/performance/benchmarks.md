@@ -384,7 +384,10 @@ pay the ~37 s shape profile of plan 4b.
 Keeping R and H per path writes 2 x 441 doubles per step (about 0.42 GB for this size) and costs 30% more on one
 thread, but 2.4 times more on 16 threads, where it is bound by memory bandwidth. The copula adds the quantile of
 each of the 21 margins at every step (a std quantile through the inverse incomplete beta), about 3 times the plain
-DCC. No profile or optimization was done in this run; the Cholesky factor of R and the O(m^2) products per step
+DCC. A Copula-DCC whose margins are nig or ghyp is far slower than the std margins measured here: their quantile is a
+root solve over the quadrature cdf, about 290 µs per call (a final-review measurement, not a benchmark), so 1000 paths x
+60 steps x 21 series takes about 6 minutes on one thread. A monotone table of each margin built once per call would
+remove it (`ponytail:` in `dist::quantile`). No profile or optimization was done in this run; the Cholesky factor of R and the O(m^2) products per step
 dominate the plain DCC.
 
 ## What the benchmarks fit

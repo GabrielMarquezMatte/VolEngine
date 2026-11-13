@@ -99,14 +99,14 @@ extern "C" ve_status ve_dcc_future_set(ve_dcc_future* x, size_t series, const ve
             ve::capi::StoredRows mean;
             ve::capi::StoredRows variance;
             ve_status status = store_rows(mxreg, x->horizon, "mxreg", mean);
-            if (status != VE_OK)
+            if (status == VE_OK)
             {
-                return status;
+                status = store_rows(vxreg, x->horizon, "vxreg", variance);
             }
-            status = store_rows(vxreg, x->horizon, "vxreg", variance);
             if (status != VE_OK)
             {
-                return status;
+                // The messages of the other checks name the series from 1.
+                return set_error(status, "series " + std::to_string(series + 1) + ": " + ve::capi::last_error());
             }
             x->mxreg[series] = std::move(mean);
             x->vxreg[series] = std::move(variance);

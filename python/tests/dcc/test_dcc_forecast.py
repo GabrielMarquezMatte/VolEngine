@@ -119,3 +119,7 @@ def test_mixed_regressors(ctx, returns):
         dcc.forecast(HORIZON, mxreg=[future, future, None])
     with pytest.raises(ValueError, match="mxreg and vxreg"):
         dcc.forecast(HORIZON, mxreg=[None, None, None], vxreg=[None])
+    with pytest.raises(ve.VolEngineError, match="series 2"):
+        dcc.forecast(HORIZON, mxreg=[None, future[:-1], None])
+    with pytest.raises(ve.VolEngineError, match="series 2"):
+        ctx.simulate(dcc, horizon=HORIZON, paths=4, seed=1, mxreg=[None, future[:-1], None])

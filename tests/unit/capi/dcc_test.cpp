@@ -1119,6 +1119,10 @@ TEST(CapiDcc, ForecastChecksTheFutureRegressors)
     ASSERT_EQ(ve_dcc_future_set(given.get(), 1, panel.get(), nullptr), VE_OK) << ve_last_error();
     EXPECT_EQ(ve_dcc_forecast_create(fitted.fits[0], 12, given.get(), &out), VE_INVALID_ARGUMENT);
     EXPECT_TRUE(mentions("series 2"));
+    std::vector<double> short_rows(11, 0.5);
+    ve::testing::PanelPtr short_panel = ve::testing::make_panel(short_rows.data(), 11, 1);
+    EXPECT_EQ(ve_dcc_future_set(given.get(), 1, short_panel.get(), nullptr), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(mentions("series 2"));
     EXPECT_EQ(ve_dcc_future_set(given.get(), kSeries, nullptr, nullptr), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_dcc_future_set(nullptr, 0, nullptr, nullptr), VE_INVALID_HANDLE);
     EXPECT_EQ(ve_dcc_future_create(0, 12, &raw), VE_INVALID_ARGUMENT);

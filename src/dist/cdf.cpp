@@ -224,6 +224,8 @@ double skewed_quantile(const SkewedLogDensity<double>& density, double u)
 constexpr int kRootIterations = 60;
 constexpr int kBracketDoublings = 60;
 
+// ponytail: ~20 quadrature cdfs per call (~290 us); a monotone table per margin would make a copula simulation with
+// nig or ghyp margins as fast as with std margins.
 // The root of cdf(z) - u by toms748 on a bracket grown from [-1, 1] (mean 0, variance 1) until the sign changes.
 double solved_quantile(const detail::DensityIntegrand<double>& integrand, double u)
 {
