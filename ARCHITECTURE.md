@@ -19,6 +19,8 @@ them, those models fitted in batches behind a C API and a Python package.
                  |
         src/capi   handles, error boundary
                  |
+        src/sim    simulated paths: Philox, samplers, start states
+                 |
         src/forecast   forecast of a fit, h steps ahead
                  |
         src/fit    driver, batch, standard errors, criteria
@@ -34,7 +36,7 @@ them, those models fitted in batches behind a C API and a Python package.
   src/linalg   Cholesky, least squares (depends on nothing; used by model and fit)
 ```
 
-Dependencies point one way: `core` <- `ad` <- `mean`, `garch`, `dist` <- `model` <- `fit` <- `forecast` <- `capi`,
+Dependencies point one way: `core` <- `ad` <- `mean`, `garch`, `dist` <- `model` <- `fit` <- `forecast` <- `sim` <- `capi`,
 and `optim` <- `fit`. `fit` includes only `forecast/state.hpp` from `forecast`: the plain `ForecastState` that a
 `FitResult` carries. `linalg` sits beside the stack: it depends on nothing, and both `model` (the start values and the
 backcast with mean regressors) and `fit` (the standard errors) use it. Nothing in `src/` includes from `src/capi/` except `capi` itself. Everything below the C API is
@@ -49,7 +51,8 @@ like any other wrapper would be.
 | `src/capi/handles.hpp` | The handle types (`ve_context`, `ve_spec`, `ve_fit_options`, `ve_panel`, `ve_batch`, `ve_fit`, `ve_forecast`), each wrapping one core value |
 | `src/capi/error.hpp`, `error.cpp` | Thread-local `ve_last_error()`, `set_error`, and `guard`, the one place exceptions are caught |
 | `src/capi/context_api.cpp`, `spec_api.cpp`, `panel_api.cpp`, `batch_api.cpp`, `version_api.cpp` | The `extern "C"` functions, one file per handle family |
-| `src/capi/results/fit_api.cpp`, `forecast_api.cpp` | The `extern "C"` functions over results: the accessors of `ve_fit`, and `ve_forecast` |
+| `src/capi/results/fit_api.cpp`, `forecast_api.cpp`, `sim_api.cpp` | The `extern "C"` functions over results: the accessors of `ve_fit`, `ve_forecast`, and `ve_sim_options` / `ve_simulate_*` / `ve_sim` |
+| `src/capi/results/regressor_rows.*` | The checks and copies of the regressors of a horizon, shared by the forecast and the simulation |
 | `src/core/context.hpp`, `context.cpp` | `ve::Context`: the thread pool and thread count |
 | `src/core/spec.hpp` | `ve::Spec` (model, order, distribution, mean, fixed and start values, variance targeting) and `ve::FitConfig` (iterations, tolerance, variance initialization): copyable values |
 | `src/core/panel.hpp` | `ve::PanelView`: a borrowed pointer, T, N, element strides and optional per-series start and length |
@@ -78,7 +81,12 @@ like any other wrapper would be.
 | `src/fit/fit_result.hpp` | `ve::FitResult`: status, estimates, standard errors, series and the forecast state, all by value |
 | `src/forecast/state.hpp` | `ForecastState`: the last max(m, n, p, q) residuals, variances, csGARCH trends and mean deviations of a fit (every deviation with ARFIMA), filled by the final evaluation of `fit_one` through the `deviations` and `permanent` outputs of `loglik` |
 | `src/forecast/forecast.hpp`, `forecast.cpp` | `forecast`: the mean (ARMA, regressors, `archm`, `rugarch`'s ARFIMA rule) over the variance forecast |
-| `src/forecast/variance_forecast.*`, `inputs.hpp` | The variance forecast of each family, in sigma2, log sigma2 or sigma^delta, with future shocks at their expectation; csGARCH by `rugarch`'s closed form from h = 2 |
+| `src/forecast/variance_forecast.*`, `inputs.hpp` | The variance forecast of each family, in sigma2, log sigma2 or sigma^delta, with future shocks at their expectation; csGARCH by `rugarch`'s closed form from h = 2. The shock moments (pi, E\|z\|, kappa) are computed once per call (`moments_of`) |
+| `src/forecast/step.hpp` | `first_step`: the forecast of one step with its mean level and csGARCH q, the step a simulation repeats |
+| `src/sim/philox.hpp` | Philox4x32-10 and `Stream`, the stream of one path (key = seed, counter = (block, path)) |
+| `src/sim/samplers.*` | Box-Muller, Marsaglia-Tsang gamma, Hormann-Leydold GIG, and `Sampler`: z of the standardized density of a fit, for the eight distributions |
+| `src/sim/start.*` | `Start`: the state the paths start from, the final state of a fit or the unconditional state of a spec with every parameter fixed |
+| `src/sim/simulate.*` | `simulate`: each path repeats `first_step` with a drawn shock; the paths are split among the threads of the context |
 | `python/src/volengine/_native.py` | Library discovery (`VOLENGINE_LIB`), ABI check, prototypes, handle ownership |
 | `python/src/volengine/_spec.py`, `_fit.py`, `api.py` | `Spec` and `FitOptions`, `Fit` and the criteria, `Context.fit` |
 | `tests/unit/{ad,capi,dist,fit,garch,mean,model,optim}` | GoogleTest suites mirroring `src/`; `c_header_check.c` compiles the header as C11 |

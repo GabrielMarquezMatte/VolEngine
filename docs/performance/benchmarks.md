@@ -151,6 +151,39 @@ deviation.
 A forecast costs well under a fit in every case. For example, the s11_norm forecast takes about 1 µs against 4.7 ms
 for its fit.
 
+## Simulation (plan 3b)
+
+`BM_Simulate/<series>/paths:10000/h:60/threads:<N>`: one `sim::simulate` of 10 000 paths × 60 steps from a fit of the
+series of the same name, made once outside the timing, with 1 thread and with the 16 threads of the machine (`hw`);
+wall time. `BM_Sampler/<dist>/draws:100000`: 10⁵ draws of one distribution, at the parameters of
+`Samplers.StandardizedMoments`. Measured on the same machine on 2026-11-13 at `953567b` (the benchmarks were registered
+in the commit after it), 5 repetitions; medians, with the standard deviation.
+
+| Series | 1 thread (ms) | sd | 16 threads (ms) | sd |
+| --- | ---: | ---: | ---: | ---: |
+| `s11_norm` | 125 | 2.8 | 21.3 | 0.9 |
+| `egarch11_std` | 286 | 6.4 | 47.7 | 1.5 |
+| `sgarch11_ghyp` | 182 | 7.1 | 27.9 | 0.2 |
+
+| Distribution | 10⁵ draws (ms) | sd |
+| --- | ---: | ---: |
+| norm | 2.92 | 0.03 |
+| std | 7.84 | 0.04 |
+| ged | 11.3 | 1.4 |
+| sstd | 8.90 | 0.11 |
+| sged | 12.0 | 0.15 |
+| nig | 10.3 | 0.12 |
+| ghyp | 10.8 | 0.03 |
+| jsu | 5.08 | 0.02 |
+
+- A step costs about 0.2 µs in sGARCH: the forecast of one step from a state that grows by one entry per step, plus
+  one draw. eGARCH pays a log of its state per step.
+- The 16 threads give about 6×; the paths are independent, so the remainder is the fixed cost of the fit's state
+  and of the pool.
+- The samplers cost 30–120 ns a draw; ghyp and nig spend it in the GIG. Box-Muller and the state of a step dominate
+  over the RNG. `ponytail:` a ziggurat and a step without allocations are the upgrades if a simulation ever needs
+  them (plan 5).
+
 ## Batch scaling
 
 `BM_Batch/threads:N` is one `ve_fit_batch` call with 20 series of T = 5000 and one spec (`s11_norm`), through the C API.

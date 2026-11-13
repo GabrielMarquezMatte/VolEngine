@@ -29,6 +29,16 @@ library whose ABI version differs).
   Python: `Fit.forecast(horizon, mxreg=, vxreg=)` returning a `Forecast`. In eGARCH, apARCH and fGARCH, sigma for
   h > 1 is `rugarch`'s quantity, not sqrt(E[sigma2]). Validated against `rugarch` (108 cases) and `arch` (15 cases)
   in [docs/guide/validation.md](docs/guide/validation.md); benchmarks `BM_Forecast/<series>/h:60`.
+- Simulation: P paths of H steps (returns and sigma, P x H, row = path) from a fit, continuing after its last
+  observation (`rugarch`'s `ugarchsim`), or from a spec with every parameter fixed, from its unconditional state
+  (`ugarchpath`); every model, distribution and option, regressors over the horizon the same for every path. Philox
+  RNG, one stream per path: the same paths for any number of threads, and the first paths and steps of a longer run.
+  **A seed reproduces paths only within the same version of VolEngine**; this file says when they change. C API:
+  `ve_sim_options_create`, `ve_sim_options_set_regressors`, `ve_sim_options_free`, `ve_simulate_fit`,
+  `ve_simulate_spec`, `ve_sim_paths`, `ve_sim_horizon`, `ve_sim_returns`, `ve_sim_sigma`, `ve_sim_free`. Python:
+  `Context.simulate(source, horizon=, paths=, seed=, mxreg=, vxreg=)` returning a `Simulation`. Validated
+  statistically in [docs/guide/validation.md](docs/guide/validation.md#simulation); benchmarks `BM_Simulate`,
+  `BM_Sampler`.
 - A fit keeps a small final state (the last max(m, n, p, q) residuals, variances, csGARCH trends and mean
   deviations; every deviation with ARFIMA) for the forecast; no number of a fit changes.
 - ARFIMA mean for every model and distribution, following `rugarch`'s `arfima = TRUE`: the parameter `arfima`
