@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/spec.hpp"
+#include "fit/nyblom.hpp"
 #include "forecast/state.hpp"
 
 #include <cstddef>
@@ -38,6 +39,7 @@ struct FitResult
     std::vector<double> std_residuals;
     std::vector<double> fitted;
     forecast::ForecastState state;
+    fit::Nyblom nyblom;
 };
 
 }

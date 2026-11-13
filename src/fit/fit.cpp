@@ -9,6 +9,7 @@
 #include "optim/lbfgs.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -257,6 +258,16 @@ forecast::ForecastState final_state(const model::Layout& layout, const fit::Logl
             last(series.deviations, deviations)};
 }
 
+fit::Nyblom nyblom_at_estimate(std::span<const double> scores, const model::Layout& layout)
+{
+    std::array<bool, kMaxParameterCount> estimated{};
+    for (std::size_t i = 0; i < layout.count(); ++i)
+    {
+        estimated[i] = layout.is_estimated(i);
+    }
+    return fit::nyblom_statistics(scores, layout.count(), {estimated.data(), layout.count()});
+}
+
 bool fill_at_estimate(FitResult& result, const fit::LikelihoodProblem& problem,
                       const model::Standardization& standardization)
 {
@@ -291,6 +302,7 @@ bool fill_at_estimate(FitResult& result, const fit::LikelihoodProblem& problem,
         });
     result.se_hessian = std::move(errors.hessian);
     result.se_robust = std::move(errors.robust);
+    result.nyblom = nyblom_at_estimate(scores, problem.layout);
     return true;
 }
 

@@ -65,6 +65,7 @@ add_library(volengine_core STATIC
     src/diagnostics/sign_bias.cpp
     src/diagnostics/gof.cpp
     src/dist/cdf.cpp
+    src/fit/nyblom.cpp
     src/dist/bessel.cpp
     src/dist/moments.cpp
     src/fit/batch.cpp
@@ -136,6 +137,7 @@ if(VE_BUILD_TESTS)
         tests/unit/diagnostics/portmanteau_test.cpp
         tests/unit/diagnostics/sign_bias_test.cpp
         tests/unit/diagnostics/gof_test.cpp
+        tests/unit/fit/nyblom_test.cpp
         tests/unit/dist/bessel_test.cpp
         tests/unit/dist/densities_test.cpp
         tests/unit/dist/moments_test.cpp
