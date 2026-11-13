@@ -63,7 +63,19 @@ The univariate fits must have the same T (at least 100) and finite estimates; at
 Information criteria count the estimated univariate and DCC parameters and the sample correlation entries.
 Each DCC result has its own convergence status. Standard errors can be deferred until after model selection;
 the explicit call requires the original univariate estimates in the original order. Standard errors with
-univariate external regressors are currently unsupported. DCC forecast and simulation are planned separately.
+univariate external regressors are currently unsupported.
+
+A DCC fit forecasts and simulates without the univariate fits, which it no longer needs:
+
+```python
+forecast = best.forecast(60)                   # R, H of shape (60, 21, 21), sigma and mean of shape (60, 21)
+print(forecast.H[-1])                          # the covariance matrix 60 steps ahead
+paths = ctx.simulate(best, horizon=60, paths=1000, seed=7, correlations=True)
+print(paths.returns.shape, paths.H.shape)      # (1000, 60, 21) and (1000, 60, 21, 21)
+```
+
+The same seed gives the same paths for any thread count, within one version of the library. `mxreg` and `vxreg`
+are sequences with the regressors of the horizon of each series (or `None`).
 
 A Copula-DCC is the same spec with `copula="parametric"` (each fit's cdf) or `"empirical"` (ranks), and a static
 copula is `model="static"`. Both kinds go in one grid, and their BIC uses the same parameter count:

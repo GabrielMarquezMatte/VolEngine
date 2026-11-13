@@ -42,6 +42,23 @@ library whose ABI version differs).
   `DccSpec(model="static", copula=..., static_method=...)`. Validated against `rmgarch`'s `cgarchfit`, with the
   public convention following the papers (see `docs/guide/validation.md`). Benchmarks: `BM_CopulaFit`,
   `BM_CopulaGrid`, `BM_CopulaStandardErrors`.
+- DCC forecast and simulation, for every DCC, aDCC, FDCC and Copula-DCC fit made by a batch (the fit keeps the final
+  state of each series and of its correlation recursion, so neither needs the univariate fits afterwards). Forecast:
+  R, H, sigma and mean for h = 1..H as `rmgarch`'s `dccforecast`: the exact recursion for h = 1 and, for h >= 2,
+  R_h = (1 - k^(h-1)) Rbar + k^(h-1) R_1 with the total persistence k (the aDCC and the FDCC extend it where
+  `rmgarch` refuses or gives no value; see [docs/guide/validation.md](docs/guide/validation.md)). Simulation: P
+  multivariate paths of H steps with the shock of the mvnorm, the mvt or the mvlaplace, through the copula and the
+  margins of each series in a Copula-DCC, with R and H per path on request. **The seed rule is that of the univariate
+  simulation:** path p reads only `Stream(seed, p)`, the same paths for any number of threads and the first paths and
+  steps of a longer run, and **a seed reproduces paths only within the same version of VolEngine**. C API:
+  `ve_dcc_future_create`, `ve_dcc_future_set`, `ve_dcc_future_free`, `ve_dcc_forecast_create`,
+  `ve_dcc_forecast_horizon`, `ve_dcc_forecast_series`, `ve_dcc_forecast_correlation`, `ve_dcc_forecast_covariance`,
+  `ve_dcc_forecast_sigma`, `ve_dcc_forecast_mean`, `ve_dcc_forecast_free`, `ve_sim_options_set_correlations`,
+  `ve_simulate_dcc`, `ve_dcc_sim_paths`, `ve_dcc_sim_horizon`, `ve_dcc_sim_series`, `ve_dcc_sim_returns`,
+  `ve_dcc_sim_sigma`, `ve_dcc_sim_correlation`, `ve_dcc_sim_covariance`, `ve_dcc_sim_free`. Python:
+  `DccFit.forecast(horizon, mxreg=, vxreg=)` returning a `DccForecast`, and `Context.simulate(dcc_fit, horizon=,
+  paths=, seed=, correlations=, mxreg=, vxreg=)` returning a `DccSimulation`; the per-series regressors are
+  sequences with one entry (or `None`) per series. Benchmarks: `BM_DccForecast`, `BM_DccSimulate`.
 - Diagnostics reported by `rugarch`'s `show()`: weighted Ljung-Box on standardized residuals or their squares,
   weighted ARCH-LM, Nyblom stability with individual and joint critical values, Engle-Ng sign bias and adjusted
   Pearson goodness of fit for all eight distributions. C API: `ve_fit_ljung_box`, `ve_fit_arch_lm`,

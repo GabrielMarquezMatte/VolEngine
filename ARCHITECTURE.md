@@ -75,7 +75,7 @@ depends on `dcc` and `dcc` on it for that dispatch only: `dist` <- `dcc/copula` 
 | `src/capi/results/fit_api.cpp`, `forecast_api.cpp`, `sim_api.cpp` | The `extern "C"` functions over results: the accessors of `ve_fit`, `ve_forecast`, and `ve_sim_options` / `ve_simulate_*` / `ve_sim` |
 | `src/capi/results/regressor_rows.*` | The checks and copies of the regressors of a horizon, shared by the forecast and the simulation |
 | `src/capi/results/diagnostics_api.cpp` | Diagnostic argument checks and caller-owned result arrays over immutable fits |
-| `src/capi/dcc/` | DCC spec/options, batch fitting, immutable result accessors, lazy covariance cache and deferred standard-error handles |
+| `src/capi/dcc/` | DCC spec/options, batch fitting, immutable result accessors, lazy covariance cache and deferred standard-error handles; `dcc_forecast_api.cpp` (`ve_dcc_future`, `ve_dcc_forecast`) and `dcc_sim_api.cpp` (`ve_simulate_dcc`, `ve_dcc_sim`) |
 | `src/core/context.hpp`, `context.cpp` | `ve::Context`: the thread pool and thread count |
 | `src/core/spec.hpp` | `ve::Spec` (model, order, distribution, mean, fixed and start values, variance targeting) and `ve::FitConfig` (iterations, tolerance, variance initialization): copyable values |
 | `src/core/panel.hpp` | `ve::PanelView`: a borrowed pointer, T, N, element strides and optional per-series start and length |
@@ -88,7 +88,7 @@ depends on `dcc` and `dcc` on it for that dispatch only: `dist` <- `dcc/copula` 
 | `src/dcc/recursion.hpp`, `likelihood.*` | DCC/aDCC/FDCC correlation paths and multivariate normal, Student-t and Laplace log-densities, templated for AD |
 | `src/dcc/parameter_map.*`, `fit.*` | Parameter layout and constraints, L-BFGS estimation, deterministic batches, full likelihood criteria and covariance paths |
 | `src/dcc/copula/` | Copula-DCC: margins to uniforms (`margins.*`), scores (`scores.*`), static Kendall/ML correlation (`static_fit.*`), profile fit and copula likelihood (`fit.*`) |
-| `src/dcc/future/` | The future of a DCC fit (plan 4c): the final state of the correlation recursion and the `CorrelationStepper` that advances Q and R one step (`state.*`) |
+| `src/dcc/future/` | The future of a DCC fit (plan 4c): the final state of the correlation recursion and the `CorrelationStepper` that advances Q and R one step (`state.*`), `forecast_dcc` (`forecast.*`) and `simulate_dcc` (`simulate.*`) |
 | `src/dcc/standard_errors.*` | Two-stage Hessian and sandwich standard errors, with univariate refiltering and source-estimate validation |
 | `src/mean/arma.hpp` | ARMA(m,n) residuals over the returns or over the deviations from the mean (regressors included), a template over the scalar type |
 | `src/mean/fractional.hpp` | The ARFIMA fractional difference (1 - L)^d of the mean residuals, truncated at the first observation, in place, O(T^2) |
@@ -99,7 +99,7 @@ depends on `dcc` and `dcc` on it for that dispatch only: `dist` <- `dcc/copula` 
 | `src/dist/symmetric.hpp`, `skewed.hpp`, `hyperbolic.hpp`, `johnson.hpp` | The families of the variant: norm, std and ged; sstd and sged (Fernandez-Steel); nig and ghyp; jsu. Templates over the scalar type |
 | `src/dist/bessel.hpp`, `bessel.cpp` | `log_bessel_k` and its derivatives. Boost.Math is included only in `.cpp` files (`bessel.cpp`, `dist/cdf.cpp`, `diagnostics/tails.cpp`), so no header exposes it |
 | `src/dist/moments.hpp`, `moments.cpp` | Expected absolute shock, P(z < 0) and the fGARCH news moments (Gauss-Legendre quadrature for the shifted and the asymmetric ones) |
-| `src/dist/cdf.*` | Standardized CDFs of all eight distributions; sorted accumulation of density quadrature for nig and ghyp |
+| `src/dist/cdf.*` | Standardized CDFs of all eight distributions; sorted accumulation of density quadrature for nig and ghyp; `quantile`, their inverse (closed forms, a root solve for nig and ghyp), used by the Copula-DCC simulation |
 | `src/diagnostics/` | Upper probability tails, weighted Ljung-Box and ARCH-LM, sign-bias regression and adjusted Pearson GOF |
 | `src/model/data.hpp` | `Data`: the series and its row-major regressor matrices (mean and variance) |
 | `src/model/layout.hpp`, `layout.cpp` | `Layout`: parameter blocks (gamma, eta1, eta2, power), offsets, count, `ParameterKind` of each parameter, rugarch names of a `Spec`, and the role of each parameter (estimated, fixed or derived; `estimated_count`) |
@@ -120,6 +120,7 @@ depends on `dcc` and `dcc` on it for that dispatch only: `dist` <- `dcc/copula` 
 | `src/sim/philox.hpp` | Philox4x32-10 and `Stream`, the stream of one path (key = seed, counter = (block, path)) |
 | `src/sim/samplers.*` | Box-Muller, Marsaglia-Tsang gamma, Hormann-Leydold GIG, and `Sampler`: z of the standardized density of a fit, for the eight distributions |
 | `src/sim/start.*` | `Start`: the state the paths start from, the final state of a fit or the unconditional state of a spec with every parameter fixed |
+| `src/sim/path.*` | `Path`: one path of one series, a step that takes the shock from outside (the univariate `simulate` and the DCC simulation both step through it) |
 | `src/sim/simulate.*` | `simulate`: each path repeats `first_step` with a drawn shock; the paths are split among the threads of the context |
 | `python/src/volengine/_native.py` | Library discovery (`VOLENGINE_LIB`), ABI check, prototypes, handle ownership |
 | `python/src/volengine/_spec.py`, `_fit.py`, `api.py` | `Spec` and `FitOptions`, `Fit` and the criteria, `Context.fit` |
