@@ -5,6 +5,8 @@
 #include <boost/math/special_functions/gamma.hpp>
 
 #include <algorithm>
+#include <array>
+#include <variant>
 #include <cmath>
 #include <limits>
 #include <numbers>
@@ -56,13 +58,52 @@ double skewed_cdf(const SkewedLogDensity<double>& density, double z)
     return (1.0 + 2.0 * skew_squared * (kernel_cdf(density.kernel, y / density.skew) - 0.5)) / denominator;
 }
 
+// The width over which a nig or ghyp density changes: delta below 1 puts its peak within a few delta of the location.
+double density_scale(const detail::DensityIntegrand<double>& integrand)
+{
+    const auto* hyperbolic = std::get_if<HyperbolicLogDensity<double>>(&integrand.density);
+    if (hyperbolic == nullptr)
+    {
+        return 1.0;
+    }
+    return std::min(1.0, hyperbolic->delta);
+}
+
+// Five-point Gauss-Legendre on [0, 1]: exact to rounding on a piece much narrower than the density scale, which is
+// every gap between neighbouring residuals of a fit.
+constexpr std::array<detail::QuadratureNode, 5> kShortRule{{
+    {0.04691007703066800, 0.11846344252809454},
+    {0.23076534494715845, 0.23931433524968324},
+    {0.5, 0.28444444444444444},
+    {0.76923465505284155, 0.23931433524968324},
+    {0.95308992296933200, 0.11846344252809454},
+}};
+constexpr double kShortPiece = 0.02;
+
+double short_integral(const detail::DensityIntegrand<double>& integrand, double lower, double upper)
+{
+    double width = upper - lower;
+    double sum = 0.0;
+    for (const detail::QuadratureNode& node : kShortRule)
+    {
+        sum += node.weight * integrand(lower + width * node.t);
+    }
+    return width * sum;
+}
+
+// int over [lower, upper] in pieces no wider than the density scale (at most 1024 of them).
 double integrate_segment(const detail::DensityIntegrand<double>& integrand, double lower, double upper)
 {
-    double pieces = std::min(1024.0, std::ceil(upper - lower));
-    if (pieces <= 0.0)
+    double scale = density_scale(integrand);
+    if (!(upper > lower))
     {
         return 0.0;
     }
+    if (upper - lower <= kShortPiece * scale)
+    {
+        return short_integral(integrand, lower, upper);
+    }
+    double pieces = std::min(1024.0, std::ceil((upper - lower) / scale));
     double width = (upper - lower) / pieces;
     double sum = 0.0;
     for (double i = 0.0; i < pieces; i += 1.0)
@@ -72,22 +113,33 @@ double integrate_segment(const detail::DensityIntegrand<double>& integrand, doub
     return sum;
 }
 
+// The integral from 0, for |z| <= 1.
+double central_cdf(const detail::DensityIntegrand<double>& integrand, double z)
+{
+    double below_zero = detail::below_zero_quadrature(integrand, 1.0);
+    if (z < 0.0)
+    {
+        return below_zero - integrate_segment(integrand, z, 0.0);
+    }
+    return below_zero + integrate_segment(integrand, 0.0, z);
+}
+
+// Beyond |z| = 1 the tail integral, scaled so that it meets the central integral at +-1: the two quadratures differ
+// by up to ~1e-8 on a peaked density, which would otherwise make the cdf jump there. The scale keeps the tail going
+// to 0 (or 1).
 double quadrature_cdf(const detail::DensityIntegrand<double>& integrand, double z)
 {
     if (z < -1.0)
     {
-        return std::clamp(detail::tail_integral(integrand, z + 1.0, -1.0, 1.0), 0.0, 1.0);
+        double scale = central_cdf(integrand, -1.0) / detail::tail_integral(integrand, 0.0, -1.0, 1.0);
+        return std::clamp(scale * detail::tail_integral(integrand, z + 1.0, -1.0, 1.0), 0.0, 1.0);
     }
     if (z > 1.0)
     {
-        return std::clamp(1.0 - detail::tail_integral(integrand, z - 1.0, 1.0, 1.0), 0.0, 1.0);
+        double scale = (1.0 - central_cdf(integrand, 1.0)) / detail::tail_integral(integrand, 0.0, 1.0, 1.0);
+        return std::clamp(1.0 - scale * detail::tail_integral(integrand, z - 1.0, 1.0, 1.0), 0.0, 1.0);
     }
-    double below_zero = detail::below_zero_quadrature(integrand, 1.0);
-    if (z < 0.0)
-    {
-        return std::clamp(below_zero - integrate_segment(integrand, z, 0.0), 0.0, 1.0);
-    }
-    return std::clamp(below_zero + integrate_segment(integrand, 0.0, z), 0.0, 1.0);
+    return std::clamp(central_cdf(integrand, z), 0.0, 1.0);
 }
 
 bool needs_quadrature(Dist dist)

@@ -199,10 +199,13 @@ ARCH-LM uses lag 5 and fitdf 2, sign bias computes all four tests, and GOF uses 
 | `s11_norm` | ARCH-LM | 22.95 | 0.27 |
 | `s11_norm` | Sign bias | 38.50 | 0.92 |
 | `s11_norm` | Pearson GOF | 256.70 | 10.44 |
-| `sgarch11_ghyp` | Pearson GOF | 351562.50 | 3493.86 |
+| `sgarch11_ghyp` | Pearson GOF | 29375.00 | 1767.77 |
 
 The ghyp GOF integrates its density between sorted residuals; it is substantially more expensive than
-the closed normal CDF. It does not repeat an integral from negative infinity for every observation.
+the closed normal CDF. It does not repeat an integral from negative infinity for every observation. The
+ghyp row was measured again after the review fix that integrates a gap much narrower than the density scale
+(every gap between the residuals of a fit) with a five-point rule instead of 64 points: 351 562 µs before,
+29 375 µs after, with the same Pearson counts on all 108 `rugarch` cases.
 
 Reproduce with `/c/msys64/ucrt64/bin` first on PATH:
 
