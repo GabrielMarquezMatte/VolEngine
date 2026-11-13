@@ -8,6 +8,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 
 using ve::capi::guard;
@@ -82,7 +84,7 @@ extern "C" ve_status ve_fit_arch_lm(const ve_fit* f, size_t lag, size_t fitdf, d
     });
 }
 
-extern "C" ve_status ve_fit_nyblom(const ve_fit* f, double* individual, double* joint)
+extern "C" ve_status ve_fit_nyblom(const ve_fit* f, double* individual, double* joint, int32_t* estimated)
 {
     return guard([&]
     {
@@ -91,9 +93,14 @@ extern "C" ve_status ve_fit_nyblom(const ve_fit* f, double* individual, double* 
         {
             return status;
         }
-        if (joint == nullptr)
+        if (joint == nullptr || estimated == nullptr)
         {
-            return set_error(VE_INVALID_ARGUMENT, "joint must not be null");
+            return set_error(VE_INVALID_ARGUMENT, "joint and estimated must not be null");
+        }
+        const ve::model::Layout layout = ve::model::layout_of(f->result.spec);
+        for (std::size_t i = 0; i < layout.count(); ++i)
+        {
+            estimated[i] = layout.is_estimated(i) ? 1 : 0;
         }
         std::ranges::copy(f->result.nyblom.individual, individual);
         *joint = f->result.nyblom.joint;

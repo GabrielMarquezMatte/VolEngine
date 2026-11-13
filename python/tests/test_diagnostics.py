@@ -84,10 +84,12 @@ def test_nyblom_retains_estimated_nan(fit, monkeypatch):
 
     from volengine._native import lib
 
-    def zero_scores(pointer, individual, joint):
+    def zero_scores(pointer, individual, joint, estimated):
         values = (ctypes.c_double * len(fit.names)).from_address(individual)
+        flags = (ctypes.c_int32 * len(fit.names)).from_address(estimated)
         for i in range(len(values)):
             values[i] = float("nan")
+            flags[i] = 1
         ctypes.cast(joint, ctypes.POINTER(ctypes.c_double))[0] = float("nan")
         return 0
 
@@ -96,3 +98,11 @@ def test_nyblom_retains_estimated_nan(fit, monkeypatch):
     assert set(result.individual) == set(fit.names)
     assert all(np.isnan(value) for value in result.individual.values())
     assert result.joint_critical == (1.07, 1.24, 1.60)
+
+
+def test_nyblom_roles_come_from_the_fit(ctx, series):
+    """The fit itself says which parameters it estimated: a Fit built from the handle alone knows them."""
+    fit = ctx.fit(ve.Spec(fixed={"mu": 0.05}), series[:, 0])
+    alone = ve.Fit(fit._handle)
+    assert set(alone.nyblom().individual) == set(fit.names) - {"mu"}
+    assert alone.nyblom().joint_critical == ve.Fit(fit._handle).nyblom().joint_critical

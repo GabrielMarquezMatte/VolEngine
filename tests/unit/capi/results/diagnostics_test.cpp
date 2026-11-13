@@ -7,6 +7,7 @@
 #include "model/layout.hpp"
 #include "simulated_garch.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
@@ -66,18 +67,21 @@ TEST(CapiDiagnostics, MatchCore)
     }
     std::vector<double> individual(core.names.size());
     double joint = 0.0;
-    ASSERT_EQ(ve_fit_nyblom(f, individual.data(), &joint), VE_OK);
+    std::vector<int32_t> estimated(core.names.size(), -1);
+    ASSERT_EQ(ve_fit_nyblom(f, individual.data(), &joint, estimated.data()), VE_OK);
     EXPECT_EQ(individual, core.nyblom.individual);
     EXPECT_EQ(joint, core.nyblom.joint);
+    EXPECT_EQ(estimated, std::vector<int32_t>(core.names.size(), 1));
 }
 
 TEST(CapiDiagnostics, InvalidArguments)
 {
     ve_fit empty;
     double out[8]{};
+    int32_t flags[8]{};
     EXPECT_EQ(ve_fit_ljung_box(nullptr, 0, 1, 0, out), VE_INVALID_HANDLE);
     EXPECT_EQ(ve_fit_arch_lm(nullptr, 3, 2, out), VE_INVALID_HANDLE);
-    EXPECT_EQ(ve_fit_nyblom(nullptr, out, out), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_fit_nyblom(nullptr, out, out, flags), VE_INVALID_HANDLE);
     EXPECT_EQ(ve_fit_sign_bias(nullptr, out), VE_INVALID_HANDLE);
     EXPECT_EQ(ve_fit_gof(nullptr, 20, out), VE_INVALID_HANDLE);
     EXPECT_EQ(ve_fit_gof(&empty, 20, out), VE_INVALID_ARGUMENT);
@@ -98,8 +102,9 @@ TEST(CapiDiagnostics, InvalidArguments)
     EXPECT_EQ(ve_fit_arch_lm(f, 3, 2, nullptr), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_fit_gof(f, 2, nullptr), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_fit_sign_bias(f, nullptr), VE_INVALID_ARGUMENT);
-    EXPECT_EQ(ve_fit_nyblom(f, nullptr, out), VE_INVALID_ARGUMENT);
-    EXPECT_EQ(ve_fit_nyblom(f, out, nullptr), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_nyblom(f, nullptr, out, flags), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_nyblom(f, out, nullptr, flags), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_nyblom(f, out, out, nullptr), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_nyblom_critical(0, out), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_nyblom_critical(21, out), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_nyblom_critical(1, nullptr), VE_INVALID_ARGUMENT);
@@ -117,8 +122,10 @@ TEST(CapiDiagnostics, NyblomWithFixedParameters)
     f.result = ve::fit_one(ve::testing::simulate_garch_series(1, 800), spec, ve::FitConfig{});
     std::vector<double> individual(f.result.names.size());
     double joint = 0.0;
-    ASSERT_EQ(ve_fit_nyblom(&f, individual.data(), &joint), VE_OK);
+    std::vector<int32_t> estimated(individual.size());
+    ASSERT_EQ(ve_fit_nyblom(&f, individual.data(), &joint, estimated.data()), VE_OK);
     EXPECT_TRUE(std::isnan(individual[0]));
+    EXPECT_EQ(estimated[0], 0);
     for (std::size_t i = 1; i < individual.size(); ++i)
     {
         EXPECT_TRUE(std::isfinite(individual[i]));
@@ -139,7 +146,8 @@ TEST(CapiDiagnostics, NoFinitePointRejectsEveryDiagnostic)
     EXPECT_EQ(std::string(ve_last_error()), "the fit has no finite point");
     EXPECT_EQ(ve_fit_arch_lm(&f, 3, 2, out.data()), VE_INVALID_ARGUMENT);
     EXPECT_EQ(std::string(ve_last_error()), "the fit has no finite point");
-    EXPECT_EQ(ve_fit_nyblom(&f, out.data(), &joint), VE_INVALID_ARGUMENT);
+    std::array<int32_t, 8> flags{};
+    EXPECT_EQ(ve_fit_nyblom(&f, out.data(), &joint, flags.data()), VE_INVALID_ARGUMENT);
     EXPECT_EQ(std::string(ve_last_error()), "the fit has no finite point");
     EXPECT_EQ(ve_fit_sign_bias(&f, out.data()), VE_INVALID_ARGUMENT);
     EXPECT_EQ(std::string(ve_last_error()), "the fit has no finite point");
@@ -181,15 +189,26 @@ TEST(CapiDiagnostics, NyblomExcludesDerivedAndAllFixedParameters)
     f.result = ve::fit_one(series, targeted, ve::FitConfig{});
     std::vector<double> individual(f.result.names.size());
     double joint = 0.0;
-    ASSERT_EQ(ve_fit_nyblom(&f, individual.data(), &joint), VE_OK);
+    std::vector<int32_t> estimated(individual.size());
+    ASSERT_EQ(ve_fit_nyblom(&f, individual.data(), &joint, estimated.data()), VE_OK);
     const auto layout = ve::model::layout_of(targeted);
     EXPECT_TRUE(std::isnan(individual[layout.omega()]));
     EXPECT_EQ(f.result.nyblom.estimated, layout.count() - 1);
+    EXPECT_EQ(estimated[layout.omega()], 0);
+    EXPECT_EQ(std::count(estimated.begin(), estimated.end(), 1), static_cast<long>(layout.count() - 1));
+    ve::Spec integrated{.model = ve::Model::IGarch};
+    ve_fit igarch;
+    igarch.result = ve::fit_one(series, integrated, ve::FitConfig{});
+    std::vector<double> igarch_individual(igarch.result.names.size());
+    std::vector<int32_t> igarch_estimated(igarch_individual.size());
+    ASSERT_EQ(ve_fit_nyblom(&igarch, igarch_individual.data(), &joint, igarch_estimated.data()), VE_OK);
+    EXPECT_EQ(igarch_estimated.back(), 0);
     ve::Spec fixed;
     fixed.fixed = {{"mu", 0.05}, {"omega", 0.01}, {"alpha1", 0.08}, {"beta1", 0.9}};
     f.result = ve::fit_one(series, fixed, ve::FitConfig{});
-    ASSERT_EQ(ve_fit_nyblom(&f, individual.data(), &joint), VE_OK);
+    ASSERT_EQ(ve_fit_nyblom(&f, individual.data(), &joint, estimated.data()), VE_OK);
     EXPECT_EQ(f.result.nyblom.estimated, 0);
+    EXPECT_EQ(estimated, std::vector<int32_t>(estimated.size(), 0));
     EXPECT_TRUE(std::isnan(joint));
     for (double value : individual)
     {
