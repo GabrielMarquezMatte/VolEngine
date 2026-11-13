@@ -44,6 +44,8 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_dcc_spec_set_groups": (_STATUS, [_HANDLE, ctypes.POINTER(_I32), _SIZE]),
     "ve_dcc_spec_set_fixed": (_STATUS, [_HANDLE, ctypes.c_char_p, _DOUBLE]),
     "ve_dcc_spec_set_start": (_STATUS, [_HANDLE, ctypes.c_char_p, _DOUBLE]),
+    "ve_dcc_spec_set_copula": (_STATUS, [_HANDLE, _I32]),
+    "ve_dcc_spec_set_static_method": (_STATUS, [_HANDLE, _I32]),
     "ve_dcc_options_create": (_STATUS, [_OUT_HANDLE]),
     "ve_dcc_options_set_standard_errors": (_STATUS, [_HANDLE, _I32]),
     "ve_dcc_batch_create": (_STATUS, [_OUT_HANDLE]),

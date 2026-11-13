@@ -366,6 +366,7 @@ typedef struct ve_dcc_fit ve_dcc_fit;
 #define VE_DCC_MODEL_DCC 0
 #define VE_DCC_MODEL_ADCC 1
 #define VE_DCC_MODEL_FDCC 2
+#define VE_DCC_MODEL_STATIC 3
 #define VE_DCC_DIST_MVNORM 0
 #define VE_DCC_DIST_MVT 1
 #define VE_DCC_DIST_MVLAPLACE 2
@@ -380,6 +381,19 @@ VE_API ve_status ve_dcc_spec_set_groups(ve_dcc_spec* s, const int32_t* groups, s
 VE_API ve_status ve_dcc_spec_set_fixed(ve_dcc_spec* s, const char* name, double value);
 VE_API ve_status ve_dcc_spec_set_start(ve_dcc_spec* s, const char* name, double value);
 VE_API void ve_dcc_spec_free(ve_dcc_spec* s);
+/* Copula-DCC: the margins become uniforms by each fit's cdf (parametric) or by ranks (empirical), and the model
+   (static, dcc or adcc) runs on their normal or Student scores (dist mvnorm or mvt). VE_DCC_COPULA_NONE is the
+   plain DCC. The static model needs a copula; the fdcc and the mvlaplace take none. The static method (Kendall by
+   default, or ML, whose C1.. are rmgarch's free entries of A with R = cov2cor(A A')) is only for the static model.
+   The setters check ranges; ve_dcc_fit_batch rejects the combinations. */
+#define VE_DCC_COPULA_NONE 0
+#define VE_DCC_COPULA_PARAMETRIC 1
+#define VE_DCC_COPULA_EMPIRICAL 2
+#define VE_DCC_STATIC_DEFAULT 0
+#define VE_DCC_STATIC_KENDALL 1
+#define VE_DCC_STATIC_ML 2
+VE_API ve_status ve_dcc_spec_set_copula(ve_dcc_spec* s, int32_t transformation);
+VE_API ve_status ve_dcc_spec_set_static_method(ve_dcc_spec* s, int32_t method);
 /* Standard errors are enabled by default; regressors make them VE_UNSUPPORTED. */
 VE_API ve_status ve_dcc_options_create(ve_dcc_options** out);
 VE_API ve_status ve_dcc_options_set_standard_errors(ve_dcc_options* o, int32_t on);

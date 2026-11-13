@@ -166,3 +166,52 @@ TEST(Cdf, SortedMatchesPointwiseOnDenseSamples)
 }
 
 }
+
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
+namespace
+{
+
+// The x87 precision-control field: a thread whose CRT sets 53-bit precision (the Python main thread on MinGW) and
+// one with 64-bit precision (a pool thread) compute long double differently.
+unsigned short x87_control()
+{
+    unsigned short word = 0;
+    __asm__ volatile("fnstcw %0" : "=m"(word));
+    return word;
+}
+
+void set_x87_control(unsigned short word)
+{
+    __asm__ volatile("fldcw %0" : : "m"(word));
+}
+
+}
+
+TEST(Cdf, SameBitsAtAnyX87Precision)
+{
+    const unsigned short saved = x87_control();
+    const std::array<double, 5> points{-4.3, -1.1, 0.37, 2.2, 6.5};
+    std::vector<double> extended;
+    std::vector<double> rounded;
+    for (const Dist dist : {Dist::Std, Dist::Ged})
+    {
+        ve::dist::ShapeParameters<double> shape;
+        shape.shape = dist == Dist::Std ? 5.311179277998689 : 1.37;
+        set_x87_control(static_cast<unsigned short>((saved & ~0x0300U) | 0x0300U));
+        for (const double z : points)
+        {
+            extended.push_back(ve::dist::cdf(dist, shape, z));
+        }
+        set_x87_control(static_cast<unsigned short>((saved & ~0x0300U) | 0x0200U));
+        for (const double z : points)
+        {
+            rounded.push_back(ve::dist::cdf(dist, shape, z));
+        }
+        set_x87_control(saved);
+    }
+    for (std::size_t i = 0; i < extended.size(); ++i)
+    {
+        EXPECT_EQ(extended[i], rounded[i]) << i;
+    }
+}
+#endif
