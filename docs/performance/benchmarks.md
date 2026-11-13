@@ -55,6 +55,14 @@ page, so this page publishes no number for them. The run is also to record the p
 `BM_FitOne` for nig and ghyp, to decide whether a Bessel K of our own or an analytic derivative in the ghyp
 lambda is worth it. The tables below are those of plan 2a and describe sGARCH only.
 
+## Plan 2f case: not measured yet
+
+ARFIMA is `BM_Loglik/arfima_sgarch11_norm/{double,dual}` and `BM_FitOne/arfima_sgarch11_norm` (T = 5000), on the
+`arfima_sgarch11_norm` process of `tests/unit/simulated_garch.hpp` at its parameters. The fractional difference is a
+direct O(T^2) sum (marked `ponytail:` in `src/mean/fractional.hpp`, with an FFT convolution as the way out), so at
+T = 5000 it dominates the evaluation. The case was only built and run briefly on the plan's machine, to check that it
+runs; the measurement is left to the benchmark machine, and this page publishes no number for it.
+
 ## Plan 2e cases: not measured yet
 
 The regressor and ARCH-in-mean cases are `BM_Loglik/<series>/{double,dual}` and `BM_FitOne/<series>` (T = 5000) for

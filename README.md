@@ -14,7 +14,8 @@ Student-t (`std`) or GED (`ged`) innovations, or the skewed ones: skewed Student
 normal inverse Gaussian (`nig`), generalized hyperbolic (`ghyp`) and Johnson SU (`jsu`), with Hessian and robust
 standard errors and the usual information criteria. Any estimated parameter can be fixed or given a start value
 (the derived ones cannot), the variance can be targeted, and the mean and the variance take external regressors
-(`mxreg`, `vxreg`) and ARCH-in-mean (`archm`), as in `rugarch`. More features come in later releases.
+(`mxreg`, `vxreg`), ARCH-in-mean (`archm`) and an ARFIMA mean (`arfima`), as in `rugarch`. More features come in
+later releases.
 Until 1.0 the C ABI may change between releases. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Python example
@@ -95,6 +96,18 @@ the spec, and a wrong count or shape is a `ValueError`; the regressor of row t a
 restriction when there is a `vxreg`); under variance targeting `omega` is the target minus the coefficients times the
 regressor means. The conventions and the checks against `rugarch` and `arch` are in
 [docs/guide/validation.md](docs/guide/validation.md#rugarch-and-arch-regressors-and-arch-in-mean).
+
+ARFIMA adds a fractional difference d in (1e-8, 0.5) to the mean, as `rugarch`'s `arfima = TRUE`: the ARMA residuals
+e_t become the truncated (1 - L)^d of the series, sum of pi_k e_(t-k) for k = 0..t. It cannot be combined with
+`archm`, and its cost grows as T^2:
+
+```python
+fit = ctx.fit(ve.Spec(arma=(1, 0), arfima=True), returns)
+print(fit.coef())                 # mu, ar1, arfima, omega, alpha1, beta1
+```
+
+The convention and the checks against `rugarch` are in
+[docs/guide/validation.md](docs/guide/validation.md#rugarch-arfima).
 
 `ctx.fit` also takes a `(T, N)` array (one fit per column), a list of specs, `starts` and `lengths` for series of
 different lengths, and `options=ve.FitOptions(var_init="backcast")` for the `arch` convention.

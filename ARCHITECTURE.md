@@ -53,6 +53,7 @@ like any other wrapper would be.
 | `src/ad/dual.hpp`, `special.hpp`, `special.cpp` | `ve::ad::Dual<N>`: forward-mode dual numbers and their elementary functions; `digamma` |
 | `src/linalg/cholesky.*`, `least_squares.*` | Cholesky factor and solve; minimum-norm least squares by the normal equations, with a Jacobi pseudo-inverse when they are singular |
 | `src/mean/arma.hpp` | ARMA(m,n) residuals over the returns or over the deviations from the mean (regressors included), a template over the scalar type |
+| `src/mean/fractional.hpp` | The ARFIMA fractional difference (1 - L)^d of the mean residuals, truncated at the first observation, in place, O(T^2) |
 | `src/garch/presample.hpp` | The pre-sample rule shared by the recursions: a state held at a value up to a time, and the expected value of a term before the first observation |
 | `src/garch/sgarch.hpp`, `egarch.hpp`, `gjrgarch.hpp`, `csgarch.hpp` | The variance recursions of sGARCH (also iGARCH), eGARCH, gjrGARCH and csGARCH, templates over the scalar type |
 | `src/garch/power_garch.hpp` | The recursion in sigma^power shared by apARCH and the eight fGARCH submodels |
@@ -154,7 +155,9 @@ then the variance (the loop of plan 2d, bit for bit). With `archm` the mean at t
 advances the variance step and the mean residual together. The pre-sample residuals e^0 (the mean without the
 `archm` term) feed the sample initialization and variance targeting. `src/linalg` gives the OLS start of `mu` and the
 mean coefficients, and the backcast residuals, by minimum-norm least squares, so a collinear column leaves a finite
-start. The conventions, with their sources, are in [docs/guide/validation.md](docs/guide/validation.md).
+start. With ARFIMA (`Layout::arfima`, never together with `archm`) the mean residuals of the ARMA pass through
+`mean::fractional_difference` before anything reads them, so the pre-sample, variance targeting, the density and the
+reported residuals all see the differenced series. The conventions, with their sources, are in [docs/guide/validation.md](docs/guide/validation.md).
 
 ## Performance method
 

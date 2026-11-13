@@ -23,6 +23,12 @@ library whose ABI version differs).
 
 ### Added
 
+- ARFIMA mean for every model and distribution, following `rugarch`'s `arfima = TRUE`: the parameter `arfima`
+  (d in (1e-8, 0.5), after `ma`), a truncated fractional difference of the ARMA residuals at O(T^2) per evaluation.
+  It cannot be combined with `archm`. A spec without it gives the numbers of before. C API: `ve_spec_set_arfima`.
+  Python: `Spec(arfima=True)`. Validated against `rugarch` ([docs/guide/validation.md](docs/guide/validation.md)),
+  with benchmarks `BM_Loglik/arfima_sgarch11_norm` and `BM_FitOne/arfima_sgarch11_norm`, not yet measured on the
+  benchmark machine.
 - Mean regressors (`mxreg`), variance regressors (`vxreg`) and ARCH-in-mean (`archm`, on the standard deviation or the
   variance) for every model, following `rugarch`: the parameters `archm`, `mxreg1..` and `vxreg1..` (up to 8 of each
   kind) in the `rugarch` order, with start values from the least squares of the series on the mean regressors and
