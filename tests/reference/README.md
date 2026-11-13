@@ -146,3 +146,26 @@ cases only, its results appended to the committed fixture. sged's `hess.d = 1e-4
 against the committed fixtures and may need re-tuning on another machine or R version. The plan-2f ARFIMA cases
 were added the same way: only `grid_2f.csv` was kept from the generator run, and `oracle_rugarch.R` was run on a copy
 of `cases.json` holding the ARFIMA cases only, its results appended to the committed fixture.
+
+### DCC oracle
+
+From the repository root, run `Rscript tests/reference/dcc_rmgarch.R`. It requires R 4.6.2,
+`rugarch` 1.5.6, `rmgarch` 1.4.3 and `jsonlite`. The script reads the committed CSV files without
+regenerating data, fits sGARCH(1,1)-normal margins with `multifit`/`solnp`, then passes those fits
+to `dccfit`/`solnp`. It writes `fixtures/rmgarch_dcc.json` with full-precision coefficients,
+likelihood, all four information criteria, two-stage standard errors and correlations at
+observations 1, floor(T/2), and T. The FDCC names are normalized to `fdcca1`, `fdccb1`, etc.
+
+The two panels are `dcc3.csv` (three series, 1,500 observations) and `grid_2c.csv` (five series,
+3,000 observations). The latter is used because `grid.csv` contains only four columns.
+Each panel has eleven cases: DCC(1,1), aDCC(1,1), and DCC(2,1), each with normal, Student-t
+and Laplace multivariate densities; two-group FDCC-normal; and DCC-t with shape fixed at 8.
+The first m-1 series form FDCC group 1, and the last forms group 2.
+
+`tests/unit/dcc/oracles/oracle_test.cpp` contains a numeric table copied from this fixture;
+update that table after regeneration. C++ tests intentionally do not parse JSON. They evaluate
+the internal `Rmgarch` convention at the exact oracle point. Python reads the JSON and checks
+the public paper convention against a separate NumPy recursion and density, with both default
+and explicit oracle initial values. Laplace evaluation is covered by C++, since NumPy has no
+Bessel K function. See `docs/guide/validation.md` for bounds, weak identification and optimizer
+limitations; regeneration must not silently loosen tolerances or replace those disclosures.

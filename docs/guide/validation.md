@@ -1321,6 +1321,141 @@ The largest Nyblom differences occur in the fGARCH Student-t variance-targeting 
 and score approximations remain within the original `1e-3` tolerance. GOF's statistic comparison
 sets relative tolerance to zero and allows only `1e-12` absolute summation roundoff.
 
+### `rmgarch`, DCC
+
+`tests/reference/dcc_rmgarch.R` generates `rmgarch_dcc.json` with R 4.6.2,
+`rugarch` 1.5.6 and `rmgarch` 1.4.3. It reads the committed three-series `dcc3.csv`
+and five-series `grid_2c.csv`; the latter replaces the originally proposed `grid.csv`,
+which has only four columns. Each panel has eleven fits: DCC, aDCC and DCC(2,1),
+each with mvnorm, mvt and mvlaplace; FDCC-mvnorm with two groups; and DCC-mvt with
+shape fixed at 8. The univariate margins are sGARCH(1,1)-normal, estimated once by
+`multifit` and passed to every second-stage `dccfit`.
+
+Both conventions use Qbar = cov(z), centered with divisor T-1, the full multivariate
+log density including minus the sum of log sigma, and information criteria with
+k = estimated margin parameters + estimated correlation parameters + m(m-1)/2.
+Fixed parameters leave the table and k. Student-t is standardized to covariance R,
+with shape constrained between 4 and 50; Laplace uses the multivariate Bessel K density.
+
+The public C and Python interfaces use the paper convention. The internal C++
+`Convention::Rmgarch` is available for numerical tests only. Its fixed-point test checks
+all 22 cases: likelihood and correlations at observations 1, floor(T/2), T at relative
+`1e-10`, and all four per-observation criteria at absolute `1e-10`. The C++ source
+contains a table copied from the JSON; it does not implement a JSON reader.
+
+The public convention differs in four places:
+
+- The presample shock outer products equal Qbar, and downside products equal Nbar,
+  in optimization and reporting alike. Thus R[0] = corr(Qbar). Engle and Sheppard
+  (2001) permit a positive definite initial covariance; ARCHModels' `DCC.jl` starts
+  with Rbar, and MFE uses a consistent backcast. Rmgarch instead optimizes with zero
+  shocks and reports with ones. At the same DCC-normal oracle coefficients this
+  changes dcc3 likelihood from `-6082.940871` to `-6082.898248`, and BIC by `-0.000056831`.
+- aDCC uses the uncentered second moment Nbar = sum(n n')/T, as in Cappiello,
+  Engle and Sheppard (2006), equation 5, and MFE. Rmgarch centers n. On dcc3 the
+  stationarity eigenvalue rises from about `0.393` to `0.589`; the insignificant
+  rmgarch asymmetry estimate `0.002413` (SE `0.010403`) moves toward its zero bound
+  (`0.000011` at the public default stopping tolerance). It is checked as a bound
+  effect rather than requiring 5% relative agreement in gamma. This applies to
+  the asymmetry coefficient; the other estimates retain their comparisons.
+- The two-stage covariance is A-inverse B A-inverse-transpose/T, following
+  Engle and Sheppard (2001), theorem 2, Newey and McFadden (1994), theorem 6.1,
+  and MFE's `Ainv*B*Ainv'/T`. Rmgarch omits the transpose with mixed score signs.
+  A prior dcc3 check holding the pieces fixed gave SE(a) `0.00627467` versus
+  `0.00639279`; this changes neither likelihood nor BIC. Explicit score-sign
+  changes are unnecessary because they cancel in the correct sandwich.
+- FDCC uses a_g squared + b_g squared < 1 per group and checks the positive
+  definiteness of the intercept. The Billio-Caporin recursion reduces to DCC
+  with a=a_F squared, b=b_F squared for one group. Rmgarch's one-group linear
+  constraint and its multiple-group cross-combinations are too restrictive.
+  Neither is reproduced, even in the internal convention. The dcc3 two-group
+  oracle is interior to both constraint sets, so those constraints have no active
+  effect there. Its public likelihood/BIC differences below include consistent
+  presampling and the use of cov(z) throughout; rmgarch uses z'z/T during FDCC
+  optimization and cov(z) during reporting. The historical one-group rmgarch
+  fit had likelihood `-6106.164371`, about 23.22 below the equivalent DCC optimum;
+  it is excluded as an estimation oracle.
+
+These choices and the source audit are recorded in
+[`rmgarch notes`](../superpowers/plans/2026-11-13-volengine-04a-rmgarch-notes.md),
+sections 10-11. The primary comparisons are
+[Engle-Sheppard (2001)](https://www.nber.org/papers/w8554.pdf),
+[Cappiello-Engle-Sheppard (2006)](https://igier.unibocconi.eu/sites/default/files/media/attach/cappiello-engle-sheppard.pdf),
+[MFE dcc.m](https://github.com/bashtage/mfe-toolbox/blob/main/multivariate/dcc.m), and
+[ARCHModels DCC.jl](https://github.com/s-broda/ARCHModels.jl/blob/master/src/DCC.jl).
+
+Observed dcc3-normal results at each convention's estimate (public default tolerance):
+
+| Model | rmgarch likelihood | Public likelihood | rmgarch BIC | Public BIC | rmgarch robust SE(a1) | Public robust SE(a1) |
+|---|---:|---:|---:|---:|---:|---:|
+| DCC | -6082.940871 | -6082.898221 | 8.193471 | 8.193414 | 0.00627539 | 0.00639077 |
+| aDCC | -6082.916294 | -6082.898236 | 8.198314 | 8.198290 | 0.00695504 | 0.00810668 |
+| FDCC | -6082.566615 | -6082.520221 | 8.202723 | 8.202661 | 0.02580740 | 0.02604138 |
+
+C++ compares robust SEs for all eleven dcc3 cases at the exact oracle point with
+relative tolerance `2e-3`, except t shape at the 50 ceiling, where it checks finite
+positive errors. The reported shape curvature is dominated by finite-difference
+roundoff near that bound: even regenerated rmgarch shape errors differ from the
+earlier `10.0908` reference. The public "hessian" table, which rmgarch does not
+provide, uses sqrt(diag((-H_DD)-inverse)). The robust table accounts for first-stage
+estimation. Univariate parameters on their own boundary are excluded from the
+two-stage parameter vector, matching the univariate inference tables. The public
+cross-Hessian uses parameter-kind-aware steps so changing return units preserves
+inference; the internal convention retains rmgarch's finite-difference steps.
+
+The C++ estimate comparison uses tolerance `1e-10` and up to 2,000 iterations on
+dcc3. Identifiable coefficients agree to relative `1e-3` and likelihood to relative
+`1e-7`; aDCC-Laplace's approximately zero gamma is checked within absolute `1e-7`.
+The correlation objective is no worse than the oracle by `1e-7`. At the t shape
+ceiling this comparison holds shape equal in both evaluations: different finite
+distances from 50 otherwise left the DCC-t full objective `7.9e-6` above the oracle.
+This conditional comparison does not assert that the original full objective
+meets `1e-7`.
+
+The five-series panel has independent simulated columns and near-zero ARCH weights.
+Persistence is then weakly identified: at zero ARCH a stationary DCC path is constant
+for every beta. Its fixed-point likelihood, criteria and correlations still meet
+the exact oracle tolerances in every case. Its robust errors are finite and positive,
+but numerical SE parity is not claimed: for example the DCC-t beta SE is `0.65648`
+versus rmgarch's `0.11098` at the same point. Estimated-coefficient C++ parity is
+restricted to dcc3 rather than presenting these boundary fits as validated estimates.
+
+Python independently reconstructs the public Q/R recursion and normal/t densities
+in NumPy. All 16 non-Laplace cases pass at both default and explicit oracle starts
+(32 likelihood/path checks); all 16 oracle-start robust tables are finite and
+positive. Default high-delta aDCC initialization is made feasible without changing
+the historical default on dcc3: grid5 has delta `1.1855215`, for which unadjusted
+weights would give persistence `1.0092761`. FDCC-t and FDCC-Laplace have no rmgarch
+oracle; core tests validate their one-group equivalence to DCC. Laplace's Bessel
+evaluation is checked in C++ because NumPy does not supply Bessel K.
+
+Nine separate Python coefficient comparisons are strict expected failures; the
+independent likelihood/path checks are never marked expected failures. Eight
+come from grid5's boundaries or weak identification, and one from default optimizer
+stopping on dcc3. Their exact triggers are recorded below; no tolerances are relaxed.
+
+| Case | Oracle coefficient | Public default coefficient |
+|---|---:|---:|
+| dcc3_DCC21_mvt, a2 | 0.002857955 | 0.002711554 |
+| grid5_DCC_mvnorm, a1 | 4.182e-9 | 0.000285109 |
+| grid5_DCC_mvt, a1 | 0.000208559 | 0.000009444 |
+| grid5_aDCC_mvnorm, a1 | 1.599e-10 | 0.000009600 |
+| grid5_aDCC_mvt, a1 | 8.451e-10 | 0.000011498 |
+| grid5_DCC21_mvnorm, a1 | 9.187e-11 | 0.000342655 |
+| grid5_DCC21_mvt, a2 | 9.602e-8 | 0.000124223 |
+| grid5_FDCC_mvnorm, a1 | 0.000010695 | 0.010000000 |
+| grid5_DCC_mvt_fixedshape, a1 | 0.000244798 | 0.000440322 |
+
+The dcc3 DCC(2,1)-t difference is 5.12%, just outside the planned 5% comparison.
+Direct evaluation diagnoses stopping rather than a formula discrepancy: the public
+objective is `6046.9588981` at its default result versus `6046.9584564` at the oracle
+point. An oracle start reaches `6046.9584314` with a2 `0.002858093`. Under rmgarch
+presampling, the oracle point's objective is `6046.9774792`, while the default public
+point gives `6046.9779441`. Thus the default point is worse under both conventions.
+On grid5, even a tight internal DCC-t fit can finish about `0.00357` above the oracle
+objective. These are optimizer limitations; exact evaluation parity must not be
+read as a guarantee that default estimates reach the same optimum.
+
 ## Regenerating
 
 See [`tests/reference/README.md`](../../tests/reference/README.md). When an oracle version changes, regenerate
