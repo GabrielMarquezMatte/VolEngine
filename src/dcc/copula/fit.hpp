@@ -8,6 +8,7 @@
 
 #include <array>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -21,6 +22,9 @@ struct CopulaInputs
     std::shared_ptr<const StandardizedPanel> univariate;
     // Indexed by uniform_index; empty unless some spec asks for it.
     std::array<std::vector<double>, 4> u;
+    // sin(pi tau_b / 2) of each u a static Kendall spec reads; nullopt when it is not positive definite (the spec
+    // then fails) or no spec reads it.
+    std::array<std::optional<std::vector<double>>, 4> kendall;
     double univariate_loglik = 0.0;
 
     // The u of spec (spec.copula is not None, and copula_inputs saw a spec like it).
