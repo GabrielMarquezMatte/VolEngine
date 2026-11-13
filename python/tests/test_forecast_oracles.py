@@ -36,7 +36,9 @@ def forecast_ids(oracle: str) -> list[str]:
 
 
 def rows(matrix: Any, first: int, last: int) -> Any:
-    return None if matrix is None else matrix[first:last]
+    if matrix is None:
+        return None
+    return matrix[first:last]
 
 
 def volengine_forecast(ctx: ve.Context, case: dict[str, Any], result: dict[str, Any], var_init: str) -> ve.Forecast:
