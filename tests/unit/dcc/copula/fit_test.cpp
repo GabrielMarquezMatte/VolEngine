@@ -288,6 +288,15 @@ TEST(DccBatch, MixedBatchSameAsAlone)
             }
         }
     }
+    for (const ve::dcc::StaticMethod method : {ve::dcc::StaticMethod::Kendall, ve::dcc::StaticMethod::Ml})
+    {
+        for (const DccDist dist : {DccDist::MvNorm, DccDist::MvT})
+        {
+            DccSpec spec = copula_spec(DccModel::Static, dist, DccCopula::Parametric);
+            spec.static_method = method;
+            specs.push_back(spec);
+        }
+    }
     std::vector<DccFitResult> alone;
     for (const DccSpec& spec : specs)
     {

@@ -54,6 +54,9 @@ template <class T>
 void correlation_terms(const StandardizedPanel& panel, const DccSpec& spec, const DccParameters<T>& theta,
                        Stage stage, const CorrelationOutput<T>& out);
 
+// log f(z; R) of dist in m dimensions from log |R| and q = z' R^-1 z, every constant included (shape: the mvt's).
+double log_density_at(DccDist dist, std::size_t m, double shape, double log_det, double quadratic);
+
 // sum_t (log f(z_t; R_t) - sum_i log sigma_it) at Stage::Reported, writing R_t as correlation_terms does.
 double reported_loglik(const StandardizedPanel& panel, const DccSpec& spec, std::span<const double> theta,
                        std::span<double> r = {});

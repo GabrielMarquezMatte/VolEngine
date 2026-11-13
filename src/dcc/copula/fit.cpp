@@ -2,6 +2,7 @@
 
 #include "dcc/copula/margins.hpp"
 #include "dcc/copula/scores.hpp"
+#include "dcc/copula/static_fit.hpp"
 #include "dcc/likelihood.hpp"
 #include "dcc/parameter_map.hpp"
 #include "dcc/recursion.hpp"
@@ -16,6 +17,7 @@
 #include <limits>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <span>
 #include <tuple>
 #include <utility>
@@ -35,6 +37,14 @@ std::size_t uniform_index(DccCopula copula, Convention convention)
 {
     assert(copula != DccCopula::None);
     return 2 * (static_cast<std::size_t>(copula) - 1) + (convention == Convention::Rmgarch ? 1 : 0);
+}
+
+// Rmgarch's static mvnorm "Kendall" is cor(epsilon) (plan 4b notes, section 5); every other Kendall spec reads
+// sin(pi tau_b / 2).
+bool reads_kendall(const DccSpec& spec)
+{
+    const bool rmgarch_pearson = spec.convention == Convention::Rmgarch && spec.dist == DccDist::MvNorm;
+    return spec.model == DccModel::Static && static_method_of(spec) == StaticMethod::Kendall && !rmgarch_pearson;
 }
 
 double shape_of(const DccSpec& spec, std::span<const double> theta, const DccLayout& layout)
@@ -57,31 +67,102 @@ double dynamic_terms(const StandardizedPanel& scores, const DccSpec& spec, std::
     return std::accumulate(terms.begin(), terms.end(), 0.0);
 }
 
-// spec with the mvt shape fixed at nu: what one profile point fits.
-DccSpec with_shape(DccSpec spec, double nu)
+// cov2cor of the scores' Qbar = cov(epsilon).
+std::vector<double> pearson(const StandardizedPanel& scores)
 {
-    spec.fixed.push_back({"mshape", nu});
-    return spec;
+    const std::size_t m = scores.m;
+    std::vector<double> r(m * m);
+    for (std::size_t k = 0; k < m * m; ++k)
+    {
+        r[k] = scores.qbar[k] / std::sqrt(scores.qbar[(k / m) * (m + 1)] * scores.qbar[(k % m) * (m + 1)]);
+    }
+    return r;
 }
 
-// One profile point: the dynamic fit on the scores of the shape nu (the spec's own fixed shape, or none).
+// The constant R of a static spec at theta, or nullopt (a Kendall matrix that is not positive definite).
+std::optional<std::vector<double>> static_correlation(const CopulaInputs& inputs, const DccSpec& spec,
+                                                      std::span<const double> theta, const StandardizedPanel& scores)
+{
+    const DccLayout layout = layout_of(spec, scores.m);
+    if (layout.c_count > 0)
+    {
+        return correlation_from_free(theta.subspan(layout.c_begin(), layout.c_count), scores.m);
+    }
+    if (reads_kendall(spec))
+    {
+        return inputs.kendall[uniform_index(spec.copula, spec.convention)];
+    }
+    return pearson(scores);
+}
+
+// sum_t log f(epsilon_t; R) of a static spec, writing R at every t of r.
+double static_dependence(const CopulaInputs& inputs, const DccSpec& spec, std::span<const double> theta,
+                         const CopulaPanel& scores, std::span<double> r)
+{
+    const std::optional<std::vector<double>> correlation = static_correlation(inputs, spec, theta, *scores.panel);
+    if (!correlation)
+    {
+        return kNaN;
+    }
+    const std::size_t m2 = correlation->size();
+    for (std::size_t offset = 0; offset < r.size(); offset += m2)
+    {
+        std::ranges::copy(*correlation, r.begin() + static_cast<std::ptrdiff_t>(offset));
+    }
+    return static_terms(*scores.panel, *correlation, spec.dist, shape_of(spec, theta, layout_of(spec, scores.panel->m)),
+                        {});
+}
+
+// One point of the shape profile (or the only point when the shape is fixed or absent): the estimate of the other
+// parameters at the shape nu, its status and loglik.
 struct ProfilePoint
 {
-    DccFitResult inner;
+    FitStatus status = FitStatus::Failed;
     std::vector<double> theta;
     double loglik = kNaN;
 };
 
-ProfilePoint profile_point(const CopulaInputs& inputs, const DccSpec& spec, double nu, const FitConfig& config)
+ProfilePoint dynamic_point(const CopulaInputs& inputs, const DccSpec& spec, double nu, const FitConfig& config)
 {
     const DccLayout layout = layout_of(spec, inputs.univariate->m);
-    const bool free_shape = layout.has_shape && layout.is_estimated(layout.shape());
-    const DccSpec inner_spec = free_shape ? with_shape(spec, nu) : spec;
+    DccSpec inner_spec = spec;
+    if (layout.has_shape && layout.is_estimated(layout.shape()))
+    {
+        inner_spec.fixed.push_back({"mshape", nu});
+    }
     const CopulaPanel scores = copula_panel(inputs.uniforms_of(spec), *inputs.univariate, spec.dist, nu);
-    ProfilePoint point{fit_dcc(scores.panel, inner_spec, config), {}, kNaN};
-    point.theta = full_parameters(layout_of(inner_spec, inputs.univariate->m), point.inner.estimate);
+    const DccFitResult inner = fit_dcc(scores.panel, inner_spec, config);
+    ProfilePoint point{inner.status, full_parameters(layout_of(inner_spec, scores.panel->m), inner.estimate), kNaN};
     point.loglik = copula_loglik(inputs, spec, point.theta);
     return point;
+}
+
+ProfilePoint static_point(const CopulaInputs& inputs, const DccSpec& spec, double nu, const FitConfig& config)
+{
+    const DccLayout layout = layout_of(spec, inputs.univariate->m);
+    ProfilePoint point{FitStatus::Converged, layout.given, kNaN};
+    if (layout.has_shape)
+    {
+        point.theta[layout.shape()] = nu;
+    }
+    if (layout.c_count > 0)
+    {
+        const CopulaPanel scores = copula_panel(inputs.uniforms_of(spec), *inputs.univariate, spec.dist, nu);
+        const StaticCorrelation correlation = static_ml(*scores.panel, layout, nu, config);
+        std::ranges::copy(correlation.x, point.theta.begin() + static_cast<std::ptrdiff_t>(layout.c_begin()));
+        point.status = correlation.status;
+    }
+    point.loglik = copula_loglik(inputs, spec, point.theta);
+    return point;
+}
+
+ProfilePoint point_at(const CopulaInputs& inputs, const DccSpec& spec, double nu, const FitConfig& config)
+{
+    if (spec.model == DccModel::Static)
+    {
+        return static_point(inputs, spec, nu, config);
+    }
+    return dynamic_point(inputs, spec, nu, config);
 }
 
 // The shape of the profile maximum (minimising -loglik, +max where a point fails) and whether Brent ran out.
@@ -89,7 +170,7 @@ std::pair<double, bool> profile_shape(const CopulaInputs& inputs, const DccSpec&
 {
     auto negative = [&](double nu)
     {
-        const double loglik = profile_point(inputs, spec, nu, config).loglik;
+        const double loglik = point_at(inputs, spec, nu, config).loglik;
         return std::isfinite(loglik) ? -loglik : std::numeric_limits<double>::max();
     };
     std::uintmax_t iterations = kShapeIterations;
@@ -97,40 +178,27 @@ std::pair<double, bool> profile_shape(const CopulaInputs& inputs, const DccSpec&
     return {best.first, iterations >= kShapeIterations};
 }
 
-DccFitResult dynamic_fit(const CopulaInputs& inputs, const DccSpec& spec, const FitConfig& config)
+DccFitResult result_of(const CopulaInputs& inputs, const DccSpec& spec, const DccLayout& layout,
+                       const ProfilePoint& point)
 {
-    const DccLayout layout = layout_of(spec, inputs.univariate->m);
-    double nu = layout.has_shape ? layout.given[layout.shape()] : 0.0;
-    bool ran_out = false;
-    if (layout.has_shape && layout.is_estimated(layout.shape()))
-    {
-        std::tie(nu, ran_out) = profile_shape(inputs, spec, config);
-    }
-    ProfilePoint point = profile_point(inputs, spec, nu, config);
-    DccFitResult result = std::move(point.inner);
+    DccFitResult result;
     result.spec = spec;
     result.names = estimated_names(layout);
+    result.estimate.assign(result.names.size(), kNaN);
+    result.se_hessian.assign(result.names.size(), kNaN);
+    result.se_robust.assign(result.names.size(), kNaN);
+    result.nobs = inputs.univariate->t;
+    result.series = inputs.univariate->m;
     result.panel = inputs.univariate;
     if (!std::isfinite(point.loglik))
     {
-        result.status = FitStatus::Failed;
-        result.estimate.assign(result.names.size(), kNaN);
-        result.se_hessian.assign(result.names.size(), kNaN);
-        result.se_robust.assign(result.names.size(), kNaN);
-        result.loglik = kNaN;
-        result.r = nullptr;
         return result;
     }
-    auto r = std::make_shared<std::vector<double>>(inputs.univariate->t * inputs.univariate->m * inputs.univariate->m);
+    auto r = std::make_shared<std::vector<double>>(result.nobs * result.series * result.series);
     result.loglik = copula_loglik(inputs, spec, point.theta, *r);
     result.r = std::move(r);
     result.estimate = estimated_part(layout, point.theta);
-    result.se_hessian.assign(result.names.size(), kNaN);
-    result.se_robust.assign(result.names.size(), kNaN);
-    if (ran_out && result.status == FitStatus::Converged)
-    {
-        result.status = FitStatus::MaxIter;
-    }
+    result.status = point.status;
     return result;
 }
 
@@ -155,16 +223,22 @@ CopulaInputs copula_inputs(std::span<const FitResult* const> fits, std::span<con
     {
         inputs.univariate_loglik += fit->loglik;
     }
+    const std::size_t t = inputs.univariate->t;
+    const std::size_t m = inputs.univariate->m;
     for (const DccSpec& spec : specs)
     {
         if (spec.copula == DccCopula::None)
         {
             continue;
         }
-        std::vector<double>& slot = inputs.u[uniform_index(spec.copula, spec.convention)];
-        if (slot.empty())
+        const std::size_t index = uniform_index(spec.copula, spec.convention);
+        if (inputs.u[index].empty())
         {
-            slot = uniforms(fits, *inputs.univariate, spec.copula, spec.convention);
+            inputs.u[index] = uniforms(fits, *inputs.univariate, spec.copula, spec.convention);
+        }
+        if (reads_kendall(spec) && !inputs.kendall[index])
+        {
+            inputs.kendall[index] = kendall_correlation(inputs.u[index], t, m);
         }
     }
     return inputs;
@@ -181,18 +255,38 @@ double copula_loglik(const CopulaInputs& inputs, const DccSpec& spec, std::span<
         return kNaN;
     }
     const CopulaPanel scores = copula_panel(inputs.uniforms_of(spec), *inputs.univariate, spec.dist, nu);
-    if (spec.model == DccModel::Static || !is_valid(theta, layout, constraint_delta(*scores.panel, spec)))
+    if (!is_valid(theta, layout, constraint_delta(*scores.panel, spec)))
     {
         return kNaN;
     }
-    const double dependence = dynamic_terms(*scores.panel, spec, theta, r);
+    double dependence = kNaN;
+    if (spec.model == DccModel::Static)
+    {
+        dependence = static_dependence(inputs, spec, theta, scores, r);
+    }
+    if (spec.model != DccModel::Static)
+    {
+        dependence = dynamic_terms(*scores.panel, spec, theta, r);
+    }
     return inputs.univariate_loglik + dependence - scores.marginal_log_density;
 }
 
 DccFitResult fit_copula(const CopulaInputs& inputs, const DccSpec& spec, const FitConfig& config)
 {
     assert(spec.copula != DccCopula::None && !spec_problem(spec, inputs.univariate->m));
-    return dynamic_fit(inputs, spec, config);
+    const DccLayout layout = layout_of(spec, inputs.univariate->m);
+    double nu = layout.has_shape ? layout.given[layout.shape()] : 0.0;
+    bool ran_out = false;
+    if (layout.has_shape && layout.is_estimated(layout.shape()))
+    {
+        std::tie(nu, ran_out) = profile_shape(inputs, spec, config);
+    }
+    DccFitResult result = result_of(inputs, spec, layout, point_at(inputs, spec, nu, config));
+    if (ran_out && result.status == FitStatus::Converged)
+    {
+        result.status = FitStatus::MaxIter;
+    }
+    return result;
 }
 
 }

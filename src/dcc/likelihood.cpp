@@ -140,6 +140,13 @@ void correlation_terms(const StandardizedPanel& panel, const DccSpec& spec, cons
     std::ranges::fill(out.r, kNaN);
 }
 
+double log_density_at(DccDist dist, std::size_t m, double shape, double log_det, double quadratic)
+{
+    const auto dimension = static_cast<double>(m);
+    const Density<double> density{dist, dimension, shape, density_constant<double>(dist, dimension, shape)};
+    return log_density<double>(density, log_det, quadratic);
+}
+
 double reported_loglik(const StandardizedPanel& panel, const DccSpec& spec, std::span<const double> theta,
                        std::span<double> r)
 {
