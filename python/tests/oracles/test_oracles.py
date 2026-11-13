@@ -82,8 +82,11 @@ def oracle_result(oracle: str, case_id: str) -> dict[str, Any]:
     return matches[0]
 
 
-def fit_options(oracle: Oracle) -> ve.FitOptions:
-    return ve.FitOptions(var_init=oracle.var_init, tol=FIT_TOL)
+def fit_options(oracle: Oracle, case: dict[str, Any]) -> ve.FitOptions:
+    tol = FIT_TOL
+    if oracle.name == "rugarch" and case["id"] == "sgarch11_vx_std/aparch11_vx_std":
+        tol = 1e-10
+    return ve.FitOptions(var_init=oracle.var_init, tol=tol)
 
 
 def case_spec(case: dict[str, Any]) -> ve.Spec:
@@ -205,7 +208,7 @@ def test_matches_oracle(ctx, oracle, case):
         load_series()[case["series"]],
         mxreg=case_regressors(case, "mxreg"),
         vxreg=case_regressors(case, "vxreg"),
-        options=fit_options(oracle),
+        options=fit_options(oracle, case),
     )
     assert fit.status == "converged"
     assert fit.names == tuple(result["params"]) == tuple(result["se"]) == tuple(result[oracle.robust_key])
