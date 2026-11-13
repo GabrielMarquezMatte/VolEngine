@@ -3,6 +3,7 @@
 #include "ad/dual.hpp"
 #include "dcc/likelihood.hpp"
 #include "dcc/parameter_map.hpp"
+#include "fit/optimizer.hpp"
 #include "optim/lbfgs.hpp"
 
 #include <algorithm>
@@ -22,6 +23,9 @@ namespace
 
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 constexpr double kInfinity = std::numeric_limits<double>::infinity();
+
+using fit::status_from;
+using fit::with_dual_width;
 
 // What the optimiser needs: the spec on its panel, the layout, the delta of the aDCC constraint and the positions
 // of the estimated parameters, which the optimiser sees in order.
@@ -45,27 +49,6 @@ std::vector<std::size_t> estimated_positions(const DccLayout& layout)
         }
     }
     return free;
-}
-
-// objective and to_natural exist only for Dual<8>, 16, 32 and kMaxParameterCount: body runs with the narrowest
-// of them that holds k estimated parameters (spec_problem caps k).
-template <class F>
-decltype(auto) with_dual_width(std::size_t k, F&& body)
-{
-    assert(k <= kMaxParameterCount);
-    if (k <= 8)
-    {
-        return body.template operator()<8>();
-    }
-    if (k <= 16)
-    {
-        return body.template operator()<16>();
-    }
-    if (k <= 32)
-    {
-        return body.template operator()<32>();
-    }
-    return body.template operator()<kMaxParameterCount>();
 }
 
 // objective / T over the free unconstrained parameters, so that the tolerances do not depend on the sample size.
@@ -116,21 +99,6 @@ optim::LbfgsResult minimize(const DccProblem& problem, const FitConfig& config, 
     options.gtol = config.tol;
     MeanObjective<N> objective(problem);
     return optim::lbfgs_minimize(objective, x, options);
-}
-
-FitStatus status_from(optim::Stop stop)
-{
-    switch (stop)
-    {
-        case optim::Stop::Converged:
-            return FitStatus::Converged;
-        case optim::Stop::MaxIter:
-            return FitStatus::MaxIter;
-        case optim::Stop::LineSearchFailed:
-        case optim::Stop::NonFinite:
-            return FitStatus::Failed;
-    }
-    return FitStatus::Failed;
 }
 
 // Moves theta, the natural start, to the estimate. With nothing to estimate the optimiser does not run.

@@ -15,7 +15,8 @@ namespace ve::dcc
 {
 
 // names, estimate, se_hessian and se_robust cover the estimated DCC parameters only: a fixed one leaves the table.
-// Without a finite estimate (status Failed) the estimate and loglik are NaN and r is null.
+// A fit that fails before or at the estimate (see fit_dcc) has a NaN estimate and loglik and a null r; one whose
+// line search fails is Failed too, but keeps the finite estimate where it stopped, its loglik and r.
 struct DccFitResult
 {
     FitStatus status = FitStatus::Failed;
@@ -40,10 +41,11 @@ struct DccFitResult
 };
 
 // Maximises the DCC likelihood of spec on the panel: L-BFGS on the unconstrained parameters of parameter_map.hpp,
-// from start_values, minimising objective / T. The status follows the univariate fit: Failed when the start is
-// not valid or the objective is not finite there, or when the reported loglik at the estimate is not finite;
-// otherwise Converged or MaxIter. With nothing to estimate the spec is evaluated at its fixed values. The caller
-// checked spec_problem(spec, panel->m).
+// from start_values, minimising objective / T. As in the univariate fit, the status is the optimiser's: Converged,
+// MaxIter, or Failed when the line search fails (with a finite estimate). It is Failed with a NaN estimate when the
+// start is not valid, the objective is not finite there, or the reported loglik at the estimate is not finite.
+// With nothing to estimate the spec is evaluated at its fixed values. The caller checked
+// spec_problem(spec, panel->m).
 DccFitResult fit_dcc(std::shared_ptr<const StandardizedPanel> panel, const DccSpec& spec, const FitConfig& config);
 
 }
