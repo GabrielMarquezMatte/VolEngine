@@ -3,11 +3,11 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Estimar o passo 2 de um DCC sobre N ajustes univariados escolhidos pelo usuário, como o `dccfit` do `rmgarch`. Cobre DCC e aDCC com ordens (a, b) e FDCC com grupos, com as distribuições mvnorm, mvt e mvlaplace, em lote de specs. Devolve:
-- ℓ e critérios na convenção do `rmgarch`;
+- ℓ e critérios (a ℓ completa e o k do `rmgarch`);
 - Rₜ e Hₜ;
 - erros-padrão em dois estágios, por opção no ajuste ou por função explícita.
 
-Tudo exposto pela interface C e pelo Python (`ctx.fit_dcc`) e validado contra o `rmgarch` 1.4.3.
+Tudo exposto pela interface C e pelo Python (`ctx.fit_dcc`). A convenção pública segue os papers. Uma convenção interna, `Convention::Rmgarch`, reproduz o `rmgarch` 1.4.3 e é validada contra ele.
 
 **Architecture:**
 - **Módulo:** um módulo novo, `src/dcc/`. Ele recebe os zₜ = eₜ/σₜ dos `FitResult` univariados (que já guardam e e σ) e calcula Q̄ e N̄ uma vez por conjunto, que todas as specs do lote compartilham.
@@ -49,13 +49,27 @@ Valem todas as Global Constraints dos planos anteriores, o `STYLEGUIDE.md` e o `
   - **testes só em release**;
   - executáveis com `/c/msys64/ucrt64/bin` primeiro no PATH.
 
-### Convenções do `rmgarch` 1.4.3 (lidas e conferidas a ~1e-15 contra ajustes)
+### Convenções: padrão (papers) e `Rmgarch` (interna)
+
+As convenções do `rmgarch` 1.4.3 foram lidas e conferidas a ~1e-15 contra ajustes. Depois foram cruzadas com:
+- Engle–Sheppard (2001) e Cappiello–Engle–Sheppard (2006), em texto completo;
+- o código do MFE toolbox (`dcc.m`) e do ARCHModels.jl (`src/DCC.jl`).
+
+O relatório está nas notas, seção 11. Quatro convenções do `rmgarch` são bugs ou desvios do paper:
+- a pré-amostra zero/uns;
+- N̄ centrada;
+- o sanduíche sem transposta;
+- as restrições e o Q̄ duplo do FDCC.
+
+**Decisão do autor (2026-11-13): a convenção pública segue os papers.** A paridade com o `rmgarch` é `Convention::Rmgarch`, um campo interno do `DccSpec` em C++. A interface C e o Python não o expõem e sempre usam `Convention::Standard`. Ele existe para que os testes C++ batam os números do `rmgarch` e provem que cada peça do cálculo está certa. A diferença entre as duas convenções fica só nos pontos marcados **[padrão]** e **[Rmgarch]** abaixo. O resto é igual nas duas.
 
 Notação: m séries, T observações, zₜ = eₜ/σₜ por série, dos `Fit` (sem re-padronizar nem centrar).
 
 **Q̄ e N̄.**
-- Q̄ é a covariância amostral de z: centrada, com divisor T − 1, e **não** é uma matriz de correlação.
-- No aDCC, nₜ = 1(zₜ < 0) ∘ zₜ, e N̄ é a covariância amostral de n. No DCC, N̄ = 0 e n = 0.
+- Q̄ é a covariância amostral de z: centrada, com divisor T − 1, e **não** é uma matriz de correlação. Vale nas duas convenções. É defensável: os papers só pedem o análogo amostral, o MFE usa z'z/T e o ARCHModels usa cov(z).
+- No aDCC, nₜ = 1(zₜ < 0) ∘ zₜ. No DCC, N̄ = 0 e n = 0.
+  - **[padrão]** N̄ = T⁻¹ Σ nₜnₜᵀ, sem centrar (Cappiello–Engle–Sheppard, eq. 5; MFE). Só assim E[Qₜ] = Q̄.
+  - **[Rmgarch]** N̄ = cov(n), centrada, com divisor T − 1.
 
 **Recursão DCC/aDCC** de ordem (P, Q), com Rₜ = diag(Qₜ)^−½ Qₜ diag(Qₜ)^−½:
 
@@ -67,14 +81,16 @@ Notação: m séries, T observações, zₜ = eₜ/σₜ por série, dos `Fit` (
 
 Com um grupo, (a_F, b_F) equivale ao DCC com a = a_F² e b = b_F².
 
-**Duas pré-amostras.** Qₛ = Q̄ para s ≤ 0, e o rmgarch usa dois zₛ diferentes conforme o caso:
+**Pré-amostra.** Qₛ = Q̄ para s ≤ 0 nas duas convenções.
+- **[padrão]** zₛzₛᵀ := Q̄ e nₛnₛᵀ := N̄ para s ≤ 0, iguais no objetivo e em tudo que é reportado. Com isso Qₜ = Q̄ enquanto a defasagem cai na pré-amostra, então R₁ = corr(Q̄), como no ARCHModels. O objetivo é exatamente −(ℓ reportada + Σ log σ).
+- **[Rmgarch]** São duas pré-amostras:
 
-| Uso | zₛ, nₛ para s ≤ 0 | Q̄ do FDCC |
-| --- | --- | --- |
-| Objetivo que o otimizador minimiza | 0 | zᵀz/T (sem centrar) |
-| Tudo que é reportado: ℓ, ℓₜ, Rₜ, Qₜ, Hₜ, scores e Hessiana dos erros-padrão | (1, …, 1) | cov(z) |
+  | Uso | zₛ, nₛ para s ≤ 0 | Q̄ do FDCC |
+  | --- | --- | --- |
+  | Objetivo que o otimizador minimiza | 0 | zᵀz/T (sem centrar) |
+  | Tudo que é reportado: ℓ, ℓₜ, Rₜ, Qₜ, Hₜ, scores e Hessiana dos erros-padrão | (1, …, 1) | cov(z) |
 
-As estimativas maximizam o objetivo, e a ℓ reportada usa a outra pré-amostra. **O VolEngine reproduz isso** para que ℓ e BIC batam (decisão do Claude, pela regra "convenção padrão segue o oráculo"), e `validation.md` registra.
+  O vetor de uns equivale a correlação perfeita na pré-amostra, e a ℓ maximizada não é a reportada. Nenhum paper nem outra implementação faz isso.
 
 **Verossimilhança reportada.**
 
@@ -90,11 +106,11 @@ Com qₜ = zₜᵀ Rₜ⁻¹ zₜ e Lₜ = log|Rₜ|:
 
       log 2 − (m/2) log 2π − ½ Lₜ + (v/2) log(qₜ/2) + log K_v(√(2qₜ))
 
-A ℓ reportada é Σₜ ℓₜ. **Não** é a soma das ℓ univariadas mais um termo de correlação.
+A ℓ reportada é Σₜ ℓₜ, como na eq. 7 de Engle–Sheppard (2001), no ARCHModels e no MFE. **Não** é a soma das ℓ univariadas mais um termo de correlação.
 
-**Objetivo do otimizador** (pré-amostra zero, sem Σ log σ):
-- mvnorm: ½ Σ (Lₜ + qₜ), sem constantes;
-- mvt e mvlaplace: −Σ log f, com todas as constantes.
+**Objetivo do otimizador** (sem Σ log σ):
+- **[padrão]** −Σ log f(zₜ; Rₜ), com todas as constantes, nas três distribuições.
+- **[Rmgarch]** Pré-amostra zero. Para a mvnorm é ½ Σ (Lₜ + qₜ), sem constantes; para a mvt e a mvlaplace é −Σ log f, com todas as constantes.
 
 **Parâmetros:**
 - **Ordem:** a₁..a_P, b₁..b_Q, g₁..g_P (aDCC), forma (mvt). No FDCC: a[g=1..G], b[g=1..G], forma.
@@ -114,8 +130,14 @@ A ℓ reportada é Σₜ ℓₜ. **Não** é a soma das ℓ univariadas mais um 
   - DCC: aⱼ, bₖ > 0 e Σa + Σb < 1;
   - aDCC: Σa + Σb + δ Σg < 1, com δ o maior autovalor de Q̄^−½ N̄ Q̄^−½;
   - forma em (4, 50);
-  - FDCC: (maxₘ a_g)² + (maxₘ b_g)² < 1, que é o conjunto que o rmgarch impõe com G⁴ desigualdades quando G > 1.
-- **O bug do rmgarch com G = 1** (impõe a + b ≤ 1) **não é reproduzido.** O VolEngine usa a restrição do modelo, o FDCC de um grupo fica fora do oráculo, e `validation.md` registra.
+  - FDCC, nas duas convenções:
+    - a_g² + b_g² < 1 em cada grupo. A persistência do elemento (i, j) é αᵢαⱼ + βᵢβⱼ ≤ ½[(αᵢ² + βᵢ²) + (αⱼ² + βⱼ²)], então isso basta.
+    - O intercepto Q̄ ∘ (11ᵀ − ααᵀ − ββᵀ) precisa ser definido positivo. Isso garante Qₜ definida positiva, porque os outros termos são produtos de Hadamard de matrizes semidefinidas positivas. A reparametrização não impõe essa condição: quando o Cholesky do intercepto falha, o objetivo devolve +∞, como o `fit.cpp` univariado faz fora do domínio, e a busca linear recua.
+  - O `rmgarch` erra aqui de duas formas, e o VolEngine não reproduz nenhuma, nem em `Convention::Rmgarch`:
+    - com G = 1, impõe a + b ≤ 1, quando o certo é a² + b² < 1;
+    - com G > 1, impõe G⁴ desigualdades a_g a_h + b_k b_l ≤ 1, restritivo demais.
+
+    O caso do oráculo (FDCC com grupos (1, 1, 2)) é interior aos dois conjuntos: a_g² + b_g² = 0,967 e 0,947, e (max a)² + (max b)² = 0,989. O FDCC de um grupo fica fora do oráculo, e `validation.md` registra tudo isso.
 - **Fixos e iniciais** como nos univariados (`fixed`/`start` por nome). Um parâmetro fixo sai da tabela e do k.
 
 **Erros-padrão em dois estágios** (Engle–Sheppard; o rmgarch tem uma única tabela, o sanduíche abaixo). θ = (θ₁, …, θₘ, θ_D), com os parâmetros univariados estimados de cada série e depois os n_D do DCC:
@@ -127,20 +149,23 @@ A ℓ reportada é Σₜ ℓₜ. **Não** é a soma das ℓ univariadas mais um 
 - **S** (T × n_p):
   - as colunas univariadas são os scores de −ℓᵢₜ do ajuste univariado;
   - as colunas DCC são diferenças centrais de +ℓₜ, com hₖ = max(|θₖ|/2, 0,01) ε^⅓.
-- **Sanduíche:** B = cov(S), centrada e com divisor T − 1, e Ā = A/T. Então V = Ā⁻¹ B Ā⁻¹ / T, **sem transposta**, e o erro-padrão é √|diag V|.
-- **Tabela "robust"** do VolEngine: as linhas do DCC de V, que é o que o `matcoef` do rmgarch mostra.
+- **Sanduíche:** B = cov(S), centrada e com divisor T − 1, e Ā = A/T. Centrar é inofensivo; o MFE em dois estágios faz o mesmo.
+  - **[padrão]** As linhas univariadas de Ā e as colunas univariadas de S trocam de sinal, para que tudo seja derivada da mesma +ℓ. Então V = Ā⁻¹ B Ā⁻ᵀ / T, a forma de Newey–McFadden (Thm. 6.1) que Engle–Sheppard (2001, Thm. 2) usa e que o código do MFE escreve como `Ainv*B*Ainv'/T`. O bloco DCC é H₂₂⁻¹ cov(aₜ) H₂₂⁻¹ / T, com aₜ = s₂ₜ − H₂₁ H₁₁⁻¹ s₁ₜ, e é simétrico.
+  - **[Rmgarch]** Os sinais ficam misturados e V = Ā⁻¹ B Ā⁻¹ / T, **sem transposta**. Ao bloco DCC faltam dois termos, e ele sai assimétrico. No exemplo, o `rmgarch` dá se(a) = 0,006275 e a forma certa, sobre as mesmas peças, dá 0,006393.
+  - O erro-padrão é √|diag V|.
+- **Tabela "robust"** do VolEngine: as linhas do DCC de V. Em `Convention::Rmgarch`, é o que o `matcoef` do rmgarch mostra.
 - **Tabela "hessian"** do VolEngine (o rmgarch não tem): √diag((−H_DD)⁻¹), em que H_DD é o bloco DCC de A. Como A é bloco-triangular, esse é o bloco DCC de A⁻¹. É decisão do Claude, porque o design pede as duas tabelas.
 - **t e p:** t = θ/se e p = 2(1 − Φ(|t|)).
 
-**Critérios** (por observação, como os univariados):
-- k = parâmetros univariados estimados de todas as séries + parâmetros do DCC estimados + m(m − 1)/2;
+**Critérios** (por observação, como os univariados; iguais nas duas convenções):
+- k = parâmetros univariados estimados de todas as séries + parâmetros do DCC estimados + m(m − 1)/2 (Q̄ conta, como no MFE; N̄ não conta, como no rmgarch);
 - AIC = (−2ℓ + 2k)/T, BIC = (−2ℓ + k log T)/T, HQIC = (−2ℓ + 2k log log T)/T e SIC = −2ℓ/T + log((T + 2k)/T).
 - Com `per_obs = False`, os mesmos sem dividir por T, como nos univariados.
 
 **Saídas:**
 - Rₜ e Hₜ em layout T × m × m, com o tempo como primeira dimensão, contíguo por instante. Isso dá `(T, m, m)` no numpy sem cópia. O `rcor` do rmgarch é [m, m, T].
 - Hₜ = Dₜ Rₜ Dₜ, com o σ dos univariados.
-- R₁ é o da pré-amostra de uns.
+- R₁ vem da pré-amostra da convenção: corr(Q̄) na padrão, a de uns em `Convention::Rmgarch`.
 
 **Entrada e erros** (decisão do Claude):
 - É preciso m ≥ 2 `Fit` com ponto finito e o mesmo T, além de T ≥ 100 (como no rmgarch).
@@ -197,14 +222,18 @@ tests/reference/dcc_rmgarch.R, data/dcc3.csv, fixtures/rmgarch_dcc.json, python/
   namespace ve::dcc {
   enum class DccModel : int32_t { Dcc = 0, ADcc = 1, FDcc = 2 };
   enum class DccDist : int32_t { MvNorm = 0, MvT = 1, MvLaplace = 2 };
+  // Regra "Convenções": Standard follows the papers; Rmgarch reproduces rmgarch 1.4.3 (internal, tests only).
+  enum class Convention { Standard, Rmgarch };
   struct DccSpec { DccModel model = DccModel::Dcc; int p = 1; int q = 1; DccDist dist = DccDist::MvNorm;
-                   std::vector<int> groups{}; std::vector<ParameterValue> fixed{}, start{}; };
-  // z = e / sigma of each fit (T x m row-major), sigma (T x m), and what every spec shares.
+                   std::vector<int> groups{}; std::vector<ParameterValue> fixed{}, start{};
+                   Convention convention = Convention::Standard; };   // the C API never sets it
+  // z = e / sigma of each fit (T x m row-major), sigma (T x m), and what every spec shares (both conventions).
   struct StandardizedPanel {
       std::size_t t = 0, m = 0;
       std::vector<double> z, sigma;
-      std::vector<double> qbar, nbar, qbar_raw;   // cov(z), cov(n), z'z/T (FDCC estimation); m x m
-      double delta = 0.0;                         // largest eigenvalue of Qbar^-1/2 Nbar Qbar^-1/2
+      std::vector<double> qbar, qbar_raw;         // cov(z) (T-1); z'z/T (Rmgarch FDCC objective); m x m
+      std::vector<double> nbar, nbar_centered;    // T^-1 sum n n' (Standard); cov(n), T-1 (Rmgarch); m x m
+      double delta = 0.0, delta_centered = 0.0;   // largest eigenvalue of Qbar^-1/2 Nbar Qbar^-1/2, each Nbar
   };
   StandardizedPanel standardize(std::span<const FitResult* const> fits);   // the caller checked them
   std::optional<std::string> panel_problem(std::span<const FitResult* const> fits);  // regra "Entrada e erros"
@@ -218,8 +247,9 @@ TEST(SymmetricEigen, MatchesKnownSpectrum) {
   // Q = I: autovalor de N = [[2,1],[1,2]] → 3 (1e-14); Q = diag(4, 1), N = diag(1, 1) → 1; N = 0 → 0
 }
 TEST(DccPanel, CovariancesLikeR) {
-  // z de 3 séries fixas (5 linhas): qbar == covariância centrada com divisor T-1 (1e-15), nbar idem sobre
-  // n = 1(z<0) z (z == 0 conta 0), qbar_raw == z'z/T
+  // z de 3 séries fixas (5 linhas): qbar == covariância centrada com divisor T-1 (1e-15), qbar_raw == z'z/T;
+  // n = 1(z<0) z (z == 0 conta 0): nbar == n'n/T, nbar_centered == covariância centrada T-1;
+  // delta e delta_centered == largest_relative_eigenvalue de cada um
 }
 TEST(DccPanel, ZFromTheFits) { /* 2 fit_one simulados: z[t*m + i] == residuals/sigma do fit i (bit a bit) */ }
 TEST(DccPanel, Problems) {
@@ -245,17 +275,20 @@ TEST(DccPanel, Problems) {
 - Produces:
   ```cpp
   namespace ve::dcc {
-  enum class Presample { Zero, Ones };   // regra "Duas pré-amostras"
+  // Regra "Pré-amostra": what the presample is for. Standard ignores it (one presample); Rmgarch: Objective =
+  // zeros and qbar_raw for FDCC, Reported = ones and qbar.
+  enum class Stage { Objective, Reported };
   // Natural DCC parameters in the order of the "Parâmetros" rule (shape last when mvt).
   template <class T> struct DccParameters { std::span<const T> a, b, g; T shape; };
   // Writes R_t (T x m x m) when r is not empty; returns per-observation log f(z_t; R_t) (without -sum log sigma)
-  // into terms. Uses qbar_raw when FDCC and presample == Zero, as rmgarch does.
+  // into terms. spec.convention picks Nbar/delta and the presample.
   template <class T>
   void correlation_terms(const StandardizedPanel& panel, const DccSpec& spec, const DccParameters<T>& theta,
-                         Presample presample, std::span<T> terms, std::span<double> r = {});
+                         Stage stage, std::span<T> terms, std::span<double> r = {});
   double reported_loglik(const StandardizedPanel&, const DccSpec&, std::span<const double> theta,
-                         std::span<double> r = {});        // sum_t (log f - sum_i log sigma_it), Ones presample
-  template <class T> T objective(const StandardizedPanel&, const DccSpec&, std::span<const T> theta);  // Zero presample
+                         std::span<double> r = {});        // sum_t (log f - sum_i log sigma_it), Stage::Reported
+  // Regra "Objetivo do otimizador"; +infinity when the FDCC intercept is not positive definite.
+  template <class T> T objective(const StandardizedPanel&, const DccSpec&, std::span<const T> theta);
   }
   ```
 - `tests/reference/data/dcc3.csv` já está commitado, junto com o plano. São os dados das notas
@@ -267,6 +300,7 @@ TEST(DccPanel, Problems) {
 ```cpp
 // dcc3.csv + univariados sGARCH(1,1)-norm fixos nos coeficientes do rugarch (as notas, seção 10):
 // A (-0.00891999125885, 0.01947914006937, 0.07282178352751, 0.90657081832066), B (...), C (...).
+// Os dois primeiros testes usam convention = Convention::Rmgarch.
 TEST(DccLikelihood, MatchesRmgarchAtItsPoint) {
   // DCC mvnorm a = 0.0431630001835819, b = 0.9142701826310855:
   // reported_loglik == -6082.94087772754 (rel 1e-10); 3 primeiros l_t: -3.87527571695479, -2.9806184777153,
@@ -277,8 +311,18 @@ TEST(DccLikelihood, OtherDistributionsAndModelsAtRmgarchPoints) {
   // nos pontos da tabela "Other variants" das notas: DCC/mvt -6083.64532606; aDCC/mvnorm -6082.91639426;
   // FDCC grupos (1,1,2) -6082.56656677; DCC/mvlaplace -6364.40615222; DCC(2,1) -6082.93058943 (rel 1e-9)
 }
+TEST(DccLikelihood, StandardMatchesDirectEvaluation) {
+  // Standard, no mesmo ponto, as três distribuições e aDCC(2,1): reported_loglik == uma avaliação direta escrita
+  // no teste (Q_t pela fórmula com z_s z_s' = Qbar e n_s n_s' = Nbar = n'n/T para s <= 0, R_t, inversa e
+  // determinante 3x3 por cofatores, as densidades da regra) (rel 1e-12); R_1 == corr(Qbar) (1e-15);
+  // objective == -(reported_loglik + sum log sigma) (rel 1e-12)
+}
 TEST(DccLikelihood, FdccOneGroupIsDcc) {
-  // as três distribuições: FDCC 1 grupo (a_F, b_F) == DCC (a_F^2, b_F^2) em loglik e R_t (rel 1e-13)
+  // as três distribuições, nas duas convenções: FDCC 1 grupo (a_F, b_F) == DCC (a_F^2, b_F^2) em loglik e R_t
+  // (rel 1e-13)
+}
+TEST(DccLikelihood, FdccIntercept) {
+  // Standard, grupos (1,1,2), a = (0.6, 0.05), b = (0.6, 0.95): intercepto não definido positivo → objective == +inf
 }
 TEST(DccLikelihood, DualGradientMatchesDifferences) { /* objective<Dual> vs diferença central, rel 1e-6, 3 dists */ }
 TEST(DccRecursion, CorrelationsAreValid) {
@@ -323,8 +367,8 @@ TEST(DccRecursion, CorrelationsAreValid) {
   }
   ```
 - A reparametrização segue o padrão de `model/weight_terms.hpp`:
-  - os pesos são termos ≥ 0 que somam a persistência P, abaixo de 1 − 1e-8, com a parte g do aDCC escalada por δ;
-  - o FDCC usa o raio de (max a, max b) abaixo de 1 − 1e-8;
+  - os pesos são termos ≥ 0 que somam a persistência P, abaixo de 1 − 1e-8, com a parte g do aDCC escalada pelo δ da convenção;
+  - o FDCC usa, em cada grupo, o raio de (a_g, b_g) abaixo de 1 − 1e-8 e um ângulo em (0, π/2). O intercepto definido positivo fica com o objetivo (+∞);
   - a forma é logística em (4, 50).
 
   A estimativa minimiza `objective`. O status e a ℓ reportada seguem as regras.
@@ -340,11 +384,15 @@ TEST(DccParameterMap, NamesAndProblems) {
   // fdccb1 fdccb2; problemas: FDCC (2,1), groups de tamanho errado, grupo vazio, ordem 7
 }
 TEST(DccFit, MatchesRmgarchEstimates) {
-  // dcc3 + univariados do rugarch: DCC mvnorm; objetivo do VolEngine <= o do rmgarch no ponto dele + 1e-7;
-  // a, b dentro de rel 1e-3 de (0.0431630001835819, 0.9142701826310855); loglik reportada rel 1e-7
+  // Convention::Rmgarch, dcc3 + univariados do rugarch: DCC mvnorm e FDCC (1,1,2); objetivo do VolEngine <= o do
+  // rmgarch no ponto dele + 1e-7; parâmetros dentro de rel 1e-3 dos das notas; loglik reportada rel 1e-7
+}
+TEST(DccFit, StandardIsAtItsOptimum) {
+  // Standard, DCC/aDCC/FDCC (1,1,2) mvnorm: gradiente do objetivo (Dual) ~ 0 nas coordenadas livres (1e-4);
+  // estimativas a rel 5e-2 das do rmgarch (a convenção muda pouco aqui; serve de alarme, não de oráculo)
 }
 TEST(DccFit, RecoversSimulatedParameters) { /* m = 4, T = 4000 simulado DCC(0.06, 0.9) mvnorm: |erro| < 0.02 */ }
-TEST(DccFit, FixedAndStart) { /* mshape fixo 8: names sem mshape; loglik == rmgarch -6132.56175655 (rel 1e-6) */ }
+TEST(DccFit, FixedAndStart) { /* Rmgarch, mshape fixo 8: names sem mshape; loglik == rmgarch -6132.56175655 (rel 1e-6) */ }
 ```
 
 - [ ] **Step 2: Rodar e ver falhar** — `ctest --preset gcc-release -R "DccParameterMap|DccFit"` → não compila.
@@ -379,8 +427,8 @@ TEST(DccFit, FixedAndStart) { /* mshape fixo 8: names sem mshape; loglik == rmga
 
 ```cpp
 TEST(DccBatch, CriteriaMatchRmgarch) {
-  // DCC mvnorm em dcc3: k = 12 + 2 + 3 = 17; AIC 8.13325450364, BIC 8.19347100136, SIC 8.13300143181,
-  // HQIC 8.15568733467 no ponto do rmgarch (rel 1e-10); FDCC 2 grupos: k = 19
+  // Convention::Rmgarch, DCC mvnorm em dcc3: k = 12 + 2 + 3 = 17; AIC 8.13325450364, BIC 8.19347100136,
+  // SIC 8.13300143181, HQIC 8.15568733467 no ponto do rmgarch (rel 1e-10); FDCC 2 grupos: k = 19
 }
 TEST(DccBatch, SameAsAloneForAnyThreadCount) {
   // Review Focus 2: grade 3 modelos x 3 dists (FDCC 2 grupos) + aDCC(2,1) num par quase descorrelacionado;
@@ -412,7 +460,13 @@ TEST(DccBatch, CovarianceFromSigma) { /* H_t == D_t R_t D_t (rel 1e-15); r compa
   std::optional<LikelihoodProblem> problem_of(const FitResult& fit, std::vector<double>& storage);
   }
   namespace ve::dcc {
-  // Regra "Erros-padrão em dois estágios": se_hessian and se_robust of the DCC rows.
+  // Regra "Erros-padrão em dois estágios": A (n_p x n_p, signs as rmgarch builds them) and S (T x n_p).
+  struct TwoStagePieces { std::size_t parameters; std::vector<double> a, scores; };
+  std::expected<TwoStagePieces, std::string> two_stage_pieces(const DccFitResult& fit,
+                                                              std::span<const FitResult* const> fits);
+  // V of the "Sanduíche" rule for the convention (Standard: A^-1 B A^-T / T; Rmgarch: A^-1 B A^-1 / T).
+  std::vector<double> sandwich(const TwoStagePieces& pieces, Convention convention);
+  // se_hessian and se_robust of the DCC rows, the fit's convention.
   struct DccStandardErrors { std::vector<double> hessian, robust; };
   std::expected<DccStandardErrors, std::string> dcc_standard_errors(const DccFitResult& fit,
                                                                       std::span<const FitResult* const> fits);
@@ -426,11 +480,18 @@ TEST(DccBatch, CovarianceFromSigma) { /* H_t == D_t R_t D_t (rel 1e-15); r compa
 
 ```cpp
 TEST(DccStandardErrors, MatchRmgarchSandwich) {
-  // dcc3, univariados estimados no ponto do rugarch (start + tol 1, como no oráculo do 3c), DCC no ponto do rmgarch:
-  // robust: se(dcca1) 0.00627467301294802, se(dccb1) 0.0132675580840498 (rel 2e-3: Hessianas univariadas
-  // analíticas vs numéricas do rugarch); hessian: 0.00684873, 0.01556525 (rel 2e-3)
+  // Convention::Rmgarch, dcc3, univariados estimados no ponto do rugarch (start + tol 1, como no oráculo do 3c),
+  // DCC no ponto do rmgarch: robust: se(dcca1) 0.00627467301294802, se(dccb1) 0.0132675580840498 (rel 2e-3:
+  // Hessianas univariadas analíticas vs numéricas do rugarch); hessian: 0.00684873, 0.01556525 (rel 2e-3)
 }
-TEST(DccStandardErrors, OtherVariants) { /* mvt, aDCC, FDCC 2 grupos, mvlaplace: robust das "Other variants" (rel 5e-3) */ }
+TEST(DccStandardErrors, TextbookSandwichOnRmgarchPieces) {
+  // as mesmas peças (two_stage_pieces do ajuste Rmgarch): sandwich(pieces, Standard) dá se(dcca1) 0.00639279,
+  // se(dccb1) 0.01334010 (rel 2e-3, a tabela "textbook" das notas); V simétrica (rel 1e-12); o bloco DCC ==
+  // H22^-1 cov(a_t) H22^-1 / T com a_t = s2_t - H21 H11^-1 s1_t calculado no teste (rel 1e-10)
+}
+TEST(DccStandardErrors, OtherVariants) {
+  /* Rmgarch: mvt, aDCC, FDCC 2 grupos, mvlaplace: robust das "Other variants" (rel 5e-3); Standard: finitos e > 0 */
+}
 TEST(DccStandardErrors, RejectsOtherFits) {
   // Review Focus 4: outro conjunto, ordem trocada, um fit reajustado com outra spec: mensagem; com vxreg: "regressors"
 }
@@ -515,7 +576,7 @@ def test_dcc_bad_inputs_raise(ctx, series): ...    # ValueError / VolEngineError
 ### Task 7: Oráculo `rmgarch`
 
 **Files:**
-- Create: `tests/reference/dcc_rmgarch.R`, `tests/reference/fixtures/rmgarch_dcc.json`, `python/tests/oracles/test_dcc_oracles.py`
+- Create: `tests/reference/dcc_rmgarch.R`, `tests/reference/fixtures/rmgarch_dcc.json`, `tests/unit/dcc/oracle_test.cpp`, `python/tests/oracles/test_dcc_oracles.py`
 - Modify: `tests/reference/README.md`, `docs/guide/validation.md`
 
 **Interfaces:**
@@ -524,18 +585,23 @@ def test_dcc_bad_inputs_raise(ctx, series): ...    # ValueError / VolEngineError
   - ajusta os univariados com `multifit`;
   - roda o `dccfit` (solnp) em DCC, aDCC e DCC(2,1) com mvnorm, mvt e mvlaplace, FDCC com 2 grupos e mvnorm, e DCC-mvt com `mshape` fixo;
   - grava para cada caso `{id, univariate coefs, dcc coefs, llh, criteria, se, R at t = 1, T/2, T}`.
-- No Python:
-  - **no ponto do rmgarch:** univariados por `start` + `tol=1` nos coeficientes do rugarch e DCC com os parâmetros fixos no ponto do rmgarch. ℓ, critérios e R batem a rel 1e-10, e os erros-padrão `robust` a rel 2e-3;
+- A paridade exata com o `rmgarch` mora nos testes C++ das Tasks 2–5 (`Convention::Rmgarch`), que a Python não alcança. A fixture traz esses números para os casos do m = 5 e para conferência. O teste C++ `DccOracle.Rmgarch` lê os números copiados da fixture para uma tabela no próprio teste: os testes C++ não leem JSON, e não vale criar um leitor para isso. Ele confere:
+  - **no ponto do rmgarch:** ℓ, critérios e R a rel 1e-10 e os erros-padrão `robust` a rel 2e-3;
   - **estimado:** objetivo ≤ o do rmgarch + 1e-7, parâmetros a rel 1e-3 e ℓ a rel 1e-7.
+- No Python (`Convention::Standard`, a pública), `test_dcc_matches_paper_convention[<id>]`:
+  - a ℓ no ponto estimado bate com uma avaliação direta em numpy, escrita no teste, a rel 1e-10 (mvnorm e mvt; a mvlaplace precisa da Bessel K, que o numpy não tem, e fica com o teste C++ da Task 2);
+  - as estimativas ficam a rel 5e-2 das do rmgarch;
+  - os erros-padrão `robust` são finitos e positivos.
 - `validation.md` ganha a seção "`rmgarch`, DCC", com:
-  - as convenções acima: as duas pré-amostras, Q̄ = cov, a ℓ completa, k com m(m − 1)/2 e o sanduíche sem transposta;
-  - as diferenças: o bug do FDCC com G = 1 não reproduzido, a tabela "hessian" que o rmgarch não tem, e o FDCC-mvt/mvlaplace sem oráculo (validado pela identidade de um grupo = DCC);
-  - a tabela de diferenças observadas.
+  - o que é igual nas duas convenções: Q̄ = cov, a ℓ completa, k com m(m − 1)/2, a mvt em [4, 50] e a mvlaplace;
+  - os quatro desvios da convenção pública em relação ao `rmgarch`, cada um com o paper, o código do MFE ou do ARCHModels que o apoia e o tamanho do efeito no dcc3 (ℓ, BIC, se(a) com as duas convenções): a pré-amostra, N̄ sem centrar, o sanduíche com transposta e as restrições do FDCC;
+  - que `Convention::Rmgarch` existe só nos testes e reproduz o `rmgarch` dentro das tolerâncias acima;
+  - a tabela "hessian" que o rmgarch não tem e o FDCC-mvt/mvlaplace sem oráculo (validado pela identidade de um grupo = DCC).
 
 - [ ] **Step 1: Gerar a fixture.**
-- [ ] **Step 2: Escrever o teste** `test_dcc_matches_rmgarch[<id>]` e rodar → PASS. Uma divergência passa por systematic-debugging, e um xfail exige um parágrafo.
+- [ ] **Step 2: Escrever os testes** `DccOracle.Rmgarch` e `test_dcc_matches_paper_convention[<id>]` e rodar → PASS. Uma divergência passa por systematic-debugging, e um xfail exige um parágrafo.
 - [ ] **Step 3: Documentar.**
-- [ ] **Step 4: Rodar** — `pytest python/tests` PASS.
+- [ ] **Step 4: Rodar** — suíte release e `pytest python/tests` PASS.
 - [ ] **Step 5: Commit** — `git commit -m "test: validate DCC fits against rmgarch"`
 
 ---
