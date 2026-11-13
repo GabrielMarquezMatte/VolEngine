@@ -5,6 +5,7 @@
 #include "core/spec.hpp"
 #include "fit/batch.hpp"
 #include "fit/fit_result.hpp"
+#include "forecast/forecast.hpp"
 #include <volengine/volengine.h>
 
 struct ve_context
@@ -35,4 +36,9 @@ struct ve_batch
 struct ve_fit
 {
     ve::FitResult result;
+};
+
+struct ve_forecast
+{
+    ve::forecast::Forecast forecast;
 };
