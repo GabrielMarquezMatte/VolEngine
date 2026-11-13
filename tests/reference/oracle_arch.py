@@ -1,9 +1,13 @@
-"""Fit every case of cases.json that lists arch and write the oracle fixture."""
+"""Fit every case of cases.json that lists arch and write the oracle fixture.
+
+With --forecast, forecast the cases where arch's forecast is analytic at arch's own estimate and write the forecast
+fixture instead (after the fit fixture, which it reads)."""
 
 import csv
 import json
 import math
 import re
+import sys
 from pathlib import Path
 from typing import Any, Literal
 
@@ -20,6 +24,8 @@ DATA = tuple(
     for name in ("sgarch11_norm.csv", "grid.csv", "grid_2b.csv", "grid_2c.csv", "grid_2e.csv", "regressors_2e.csv")
 )
 FIXTURE = REFERENCE / "fixtures" / "arch.json"
+FORECAST_FIXTURE = REFERENCE / "fixtures" / "arch_forecast.json"
+FORECAST_HORIZON = 25
 ArchDist = Literal["normal", "t", "ged", "skewt"]
 ArchVol = Literal["GARCH", "EGARCH"]
 DISTRIBUTIONS: dict[str, ArchDist] = {"norm": "normal", "std": "t", "ged": "ged", "sstd": "skewt"}
@@ -40,6 +46,7 @@ EGARCH_NAMES = {"alpha": "gamma", "gamma": "alpha"}
 # rugarch's parameter order: VolEngine's.
 ORDER = ("mu", "mxreg", "omega", "alpha", "beta", "gamma", "skew", "shape")
 SQRT_TWO_OVER_PI = math.sqrt(2.0 / math.pi)
+SYMMETRIC_DISTS = ("norm", "std", "ged")
 
 
 def load_columns(paths: tuple[Path, ...]) -> dict[str, NDArray[np.float64]]:
@@ -269,5 +276,53 @@ def main() -> None:
     FIXTURE.write_text(json.dumps(fixture, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
-if __name__ == "__main__":
+def forecast_supported(case: dict[str, Any]) -> bool:
+    """arch's analytic forecast: sGARCH and gjrGARCH (eGARCH forecasts by simulation beyond one step), constant
+    mean, symmetric shocks (its gjrGARCH forecast takes P(z < 0) = 1/2)."""
+    model_ok = case["model"] in ("sgarch", "gjrgarch")
+    return model_ok and "mxreg" not in case and case["dist"] in SYMMETRIC_DISTS
+
+
+def forecast_case(case: dict[str, Any], columns: dict[str, NDArray[np.float64]], params: dict[str, Any]) -> dict[str, Any]:
+    """arch fixed at its estimate (params, VolEngine names) on the first n = T - FORECAST_HORIZON observations; the
+    backcast is that of arch's fix() on those n."""
+    values = columns[case["series"]]
+    n = len(values) - FORECAST_HORIZON
+    model = case_model(case, {**columns, case["series"]: values[:n]})
+    names = [*model.parameter_names(), *model.volatility.parameter_names(), *model.distribution.parameter_names()]
+    result = model.fix([params[volengine_name(case["model"], name)] for name in names])
+    forecast = result.forecast(horizon=FORECAST_HORIZON, method="analytic", reindex=False)
+    return {
+        "case": case["id"],
+        "n": n,
+        "horizon": FORECAST_HORIZON,
+        "fixed": params,
+        "sigma": [math.sqrt(float(value)) for value in forecast.variance.to_numpy()[-1]],
+        "mean": [float(value) for value in forecast.mean.to_numpy()[-1]],
+    }
+
+
+def forecast_main() -> None:
+    cases = [case for case in json.loads(CASES.read_text(encoding="utf-8")) if "arch" in case["oracles"]]
+    fits = {result["case"]: result for result in json.loads(FIXTURE.read_text(encoding="utf-8"))["results"]}
+    columns = load_columns(DATA)
+    fixture = {
+        "oracle": "arch",
+        "oracle_version": arch.__version__,
+        "horizon": FORECAST_HORIZON,
+        "results": [
+            forecast_case(case, columns, fits[case["id"]]["params"]) for case in cases if forecast_supported(case)
+        ],
+    }
+    FORECAST_FIXTURE.write_text(json.dumps(fixture, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+
+def run(arguments: list[str]) -> None:
+    if "--forecast" in arguments:
+        forecast_main()
+        return
     main()
+
+
+if __name__ == "__main__":
+    run(sys.argv[1:])
