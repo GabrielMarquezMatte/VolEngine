@@ -1,5 +1,7 @@
 #include "fit/fit.hpp"
 #include "forecast/forecast.hpp"
+#include "forecast/step.hpp"
+#include "forecast/variance_forecast.hpp"
 #include "model/layout.hpp"
 #include "model/likelihood.hpp"
 #include "model/parameter_map.hpp"
@@ -448,6 +450,72 @@ TEST(Forecast, ArfimaZeroIsPlain)
     Forecast b = ve::forecast::forecast(plain, 20);
     EXPECT_EQ(a.mean, b.mean);
     EXPECT_EQ(a.sigma, b.sigma);
+}
+
+
+// first_step is the forecast of one step from the state of the fit, with its level (the mean before the ARMA part)
+// and the csGARCH q of that step.
+void expect_first_step_is_forecast_of_one(const ve::Spec& spec)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(5, kObservations);
+    std::size_t k_mean = static_cast<std::size_t>(spec.mxreg);
+    std::size_t k_variance = static_cast<std::size_t>(spec.vxreg);
+    std::vector<double> x = columns(kObservations + 1, k_mean, -0.25);
+    std::vector<double> v = columns(kObservations + 1, k_variance, 0.5);
+    ve::model::Data sample{r,
+                           {std::span<const double>(x.data(), kObservations * k_mean), k_mean},
+                           {std::span<const double>(v.data(), kObservations * k_variance), k_variance}};
+    ve::FitResult fit = ve::fit_one(sample, spec, ve::FitConfig{});
+    ASSERT_FALSE(fit.sigma.empty());
+    ve::forecast::FutureRegressors future{{std::span<const double>(x).last(k_mean), k_mean},
+                                          {std::span<const double>(v).last(k_variance), k_variance}};
+    Forecast forecast = ve::forecast::forecast(fit, 1, future);
+    ve::model::Layout layout = ve::model::layout_of(spec);
+    ve::forecast::detail::Moments moments = ve::forecast::detail::moments_of(layout, fit.estimate);
+    ve::forecast::detail::Inputs in{fit.state, layout, fit.estimate, future, 1, moments};
+    ve::forecast::detail::Step step = ve::forecast::detail::first_step(in);
+    EXPECT_EQ(std::sqrt(step.sigma2), forecast.sigma[0]);
+    EXPECT_EQ(step.mean, forecast.mean[0]);
+    double level = layout.include_mean ? fit.estimate[layout.mu()] : 0.0;
+    for (std::size_t k = 0; k < k_mean; ++k)
+    {
+        level += fit.estimate[layout.mxreg_begin() + k] * future.mean.at(0, k);
+    }
+    if (spec.archm != 0)
+    {
+        level += fit.estimate[layout.archm_index()] * std::pow(forecast.sigma[0], spec.archm);
+    }
+    EXPECT_NEAR(step.level, level, 1e-14 * (1.0 + std::abs(level)));
+    if (spec.model != Model::CsGarch)
+    {
+        EXPECT_EQ(step.permanent, 0.0);
+        return;
+    }
+    const ve::forecast::ForecastState& s = fit.state;
+    double e = s.residuals.back();
+    double c = 0.0;
+    for (std::size_t k = 0; k < k_variance; ++k)
+    {
+        c += fit.estimate[layout.vxreg_begin() + k] * future.variance.at(0, k);
+    }
+    double q = fit.estimate[layout.omega()] + c + fit.estimate[layout.eta1_begin()] * s.permanent.back() +
+               fit.estimate[layout.eta2_begin()] * (e * e - s.sigma2.back());
+    EXPECT_NEAR(step.permanent, q, 1e-15 * q);
+}
+
+TEST(Forecast, FirstStepIsForecastOfOne)
+{
+    for (Model model : {Model::SGarch, Model::IGarch, Model::GjrGarch, Model::EGarch, Model::ApArch,
+                        Model::FGarchAllGarch, Model::CsGarch})
+    {
+        Dist dist = model == Model::GjrGarch ? Dist::Sstd : Dist::Norm;
+        SCOPED_TRACE(::testing::Message() << "model " << static_cast<int>(model));
+        expect_first_step_is_forecast_of_one(
+            ve::Spec{.model = model, .ar = 1, .ma = 1, .dist = dist, .mxreg = 1, .vxreg = 1});
+    }
+    SCOPED_TRACE("archm and arfima");
+    expect_first_step_is_forecast_of_one(ve::Spec{.model = Model::GjrGarch, .archm = 1});
+    expect_first_step_is_forecast_of_one(ve::Spec{.ar = 1, .ma = 1, .arfima = true});
 }
 
 }

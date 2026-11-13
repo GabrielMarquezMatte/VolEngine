@@ -73,11 +73,7 @@ double quadratic_shock(const Inputs& in, std::span<const double> forecast, std::
 // sGARCH, iGARCH and gjrGARCH: sigma2_h = omega_h + sum_i shock_i + sum_j beta_j sigma2_{h-j}.
 std::vector<double> quadratic_variance(const Inputs& in)
 {
-    double pi = 0.0;
-    if (in.layout.model == Model::GjrGarch)
-    {
-        pi = dist::probability_below_zero(in.layout.dist, model::shape_parameters_of(in.theta, in.layout));
-    }
+    double pi = in.moments.below_zero;
     std::vector<double> beta = betas(in);
     std::vector<double> sigma2(in.horizon);
     for (std::size_t h = 1; h <= in.horizon; ++h)
@@ -104,12 +100,9 @@ std::vector<double> component_variance(const Inputs& in)
     const ForecastState& s = in.state;
     std::size_t last = s.sigma2.size() - 1;
     double rho = in.theta[in.layout.eta1_begin()];
-    double phi = in.theta[in.layout.eta2_begin()];
     std::span<const double> alpha = block(in.theta, in.layout.alpha_begin(), in.layout.arch);
     std::span<const double> beta = block(in.theta, in.layout.beta_begin(), in.layout.garch);
-    double square = s.residuals[last] * s.residuals[last];
-    double q = intercept(in, 1) + rho * s.permanent[last] + phi * (square - s.sigma2[last]);
-    double first = q;
+    double first = next_permanent(in);
     for (std::size_t i = 1; i <= alpha.size(); ++i)
     {
         double e = s.residuals[last + 1 - i];
@@ -139,7 +132,7 @@ std::vector<double> log_variance(const Inputs& in)
     std::span<const double> alpha = block(in.theta, in.layout.alpha_begin(), in.layout.arch);
     std::span<const double> gamma = block(in.theta, in.layout.gamma_begin(), in.layout.gamma);
     std::vector<double> beta = betas(in);
-    double abs_moment = dist::abs_moment(in.layout.dist, model::shape_parameters_of(in.theta, in.layout), 1.0);
+    double abs_moment = in.moments.abs_moment;
     std::vector<double> sample(in.state.sigma2.size());
     std::ranges::transform(in.state.sigma2, sample.begin(), [](double variance) { return std::log(variance); });
     std::vector<double> logs(in.horizon);
@@ -178,12 +171,7 @@ garch::PowerGarchParameters<double> exact_power_parameters(const Inputs& in, std
 // forecast (the filter of the fit smooths it in fGARCH), and kappa_i sigma^delta after it.
 std::vector<double> power_variance(const Inputs& in)
 {
-    std::vector<double> moments(static_cast<std::size_t>(in.layout.arch));
-    for (std::size_t i = 0; i < moments.size(); ++i)
-    {
-        moments[i] = model::shock_moment<double>(in.theta, in.layout, i);
-    }
-    garch::PowerGarchParameters<double> p = exact_power_parameters(in, moments);
+    garch::PowerGarchParameters<double> p = exact_power_parameters(in, in.moments.shock);
     std::vector<double> sample(in.state.sigma2.size());
     std::ranges::transform(in.state.sigma2, sample.begin(),
                            [&p](double variance) { return garch::raise(variance, 0.5 * p.power, p.free_power); });
@@ -209,6 +197,38 @@ std::vector<double> power_variance(const Inputs& in)
     return x;
 }
 
+}
+
+Moments moments_of(const model::Layout& layout, std::span<const double> theta)
+{
+    Moments moments;
+    dist::ShapeParameters<double> shape = model::shape_parameters_of(theta, layout);
+    if (layout.model == Model::GjrGarch)
+    {
+        moments.below_zero = dist::probability_below_zero(layout.dist, shape);
+    }
+    if (layout.model == Model::EGarch)
+    {
+        moments.abs_moment = dist::abs_moment(layout.dist, shape, 1.0);
+    }
+    if (layout.is_power_family())
+    {
+        moments.shock.resize(static_cast<std::size_t>(layout.arch));
+        for (std::size_t i = 0; i < moments.shock.size(); ++i)
+        {
+            moments.shock[i] = model::shock_moment<double>(theta, layout, i);
+        }
+    }
+    return moments;
+}
+
+double next_permanent(const Inputs& in)
+{
+    const ForecastState& s = in.state;
+    std::size_t last = s.sigma2.size() - 1;
+    double square = s.residuals[last] * s.residuals[last];
+    return intercept(in, 1) + in.theta[in.layout.eta1_begin()] * s.permanent[last] +
+           in.theta[in.layout.eta2_begin()] * (square - s.sigma2[last]);
 }
 
 std::vector<double> variance_forecast(const Inputs& in)

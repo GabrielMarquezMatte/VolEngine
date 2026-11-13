@@ -12,4 +12,9 @@ namespace ve::forecast::detail
 // closed form from h = 2 on.
 std::vector<double> variance_forecast(const Inputs& in);
 
+Moments moments_of(const model::Layout& layout, std::span<const double> theta);
+
+// csGARCH: q of step 1, omega_1 + rho q_{n-1} + phi (e^2_{n-1} - sigma2_{n-1}).
+double next_permanent(const Inputs& in);
+
 }

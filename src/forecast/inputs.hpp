@@ -5,11 +5,22 @@
 
 #include <cstddef>
 #include <span>
+#include <vector>
 
 namespace ve::forecast::detail
 {
 
-// What every rule reads: the point and its layout, the final state of the fit and the future regressors.
+// The moments of the shock the rules read, computed once per forecast or simulation (the skewed densities take them
+// by quadrature): pi = P(z < 0) in gjrGARCH, E|z| in eGARCH, kappa_i in apARCH and fGARCH; 0 or empty elsewhere.
+struct Moments
+{
+    double below_zero = 0.0;
+    double abs_moment = 0.0;
+    std::vector<double> shock{};
+};
+
+// What every rule reads: the point and its layout, the final state of the fit, the future regressors and the
+// moments of the shock.
 struct Inputs
 {
     const ForecastState& state;
@@ -17,6 +28,7 @@ struct Inputs
     std::span<const double> theta;
     const FutureRegressors& future;
     std::size_t horizon;
+    const Moments& moments;
 };
 
 inline std::span<const double> block(std::span<const double> theta, std::size_t begin, int count)
