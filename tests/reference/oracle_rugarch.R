@@ -289,4 +289,7 @@ main <- function() {
     write_json(fixture, fixture_path, auto_unbox = TRUE, digits = I(17), pretty = TRUE, na = "null")
 }
 
-main()
+# Sourced by forecast_rugarch.R for its helpers: main() runs only under Rscript on this file.
+if (sys.nframe() == 0) {
+    main()
+}

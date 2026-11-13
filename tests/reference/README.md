@@ -11,6 +11,7 @@ that `python/tests/test_oracles.py` compares VolEngine against. Conventions and 
 | `cases.json` | The validation cases: series, model, orders, distribution and the oracles each one is compared with |
 | `oracle_rugarch.R` | Fits every case that lists `rugarch` and writes its fixture |
 | `oracle_arch.py` | Fits every case that lists `arch` and writes its fixture |
+| `forecast_rugarch.R` | Forecasts every `rugarch` case at `rugarch`'s estimate (from `fixtures/rugarch.json`) on the first T − 25 observations, 25 steps ahead, and writes `fixtures/rugarch_forecast.json` |
 | `data/sgarch11_norm.csv` | Plan-1 series, one column per length (`t5000`, `t3000`, `t1500`), 17 significant digits; shorter series end in empty cells |
 | `data/grid.csv` | Grid series, T = 3000 each (`sgarch21_std`, `arma11_sgarch11_ged`, `sgarch12_norm`, `sgarch22_ged`), 17 significant digits |
 | `data/grid_2b.csv` | GARCH-variant series, T = 3000 each (`egarch11_std`, `gjrgarch11_norm`, `aparch11_ged`, `igarch11_norm`, `csgarch11_std`, `fgarch_allgarch11_norm`), 17 significant digits |
@@ -19,6 +20,7 @@ that `python/tests/test_oracles.py` compares VolEngine against. Conventions and 
 | `data/regressors_2e.csv` | The regressors the cases name, T = 3000 rows aligned with `grid_2e.csv` and every other series: `x1` = sin(t/40), `x2` ~ N(0, 1), `v1` = \|cos(t/25)\|, t = 1..T |
 | `fixtures/rugarch.json` | `rugarch` results |
 | `fixtures/arch.json` | `arch` results |
+| `fixtures/rugarch_forecast.json` | `rugarch` forecasts: per case `n`, `horizon`, the `fixed` point and the 25 values of `sigma` and `mean` |
 
 The files under `data/` and `fixtures/` are generated and committed. The tests read only these files: running
 them needs neither R nor `arch`. Series names are unique across the data files.
@@ -98,6 +100,7 @@ From the repository root:
 ```
 python/.venv/Scripts/python tests/reference/generate_data.py
 Rscript tests/reference/oracle_rugarch.R
+Rscript tests/reference/forecast_rugarch.R   # after oracle_rugarch.R: it reads fixtures/rugarch.json
 python/.venv/Scripts/python tests/reference/oracle_arch.py
 ```
 

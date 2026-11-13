@@ -679,6 +679,65 @@ fits below confirm the convention again. No core change was needed.
 - **Names and order.** `mu`, `ar1..`, `ma1..`, `arfima`, `mxreg1..`, `omega`, ...: `arfima` sits where `archm` would,
   after `ma`.
 
+### `rugarch`, forecast
+
+Read: the `ugarchforecast` manual, and the functions it calls, printed from the installed package (`rugarch` 1.5.6):
+`.nsgarchforecast`, `.ngjrgarchforecast`, `.negarchforecast`, `.naparchforecast`, `.nfgarchforecast`,
+`.ncsgarchforecast`, `.nigarchforecast`, `armaf`, `arfimaf`, and the moments they receive (`pneg`, `egarchKappa`,
+`fgarchKappa`). VolEngine forecasts from the final state of the fit (`ForecastState`: the last max(m, n, p, q)
+residuals, variances, csGARCH trends and mean deviations, every deviation with ARFIMA), at the estimate.
+
+- **Variance.** Each family advances the quantity its recursion is linear in. In-sample lags read the fit; the shock
+  of a future step is replaced by its expectation:
+  - sGARCH and iGARCH: σ²; the future shock αᵢ e² becomes αᵢ σ̂².
+  - gjrGARCH: σ²; the future shock (αᵢ + γᵢ 1[e < 0]) e² becomes (αᵢ + γᵢ π) σ̂², with π = P(z < 0) as in the
+    persistence.
+  - eGARCH: log σ²; the future shock αᵢ z + γᵢ(|z| − E|z|) becomes 0.
+  - apARCH and fGARCH: σᵟ (σ^λ in fGARCH); the future shock becomes κᵢ σ̂ᵟ, with κᵢ the shock moment of the
+    persistence. The in-sample shock takes |z − η₂| exactly, while the filter of the fit (and `rugarch`'s) smooths it
+    as √((z − η₂)² + 1e-6). The first forecast step of fGARCH therefore differs from one more filter step by up to
+    1e-4 relative (C++ test `Forecast.FGarchFirstStepNearExtendedFilter`).
+  - csGARCH: the step h = 1 is the recursion of the fit. From h = 2 on, `rugarch` uses a closed form from the last
+    observation that leaves out its shock: q̂ₕ = (1 − ρʰ)/(1 − ρ)(ω + cₕ) + ρʰ q, σ̂²ₕ = q̂ₕ + (Σα + Σβ)ʰ(σ² − q).
+    VolEngine follows it.
+  - `vxreg`: ωₜ = ω + Σₖ ζₖ vₜ,ₖ with the rows of the horizon (`external.forecasts$vregfor`).
+- **σ.** The reported σ̂ is `rugarch`'s `sigmaFor`: √σ̂² in sGARCH, iGARCH, gjrGARCH and csGARCH, but
+  exp(E[log σ²]/2) in eGARCH and E[σᵟ]^(1/δ) in apARCH and fGARCH. For h > 1 these are not √E[σ²]. The header, the
+  `Forecast` docstring and the README say so.
+- **Mean.** dₜ is the series the ARMA acts on (r − μ − Σδₖxₜ,ₖ, less the ARCH-in-mean term). The forecast is
+  μ + Σδₖ xₜ,ₖ (rows of `mregfor`) + ξσ̂ᵖ + d̂, with d̂ₕ = Σφᵢ dₕ₋ᵢ + Σⱼ θⱼ eₕ₋ⱼ and future residuals 0 (`armaf`).
+  `rugarch`'s `archex` (mean regressors times σ) does not exist in VolEngine.
+- **ARFIMA.** `arfimaf` forecasts φ(L)(1 − L)ᵈ d = θ(L) e over the deviations, not over the ARMA residuals of the
+  likelihood: Fₜ = −Σₖ≥₁ πₖ dₜ₋ₖ, w the differenced deviations (d − F after the sample), and
+  d̂ₜ = Fₜ + Σφᵢ wₜ₋ᵢ + Σθⱼ eₜ₋ⱼ. VolEngine follows it, at O(n·H).
+
+**Comparison.** `tests/reference/forecast_rugarch.R` takes `rugarch`'s estimate of every `rugarch` case from
+`fixtures/rugarch.json` and fixes the model there, on the first n = T − 25 observations. Then `ugarchforecast` runs
+with `n.ahead = 25` and the last 25 rows of the regressors as `external.forecasts`. `python/tests/test_forecast_oracles.py`
+fixes VolEngine at the same point (an evaluation, no optimizer) and forecasts. Comparing at the oracle's point
+separates the forecast rules from the optimizers.
+
+- The derived iGARCH β_q is left free on both sides.
+- Under variance targeting, `ugarchfilter` rejects a fully fixed point, so both sides fix ω at `rugarch`'s targeted
+  value and turn targeting off. Targeting only chooses ω; the forecast rules do not see how.
+
+**Tolerances.** σ̂ relative 1e-8; mean absolute 1e-8 (1 + |mean|). Exception: `rugarch` integrates some moments
+with `integrate()` at its default tolerance, and its forecast inherits the error. Against an integral to 1e-14:
+- its apARCH κ (norm, γ = −0.056, δ = 1.27) is off by −1.2e-8;
+- its eGARCH E|z| for sged (ξ = 0.90, ν = 1.39) is off by −1.2e-6.
+
+So σ̂ is compared at 5e-6 relative in apARCH and fGARCH (κ) and in eGARCH with sstd or sged (E|z|). The first step of
+apARCH and fGARCH reads no κ and is still held to 1e-12.
+
+Observed on the 108 cases:
+
+| Cases | Largest σ̂ difference (relative) | Largest mean difference (over 1 + \|mean\|) |
+| --- | --- | --- |
+| sGARCH, iGARCH, gjrGARCH, csGARCH, eGARCH (norm, std, ged, jsu), ARMA, regressors, `archm`, ARFIMA (77 cases) | 4.8e-9 | 4.6e-12 |
+| apARCH (12 cases) | 1.6e-10 to 8.6e-8; h = 1 within 4.4e-16 | 8.9e-16 |
+| fGARCH (17 cases) | up to 2.5e-6 (`egarch11_jsu/fgarch_allgarch11_sstd`); h = 1 within 3.3e-16 | 0 |
+| eGARCH sstd, sged (2 cases) | 3.6e-8 and 8.0e-7, from h = 1 (the filter reads E\|z\| too) | 0 |
+
 ### `arch` (`VE_VARINIT_BACKCAST`)
 
 Read: `arch/univariate/base.py` (`ARCHModel.fit`, `ARCHModel.compute_param_cov`, `ARCHModel._loglikelihood`),
