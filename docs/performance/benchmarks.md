@@ -351,6 +351,42 @@ Every fit converged. Two costs stand out, both deliberate simplifications marked
 - the static Kendall matrix uses the O(T^2) pair count per entry (210 entries here, ~4 s); Knight's O(T log T)
   algorithm would remove it.
 
+## DCC forecast and simulation (plan 4c)
+
+Measured on 2026-11-13, same machine and Release toolchain as above, source `36a7b30` plus the plan 4c benchmark
+additions in `tests/benchmarks/fit_benchmarks.cpp`. Five repetitions, medians; every run finished without errors.
+
+```
+cmake --preset gcc-bench
+cmake --build --preset gcc-bench
+build/gcc-bench/volengine_benchmarks --benchmark_filter="BM_DccForecast|BM_DccSimulate" --benchmark_repetitions=5 --benchmark_report_aggregates_only=true --benchmark_out=build/gcc-bench/bench_dcc_future.json --benchmark_out_format=json
+```
+
+The workload is the plan 4a one (m = 21, T = 5000, the 21 sGARCH(1,1)-std univariates fitted once outside the timed
+loops); each case fits its DCC once before its timed loop (standard errors off) and times only the forecast or the
+simulation. The copula case is a DCC-t copula with parametric margins and `mshape` fixed at 8, so that setup does not
+pay the ~37 s shape profile of plan 4b.
+
+| Forecast, h = 60 (`BM_DccForecast`) | Median (µs) | sd (µs) |
+| --- | ---: | ---: |
+| `dcc_mvnorm` | 582 | 20.2 |
+| `adcc_mvnorm` | 575 | 2.7 |
+
+| Simulation, 1000 paths x 60 steps (`BM_DccSimulate`) | `correlations` | 1 thread (ms) | hw (16 threads) (ms) |
+| --- | --- | ---: | ---: |
+| `dcc_mvnorm` | off | 356 (sd 6.7) | 58.1 (sd 3.6) |
+| `dcc_mvnorm` | on | 461 (sd 16.0) | 137 (sd 7.7) |
+| `adcc_mvnorm` | off | 365 (sd 10.3) | 61.3 (sd 2.6) |
+| `adcc_mvnorm` | on | 461 (sd 17.7) | 137 (sd 8.7) |
+| `copula_dcc_mvt_param` | off | 1120 (sd 77.8) | 152 (sd 3.0) |
+| `copula_dcc_mvt_param` | on | 1212 (sd 7.3) | 225 (sd 5.5) |
+
+Keeping R and H per path writes 2 x 441 doubles per step (about 0.42 GB for this size) and costs 30% more on one
+thread, but 2.4 times more on 16 threads, where it is bound by memory bandwidth. The copula adds the quantile of
+each of the 21 margins at every step (a std quantile through the inverse incomplete beta), about 3 times the plain
+DCC. No profile or optimization was done in this run; the Cholesky factor of R and the O(m^2) products per step
+dominate the plain DCC.
+
 ## What the benchmarks fit
 
 - The series are simulated by `tests/benchmarks/simulated_panel.hpp` and `tests/unit/simulated_garch.hpp`. They reuse

@@ -181,6 +181,23 @@ TEST(DccForecast, OneGroupFdccIsDcc)
     }
 }
 
+// With g = 0 the aDCC is the DCC with the same a and b.
+TEST(DccForecast, AdccWithoutGIsDcc)
+{
+    DccSpec adcc = dcc_spec(DccModel::ADcc);
+    adcc.fixed = {{"dcca1", 0.04}, {"dccb1", 0.9}, {"dccg1", 0.0}};
+    DccSpec dcc = dcc_spec(DccModel::Dcc);
+    dcc.fixed = {{"dcca1", 0.04}, {"dccb1", 0.9}};
+    const std::vector<DccFitResult> results = run_batch(dcc3_fits(), {adcc, dcc});
+    const SeriesRegressors none(kSeries);
+    const DccForecast a = ve::dcc::future::forecast_dcc(results[0], kHorizon, none);
+    const DccForecast b = ve::dcc::future::forecast_dcc(results[1], kHorizon, none);
+    for (std::size_t e = 0; e < a.r.size(); ++e)
+    {
+        EXPECT_NEAR(a.r[e], b.r[e], 1e-14) << e;
+    }
+}
+
 TEST(DccForecast, SeriesAreTheirOwnForecast)
 {
     const ve::testing::MixedPanel& panel = ve::testing::mixed_panel();

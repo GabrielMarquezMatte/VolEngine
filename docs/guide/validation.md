@@ -873,6 +873,52 @@ sGARCH, gjrGARCH, eGARCH, apARCH, csGARCH and an ARMA mean. A spec with a free p
 (no unconditional variance), parameters outside their domain or persistence ≥ 1 is refused, with the reason in
 `ve_last_error`.
 
+## DCC simulation
+
+As the univariate simulation, the paths have no oracle (`rmgarch`'s `dccsim` and `cgarchsim` use another RNG), so the
+checks are statistical and structural, with fixed seeds in `tests/unit/dcc/future/simulate_test.cpp`. Path p reads
+only `Stream(seed, p)`, in this order at every step: the m normals x₁..x_m of the shock, then the mixing variable if
+the distribution has one. The same seed reproduces paths only within one version of the library (see the CHANGELOG).
+
+**Shocks.** At step h, R_h comes from the recursion, L is its Cholesky factor, ε = c L x with:
+
+| Distribution | c | Covariance of ε |
+| --- | --- | --- |
+| mvnorm | 1 | R |
+| mvt, shape ν | √((ν − 2) / (2G)), G ~ Gamma(ν/2) | R |
+| mvlaplace | √W, W ~ Exp(1) = Gamma(1) | R |
+
+The standardized shock of series i is z_i = ε_i in a DCC. In a Copula-DCC, u_i = F(ε_i), with F the normal cdf (mvnorm)
+or the cdf of the standardized t with the shape of the fit (mvt), cut to [2⁻⁵³, 1 − 2⁻⁵³], and z_i = F_i⁻¹(u_i):
+the quantile function of the distribution of series i (parametric margins), or the empirical quantile
+z₍k₎, k = min(⌈u_i (T + 1)⌉, T), of the standardized residuals of the sample (empirical margins, the inverse of
+rank/(T + 1)). Each series then steps from its own state with its z_i (`sim::Path`, the step of the univariate
+simulation), and the recursion takes z (DCC) or ε (copula) as the new score.
+
+**Quantile functions** (`dist::quantile`, internal): norm, std, ged, sstd, sged and jsu have closed forms (the
+inverse incomplete beta and gamma functions, the Fernandez–Steel branches inverted separately on each side of y = 0,
+the sinh of the normal quantile for the Johnson SU); nig and ghyp solve cdf(z) = u by the TOMS 748 root finder on a
+bracket grown from [−1, 1], 60 iterations and a 2⁻⁴⁸ relative tolerance, deterministic and so bit-identical across
+threads wherever the cdf is. `DistQuantile.InvertsTheCdf` checks |cdf(quantile(u)) − u| ≤ 10⁻¹² min(u, 1 − u) + 10⁻¹⁵ for
+u from 10⁻¹² to 1 − 10⁻¹², for every distribution including the extreme shapes of `Samplers.StandardizedMoments`;
+the same function with known values, monotonicity and the same bits on a second thread (std and sged; the cdf of
+nig and ghyp keeps the Bessel K open item of plan 4b).
+
+**Tests.**
+
+- `DccSimulate.SameForAnyThreadCount`: 1, 3 and 16 threads, bit for bit, for the DCC-t, the aDCC, the Laplace DCC and
+  the Copula-DCC-t (parametric and empirical margins), including R and H.
+- `DccSimulate.Prefixes`: the first paths and the first steps of a bigger run.
+- `DccSimulate.FirstStepShocks`: with 4·10⁵ paths at h = 1, the mean of z_i z_j is R_1 of the forecast to 5 SE for the
+  mvnorm, the mvt and the mvlaplace, and sigma at step 1 is the forecast's, bit for bit.
+- `DccSimulate.MeansFollowTheForecast`: 2·10⁴ paths, 20 steps, DCC and aDCC: the mean of σ² within 5 SE of the
+  forecast's, and the mean of R within 5 SE + 0.01 (the forecast of R is the Engle–Sheppard approximation, which has a
+  small bias).
+- `DccSimulate.CopulaMargins`: u_i = F_i(z_i) has mean 1/2 and variance 1/12 to 5 SE with parametric margins, and every
+  empirical z is a z of the sample.
+- `DccSimulate.ArfimaAndComponentSeries`: a panel with an ARFIMA series, a csGARCH series and a series with a mean
+  regressor simulates finite paths.
+
 ## Numerical settings
 
 ### `rugarch`: Hessian step (`hess.d = 1e-3`)
@@ -1538,6 +1584,47 @@ The empirical cases move most (rank/(T+1) and the cut). The BIC choice is the sa
 parametric first, then DCC-t with the shape fixed, then aDCC-t), but the empirical cases fall in the ranking:
 dcc_mvnorm_emp drops behind adcc_mvnorm_param, and static_mvnorm_ml_emp from first to last of the static mvnorm
 cases.
+
+### `rmgarch`, DCC forecast
+
+`tests/reference/dcc_forecast_rmgarch.R` generates `rmgarch_dcc_forecast.json` (R 4.6.2, `rugarch` 1.5.6, `rmgarch`
+1.4.3) from `dcc3.csv`: sGARCH(1,1)-normal margins by `multifit`, then `dccforecast` (`n.roll = 0`) for DCC(1,1)
+mvnorm, DCC(2,1) mvnorm and DCC(1,1) mvt with `n.ahead = 10`, and for aDCC and FDCC (groups 1, 1, 2) mvnorm with
+`n.ahead = 1`. `DccForecastOracle.MatchesDccforecast` fixes the univariate fits and every DCC parameter at the
+`rmgarch` values (the table in the test holds them, copied from the fixture), runs the internal `Rmgarch`
+convention and compares R, H and sigma at h = 1, 5 and 10 (h = 1 for the aDCC and the FDCC): R and H to 1e-8
+absolute, sigma to 1e-8 relative. All five cases agree at that tolerance. The univariate estimates come from the
+fixture rather than from `dcc3_fits()`: a new `multifit` run differs from the estimates of the plan 4a oracle in
+the sixth digit, which moves H by 1e-6.
+
+What the forecast is:
+
+| Piece | Rule |
+| --- | --- |
+| sigma, mean | each series' own `forecast::forecast`, bit for bit the `Fit.forecast` of the series, with its own regressors |
+| R at h = 1 | the exact recursion one step after T, with the Q and the scores observed (`CorrelationStepper`, whose sums run in the order of the fit's recursion, so the bits match `fit.R`) |
+| R at h ≥ 2, DCC and aDCC | R_h = (1 − k^(h−1)) R̄ + k^(h−1) R_1, k = Σa + Σb, R̄ = diag(Q̄)^(−1/2) Q̄ diag(Q̄)^(−1/2) |
+| R at h ≥ 2, FDCC | the same per element, with K_ij = α_i α_j + β_i β_j (the weights of the recursion) |
+| R, static copula | the fitted R at every h |
+| H | D_h R_h D_h, D_h = diag of the univariate sigma of step h (`sigmaFor`, as `rmgarch`) |
+
+- **Total persistence.** In an order (a, b) the decay is k = Σa + Σb; `rmgarch` agrees with DCC(2,1) with error 0,
+  from R_1: the term a₂ z_T z_T′ already observed does not enter after step 1.
+- **aDCC, h > 1.** `rmgarch` refuses `n.ahead > 1` for the aDCC. Here g does not enter k: the expectation of n n′
+  is taken equal to N̄, which cancels the −g N̄ of the intercept. That is the Engle–Sheppard approximation with no
+  oracle; it is checked internally: with g = 0 the aDCC forecast is the DCC's (`DccForecast.AdccWithoutGIsDcc`),
+  and the mean of R over 2·10⁴ simulated paths stays within 5 SE + 0.01 of it (`DccSimulate.MeansFollowTheForecast`).
+- **FDCC, h ≥ 2.** `rmgarch` returns NA for Q from h = 2 and follows neither the Hadamard formula (error 1e-3) nor
+  any other rule that could be identified; by the rule of the notes on oracle conventions, that is treated as a bug
+  there, and the per-element formula above is used with no oracle. An FDCC with one group equals the DCC with
+  a = α², b = β² (`DccForecast.OneGroupFdccIsDcc`).
+- **FDCC, h = 1.** `rmgarch` uses Q̄ = cov(z), not the Q̄ of the fit, in this step; the `Rmgarch` convention's
+  reported Q̄ is that one, and the oracle matches.
+- **Copula-DCC.** `rmgarch` has `cgarchsim` but no `cgarchforecast`. The formulas are the same on the scores ε
+  (the normal or Student scores of the margins), with the Q̄ of ε; no oracle. The `Rmgarch` convention of a copula
+  fit estimates with the zero presample, and its forecast uses the reported Q̄ as the DCC does.
+- **Public convention.** The Python test evaluates the formula directly, with R̄ the normalized `np.cov` of the
+  standardized residuals of the univariate fits.
 
 ## Regenerating
 

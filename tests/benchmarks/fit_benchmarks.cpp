@@ -1,5 +1,7 @@
 #include "dist/bessel.hpp"
 #include "dcc/fit.hpp"
+#include "dcc/future/forecast.hpp"
+#include "dcc/future/simulate.hpp"
 #include "dcc/standard_errors.hpp"
 #include "diagnostics/gof.hpp"
 #include "diagnostics/portmanteau.hpp"
@@ -1360,6 +1362,95 @@ void register_copula()
         ->Iterations(1);
 }
 
+// A DCC fit of the 21 univariates, made once per spec outside every timed loop (standard errors off).
+ve::dcc::DccFitResult dcc_fitted(const ve::dcc::DccSpec& spec)
+{
+    ve::Context context;
+    ve::dcc::DccOptions options;
+    options.standard_errors = false;
+    const std::vector<ve::dcc::DccSpec> specs{spec};
+    return ve::dcc::fit_dcc_batch(context, dcc_fit_pointers(), specs, options).front();
+}
+
+constexpr std::size_t kFutureHorizon = 60;
+
+void run_dcc_forecast(benchmark::State& state, const ve::dcc::DccSpec& spec)
+{
+    const ve::dcc::DccFitResult fit = dcc_fitted(spec);
+    const ve::dcc::future::SeriesRegressors none(kDccSeries);
+    if (const auto problem = ve::dcc::future::forecast_problem(fit, kFutureHorizon, none))
+    {
+        state.SkipWithError(problem->c_str());
+        return;
+    }
+    for (auto _ : state)
+    {
+        const ve::dcc::future::DccForecast forecast = ve::dcc::future::forecast_dcc(fit, kFutureHorizon, none);
+        benchmark::DoNotOptimize(forecast.h.data());
+    }
+}
+
+void run_dcc_simulate(benchmark::State& state, const ve::dcc::DccSpec& spec, bool correlations, int threads)
+{
+    const ve::dcc::DccFitResult fit = dcc_fitted(spec);
+    ve::Context context;
+    context.set_threads(threads);
+    const ve::dcc::future::DccRequest request{kFutureHorizon, 1000, 7, correlations,
+                                              ve::dcc::future::SeriesRegressors(kDccSeries)};
+    if (const auto problem = ve::dcc::future::forecast_problem(fit, kFutureHorizon, request.future))
+    {
+        state.SkipWithError(problem->c_str());
+        return;
+    }
+    for (auto _ : state)
+    {
+        const ve::dcc::future::DccSimulation simulation = ve::dcc::future::simulate_dcc(context, fit, request);
+        benchmark::DoNotOptimize(simulation.returns.data());
+    }
+}
+
+// The copula mvt takes a fixed mshape: its profile search would cost ~37 s of setup.
+ve::dcc::DccSpec copula_mvt_fixed_shape()
+{
+    ve::dcc::DccSpec spec = copula_spec(ve::dcc::DccModel::Dcc, ve::dcc::DccDist::MvT, ve::dcc::StaticMethod::Default,
+                                        ve::dcc::DccCopula::Parametric);
+    spec.fixed.push_back({"mshape", 8.0});
+    return spec;
+}
+
+void register_dcc_future()
+{
+    using ve::dcc::DccDist;
+    using ve::dcc::DccModel;
+    const std::array<std::string, 2> forecast_names{"dcc_mvnorm", "adcc_mvnorm"};
+    const std::array<ve::dcc::DccSpec, 2> forecast_specs{dcc_spec(DccModel::Dcc, DccDist::MvNorm),
+                                                         dcc_spec(DccModel::ADcc, DccDist::MvNorm)};
+    for (std::size_t i = 0; i < forecast_specs.size(); ++i)
+    {
+        benchmark::RegisterBenchmark("BM_DccForecast/" + forecast_names[i] + "/m:21/h:60", run_dcc_forecast,
+                                     forecast_specs[i])
+            ->Unit(benchmark::kMicrosecond);
+    }
+    const std::array<std::string, 3> names{"dcc_mvnorm", "adcc_mvnorm", "copula_dcc_mvt_param"};
+    const std::array<ve::dcc::DccSpec, 3> specs{dcc_spec(DccModel::Dcc, DccDist::MvNorm),
+                                                dcc_spec(DccModel::ADcc, DccDist::MvNorm),
+                                                copula_mvt_fixed_shape()};
+    for (std::size_t i = 0; i < specs.size(); ++i)
+    {
+        for (const bool correlations : {false, true})
+        {
+            for (const int threads : {1, 0})
+            {
+                const std::string name = "BM_DccSimulate/" + names[i] + "/paths:1000/h:60/correlations:" +
+                                         std::to_string(correlations ? 1 : 0) + "/threads:" + thread_label(threads);
+                benchmark::RegisterBenchmark(name, run_dcc_simulate, specs[i], correlations, threads)
+                    ->Unit(benchmark::kMillisecond)
+                    ->UseRealTime();
+            }
+        }
+    }
+}
+
 void register_all()
 {
     for (const NamedSpec& named : named_specs())
@@ -1384,6 +1475,7 @@ void register_all()
     register_diagnostics();
     register_dcc();
     register_copula();
+    register_dcc_future();
     static const std::vector<ve::Spec> single{named_specs().front().spec};
     for (const int threads : {1, 2, 4, 8, 0})
     {
