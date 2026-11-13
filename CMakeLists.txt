@@ -149,7 +149,8 @@ if(VE_BUILD_TESTS)
         tests/unit/optim/lbfgs_test.cpp
         tests/unit/sim/philox_test.cpp
         tests/unit/sim/samplers_test.cpp
-        tests/unit/sim/simulate_test.cpp)
+        tests/unit/sim/simulate_test.cpp
+        tests/unit/sim/start_test.cpp)
     target_include_directories(volengine_tests PRIVATE tests/unit)
     target_link_libraries(volengine_tests PRIVATE volengine_core volengine GTest::gtest_main ve_boost_math)
     target_compile_options(volengine_tests PRIVATE ${VE_WARNING_FLAGS} ${VE_FLOAT_FLAGS})
