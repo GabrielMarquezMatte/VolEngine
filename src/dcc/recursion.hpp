@@ -234,6 +234,9 @@ public:
         return r_;
     }
 
+    // The packed Q_t of the last next().
+    std::span<const T> q() const { return q_; }
+
 private:
     template <class U>
     void add_weighted(std::span<const T> weights, std::span<const U> x)

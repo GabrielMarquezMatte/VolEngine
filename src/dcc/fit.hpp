@@ -2,6 +2,7 @@
 
 #include "core/context.hpp"
 #include "core/spec.hpp"
+#include "dcc/future/state.hpp"
 #include "dcc/panel.hpp"
 #include "dcc/spec.hpp"
 #include "fit/fit_result.hpp"
@@ -41,6 +42,10 @@ struct DccFitResult
     std::shared_ptr<const StandardizedPanel> panel;
     // The univariate estimates, concatenated in series order.
     std::vector<double> univariate_estimates;
+    // Filled by fit_dcc_batch (null and empty from fit_dcc alone, and when the estimate is NaN): the final state of
+    // each series, one for the whole batch, and the final state of the correlation recursion (plan 4c).
+    std::shared_ptr<const std::vector<future::SeriesEnd>> series_end;
+    future::DccEnd end;
 };
 
 // Maximises the DCC likelihood of spec on the panel: L-BFGS on the unconstrained parameters of parameter_map.hpp,
