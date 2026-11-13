@@ -328,8 +328,13 @@ forecast e simulação leem só o fim da amostra no θ estimado. A docstring diz
 - **`rmgarch` 1.4.3, `dccforecast`:** para h = 2..6 bate com a segunda fórmula com erro 0, com R̄ = Q̄ normalizado.
   Hₜ₊ₕ = DRD com D = diag(sigmaFor) dos univariados (erro 4e-16). Aceita h > 1 com DCC(2,1), FDCC e mvt. **Recusa
   aDCC com `n.ahead > 1`** ("asymmetric DCC specification only support n.ahead = 1 currently").
-- **No h = 1, o Qₜ₊₁ refeito pelo Claude difere 5,6e-3 do Qₜ₊₁ do `rmgarch`.** A causa provável é uma das convenções
-  da seção 8a (pré-amostra ou Q̄); o builder identifica e registra numa nota, como no 4a.
+  - DCC(2,1), h ≥ 2: a mesma fórmula com a persistência total k = Σa + Σb, a partir de Rₜ₊₁ (erro 0). O termo
+    a₂zₜzₜ′ já observado não entra depois do passo 1.
+  - FDCC, h = 1: a recursão exata, mas com Q̄ = cov(z) e não o `Qbar` do ajuste (o Q̄ duplo da seção 8a).
+  - FDCC, h ≥ 2: o Q previsto sai NA e o R não segue nem a fórmula de Hadamard (erro 1e-3) nem outra regra que o
+    Claude identificou. É tratado como bug pela regra da seção 8a: sem oráculo para h ≥ 2.
+- **No h = 1, o Qₜ₊₁ do `rmgarch` é a recursão exata** com Q_T, o z_T dos univariados e o Q̄ do ajuste (erro 0). A
+  diferença de 5,6e-3 da primeira sonda vinha de usar `fit@mfit$stdresid`, que não é o z dos univariados.
 - **O `rmgarch` não tem `cgarchforecast`**, só `cgarchsim`. O `dccsim` e o `cgarchsim` aceitam partir do ajuste
   ou de uma spec.
 
@@ -341,7 +346,9 @@ forecast e simulação leem só o fim da amostra no θ estimado. A docstring diz
     apARCH e fGARCH não é √E[σ²] para h > 1, como no `rmgarch`);
   - h = 1: a recursão exata do modelo com zₜ, nₜ e Qₜ observados;
   - h > 1: a aproximação de Engle–Sheppard que prevê R direto (11.3), na convenção da spec. Nas ordens (a, b), a
-    mesma ideia termo a termo: os zz′ e Q já observados entram como na recursão, e os futuros viram E[R];
+    fórmula do (1,1) com a persistência total k = Σa + Σb, a partir de Rₜ₊₁, como o `rmgarch` (decisão do Claude,
+    ao escrever o plano: o paper só trata o (1,1), e levar termo a termo misturaria zz′ observados, do espaço de Q,
+    com a recursão em R; a diferença some depois de poucos passos);
   - **aDCC h > 1 (decisão do autor, 2026-11-13):** estende a mesma aproximação com Eₜ[nₜ₊ᵢnₜ₊ᵢ′] ≈ N̄. O −gN̄ e o
     gE[nn′] se cancelam do passo 2 em diante, e a persistência fica a + b. Sem oráculo; `validation.md` registra a
     aproximação e a validação interna (11.5);
@@ -383,9 +390,9 @@ forecast e simulação leem só o fim da amostra no θ estimado. A docstring diz
 
 ### 11.5 Validação e benchmark
 
-- **Oráculo `dccforecast`** (`rmgarch` 1.4.3), nos testes C++ com o interruptor `Rmgarch`: DCC(1,1), DCC(2,1), FDCC
-  e mvt com h = 1..H, e aDCC com h = 1. Na convenção pública, no Python, a fórmula de 11.4 avaliada direto.
-- **aDCC h > 1 e Copula-DCC:** validação interna. O forecast de h = 1 é conferido contra a recursão; para h > 1, a
+- **Oráculo `dccforecast`** (`rmgarch` 1.4.3), nos testes C++ com o interruptor `Rmgarch`: DCC(1,1), DCC(2,1) e
+  mvt com h = 1..H, e aDCC e FDCC com h = 1. Na convenção pública, no Python, a fórmula de 11.4 avaliada direto.
+- **aDCC h > 1, FDCC h > 1 e Copula-DCC:** validação interna. O FDCC com um único grupo é igual ao DCC. O forecast de h = 1 é conferido contra a recursão; para h > 1, a
   média de Rₜ₊ₕ em muitos caminhos simulados fica perto do forecast, com folga, porque a aproximação tem viés
   pequeno. Com g = 0, o aDCC é igual ao DCC.
 - **Simulação:** sem oráculo de caminhos (sementes diferentes). Testes:
@@ -412,7 +419,6 @@ forecast e simulação leem só o fim da amostra no θ estimado. A docstring diz
 ### 11.7 Deixado ao builder
 
 - Nomes no C e no Python, além do que 11.4 fixa.
-- A causa da diferença no h = 1 (11.3) e a nota de convenções, como `2026-11-13-volengine-04a-rmgarch-notes.md`.
 - Como o passo univariado do 3b recebe o choque de fora sem mudar nenhum número do 3b.
 - O quantil empírico (definição e interpolação), coerente com o `rank/(T+1)` da convenção pública.
 - A inversão numérica da nig e da ghyp (bracket e tolerância), desde que bit-idêntica entre threads.
