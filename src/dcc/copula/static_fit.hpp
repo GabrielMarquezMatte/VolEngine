@@ -31,6 +31,10 @@ void free_gradient(std::span<const double> x, std::span<const double> dl_dr, std
 double static_terms(const StandardizedPanel& scores, std::span<const double> r, DccDist dist, double shape,
                     std::span<double> gradient);
 
+// log f(epsilon_t; R[, nu]) of each observation (static_terms' summands); NaN unless R is positive definite.
+std::vector<double> static_observations(const StandardizedPanel& scores, std::span<const double> r, DccDist dist,
+                                        double shape);
+
 // The ML R of the scores: L-BFGS over the free x of the layout's C block (fixed ones kept), from the user's start or
 // 0, minimising -static_terms / T. x holds every C entry.
 struct StaticCorrelation

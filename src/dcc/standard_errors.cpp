@@ -1,5 +1,7 @@
 #include "dcc/standard_errors.hpp"
 
+#include "dcc/copula/fit.hpp"
+#include "dcc/copula/margins.hpp"
 #include "dcc/likelihood.hpp"
 #include "dcc/panel.hpp"
 #include "dcc/parameter_map.hpp"
@@ -18,6 +20,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
+#include <optional>
 #include <utility>
 
 namespace ve::dcc
@@ -65,6 +69,7 @@ bool same_bits(std::span<const double> a, std::span<const double> b)
 // estimate and the entries of it that theta holds.
 struct Series
 {
+    const Spec* spec = nullptr;
     std::vector<double> returns;
     fit::LikelihoodProblem problem;
     std::vector<double> estimate;
@@ -81,6 +86,7 @@ std::vector<Series> series_of(std::span<const FitResult* const> fits)
     {
         const std::optional<fit::LikelihoodProblem> problem = fit::problem_of(*fits[i], series[i].returns);
         assert(problem.has_value());
+        series[i].spec = &fits[i]->spec;
         series[i].problem = *problem;
         series[i].estimate = fits[i]->estimate;
         series[i].free = fit::interior_indices(problem->layout, series[i].estimate);
@@ -89,11 +95,14 @@ std::vector<Series> series_of(std::span<const FitResult* const> fits)
     return series;
 }
 
-// The panel at one univariate point, with sum_t log sigma_it of each series.
+// The panel at one univariate point, with sum_t log sigma_it and the estimate of each series, and for a copula
+// spec the copula inputs there.
 struct Point
 {
     StandardizedPanel panel;
     std::vector<double> log_sigma;
+    std::vector<std::vector<double>> estimates;
+    std::shared_ptr<const copula::CopulaInputs> copula;
 };
 
 // Column `column` of z and sigma, NaN where the filter fails, and its log-sigma sum, from series filtered at theta.
@@ -134,25 +143,56 @@ Point base_point(std::span<const Series> series, std::size_t t)
     for (std::size_t i = 0; i < m; ++i)
     {
         filter_into(series[i], series[i].estimate, i, point);
+        point.estimates.push_back(series[i].estimate);
     }
     refresh_moments(point.panel);
     return point;
 }
 
-std::vector<double> reported_terms(const Point& point, const DccSpec& spec, std::span<const double> theta)
+// The copula inputs of spec at point, each series' margin at the point's estimate.
+std::shared_ptr<const copula::CopulaInputs> copula_at(std::span<const Series> series, const Point& point,
+                                                      const DccSpec& spec, const copula::CopulaInputs& base)
+{
+    std::vector<copula::Margin> margins;
+    for (std::size_t i = 0; i < series.size(); ++i)
+    {
+        margins.push_back({series[i].spec, point.estimates[i]});
+    }
+    auto univariate = std::make_shared<const StandardizedPanel>(point.panel);
+    return std::make_shared<const copula::CopulaInputs>(copula::inputs_at(std::move(univariate), margins, spec, base));
+}
+
+// The per-observation terms of the reported loglik that depend on the second stage: log f(z_t; R_t) of the DCC, the
+// copula's c_t of a copula spec. What they leave out (sum_i log sigma_it, the univariate loglik) cancels in every
+// difference of the DCC rows.
+std::vector<double> dcc_terms(const Point& point, const DccSpec& spec, std::span<const double> theta)
 {
     std::vector<double> terms(point.panel.t);
     correlation_terms<double>(point.panel, spec, split_parameters(spec, theta), Stage::Reported, {terms});
     return terms;
 }
 
-// The reported loglik: sum_t log f(z_t; R_t) - sum_i sum_t log sigma_it.
+std::vector<double> reported_terms(const Point& point, const DccSpec& spec, std::span<const double> theta)
+{
+    if (point.copula != nullptr)
+    {
+        return copula::copula_terms(*point.copula, spec, theta);
+    }
+    return dcc_terms(point, spec, theta);
+}
+
+// The reported loglik less the terms that cancel: sum_t log f(z_t; R_t) - sum_i sum_t log sigma_it (DCC), sum_t c_t
+// (copula: subtracting sum log sigma there would only add roundoff, which keeps the empirical cross block off 0).
 double reported_total(const Point& point, const DccSpec& spec, std::span<const double> theta)
 {
     double total = 0.0;
     for (const double term : reported_terms(point, spec, theta))
     {
         total += term;
+    }
+    if (point.copula != nullptr)
+    {
+        return total;
     }
     for (const double log_sigma : point.log_sigma)
     {
@@ -172,13 +212,15 @@ struct TwoStage
     std::vector<Series> series;
     std::vector<std::pair<std::size_t, std::size_t>> univariate;
     Point base;
+    // The copula inputs of the fits, for a copula spec.
+    std::optional<copula::CopulaInputs> copula;
 
     std::size_t parameters() const { return univariate.size() + free.size(); }
 };
 
-TwoStage two_stage_of(const DccFitResult& fit, std::vector<Series> series)
+TwoStage two_stage_of(const DccFitResult& fit, std::span<const FitResult* const> fits)
 {
-    TwoStage stage{fit.spec, layout_of(fit.spec, fit.series), {}, {}, std::move(series), {}, {}};
+    TwoStage stage{fit.spec, layout_of(fit.spec, fit.series), {}, {}, series_of(fits), {}, {}, std::nullopt};
     stage.theta = full_parameters(stage.layout, fit.estimate);
     stage.free = estimated_positions(stage.layout);
     for (std::size_t i = 0; i < stage.series.size(); ++i)
@@ -189,6 +231,12 @@ TwoStage two_stage_of(const DccFitResult& fit, std::vector<Series> series)
         }
     }
     stage.base = base_point(stage.series, fit.nobs);
+    if (fit.spec.copula != DccCopula::None)
+    {
+        const DccSpec spec[] = {fit.spec};
+        stage.copula = copula::copula_inputs(fits, spec);
+        stage.base.copula = copula_at(stage.series, stage.base, fit.spec, *stage.copula);
+    }
     return stage;
 }
 
@@ -289,6 +337,11 @@ void cross_column(const TwoStage& stage, const DccDifferences& differences, std:
     Point point = stage.base;
     filter_into(series, estimate, index, point);
     refresh_moments(point.panel);
+    point.estimates[index] = estimate;
+    if (stage.copula)
+    {
+        point.copula = copula_at(stage.series, point, stage.spec, *stage.copula);
+    }
     const double shifted = reported_total(point, stage.spec, stage.theta);
     const std::size_t n = stage.parameters();
     const std::size_t u = stage.univariate.size();
@@ -436,7 +489,7 @@ std::expected<TwoStagePieces, std::string> two_stage_pieces(const DccFitResult& 
     {
         return std::unexpected(std::move(*problem));
     }
-    const TwoStage stage = two_stage_of(fit, series_of(fits));
+    const TwoStage stage = two_stage_of(fit, fits);
     const std::size_t n = stage.parameters();
     TwoStagePieces pieces{n, Matrix(n * n, 0.0), Matrix(fit.nobs * n, 0.0)};
     std::size_t offset = 0;
