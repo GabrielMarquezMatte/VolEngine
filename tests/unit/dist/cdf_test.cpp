@@ -124,4 +124,45 @@ TEST(Cdf, TailsStayInRange)
     check_tails(Dist::Ghyp, {.skew = -0.2, .shape = 0.3, .ghlambda = -1.5});
 }
 
+// The pointwise nig and ghyp cdf switches from the tail integral to the integral from 0 at |z| = 1: it stays monotone
+// across both switches to rounding, even for a peaked density (zeta 0.01); the switch used to jump by 8.6e-9.
+TEST(Cdf, ContinuousAcrossTheTailSwitch)
+{
+    for (ve::dist::ShapeParameters<double> parameters :
+         {ve::dist::ShapeParameters<double>{.skew = 0.9, .shape = 0.01}, ve::dist::ShapeParameters<double>{.skew = -0.5, .shape = 0.05},
+          ve::dist::ShapeParameters<double>{.skew = 0.3, .shape = 1.2}})
+    {
+        for (double edge : {-1.0, 1.0})
+        {
+            double below = ve::dist::cdf(Dist::Nig, parameters, std::nextafter(edge, -2.0));
+            double at = ve::dist::cdf(Dist::Nig, parameters, edge);
+            double above = ve::dist::cdf(Dist::Nig, parameters, std::nextafter(edge, 2.0));
+            EXPECT_LE(below, at + 1e-14) << parameters.skew << " " << edge;
+            EXPECT_LE(at, above + 1e-14) << parameters.skew << " " << edge;
+            EXPECT_NEAR(below, above, 1e-12) << parameters.skew << " " << edge;
+        }
+    }
+}
+
+// sorted_cdf on the sample size of a fit, with the narrow gaps of 5000 points: the same values as pointwise.
+TEST(Cdf, SortedMatchesPointwiseOnDenseSamples)
+{
+    std::vector<double> points;
+    for (std::size_t i = 0; i < 5000; ++i)
+    {
+        double u = (static_cast<double>(i) + 0.5) / 5000.0;
+        points.push_back(4.0 * std::tan(3.0 * (u - 0.5)) / std::tan(1.5));
+    }
+    for (ve::dist::ShapeParameters<double> parameters :
+         {ve::dist::ShapeParameters<double>{.skew = -0.2, .shape = 2.0, .ghlambda = -1.5},
+          ve::dist::ShapeParameters<double>{.skew = 0.6, .shape = 0.05, .ghlambda = 1.0}})
+    {
+        auto values = ve::dist::sorted_cdf(Dist::Ghyp, parameters, points);
+        for (std::size_t i = 0; i < points.size(); i += 97)
+        {
+            EXPECT_NEAR(values[i], ve::dist::cdf(Dist::Ghyp, parameters, points[i]), 1e-10) << points[i];
+        }
+    }
+}
+
 }
