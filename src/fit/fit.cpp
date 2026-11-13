@@ -2,6 +2,7 @@
 
 #include "ad/dual.hpp"
 #include "core/spec.hpp"
+#include "fit/optimizer.hpp"
 #include "fit/standard_errors.hpp"
 #include "model/likelihood.hpp"
 #include "model/parameter_map.hpp"
@@ -26,30 +27,9 @@ namespace
 
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 constexpr double kInfinity = std::numeric_limits<double>::infinity();
-constexpr std::size_t kWidestDual = kMaxParameterCount;
-// ad::variable writes grad[index] unchecked.
-static_assert(kMaxParameterCount <= kWidestDual, "the widest layout must fit the widest Dual");
 
-// model::loglik and model::to_natural exist only for Dual<8>, 16, 32 and kMaxParameterCount: body runs with the
-// narrowest of them that holds k parameters.
-template <class F>
-decltype(auto) with_dual_width(std::size_t k, F&& body)
-{
-    assert(k <= kWidestDual);
-    if (k <= 8)
-    {
-        return body.template operator()<8>();
-    }
-    if (k <= 16)
-    {
-        return body.template operator()<16>();
-    }
-    if (k <= 32)
-    {
-        return body.template operator()<32>();
-    }
-    return body.template operator()<kWidestDual>();
-}
+using fit::status_from;
+using fit::with_dual_width;
 
 template <std::size_t N>
 void seed(std::span<const double> values, std::span<ad::Dual<N>> seeds)
@@ -210,21 +190,6 @@ bool has_valid_start(std::span<const double> r, std::span<const double> theta, c
         return false;
     }
     return model::is_valid(theta, layout);
-}
-
-FitStatus status_from(optim::Stop stop)
-{
-    switch (stop)
-    {
-        case optim::Stop::Converged:
-            return FitStatus::Converged;
-        case optim::Stop::MaxIter:
-            return FitStatus::MaxIter;
-        case optim::Stop::LineSearchFailed:
-        case optim::Stop::NonFinite:
-            return FitStatus::Failed;
-    }
-    return FitStatus::Failed;
 }
 
 void fill_series(FitResult& result, std::span<const double> r, std::vector<double> residuals,

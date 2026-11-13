@@ -163,6 +163,7 @@ TEST(DccFit, StandardADccGammaIsOnItsBound)
     const Oracle& oracle = kOracles[1];
     const DccSpec spec = spec_of(DccModel::ADcc, DccDist::MvNorm, Convention::Standard);
     const DccFitResult free = ve::dcc::fit_dcc(panel, spec, FitConfig{});
+    ASSERT_EQ(free.status, FitStatus::Converged);
     DccSpec at_rmgarch = spec;
     at_rmgarch.fixed = {{"dccg1", oracle.estimate[2]}};
     const DccFitResult fixed = ve::dcc::fit_dcc(panel, at_rmgarch, FitConfig{});

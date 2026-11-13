@@ -1,6 +1,7 @@
 #include "dcc/parameter_map.hpp"
 
 #include "ad/dual.hpp"
+#include "ad/links.hpp"
 #include "core/spec.hpp"
 
 #include <algorithm>
@@ -24,24 +25,8 @@ namespace
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 constexpr double kQuarterTurn = std::numbers::pi / 2.0;
 
-template <class T>
-T logistic(const T& x)
-{
-    using std::exp;
-    if (ad::value_of(x) >= 0.0)
-    {
-        return 1.0 / (1.0 + exp(-x));
-    }
-    T exponential = exp(x);
-    return exponential / (1.0 + exponential);
-}
-
-// log(numerator / denominator), each floored at DBL_MIN so that a zero weight gives a finite value.
-double log_ratio(double numerator, double denominator)
-{
-    constexpr double kFloor = std::numeric_limits<double>::min();
-    return std::log(std::max(numerator, kFloor)) - std::log(std::max(denominator, kFloor));
-}
+using ad::log_ratio;
+using ad::logistic;
 
 // --- layout and names ---
 
@@ -248,30 +233,21 @@ double weight_budget(const DccLayout& layout, double delta)
     return budget;
 }
 
-// theta[free[i]] = term_i / scale, terms = budget logistic(u[free[0]]) softmax(u[free[1..]], 0).
+// theta[free[i]] = term_i, terms = budget logistic(u[free[0]]) softmax(u[free[1..]], 0).
 template <class T>
 void free_terms_to_natural(std::span<const T> u, std::span<T> theta, const std::vector<std::size_t>& free,
                            double budget)
 {
-    using std::exp;
-    const std::size_t count = free.size();
-    double peak = 0.0;
-    for (std::size_t i = 1; i < count; ++i)
+    std::vector<T> logits(free.size() - 1);
+    for (std::size_t i = 1; i < free.size(); ++i)
     {
-        peak = std::max(peak, ad::value_of(u[free[i]]));
+        logits[i - 1] = u[free[i]];
     }
-    std::vector<T> shares(count);
-    shares.back() = T{std::exp(-peak)};
-    T total = shares.back();
-    for (std::size_t i = 0; i + 1 < count; ++i)
+    std::vector<T> terms(free.size());
+    ad::scaled_softmax<T>(logits, budget * logistic(u[free[0]]), terms);
+    for (std::size_t i = 0; i < free.size(); ++i)
     {
-        shares[i] = exp(u[free[i + 1]] - peak);
-        total = total + shares[i];
-    }
-    const T persistence = budget * logistic(u[free[0]]);
-    for (std::size_t i = 0; i < count; ++i)
-    {
-        theta[free[i]] = persistence * (shares[i] / total);
+        theta[free[i]] = terms[i];
     }
 }
 

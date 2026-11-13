@@ -1,5 +1,6 @@
 #include "model/parameter_map.hpp"
 
+#include "ad/links.hpp"
 #include "dist/densities.hpp"
 #include "dist/moments.hpp"
 #include "model/regressor_map.hpp"
@@ -19,27 +20,13 @@ namespace ve::model
 namespace
 {
 
-template <class T>
-T logistic(const T& x)
-{
-    using std::exp;
-    if (ad::value_of(x) >= 0.0)
-    {
-        return 1.0 / (1.0 + exp(-x));
-    }
-    T exponential = exp(x);
-    return exponential / (1.0 + exponential);
-}
+using ad::log_ratio;
+using ad::logistic;
+using ad::scaled_softmax;
 
 // rugarch bounds the ARFIMA d to [1e-8, 0.5]; the map reaches the open interval.
 constexpr double kArfimaFloor = 1e-8;
 constexpr double kArfimaCeiling = 0.5;
-
-double log_ratio(double numerator, double denominator)
-{
-    constexpr double kFloor = std::numeric_limits<double>::min();
-    return std::log(std::max(numerator, kFloor)) - std::log(std::max(denominator, kFloor));
-}
 
 template <class T>
 T sum_of(std::span<const T> values)
@@ -52,36 +39,12 @@ T sum_of(std::span<const T> values)
     return sum;
 }
 
-// weights[i] = scale softmax(logits, 0)[i]; logits has weights.size() - 1 entries.
-template <class T>
-void softmax_to_natural(std::span<const T> logits, const T& scale, std::span<T> weights)
-{
-    using std::exp;
-    std::size_t count = weights.size();
-    double peak = 0.0;
-    for (const T& logit : logits)
-    {
-        peak = std::max(peak, ad::value_of(logit));
-    }
-    T total{};
-    for (std::size_t i = 0; i < count; ++i)
-    {
-        T logit = i + 1 < count ? logits[i] : T{};
-        weights[i] = exp(logit - peak);
-        total = total + weights[i];
-    }
-    for (T& weight : weights)
-    {
-        weight = scale * (weight / total);
-    }
-}
-
 // u holds v followed by the n - 1 logits; weights has n entries.
 template <class T>
 void persistence_to_natural(std::span<const T> u, std::span<T> weights)
 {
     T persistence = logistic(u[0]) * kPersistenceCeiling;
-    softmax_to_natural<T>(u.subspan(1), persistence, weights);
+    scaled_softmax<T>(u.subspan(1), persistence, weights);
 }
 
 bool is_hyperbolic(Dist dist)
@@ -280,7 +243,7 @@ template <class T>
 void igarch_weights_to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout)
 {
     WeightBlock block = weight_block(layout);
-    softmax_to_natural<T>(u.subspan(block.begin, block.count - 1), T{1.0}, theta.subspan(block.begin, block.count));
+    scaled_softmax<T>(u.subspan(block.begin, block.count - 1), T{1.0}, theta.subspan(block.begin, block.count));
     write_derived_weight<T>(theta, layout);
 }
 
@@ -335,12 +298,12 @@ WeightArray<T> shared_terms(std::span<const T> u, const FreePositions& free, con
     std::span<const T> draws = std::span<const T>(gathered).first(free.count);
     if (layout.model == Model::IGarch)
     {
-        softmax_to_natural<T>(draws, budget, std::span<T>(terms).first(free.count + 1));
+        scaled_softmax<T>(draws, budget, std::span<T>(terms).first(free.count + 1));
         return terms;
     }
     if (free.count > 0)
     {
-        softmax_to_natural<T>(draws.subspan(1), logistic(draws[0]) * budget, std::span<T>(terms).first(free.count));
+        scaled_softmax<T>(draws.subspan(1), logistic(draws[0]) * budget, std::span<T>(terms).first(free.count));
     }
     return terms;
 }
