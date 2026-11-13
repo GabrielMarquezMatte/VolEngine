@@ -2,10 +2,14 @@
 #include "fit/fit.hpp"
 #include "forecast/forecast.hpp"
 #include "model/layout.hpp"
+#include "forecast/step.hpp"
+#include "sim/philox.hpp"
+#include "sim/samplers.hpp"
 #include "sim/simulate.hpp"
 #include "sim/start.hpp"
 #include "simulated_garch.hpp"
 
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -294,6 +298,65 @@ TEST(Simulate, ExplosivePathsStayDefined)
         point(spec, {{"mu", 0.0}, {"omega", 0.01}, {"alpha1", 0.1}, {"beta1", 0.899}, {"gamma1", 0.0}, {"delta", 2.0}});
     aparch.fit.state = {{0.5}, {0.4}, {}, {0.5}};
     expect_defined(run(aparch, 2000, 60));
+}
+
+// The path of simulate_path stepped by hand on a state that only grows: what simulate must equal, bit for bit, however
+// it keeps its state.
+ve::sim::Simulation reference(const Case& c, std::size_t paths, std::size_t horizon, std::uint64_t seed)
+{
+    ve::sim::Start start = ve::sim::start_of_fit(c.fit);
+    ve::sim::Sampler sampler(start.layout.dist, ve::model::shape_parameters_of<double>(start.theta, start.layout));
+    ve::sim::Simulation out{paths, horizon, std::vector<double>(paths * horizon), std::vector<double>(paths * horizon)};
+    for (std::size_t p = 0; p < paths; ++p)
+    {
+        ve::sim::Stream stream(seed, p);
+        ve::forecast::ForecastState state = start.state;
+        for (std::size_t h = 0; h < horizon; ++h)
+        {
+            ve::forecast::FutureRegressors row{};
+            ve::forecast::detail::Inputs in{state, start.layout, start.theta, row, 1, start.moments};
+            ve::forecast::detail::Step step = ve::forecast::detail::first_step(in);
+            double sigma = std::sqrt(step.sigma2);
+            double e = sigma * sampler.draw(stream);
+            out.returns[p * horizon + h] = step.mean + e;
+            out.sigma[p * horizon + h] = sigma;
+            state.residuals.push_back(e);
+            state.sigma2.push_back(step.sigma2);
+            if (start.layout.model == Model::CsGarch)
+            {
+                state.permanent.push_back(step.permanent);
+            }
+            state.deviations.push_back(step.mean + e - step.level);
+        }
+    }
+    return out;
+}
+
+TEST(Simulate, EqualsTheGrowingState)
+{
+    for (const ve::Spec& spec : {ve::Spec{.model = Model::ApArch, .ar = 1, .ma = 1}, ve::Spec{.model = Model::EGarch, .p = 2},
+                                 ve::Spec{.model = Model::CsGarch}, ve::Spec{.ar = 1, .ma = 1, .arfima = true}})
+    {
+        SCOPED_TRACE(::testing::Message() << "model " << static_cast<int>(spec.model) << " arfima " << spec.arfima);
+        Case c = fitted(spec, 0);
+        ve::sim::Simulation expected = reference(c, 3, 300, 17);
+        ve::sim::Simulation sim = run(c, 3, 300, 17);
+        EXPECT_TRUE(same_bits(sim.returns, expected.returns));
+        EXPECT_TRUE(same_bits(sim.sigma, expected.sigma));
+    }
+}
+
+// The rules read only the last L entries of the state: a long horizon costs O(H) per path, not O(H^2) (eGARCH,
+// apARCH and fGARCH transform the whole state at every step). 100 000 steps take well under a second then, and
+// about a minute when the state grows without bound.
+TEST(Simulate, LongHorizonCostsLinearTime)
+{
+    Case c = fitted(ve::Spec{.model = Model::ApArch}, 0);
+    auto begin = std::chrono::steady_clock::now();
+    ve::sim::Simulation sim = run(c, 1, 100000, 3, 1);
+    double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
+    EXPECT_LT(seconds, 5.0);
+    EXPECT_TRUE(std::isfinite(sim.sigma.back()));
 }
 
 }
