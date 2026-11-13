@@ -1,10 +1,10 @@
 #include "sim/simulate.hpp"
 
+#include "core/blocks.hpp"
 #include "forecast/step.hpp"
 #include "sim/philox.hpp"
 #include "sim/samplers.hpp"
 
-#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -84,7 +84,6 @@ void run_blocks(BS::light_thread_pool& pool, int threads, const Start& start, co
                 Simulation& out)
 {
     Sampler sampler(start.layout.dist, model::shape_parameters_of<double>(start.theta, start.layout));
-    std::size_t blocks = std::min(request.paths, kBlocksPerThread * static_cast<std::size_t>(threads));
     auto run_block = [&](std::size_t first, std::size_t last)
     {
         for (std::size_t path = first; path < last; ++path)
@@ -92,17 +91,7 @@ void run_blocks(BS::light_thread_pool& pool, int threads, const Start& start, co
             simulate_path(start, request, sampler, path, out);
         }
     };
-    try
-    {
-        auto futures = pool.submit_blocks(std::size_t{0}, request.paths, run_block, blocks);
-        futures.wait();
-        futures.get();
-    }
-    catch (...)
-    {
-        pool.wait();
-        throw;
-    }
+    run_in_blocks(pool, threads, request.paths, kBlocksPerThread, run_block);
 }
 
 }

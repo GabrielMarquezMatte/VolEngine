@@ -1,8 +1,8 @@
 #include "fit/batch.hpp"
 
+#include "core/blocks.hpp"
 #include "fit/fit.hpp"
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -230,8 +230,6 @@ FitResult run_job(const Batch& batch, std::size_t index)
 // Every job writes only its own slot of `results`.
 void run_blocks(BS::light_thread_pool& pool, int threads, const Batch& batch, std::vector<FitResult>& results)
 {
-    const std::size_t max_blocks = kBlocksPerThread * static_cast<std::size_t>(threads);
-    const std::size_t blocks = std::min(results.size(), max_blocks);
     auto run_block = [&](std::size_t first, std::size_t last)
     {
         for (std::size_t job = first; job < last; ++job)
@@ -239,17 +237,7 @@ void run_blocks(BS::light_thread_pool& pool, int threads, const Batch& batch, st
             results[job] = run_job(batch, job);
         }
     };
-    try
-    {
-        auto futures = pool.submit_blocks(std::size_t{0}, results.size(), run_block, blocks);
-        futures.wait();
-        futures.get();
-    }
-    catch (...)
-    {
-        pool.wait();
-        throw;
-    }
+    run_in_blocks(pool, threads, results.size(), kBlocksPerThread, run_block);
 }
 
 }
