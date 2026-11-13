@@ -92,6 +92,7 @@ add_library(volengine_core STATIC
     src/model/likelihood.cpp
     src/model/parameter_map.cpp
     src/model/start_values.cpp
+    src/sim/path.cpp
     src/sim/samplers.cpp
     src/sim/simulate.cpp
     src/sim/start.cpp)

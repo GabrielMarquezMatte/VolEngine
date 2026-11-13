@@ -3,6 +3,7 @@
 #include "forecast/forecast.hpp"
 #include "model/layout.hpp"
 #include "forecast/step.hpp"
+#include "sim/path.hpp"
 #include "sim/philox.hpp"
 #include "sim/samplers.hpp"
 #include "sim/simulate.hpp"
@@ -357,6 +358,28 @@ TEST(Simulate, LongHorizonCostsLinearTime)
     double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
     EXPECT_LT(seconds, 5.0);
     EXPECT_TRUE(std::isfinite(sim.sigma.back()));
+}
+
+// A Path stepped by hand with the draws of Stream(seed, 0) is row 0 of simulate.
+TEST(Simulate, PathStepMatchesSimulate)
+{
+    constexpr std::size_t steps = 60;
+    for (const ve::Spec& spec : {ve::Spec{.dist = Dist::Std}, ve::Spec{.model = Model::CsGarch}})
+    {
+        Case c = fitted(spec, steps);
+        ve::sim::Simulation sim = run(c, 3, steps, 42, 1);
+        ve::sim::Start start = ve::sim::start_of_fit(c.fit);
+        ve::sim::Sampler sampler(start.layout.dist, ve::model::shape_parameters_of<double>(start.theta, start.layout));
+        ve::sim::Stream stream(42, 0);
+        ve::sim::Path path(start);
+        path.draw_presample(stream, sampler);
+        for (std::size_t h = 0; h < steps; ++h)
+        {
+            ve::sim::Path::Draw draw = path.step(ve::sim::future_row(c.future, h), sampler.draw(stream));
+            EXPECT_EQ(draw.r, sim.returns[h]) << h;
+            EXPECT_EQ(draw.sigma, sim.sigma[h]) << h;
+        }
+    }
 }
 
 }

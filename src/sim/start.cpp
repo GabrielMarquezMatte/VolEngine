@@ -127,12 +127,17 @@ std::expected<Start, std::string> start_of_spec(const Spec& spec, const forecast
     return start;
 }
 
-Start start_of_fit(const FitResult& fit)
+Start start_of(const Spec& spec, std::span<const double> estimate, const forecast::ForecastState& state)
 {
-    assert(!fit.state.residuals.empty());
-    Start start{model::layout_of(fit.spec), fit.estimate, fit.state, {}};
+    assert(!state.residuals.empty());
+    Start start{model::layout_of(spec), std::vector<double>(estimate.begin(), estimate.end()), state, {}};
     start.moments = forecast::detail::moments_of(start.layout, start.theta);
     return start;
+}
+
+Start start_of_fit(const FitResult& fit)
+{
+    return start_of(fit.spec, fit.estimate, fit.state);
 }
 
 }
