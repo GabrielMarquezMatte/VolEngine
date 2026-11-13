@@ -118,6 +118,11 @@ class Spec:
     residuals of the OLS of r on [1 (with a mean), X], as arch does. Persistence < 1 is always enforced, unlike
     rugarch, which drops it when there is `vxreg`; a sigma**2 <= 0 gives a log-likelihood of -inf.
 
+    `arfima=True` is rugarch's ARFIMA mean: the parameter "arfima", named after "ma1".. (where "archm" would be;
+    a spec cannot have both), is d in (1e-8, 0.5). The ARMA residuals e_t become
+    y_t = sum(pi_k * e_(t-k), k = 0..t), pi_0 = 1, pi_k = pi_(k-1) * (k - 1 - d) / k, the (1 - L)**d truncated at
+    the start of the series, at a cost of O(T**2); y_t replaces e_t everywhere after.
+
     Rejected with VolEngineError (the message names the problem): a name the spec does not have
     (`fixed={"shpe": 5.0}`, or "shape" under dist "norm"), fixing the iGARCH `beta_q` or `omega` under
     variance targeting (both derived), variance targeting with "igarch" or "csgarch", and a csgarch
@@ -138,6 +143,7 @@ class Spec:
     mxreg: int = 0
     vxreg: int = 0
     archm: int = 0
+    arfima: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "fixed", frozen_values(self.fixed))
@@ -161,6 +167,7 @@ class Spec:
                 self.mxreg,
                 self.vxreg,
                 self.archm,
+                self.arfima,
             )
         )
 
@@ -191,6 +198,7 @@ class Spec:
         check(lib.ve_spec_set_mxreg(handle.pointer, int32(self.mxreg, "mxreg")))
         check(lib.ve_spec_set_vxreg(handle.pointer, int32(self.vxreg, "vxreg")))
         check(lib.ve_spec_set_archm(handle.pointer, int32(self.archm, "archm")))
+        check(lib.ve_spec_set_arfima(handle.pointer, int(self.arfima)))
         self.apply_values(handle)
         return handle
 

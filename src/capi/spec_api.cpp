@@ -257,6 +257,24 @@ extern "C" ve_status ve_spec_set_archm(ve_spec* s, int32_t power)
         });
 }
 
+extern "C" ve_status ve_spec_set_arfima(ve_spec* s, int32_t on)
+{
+    return guard(
+        [&]
+        {
+            if (s == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "s must not be null");
+            }
+            if (on != 0 && on != 1)
+            {
+                return bad_value("arfima", on);
+            }
+            s->spec.arfima = on == 1;
+            return VE_OK;
+        });
+}
+
 extern "C" ve_status ve_spec_set_dist(ve_spec* s, int32_t dist)
 {
     return guard(

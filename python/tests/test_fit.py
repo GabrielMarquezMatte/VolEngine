@@ -695,6 +695,17 @@ def test_archm_names(ctx, series):
     assert fit.names == ("mu", "ma1", "archm", "omega", "alpha1", "beta1")
 
 
+def test_arfima_names(ctx, series):
+    fit = ctx.fit(ve.Spec(arma=(1, 1), arfima=True), series[:, 0])
+    assert fit.names == ("mu", "ar1", "ma1", "arfima", "omega", "alpha1", "beta1")
+
+
+def test_arfima_with_archm_raises():
+    with pytest.raises(ve.VolEngineError, match="arfima cannot be combined with archm"):
+        ve.Spec(arfima=True, archm=1)
+    assert hash(ve.Spec(arfima=True)) != hash(ve.Spec())
+
+
 def test_regressor_and_archm_options_are_validated():
     with pytest.raises(ve.VolEngineError, match="VE_MAX_REGRESSORS"):
         ve.Spec(mxreg=9)

@@ -968,9 +968,11 @@ struct RaggedRegressors
     std::vector<std::vector<double>> variance_values;
     std::vector<PanelPtr> panels;
     BatchPtr batch;
+    bool arfima;
 
-    RaggedRegressors()
+    explicit RaggedRegressors(bool with_arfima = false) : arfima(with_arfima)
     {
+        EXPECT_EQ(ve_spec_set_arfima(spec.get(), arfima ? 1 : 0), VE_OK);
         EXPECT_EQ(ve_panel_set_ranges(data.get(), kStarts, kLengths), VE_OK);
         BatchInputs inputs;
         inputs.specs = {spec.get()};
@@ -1008,6 +1010,7 @@ struct RaggedRegressors
         ve::Spec direct_spec;
         direct_spec.mxreg = static_cast<int>(kMeanColumns);
         direct_spec.vxreg = static_cast<int>(kVarianceColumns);
+        direct_spec.arfima = arfima;
         ve::FitConfig config;
         config.max_iter = kMaxIter;
         const ve::model::Data data_slices{r, {x, kMeanColumns}, {v, kVarianceColumns}};
@@ -1030,6 +1033,87 @@ TEST(CapiFit, RaggedRegressorsMatchSlices)
                 << "threads " << threads << " job " << job;
         }
     }
+}
+
+// Review Focus 4: each job truncates the fractional difference at the first row of its own range.
+TEST(CapiFit, RaggedArfimaMatchesSlices)
+{
+    RaggedRegressors scenario(true);
+    for (int32_t threads : {1, 4})
+    {
+        ve::testing::ContextPtr context = ve::testing::make_context(threads);
+        FitSet fits = ve::testing::fit_all(context.get(), scenario.batch.get());
+        for (std::size_t job = 0; job < RaggedRegressors::kJobs; ++job)
+        {
+            EXPECT_EQ(ve::testing::read_snapshot(fits[job]), scenario.direct(job))
+                << "threads " << threads << " job " << job;
+        }
+    }
+}
+
+// Review Focus 3: the batch rejects the spec before any fit.
+TEST(CapiFit, ArfimaWithArchmRejectedInBatch)
+{
+    SpecPtr valid = ve::testing::make_spec(1);
+    SpecPtr invalid = regressor_spec(0, 0, 1);
+    ASSERT_EQ(ve_spec_set_arfima(invalid.get(), 1), VE_OK);
+    PanelPtr panel = ve::testing::make_panel(matrix().data(), kShortT, kSeries);
+    ve::testing::ContextPtr context = ve::testing::make_context(2);
+    BatchInputs inputs;
+    inputs.specs = {valid.get(), invalid.get()};
+    inputs.panel = panel.get();
+    inputs.job_spec = {0, 1};
+    inputs.job_series = {0, 1};
+    BatchPtr batch = ve::testing::build_batch(inputs);
+    ve_fit* outputs[2] = {reinterpret_cast<ve_fit*>(0x1), reinterpret_cast<ve_fit*>(0x1)};
+    EXPECT_EQ(ve_fit_batch(context.get(), batch.get(), outputs), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(outputs[0], nullptr);
+    EXPECT_EQ(outputs[1], nullptr);
+    EXPECT_TRUE(contains(last_error(), "spec 1: ")) << last_error();
+    EXPECT_TRUE(contains(last_error(), "arfima")) << last_error();
+    EXPECT_TRUE(contains(last_error(), "archm")) << last_error();
+}
+
+// Review Focus 2: a start outside (1e-8, 0.5) fails its own job only.
+TEST(CapiFit, ArfimaStartOutsideDomainFailsAlone)
+{
+    SpecPtr good = ve::testing::make_spec(1);
+    ASSERT_EQ(ve_spec_set_arfima(good.get(), 1), VE_OK);
+    SpecPtr bad = ve::testing::make_spec(1);
+    ASSERT_EQ(ve_spec_set_arfima(bad.get(), 1), VE_OK);
+    ASSERT_EQ(ve_spec_set_start(bad.get(), "arfima", 0.6), VE_OK);
+    PanelPtr panel = ve::testing::make_panel(matrix().data(), kShortT, kSeries);
+    BatchInputs inputs;
+    inputs.specs = {good.get(), bad.get()};
+    inputs.panel = panel.get();
+    inputs.job_spec = {0, 1, 0};
+    inputs.job_series = {0, 1, 2};
+    BatchPtr batch = ve::testing::build_batch(inputs);
+    ve::testing::ContextPtr context = ve::testing::make_context(2);
+    FitSet fits = ve::testing::fit_all(context.get(), batch.get());
+    EXPECT_EQ(ve::testing::read_snapshot(fits[0]).status, VE_FIT_CONVERGED);
+    EXPECT_EQ(ve::testing::read_snapshot(fits[1]).status, VE_FIT_FAILED);
+    EXPECT_EQ(ve::testing::read_snapshot(fits[2]).status, VE_FIT_CONVERGED);
+}
+
+TEST(CapiFit, ArfimaParamName)
+{
+    SpecPtr spec = ve::testing::make_spec(1);
+    ASSERT_EQ(ve_spec_set_arma(spec.get(), 1, 1), VE_OK);
+    ASSERT_EQ(ve_spec_set_arfima(spec.get(), 1), VE_OK);
+    PanelPtr data = ve::testing::make_panel(matrix().data(), kShortT, kSeries);
+    OptionsHandle options(kShortMaxIter);
+    BatchInputs inputs;
+    inputs.specs = {spec.get()};
+    inputs.panel = data.get();
+    inputs.job_spec = {0};
+    inputs.job_series = {0};
+    inputs.options = options.handle.get();
+    BatchPtr batch = ve::testing::build_batch(inputs);
+    ve::testing::ContextPtr context = ve::testing::make_context(1);
+    FitSet fits = ve::testing::fit_all(context.get(), batch.get());
+    const std::vector<std::string> expected = {"mu", "ar1", "ma1", "arfima", "omega", "alpha1", "beta1"};
+    EXPECT_EQ(param_names(fits[0]), expected);
 }
 
 TEST(CapiFit, RegressorParamNames)
