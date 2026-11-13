@@ -318,6 +318,39 @@ from the original univariates; its timing excludes the fit. The run completed wi
 Raw output is in the local build artifacts `build/gcc-bench/bench_dcc.json` and `bench_dcc.txt`.
 No DCC profile, assembly review or before/after optimization comparison was performed in this run.
 
+## Copula-DCC workload (plan 4b)
+
+**Pending:** the five-repetition run was deferred. The numbers below are one repetition of the individual fits
+(2026-11-13, same machine and toolchain, source `c5cb446` plus the plan 4b benchmark additions); the grid and the
+standard-error case have not been measured yet. Reproduce and fill in:
+
+```
+cmake --preset gcc-bench
+cmake --build --preset gcc-bench
+build/gcc-bench/volengine_benchmarks --benchmark_filter=BM_Copula --benchmark_repetitions=5 --benchmark_report_aggregates_only=true --benchmark_out=build/gcc-bench/bench_copula.json --benchmark_out_format=json
+```
+
+The workload is the plan 4a one (m = 21, T = 5000, the same 21 sGARCH(1,1)-std univariates fitted outside the
+timed loops). `BM_CopulaFit` fits each of the seven forms with parametric margins on one thread; `BM_CopulaGrid`
+fits the 14 specs (the seven forms, parametric and empirical) with 1 thread and all; `BM_CopulaStandardErrors`
+computes the two-stage tables of a DCC-mvnorm copula after fitting it outside the timed loop.
+
+| Individual fit (`BM_CopulaFit`, one thread, one repetition) | Time (s) |
+| --- | ---: |
+| `static_mvnorm_kendall_param` | 4.42 |
+| `static_mvt_kendall_param` | 5.27 |
+| `static_mvt_ml_param` | 2.11 |
+| `dcc_mvnorm_param` | 0.947 |
+| `dcc_mvt_param` | 36.6 |
+| `adcc_mvnorm_param` | 0.956 |
+| `adcc_mvt_param` | 38.8 |
+
+Every fit converged. Two costs stand out, both deliberate simplifications marked `ponytail:` in the code:
+- a free copula mvt shape is a Brent search over the profile likelihood, about 35 DCC fits of ~1 s each, so a
+  DCC-t copula costs ~37 s against 1.0 s for the plain DCC-t of plan 4a; a gradient in nu would remove it;
+- the static Kendall matrix uses the O(T^2) pair count per entry (210 entries here, ~4 s); Knight's O(T log T)
+  algorithm would remove it.
+
 ## What the benchmarks fit
 
 - The series are simulated by `tests/benchmarks/simulated_panel.hpp` and `tests/unit/simulated_garch.hpp`. They reuse
