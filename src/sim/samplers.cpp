@@ -173,7 +173,20 @@ double standard_gig(Stream& stream, double lambda, double omega)
     return non_t_concave(stream, lambda, omega);
 }
 
-// norm, std (N sqrt((nu - 2) / (2 G)), G ~ Gamma(nu / 2)) and ged (|z| = lambda (2 G)^(1 / nu), G ~ Gamma(1 / nu)).
+// log G, G ~ Gamma(shape): below shape 1, log G(shape + 1) + log(u) / shape, which stays finite where
+// G(shape + 1) u^(1 / shape) underflows (shape = 1 / nu for a ged with a large nu).
+double log_gamma_variate(Stream& stream, double shape)
+{
+    if (shape < 1.0)
+    {
+        double log_boost = std::log(stream.uniform()) / shape;
+        return log_gamma_variate(stream, shape + 1.0) + log_boost;
+    }
+    return std::log(gamma(stream, shape));
+}
+
+// norm, std (N sqrt((nu - 2) / (2 G)), G ~ Gamma(nu / 2)) and ged (|z| = lambda (2 G)^(1 / nu), G ~ Gamma(1 / nu),
+// taken in logs).
 double draw_symmetric(const dist::LogDensity<double>& density, Stream& stream)
 {
     if (density.dist == Dist::Std)
@@ -183,7 +196,8 @@ double draw_symmetric(const dist::LogDensity<double>& density, Stream& stream)
     }
     if (density.dist == Dist::Ged)
     {
-        double magnitude = density.scale * std::pow(2.0 * gamma(stream, 1.0 / density.power), 1.0 / density.power);
+        double log_gamma = log_gamma_variate(stream, 1.0 / density.power);
+        double magnitude = density.scale * std::exp((std::numbers::ln2 + log_gamma) / density.power);
         return stream.uniform() < 0.5 ? -magnitude : magnitude;
     }
     return normal(stream);

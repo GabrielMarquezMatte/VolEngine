@@ -2,6 +2,7 @@
 #include "sim/philox.hpp"
 #include "sim/samplers.hpp"
 
+#include <algorithm>
 #include <boost/math/special_functions/bessel.hpp>
 #include <cmath>
 #include <cstddef>
@@ -119,6 +120,28 @@ TEST(Samplers, StandardizedMoments)
         expect_mean(draws,
                     [](double z) { return std::pow(std::abs(z - 0.2) - 0.3 * (z - 0.2), 1.5); },
                     ve::dist::shifted_moment(c.dist, c.parameters, 0.3, 0.2, 1.5), c.name + " shifted moment");
+    }
+}
+
+// A ged or sged with a large nu draws G ~ Gamma(1 / nu) in logs: G(1 + 1/nu) u^nu underflowed to 0 there, which
+// made exact zeros (48% at nu = 1000) and a variance below 1. dist's quadratures of P(z < 0) and of the shifted
+// moment lose accuracy at such nu (1.106 against the uniform limit 1.0845 for the shifted moment at nu = 1000), so
+// only the moments of stable forms are checked.
+TEST(Samplers, GedWithLargeShape)
+{
+    using ve::Dist;
+    std::vector<DistCase> cases{{Dist::Ged, {0.0, 200.0, 0.0}, "ged 200"},
+                                {Dist::Ged, {0.0, 1000.0, 0.0}, "ged 1000"},
+                                {Dist::Sged, {1.2, 1000.0, 0.0}, "sged 1000"}};
+    for (const DistCase& c : cases)
+    {
+        ve::sim::Sampler sampler(c.dist, c.parameters);
+        std::vector<double> draws = draw_all([&sampler](ve::sim::Stream& s) { return sampler.draw(s); }, kDraws);
+        EXPECT_EQ(std::count(draws.begin(), draws.end(), 0.0), 0) << c.name;
+        expect_mean(draws, [](double z) { return z; }, 0.0, c.name + " mean");
+        expect_mean(draws, [](double z) { return z * z; }, 1.0, c.name + " variance");
+        expect_mean(draws, [](double z) { return std::abs(z); }, ve::dist::abs_moment(c.dist, c.parameters, 1.0),
+                    c.name + " E|z|");
     }
 }
 
