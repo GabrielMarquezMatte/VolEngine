@@ -738,6 +738,16 @@ Observed on the 108 cases:
 | fGARCH (17 cases) | up to 2.5e-6 (`egarch11_jsu/fgarch_allgarch11_sstd`); h = 1 within 3.3e-16 | 0 |
 | eGARCH sstd, sged (2 cases) | 3.6e-8 and 8.0e-7, from h = 1 (the filter reads E\|z\| too) | 0 |
 
+**`arch`.** `tests/reference/oracle_arch.py --forecast` fixes `arch` 8.0.0 at its own estimate from
+`fixtures/arch.json` on the first n = T − 25 observations and runs `forecast(horizon=25, method="analytic")`. It
+covers the cases where that forecast is analytic and the conventions meet:
+- sGARCH and gjrGARCH, since `arch`'s eGARCH forecasts by simulation beyond one step;
+- a constant mean, because no `arch` case has an AR term;
+- norm, std and ged, because for gjrGARCH `arch` takes P(z < 0) = 1/2.
+
+VolEngine runs with `VE_VARINIT_BACKCAST`, so both sides compute the backcast from the n observations. The 15 cases
+agree to 3.3e-16 in σ̂ and exactly in the mean. The tolerances are those of `rugarch`.
+
 ### `arch` (`VE_VARINIT_BACKCAST`)
 
 Read: `arch/univariate/base.py` (`ARCHModel.fit`, `ARCHModel.compute_param_cov`, `ARCHModel._loglikelihood`),

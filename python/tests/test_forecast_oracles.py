@@ -77,3 +77,10 @@ def test_forecast_matches_rugarch(ctx, case_id):
     result = next(result for result in load_forecasts("rugarch")["results"] if result["case"] == case_id)
     case = case_by_id(case_id)
     assert_forecast(volengine_forecast(ctx, case, result, "sample"), result, case)
+
+
+@pytest.mark.parametrize("case_id", forecast_ids("arch"))
+def test_forecast_matches_arch(ctx, case_id):
+    result = next(result for result in load_forecasts("arch")["results"] if result["case"] == case_id)
+    case = case_by_id(case_id)
+    assert_forecast(volengine_forecast(ctx, case, result, "backcast"), result, case)
