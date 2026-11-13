@@ -108,6 +108,13 @@ std::expected<Start, std::string> start_of_spec(const Spec& spec, const forecast
     {
         return std::unexpected(std::string("the distribution parameters of the spec are outside their domain"));
     }
+    double persistence = model::persistence<double>(theta, layout);
+    bool explosive = std::isfinite(persistence) && persistence >= 1.0;
+    if (!explosive && !model::is_valid(theta, layout))
+    {
+        return std::unexpected(std::string("the parameters of the spec are outside the model's domain (the signs "
+                                           "and ceilings of its weights)"));
+    }
     double sigma2 = unconditional_variance(layout, theta, first_shift(layout, theta, future));
     if (!(std::isfinite(sigma2) && sigma2 > 0.0))
     {
