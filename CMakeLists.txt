@@ -101,6 +101,10 @@ add_library(volengine SHARED
     src/capi/version_api.cpp
     src/capi/batch_api.cpp
     src/capi/context_api.cpp
+    src/capi/dcc/dcc_batch_api.cpp
+    src/capi/dcc/dcc_standard_errors_api.cpp
+    src/capi/dcc/dcc_fit_api.cpp
+    src/capi/dcc/dcc_spec_api.cpp
     src/capi/results/diagnostics_api.cpp
     src/capi/results/fit_api.cpp
     src/capi/results/forecast_api.cpp
@@ -137,6 +141,7 @@ if(VE_BUILD_TESTS)
         tests/unit/capi/abi_test.cpp
         tests/unit/capi/batch_test.cpp
         tests/unit/capi/context_test.cpp
+        tests/unit/capi/dcc_test.cpp
         tests/unit/capi/results/fit_accessors_test.cpp
         tests/unit/capi/results/forecast_test.cpp
         tests/unit/capi/panel_test.cpp

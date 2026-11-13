@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, overload
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from ._dcc import DccFit, DccSpec, fit_dcc
 from ._diagnostics import DiagnosticResult, Nyblom, SignBias
 from ._fit import CoefTable, Fit, future_panel
 from ._forecast import Forecast
@@ -33,6 +34,8 @@ if TYPE_CHECKING:
 __all__ = [
     "CoefTable",
     "Context",
+    "DccFit",
+    "DccSpec",
     "DiagnosticResult",
     "Fit",
     "FitOptions",
@@ -250,6 +253,28 @@ class Context:
         if one_dimensional:
             return shaped(fits, (len(specs),))
         return shaped(fits, (len(specs), series_count))
+
+    @overload
+    def fit_dcc(self, spec: DccSpec, univariate: Sequence[Fit], *, standard_errors: bool = True) -> DccFit: ...
+
+    @overload
+    def fit_dcc(
+        self, spec: Sequence[DccSpec], univariate: Sequence[Fit], *, standard_errors: bool = True
+    ) -> list[DccFit]: ...
+
+    def fit_dcc(
+        self, spec: DccSpec | Sequence[DccSpec], univariate: Sequence[Fit], *, standard_errors: bool = True
+    ) -> DccFit | list[DccFit]:
+        """Fit one DCC spec or a grid over the chosen ordered univariate fits.
+
+        Fits need at least two series with the same T >= 100 and finite points.
+        Disable standard errors for grid selection, then call the selected result's
+        standard_errors(univariate). Regressor fits require this option disabled.
+        """
+        results = fit_dcc(self._handle, spec, univariate, standard_errors)
+        if isinstance(spec, DccSpec):
+            return results[0]
+        return results
 
     def simulate(
         self,

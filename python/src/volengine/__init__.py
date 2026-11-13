@@ -3,6 +3,8 @@
 from .api import (
     CoefTable,
     Context,
+    DccFit,
+    DccSpec,
     DiagnosticResult,
     Fit,
     FitOptions,
@@ -17,6 +19,8 @@ from .api import (
 __all__ = [
     "CoefTable",
     "Context",
+    "DccFit",
+    "DccSpec",
     "DiagnosticResult",
     "Fit",
     "FitOptions",

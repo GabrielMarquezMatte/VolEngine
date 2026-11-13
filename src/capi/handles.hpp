@@ -2,6 +2,7 @@
 
 #include "capi/results/regressor_rows.hpp"
 #include "core/context.hpp"
+#include "dcc/fit.hpp"
 #include "core/panel.hpp"
 #include "core/spec.hpp"
 #include "fit/batch.hpp"
@@ -11,6 +12,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <volengine/volengine.h>
 
 struct ve_context
@@ -60,4 +62,28 @@ struct ve_sim_options
 struct ve_sim
 {
     ve::sim::Simulation simulation;
+};
+
+struct ve_dcc_spec
+{
+    ve::dcc::DccSpec spec;
+};
+
+struct ve_dcc_options
+{
+    ve::dcc::DccOptions options;
+};
+
+struct ve_dcc_batch
+{
+    std::vector<ve::dcc::DccSpec> specs;
+    std::vector<ve::FitResult> fits;
+    ve::dcc::DccOptions options;
+};
+
+struct ve_dcc_fit
+{
+    ve::dcc::DccFitResult result;
+    mutable std::once_flag covariance_once;
+    mutable std::vector<double> covariance;
 };
