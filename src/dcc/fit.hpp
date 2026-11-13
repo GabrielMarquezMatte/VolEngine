@@ -52,7 +52,7 @@ struct DccFitResult
 DccFitResult fit_dcc(std::shared_ptr<const StandardizedPanel> panel, const DccSpec& spec, const FitConfig& config);
 
 // standard_errors asks the batch for the two-stage tables (se_hessian, se_robust) of each converged spec, those of
-// dcc_standard_errors to the bit; the other specs, and every spec when a univariate fit has regressors, keep NaN.
+// dcc_standard_errors to the bit; the other specs keep NaN. With it, fits with regressors fail check_dcc_batch.
 struct DccOptions
 {
     FitConfig config{};
@@ -60,9 +60,11 @@ struct DccOptions
 };
 
 // The message of the first problem that makes the batch unrunnable, nothing when it can run: the fits do not form
-// a panel (panel_problem), there is no spec, or a spec cannot be fitted to the panel (spec_problem, named "spec i"
-// from 1). As the univariate check_batch, it is asked before the batch, which assumes it passes.
-std::optional<std::string> check_dcc_batch(std::span<const FitResult* const> fits, std::span<const DccSpec> specs);
+// a panel (panel_problem), there is no spec, a spec cannot be fitted to the panel (spec_problem, named "spec i"
+// from 1), or options.standard_errors is on and the fits cannot give them (standard_errors_problem). As the
+// univariate check_batch, it is asked before the batch, which assumes it passes.
+std::optional<std::string> check_dcc_batch(std::span<const FitResult* const> fits, std::span<const DccSpec> specs,
+                                           const DccOptions& options);
 
 // One panel, many specs: the panel is built once and shared by the results, and the specs are split among the
 // threads of the context (inside context.with_pool, so a concurrent set_threads waits). Results are indexed like

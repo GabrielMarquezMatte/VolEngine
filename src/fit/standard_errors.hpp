@@ -23,6 +23,12 @@ struct StandardErrors
 // valid or the log-likelihood is not finite.
 using GradientFn = std::function<bool(std::span<const double>, std::span<double>)>;
 
+// The first step of the central differences of standard_errors for theta[index], relative to the parameter's own
+// scale (kind-aware, with an absolute floor for those that may sit at ~0), so that the Hessian does not depend on the
+// units of r and X.
+double hessian_step(const model::Layout& layout, const model::Standardization& standardization,
+                    std::span<const double> theta, std::size_t index);
+
 // The estimated entries of theta off the boundary (model::on_boundary): the ones standard_errors reports.
 std::vector<std::size_t> interior_indices(const model::Layout& layout, std::span<const double> theta);
 

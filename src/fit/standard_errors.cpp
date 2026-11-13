@@ -60,31 +60,10 @@ bool difference_column(const Problem& problem, std::span<const double> theta, st
     return true;
 }
 
-// Steps proportional to each parameter's own scale keep the Hessian equivariant to the units of r and X. Parameters
-// that may sit at ~0 get an absolute floor.
-double initial_step(const Problem& problem, std::span<const double> theta, std::size_t index)
-{
-    double value = theta[index];
-    switch (problem.layout.kind(index))
-    {
-        case model::ParameterKind::Location:
-            return kRelativeStep *
-                   std::max(std::abs(value),
-                            model::natural_scale(problem.layout, problem.standardization, theta, index));
-        case model::ParameterKind::Real:
-            return kRelativeStep * std::max(std::abs(value), kRealStepFloor);
-        case model::ParameterKind::Positive:
-            return kRelativeStep * value;
-        case model::ParameterKind::Weight:
-            return kRelativeStep * std::max(value, kWeightStepFloor);
-    }
-    return kRelativeStep * value;
-}
-
 bool shrinking_difference_column(const Problem& problem, std::span<const double> theta, std::size_t index,
                                  std::span<double> column)
 {
-    double step = initial_step(problem, theta, index);
+    double step = hessian_step(problem.layout, problem.standardization, theta, index);
     for (int attempt = 0; attempt <= kMaxStepHalvings; ++attempt)
     {
         if (difference_column(problem, theta, index, step, column))
@@ -213,6 +192,27 @@ StandardErrors from_hessian(const Matrix& hessian, const Matrix& middle, std::si
     return from_factor(factor, middle, k);
 }
 
+}
+
+// Steps proportional to each parameter's own scale keep the Hessian equivariant to the units of r and X. Parameters
+// that may sit at ~0 get an absolute floor.
+double hessian_step(const model::Layout& layout, const model::Standardization& standardization,
+                    std::span<const double> theta, std::size_t index)
+{
+    double value = theta[index];
+    switch (layout.kind(index))
+    {
+        case model::ParameterKind::Location:
+            return kRelativeStep *
+                   std::max(std::abs(value), model::natural_scale(layout, standardization, theta, index));
+        case model::ParameterKind::Real:
+            return kRelativeStep * std::max(std::abs(value), kRealStepFloor);
+        case model::ParameterKind::Positive:
+            return kRelativeStep * value;
+        case model::ParameterKind::Weight:
+            return kRelativeStep * std::max(value, kWeightStepFloor);
+    }
+    return kRelativeStep * value;
 }
 
 std::vector<std::size_t> interior_indices(const model::Layout& layout, std::span<const double> theta)

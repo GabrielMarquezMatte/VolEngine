@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <expected>
 #include <gtest/gtest.h>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -73,7 +74,7 @@ std::vector<DccFitResult> run_batch(const Pointers& fits, const std::vector<DccS
 {
     ve::Context context;
     context.set_threads(threads);
-    EXPECT_FALSE(ve::dcc::check_dcc_batch(fits, specs).has_value());
+    EXPECT_FALSE(ve::dcc::check_dcc_batch(fits, specs, options).has_value());
     return ve::dcc::fit_dcc_batch(context, fits, specs, options);
 }
 
@@ -328,11 +329,16 @@ TEST(DccStandardErrors, OtherVariants)
     }
 }
 
-std::vector<FitResult> default_fits()
+// Default sGARCH(1,1)-norm fits of the columns, each multiplied by scale.
+std::vector<FitResult> default_fits(double scale = 1.0)
 {
     std::vector<FitResult> fits;
-    for (const std::vector<double>& column : ve::testing::read_dcc3())
+    for (std::vector<double> column : ve::testing::read_dcc3())
     {
+        for (double& value : column)
+        {
+            value *= scale;
+        }
         fits.push_back(ve::fit_one(column, ve::Spec{}, FitConfig{}));
     }
     return fits;
@@ -384,12 +390,43 @@ TEST(DccStandardErrors, RejectsOtherFits)
 
     std::vector<double> regressor;
     const std::vector<FitResult> regressed = fits_with_variance_regressor(ve::testing::read_dcc3(), regressor);
-    const DccFitResult with_regressor =
-        run_batch(pointers_of(regressed), {fit.spec}, DccOptions{FitConfig{}, true}, 1)[0];
-    ASSERT_EQ(with_regressor.status, FitStatus::Converged);
-    EXPECT_TRUE(std::isnan(with_regressor.se_robust[0]) && std::isnan(with_regressor.se_hessian[1]));
-    EXPECT_FALSE(ve::dcc::fits_problem(with_regressor, pointers_of(regressed)).has_value());
-    expect_rejected(with_regressor, pointers_of(regressed), "regressors");
+    const Pointers with_regressors = pointers_of(regressed);
+    EXPECT_FALSE(ve::dcc::standard_errors_problem(pointers_of(fits)).has_value());
+    const std::optional<std::string> unsupported = ve::dcc::standard_errors_problem(with_regressors);
+    ASSERT_TRUE(unsupported.has_value());
+    EXPECT_NE(unsupported->find("regressors"), std::string::npos) << *unsupported;
+    const std::vector<DccSpec> specs{fit.spec};
+    const std::optional<std::string> batch =
+        ve::dcc::check_dcc_batch(with_regressors, specs, DccOptions{FitConfig{}, true});
+    ASSERT_TRUE(batch.has_value());
+    EXPECT_EQ(*batch, *unsupported);
+    const DccFitResult without_errors = run_batch(with_regressors, specs, DccOptions{FitConfig{}, false}, 1)[0];
+    ASSERT_EQ(without_errors.status, FitStatus::Converged);
+    for (std::size_t i = 0; i < without_errors.estimate.size(); ++i)
+    {
+        EXPECT_TRUE(std::isnan(without_errors.se_robust[i]) && std::isnan(without_errors.se_hessian[i])) << i;
+    }
+    EXPECT_FALSE(ve::dcc::fits_problem(without_errors, with_regressors).has_value());
+    expect_rejected(without_errors, with_regressors, "regressors");
+}
+
+// Returns in percent and as decimals: the univariate estimates scale, z and the DCC do not. The rounding of the
+// forward differences, whose loglik shifts by T m log(100) between the two, already moves the hessian table, which
+// no univariate step enters, by about 1e-5; the tolerance is ten times that.
+TEST(DccStandardErrors, StandardDoesNotDependOnTheUnits)
+{
+    const std::vector<FitResult> percent = default_fits();
+    const std::vector<FitResult> decimal = default_fits(0.01);
+    const DccSpec spec = spec_of(DccModel::Dcc, DccDist::MvNorm, Convention::Standard);
+    const DccOptions options{FitConfig{}, true};
+    const DccFitResult expected = run_batch(pointers_of(percent), {spec}, options, 1)[0];
+    const DccFitResult actual = run_batch(pointers_of(decimal), {spec}, options, 1)[0];
+    ASSERT_EQ(expected.status, FitStatus::Converged);
+    ASSERT_EQ(actual.status, FitStatus::Converged);
+    EXPECT_NEAR(decimal[0].estimate[1], 1e-4 * percent[0].estimate[1], 1e-6 * 1e-4 * percent[0].estimate[1]);
+    expect_relative(actual.estimate, expected.estimate, 1e-6);
+    expect_relative(actual.se_hessian, expected.se_hessian, 1e-4);
+    expect_relative(actual.se_robust, expected.se_robust, 1e-4);
 }
 
 TEST(DccStandardErrors, OptionMatchesExplicit)

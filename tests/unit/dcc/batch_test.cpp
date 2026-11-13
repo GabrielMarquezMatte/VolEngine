@@ -64,8 +64,9 @@ std::vector<DccFitResult> run_batch(ve::Context& context, const std::vector<FitR
                                     const std::vector<DccSpec>& specs, const FitConfig& config = FitConfig{})
 {
     const std::vector<const FitResult*> pointers = pointers_of(fits);
-    EXPECT_FALSE(ve::dcc::check_dcc_batch(pointers, specs).has_value());
-    return ve::dcc::fit_dcc_batch(context, pointers, specs, DccOptions{config, false});
+    const DccOptions options{config, false};
+    EXPECT_FALSE(ve::dcc::check_dcc_batch(pointers, specs, options).has_value());
+    return ve::dcc::fit_dcc_batch(context, pointers, specs, options);
 }
 
 // rmgarch's estimates on dcc3 (the notes, section 10) and its reported loglik.
@@ -307,15 +308,17 @@ TEST(DccBatch, ReportsWhyABatchCannotRun)
 {
     const std::vector<FitResult> fits = ve::testing::dcc3_fits();
     const std::vector<const FitResult*> pointers = pointers_of(fits);
-    EXPECT_TRUE(ve::dcc::check_dcc_batch(pointers, {}).has_value());
+    EXPECT_TRUE(ve::dcc::check_dcc_batch(pointers, {}, DccOptions{}).has_value());
     DccSpec groups = spec_of(DccModel::Dcc, DccDist::MvNorm, Convention::Standard);
     groups.groups = {1, 1, 2};
     const std::optional<std::string> problem = ve::dcc::check_dcc_batch(
-        pointers, std::vector<DccSpec>{spec_of(DccModel::Dcc, DccDist::MvNorm, Convention::Standard), groups});
+        pointers, std::vector<DccSpec>{spec_of(DccModel::Dcc, DccDist::MvNorm, Convention::Standard), groups},
+        DccOptions{});
     ASSERT_TRUE(problem.has_value());
     EXPECT_NE(problem->find("spec 2"), std::string::npos) << *problem;
     const std::vector<const FitResult*> one{pointers[0]};
-    const std::optional<std::string> panel = ve::dcc::check_dcc_batch(one, std::vector<DccSpec>{DccSpec{}});
+    const std::optional<std::string> panel =
+        ve::dcc::check_dcc_batch(one, std::vector<DccSpec>{DccSpec{}}, DccOptions{});
     ASSERT_TRUE(panel.has_value());
     EXPECT_NE(panel->find("series"), std::string::npos) << *panel;
 }
