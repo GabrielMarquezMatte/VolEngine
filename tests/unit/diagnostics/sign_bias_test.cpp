@@ -51,3 +51,31 @@ TEST(SignBias, NonFiniteStandardizedResidualsBecomeZero)
 }
 
 }
+
+namespace
+{
+
+// One negative lagged residual makes 1(e < 0) e a multiple of 1(e < 0): the design is exactly collinear and every
+// statistic is NaN, never a number from a rounded-away pivot.
+TEST(SignBias, CollinearDesignIsNaN)
+{
+    for (double negative : {-0.7, -1.3, -0.01, -2.9})
+    {
+        std::vector<double> z(200);
+        std::vector<double> e(200);
+        for (std::size_t t = 0; t < z.size(); ++t)
+        {
+            z[t] = std::sin(0.37 * static_cast<double>(t)) + 0.2;
+            e[t] = 0.5 + std::abs(std::cos(0.91 * static_cast<double>(t)));
+        }
+        e[57] = negative;
+        ve::diagnostics::SignBias result = ve::diagnostics::sign_bias(z, e);
+        for (ve::diagnostics::TestResult test : {result.sign, result.negative, result.positive, result.joint})
+        {
+            EXPECT_TRUE(std::isnan(test.statistic)) << negative;
+            EXPECT_TRUE(std::isnan(test.p_value)) << negative;
+        }
+    }
+}
+
+}
