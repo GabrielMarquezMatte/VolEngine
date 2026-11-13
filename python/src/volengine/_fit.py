@@ -23,7 +23,7 @@ from ._native import (
     open_panel,
     read_scalar,
 )
-from ._spec import Spec, code_of
+from ._spec import code_of
 
 STATUS_NAMES = {0: "converged", 1: "max_iter", 2: "failed", 3: "insufficient_data"}
 SE_KINDS = {"hessian": 0, "robust": 1}
@@ -57,21 +57,13 @@ class Fit:
     nobs: int
     names: tuple[str, ...]
 
-    def __init__(self, handle: Handle, spec: Spec | None = None) -> None:
+    def __init__(self, handle: Handle) -> None:
         self._handle = handle
         pointer = handle.pointer
         self.status = status_name(read_scalar(ctypes.c_int32, lib.ve_fit_status, pointer))
         self.nobs = read_scalar(ctypes.c_size_t, lib.ve_fit_nobs, pointer)
         count = read_scalar(ctypes.c_size_t, lib.ve_fit_param_count, pointer)
         self.names = tuple(self._param_name(index) for index in range(count))
-        self._estimated_names = self.names
-        if spec is not None:
-            excluded = set(spec.fixed)
-            if spec.variance_targeting:
-                excluded.add("omega")
-            if spec.model == "igarch":
-                excluded.add(f"beta{spec.q}")
-            self._estimated_names = tuple(name for name in self.names if name not in excluded)
 
     def _param_name(self, index: int) -> str:
         text = read_scalar(ctypes.c_char_p, lib.ve_fit_param_name, self._handle.pointer, index)
@@ -150,9 +142,11 @@ class Fit:
     def nyblom(self) -> Nyblom:
         """Parameter stability, with Hansen critical values at 10%, 5%, 1%."""
         values = np.empty(len(self.names), dtype=np.float64)
+        estimated = np.empty(len(self.names), dtype=np.int32)
         joint = ctypes.c_double()
-        check(lib.ve_fit_nyblom(self._handle.pointer, values.ctypes.data, ctypes.byref(joint)))
-        individual = {name: float(value) for name, value in zip(self.names, values, strict=True) if name in self._estimated_names}
+        check(lib.ve_fit_nyblom(self._handle.pointer, values.ctypes.data, ctypes.byref(joint), estimated.ctypes.data))
+        roles = zip(self.names, values, estimated, strict=True)
+        individual = {name: float(value) for name, value, flag in roles if flag}
         individual_critical = critical_values(1)
         assert individual_critical is not None
         return Nyblom(individual, joint.value, individual_critical, critical_values(len(individual)))

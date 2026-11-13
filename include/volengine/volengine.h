@@ -290,8 +290,11 @@ VE_API ve_status ve_fit_fitted(const ve_fit* f, const double** data, size_t* len
  * See docs/guide/validation.md for formulas and rugarch conventions. */
 VE_API ve_status ve_fit_ljung_box(const ve_fit* f, int32_t squared, size_t lag, size_t fitdf, double* out);
 VE_API ve_status ve_fit_arch_lm(const ve_fit* f, size_t lag, size_t fitdf, double* out);
-/* individual has ve_fit_param_count entries, NaN for fixed and derived parameters. */
-VE_API ve_status ve_fit_nyblom(const ve_fit* f, double* individual, double* joint);
+/* individual and estimated have ve_fit_param_count entries in parameter order. estimated[i] is 1 for a parameter
+ * the fit estimated and 0 for a fixed or derived one (variance-targeted omega, iGARCH beta_q), whose individual
+ * statistic is NaN; the count of 1s is what ve_nyblom_critical takes for the joint statistic. An estimated
+ * parameter can still get NaN, when its scores are all zero. */
+VE_API ve_status ve_fit_nyblom(const ve_fit* f, double* individual, double* joint, int32_t* estimated);
 /* Critical values at 10%, 5%, 1%, for 1..20 estimated parameters. */
 VE_API ve_status ve_nyblom_critical(size_t parameters, double* out);
 /* [statistic, p_value] for sign, negative, positive, joint, in that order. */

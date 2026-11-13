@@ -40,7 +40,7 @@ _SE_VALUES = [_HANDLE, _I32, _HANDLE]
 PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_fit_ljung_box": (_STATUS, [_HANDLE, _I32, _SIZE, _SIZE, _HANDLE]),
     "ve_fit_arch_lm": (_STATUS, [_HANDLE, _SIZE, _SIZE, _HANDLE]),
-    "ve_fit_nyblom": (_STATUS, [_HANDLE, _HANDLE, _OUT_DOUBLE]),
+    "ve_fit_nyblom": (_STATUS, [_HANDLE, _HANDLE, _OUT_DOUBLE, _HANDLE]),
     "ve_nyblom_critical": (_STATUS, [_SIZE, _HANDLE]),
     "ve_fit_sign_bias": (_STATUS, [_HANDLE, _HANDLE]),
     "ve_fit_gof": (_STATUS, [_HANDLE, _SIZE, _HANDLE]),
