@@ -104,7 +104,7 @@ Como o `cgarchspec` do `rmgarch`:
 - correlação estática (com os métodos de estimação que o `rmgarch` oferece para ela), DCC e aDCC;
 - transformações das marginais paramétrica (pela CDF de cada ajuste univariado, a do plano 3c) e empírica.
 
-A transformação `spd` fica fora (spec-mãe). Saídas e lote iguais às do 4a.
+A transformação `spd` fica fora (spec-mãe). Saídas e lote iguais às do 4a. O detalhe está na seção 10.
 
 ### 4c — Forecast e simulação do DCC
 
@@ -186,3 +186,107 @@ Depois do plano 4a, as convenções do `rmgarch` foram cruzadas com os papers (E
   estimativas univariadas só como identificação para a função explícita.
 - Critérios do DCC na convenção do `rmgarch`, que o oráculo confirma, para que a escolha pelo BIC seja a mesma.
 - Forecast e simulação do DCC no padrão de API do 3a/3b.
+
+## 10. Plano 4b — Copula-DCC (design, 2026-11-13)
+
+### 10.1 Intenção
+
+O autor não usa a Copula-DCC. Ela entra para a biblioteca ficar completa, como pede a spec-mãe, com paridade com o
+`cgarchfit` do `rmgarch` onde ele não tem bug (regra da seção 8a). O sucesso é ter os mesmos contratos do 4a:
+- bit-identidade entre números de threads;
+- `DccFit` válido depois de liberar os univariados;
+- lote com status por ajuste;
+- Rₜ e Hₜ zero-copy.
+
+### 10.2 Abordagens
+
+- **A. Estender o `DccSpec` (escolhida pelo autor, 2026-11-13).** A cópula é uma opção do mesmo spec, sai no mesmo
+  `ctx.fit_dcc`, `ve_dcc_fit_batch` e `DccFit`, e um lote pode misturar DCC e Copula-DCC. No C, o custo é um valor
+  novo no enum de modelo e cerca de dois setters. Contra: algumas combinações inválidas só são recusadas em tempo de
+  execução.
+- **B. Tipos separados** (`CopulaSpec`, `ctx.fit_copula`, `CopulaFit`, handles C próprios). Descartada: a API fica
+  mais explícita, mas a superfície C dobra (acessores repetidos) e DCC e cópula não entram na mesma grade.
+
+### 10.3 O que o `rmgarch` 1.4.3 faz (sondado pelo Claude no dcc3, univariados sGARCH(1,1)-std)
+
+- `likelihood(fit)` é a ℓ **conjunta**: a soma das ℓ univariadas mais a ℓ da cópula. Por exemplo, na mvnorm estática
+  paramétrica, a soma univariada é −6426,188, o total −6122,956 e a parte da cópula +303,232.
+- Não existe `infocriteria` para `cGARCHfit`.
+- O `matcoef` traz as linhas univariadas, com erros-padrão conjuntos, mais as linhas `[Joint]`:
+  - mvt estática por ML: `C1..C{m(m−1)/2}` e `mshape`;
+  - mvt estática por Kendall: só `mshape`;
+  - mvnorm estática: nenhuma linha. O `method` é ignorado: Kendall e ML dão a mesma ℓ;
+  - DCC e aDCC: `dcca`, `dccb`, `dccg` e `mshape`.
+- A forma da mvt tem teto 50: o dcc3 estima 49,99999.
+- O `Rt` é uma matriz única na estática e uma lista de T matrizes no DCC.
+- **Não identificado:** o estimador da correlação da mvnorm estática. No dcc3 paramétrico, R₁₂ = 0,4745106, enquanto
+  `cor(qnorm(u))` dá 0,474867, `cov2cor(crossprod(qnorm(u)))` 0,4748661 e Kendall 0,4828968. No empírico, R₁₂ =
+  0,4727703 contra 0,4739724 com `rank/(T+1)`. Pode ser ML numérica ou um u truncado. O script da sonda não fica no
+  repositório.
+
+### 10.4 Decisões
+
+- **Spec** (forma fixada; nomes finais com o builder):
+  - Python: `ve.DccSpec(model="static"|"dcc"|"adcc"|"fdcc", copula=None|"parametric"|"empirical",
+    dist="mvnorm"|"mvt"|"mvlaplace", static_method=None|"kendall"|"ml", ...)`;
+  - `copula=None` é exatamente o DCC do 4a: nenhum número do 4a muda;
+  - `model="static"` só existe com cópula;
+  - com cópula, só `static`, `dcc` e `adcc` e só `mvnorm` e `mvt`. O FDCC-cópula e a cópula mvlaplace ficam fora: o
+    `rmgarch` não os tem e ninguém os pediu;
+  - `static_method` só vale para a mvt estática, com padrão `kendall`, como no `rmgarch`;
+  - C: um `VE_DCC_MODEL_STATIC` novo, um setter da transformação (nenhuma, paramétrica ou empírica) e um setter do
+    método estático. Combinação inválida é `VE_INVALID_ARGUMENT` antes de qualquer ajuste, com mensagem que nomeia
+    a combinação.
+- **Marginais:**
+  - paramétrica: uᵢₜ = Fᵢ(zᵢₜ), pela CDF da distribuição de cada ajuste univariado (plano 3c), com os parâmetros de
+    forma estimados;
+  - empírica: as pseudo-observações por ranks. A convenção pública é `rank/(T+1)` (Genest–Ghoudi–Rivest 1995). Se o
+    `rmgarch` usar outra, ela é tratada pela regra da seção 8a: convenção documentada ou bug com interruptor interno.
+- **ℓ:** a conjunta, como o `rmgarch` (soma das ℓ univariadas mais a ℓ da cópula). A soma univariada entra também
+  com marginais empíricas.
+- **Critérios:** o mesmo k do DCC (`validation.md`: parâmetros univariados estimados + parâmetros de correlação
+  estimados + m(m−1)/2), para o BIC comparar DCC e Copula-DCC dentro do mesmo lote. A matriz de correlação conta
+  **uma vez só**: os Cᵢⱼ da mvt estática por ML são os m(m−1)/2 e não somam de novo. Kendall e mvnorm estática também
+  contam m(m−1)/2.
+- **Tabela de coeficientes:** só as linhas da cópula, como no 4a: `dcca`, `dccb`, `dccg`, `mshape` e os Cᵢⱼ da
+  estática por ML. A mvnorm estática tem tabela vazia, e a estática por Kendall só `mshape`.
+  - Erros-padrão em dois estágios pelo mesmo mecanismo do 4a: opção no ajuste ou função explícita depois, com os
+    mesmos N `Fit`.
+  - Com marginais paramétricas, o bloco cruzado passa pela CDF de cada univariado.
+- **Convenção pública:** os desvios da seção 8a que se aplicam à parte DCC da cópula (pré-amostra, N̄ sem centrar,
+  sanduíche com transposta) seguem os papers. A paridade com o `rmgarch` fica no interruptor interno, só nos testes.
+- **Rₜ e Hₜ:** sempre `(T, N, N)`, com Hₜ = DₜRₜDₜ pelos σ univariados. Na estática, a mesma matriz se repete em
+  cada t. A materialização sob demanda do 4a continua permitida.
+- **Lote:** a transformação para u (CDF ou ranks) é calculada uma vez por transformação e compartilhada entre as
+  specs. As threads do `ve_context` dividem as specs, como no 4a.
+- **Oráculo:** `cgarchfit` do `rmgarch` 1.4.3 com `solnp`:
+  - estática mvnorm e mvt (Kendall e ML), DCC e aDCC, cada um com mvnorm e mvt e marginais paramétricas e
+    empíricas, mais um caso com `mshape` fixo;
+  - na convenção `Rmgarch`, nos testes C++, como no 4a;
+  - na pública, no Python, com uma avaliação direta da ℓ.
+- **Benchmark:** N = 21, T = 5.000, a grade static, dcc e adcc × mvnorm e mvt × paramétrica e empírica, com a mvt
+  estática nos dois métodos. Com 1 thread e com todas, sem erros-padrão. Os erros-padrão de um ajuste ficam num
+  benchmark separado, como no 4a.
+
+### 10.5 Não-objetivos e anti-objetivos
+
+- Não-objetivos: FDCC-cópula, cópula mvlaplace, `spd`, VAR, forma da mvt variando no tempo, forecast e simulação da
+  cópula (estes vão para o 4c).
+- Anti-objetivos: os do 4a, mais:
+  - mudar qualquer número de um ajuste DCC do 4a;
+  - um BIC de Copula-DCC que não é comparável com o do DCC no mesmo lote.
+
+### 10.6 Deixado ao builder
+
+- Nomes no C e no Python, incluindo os dos Cᵢⱼ (a ordem do `rmgarch` como referência).
+- O estimador público da correlação da mvnorm estática e a identificação do que o `rmgarch` faz (10.3), registrados
+  numa nota como `2026-11-13-volengine-04a-rmgarch-notes.md`.
+- Como a correlação de Kendall, sin(πτ/2), é levada a uma matriz definida positiva quando não é, e a
+  reparametrização dos Cᵢⱼ na ML estática (N = 21 dá 210 parâmetros).
+- Os erros-padrão com marginais empíricas: reproduzir o `rmgarch` no interruptor interno, e na convenção pública
+  escolher, com base em paper, entre a correção semiparamétrica (Chen–Fan 2006) e o mesmo cálculo do `rmgarch`, com
+  a limitação documentada em `validation.md`.
+- A escala dos escores da cópula sobre os quais corre a recursão: Φ⁻¹(u), e t_ν⁻¹(u) na mvt, que depende de ν e
+  por isso é recalculado a cada avaliação. Fica pelos papers, conferido contra o oráculo.
+- Em que momento cada combinação inválida é recusada (setter ou lote), desde que seja antes de qualquer ajuste.
+- Casos exatos do oráculo e a divisão de tarefas.
