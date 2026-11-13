@@ -14,7 +14,7 @@ Student-t (`std`) or GED (`ged`) innovations, or the skewed ones: skewed Student
 normal inverse Gaussian (`nig`), generalized hyperbolic (`ghyp`) and Johnson SU (`jsu`), with Hessian and robust
 standard errors and the usual information criteria. Any estimated parameter can be fixed or given a start value
 (the derived ones cannot), the variance can be targeted, and the mean and the variance take external regressors
-(`mxreg`, `vxreg`), ARCH-in-mean (`archm`) and an ARFIMA mean (`arfima`), as in `rugarch`. More features come in
+(`mxreg`, `vxreg`), ARCH-in-mean (`archm`) and an ARFIMA mean (`arfima`), as in `rugarch`, and forecasts from a fit. More features come in
 later releases.
 Until 1.0 the C ABI may change between releases. See [CHANGELOG.md](CHANGELOG.md).
 
@@ -108,6 +108,17 @@ print(fit.coef())                 # mu, ar1, arfima, omega, alpha1, beta1
 
 The convention and the checks against `rugarch` are in
 [docs/guide/validation.md](docs/guide/validation.md#rugarch-arfima).
+
+A fit forecasts σ and the conditional mean h = 1..H steps after its last observation, as `rugarch`'s
+`ugarchforecast`; a spec with regressors takes their values over the horizon:
+
+```python
+forecast = fit.forecast(10)       # forecast.sigma, forecast.mean: arrays of shape (10,)
+```
+
+In eGARCH, apARCH and fGARCH, `sigma` for h > 1 is `rugarch`'s forecast of log σ² or σ^δ taken back to σ, not
+√E[σ²]. The rules and the checks against `rugarch` and `arch` are in
+[docs/guide/validation.md](docs/guide/validation.md#rugarch-forecast).
 
 `ctx.fit` also takes a `(T, N)` array (one fit per column), a list of specs, `starts` and `lengths` for series of
 different lengths, and `options=ve.FitOptions(var_init="backcast")` for the `arch` convention.

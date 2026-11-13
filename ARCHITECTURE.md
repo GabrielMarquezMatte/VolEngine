@@ -19,6 +19,8 @@ them, those models fitted in batches behind a C API and a Python package.
                  |
         src/capi   handles, error boundary
                  |
+        src/forecast   forecast of a fit, h steps ahead
+                 |
         src/fit    driver, batch, standard errors, criteria
           |         \
      src/model     src/optim       layout, likelihood | L-BFGS
@@ -32,8 +34,9 @@ them, those models fitted in batches behind a C API and a Python package.
   src/linalg   Cholesky, least squares (depends on nothing; used by model and fit)
 ```
 
-Dependencies point one way: `core` <- `ad` <- `mean`, `garch`, `dist` <- `model` <- `fit` <- `capi`, and
-`optim` <- `fit`. `linalg` sits beside the stack: it depends on nothing, and both `model` (the start values and the
+Dependencies point one way: `core` <- `ad` <- `mean`, `garch`, `dist` <- `model` <- `fit` <- `forecast` <- `capi`,
+and `optim` <- `fit`. `fit` includes only `forecast/state.hpp` from `forecast`: the plain `ForecastState` that a
+`FitResult` carries. `linalg` sits beside the stack: it depends on nothing, and both `model` (the start values and the
 backcast with mean regressors) and `fit` (the standard errors) use it. Nothing in `src/` includes from `src/capi/` except `capi` itself. Everything below the C API is
 internal and may change in any release; only the header is a contract, and the Python package is a consumer of it
 like any other wrapper would be.
@@ -43,9 +46,10 @@ like any other wrapper would be.
 | Path | Responsibility |
 |---|---|
 | `include/volengine/volengine.h` | The C API: `ve_` functions, `VE_` constants, opaque handles, no public struct |
-| `src/capi/handles.hpp` | The handle types (`ve_context`, `ve_spec`, `ve_fit_options`, `ve_panel`, `ve_batch`, `ve_fit`), each wrapping one core value |
+| `src/capi/handles.hpp` | The handle types (`ve_context`, `ve_spec`, `ve_fit_options`, `ve_panel`, `ve_batch`, `ve_fit`, `ve_forecast`), each wrapping one core value |
 | `src/capi/error.hpp`, `error.cpp` | Thread-local `ve_last_error()`, `set_error`, and `guard`, the one place exceptions are caught |
-| `src/capi/context_api.cpp`, `spec_api.cpp`, `panel_api.cpp`, `batch_api.cpp`, `fit_api.cpp`, `version_api.cpp` | The `extern "C"` functions, one file per handle family |
+| `src/capi/context_api.cpp`, `spec_api.cpp`, `panel_api.cpp`, `batch_api.cpp`, `version_api.cpp` | The `extern "C"` functions, one file per handle family |
+| `src/capi/results/fit_api.cpp`, `forecast_api.cpp` | The `extern "C"` functions over results: the accessors of `ve_fit`, and `ve_forecast` |
 | `src/core/context.hpp`, `context.cpp` | `ve::Context`: the thread pool and thread count |
 | `src/core/spec.hpp` | `ve::Spec` (model, order, distribution, mean, fixed and start values, variance targeting) and `ve::FitConfig` (iterations, tolerance, variance initialization): copyable values |
 | `src/core/panel.hpp` | `ve::PanelView`: a borrowed pointer, T, N, element strides and optional per-series start and length |
@@ -71,7 +75,10 @@ like any other wrapper would be.
 | `src/fit/standard_errors.*` | Hessian and robust standard errors; Cholesky solves, no explicit inverse |
 | `src/fit/criteria.*` | Log-likelihood, AIC, BIC, HQIC, SIC |
 | `src/fit/batch.hpp`, `batch.cpp` | `check_batch` and `run_batch`: jobs on the thread pool |
-| `src/fit/fit_result.hpp` | `ve::FitResult`: status, estimates, standard errors, series, all by value |
+| `src/fit/fit_result.hpp` | `ve::FitResult`: status, estimates, standard errors, series and the forecast state, all by value |
+| `src/forecast/state.hpp` | `ForecastState`: the last max(m, n, p, q) residuals, variances, csGARCH trends and mean deviations of a fit (every deviation with ARFIMA), filled by the final evaluation of `fit_one` through the `deviations` and `permanent` outputs of `loglik` |
+| `src/forecast/forecast.hpp`, `forecast.cpp` | `forecast`: the mean (ARMA, regressors, `archm`, `rugarch`'s ARFIMA rule) over the variance forecast |
+| `src/forecast/variance_forecast.*`, `inputs.hpp` | The variance forecast of each family, in sigma2, log sigma2 or sigma^delta, with future shocks at their expectation; csGARCH by `rugarch`'s closed form from h = 2 |
 | `python/src/volengine/_native.py` | Library discovery (`VOLENGINE_LIB`), ABI check, prototypes, handle ownership |
 | `python/src/volengine/_spec.py`, `_fit.py`, `api.py` | `Spec` and `FitOptions`, `Fit` and the criteria, `Context.fit` |
 | `tests/unit/{ad,capi,dist,fit,garch,mean,model,optim}` | GoogleTest suites mirroring `src/`; `c_header_check.c` compiles the header as C11 |

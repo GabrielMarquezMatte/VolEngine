@@ -1,5 +1,6 @@
 #include "dist/bessel.hpp"
 #include "fit/fit.hpp"
+#include "forecast/forecast.hpp"
 #include "model/layout.hpp"
 #include "model/likelihood.hpp"
 #include "simulated_panel.hpp"
@@ -945,6 +946,50 @@ void run_arfima_fit_one(benchmark::State& state)
         benchmark::Counter(static_cast<double>(state.iterations()), benchmark::Counter::kIsRate);
 }
 
+// One forecast of 60 steps from a fit made once, outside the timing: the cost of forecast::forecast alone.
+constexpr std::size_t kForecastHorizon = 60;
+
+void time_forecast(benchmark::State& state, const ve::FitResult& fit)
+{
+    if (fit.state.residuals.empty())
+    {
+        state.SkipWithError("the fit has no finite point to forecast from");
+        return;
+    }
+    for (auto _ : state)
+    {
+        ve::forecast::Forecast forecast = ve::forecast::forecast(fit, kForecastHorizon);
+        benchmark::DoNotOptimize(forecast.sigma.data());
+        benchmark::DoNotOptimize(forecast.mean.data());
+    }
+}
+
+void run_forecast(benchmark::State& state, const NamedSpec& named)
+{
+    time_forecast(state, ve::fit_one(series_of(named), named.spec, ve::FitConfig{}));
+}
+
+void run_arfima_forecast(benchmark::State& state)
+{
+    const ArfimaCase& item = arfima_case();
+    time_forecast(state, ve::fit_one(item.r, item.spec, ve::FitConfig{}));
+}
+
+void register_forecasts()
+{
+    for (const NamedSpec& named : named_specs())
+    {
+        const bool measured = named.name == "s11_norm" || named.name == "egarch11_std" ||
+                              named.name == "csgarch11_std" || named.name == "fgarch_allgarch11_norm";
+        if (!measured)
+        {
+            continue;
+        }
+        benchmark::RegisterBenchmark("BM_Forecast/" + named.name + "/h:60", run_forecast, named);
+    }
+    benchmark::RegisterBenchmark("BM_Forecast/arfima_sgarch11_norm/h:60", run_arfima_forecast);
+}
+
 void register_all()
 {
     for (const NamedSpec& named : named_specs())
@@ -964,6 +1009,7 @@ void register_all()
     benchmark::RegisterBenchmark("BM_Loglik/arfima_sgarch11_norm/double", run_arfima_loglik, false);
     benchmark::RegisterBenchmark("BM_Loglik/arfima_sgarch11_norm/dual", run_arfima_loglik, true);
     benchmark::RegisterBenchmark("BM_FitOne/arfima_sgarch11_norm", run_arfima_fit_one)->Unit(benchmark::kMillisecond);
+    register_forecasts();
     static const std::vector<ve::Spec> single{named_specs().front().spec};
     for (const int threads : {1, 2, 4, 8, 0})
     {

@@ -23,6 +23,14 @@ library whose ABI version differs).
 
 ### Added
 
+- Forecast: sigma and the conditional mean h = 1..H steps after the last observation of a fit, for every model,
+  distribution and option, as `rugarch`'s `ugarchforecast` (`n.roll = 0`), regressors over the horizon included.
+  C API: `ve_forecast_create`, `ve_forecast_horizon`, `ve_forecast_sigma`, `ve_forecast_mean`, `ve_forecast_free`.
+  Python: `Fit.forecast(horizon, mxreg=, vxreg=)` returning a `Forecast`. In eGARCH, apARCH and fGARCH, sigma for
+  h > 1 is `rugarch`'s quantity, not sqrt(E[sigma2]). Validated against `rugarch` (108 cases) and `arch` (15 cases)
+  in [docs/guide/validation.md](docs/guide/validation.md); benchmarks `BM_Forecast/<series>/h:60`.
+- A fit keeps a small final state (the last max(m, n, p, q) residuals, variances, csGARCH trends and mean
+  deviations; every deviation with ARFIMA) for the forecast; no number of a fit changes.
 - ARFIMA mean for every model and distribution, following `rugarch`'s `arfima = TRUE`: the parameter `arfima`
   (d in (1e-8, 0.5), after `ma`), a truncated fractional difference of the ARMA residuals at O(T^2) per evaluation.
   It cannot be combined with `archm`. A spec without it gives the numbers of before. C API: `ve_spec_set_arfima`.
