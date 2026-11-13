@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <gtest/gtest.h>
+#include <numbers>
 #include <span>
 #include <utility>
 #include <vector>
@@ -38,7 +39,7 @@ std::vector<double> columns(std::size_t rows, std::size_t count, double base)
 // The fit of spec on the first n points, the forecast of h = 1, and the filter at the estimate on n + 1 points. The
 // point n is chosen so that the presample (the mean of e^2, of e0^2 = (r - mu)^2 with ARCH-in-mean) and the
 // variance target stay those of the n points, and v_n is the mean of v: the filter at n then reads only the past.
-void expect_first_step_matches_filter(const ve::Spec& spec)
+void expect_first_step_matches_filter(const ve::Spec& spec, double tolerance = 1e-12)
 {
     std::vector<double> r = ve::testing::simulate_garch_series(11, kObservations);
     std::size_t k_mean = static_cast<std::size_t>(spec.mxreg);
@@ -73,22 +74,27 @@ void expect_first_step_matches_filter(const ve::Spec& spec)
         }
         extended.push_back(mu + std::sqrt(scale));
     }
+    ve::model::Layout layout = ve::model::layout_of(spec);
+    double power = 2.0;
+    if (layout.is_power_family())
+    {
+        power = ve::model::power_of<double>(fit.estimate, layout);
+    }
     if (spec.archm == 0)
     {
         for (double e : fit.residuals)
         {
-            scale += e * e / static_cast<double>(r.size());
+            scale += std::pow(std::abs(e), power) / static_cast<double>(r.size());
         }
-        extended.push_back(forecast.mean[0] + std::sqrt(scale));
+        extended.push_back(forecast.mean[0] + std::pow(scale, 1.0 / power));
     }
-    ve::model::Layout layout = ve::model::layout_of(spec);
     std::vector<double> residuals(extended.size());
     std::vector<double> sigma2(extended.size());
     double ll = ve::model::loglik<double>(ve::model::Data{extended, {x, k_mean}, {v, k_variance}}, fit.estimate,
                                           layout, ve::VarInit::Sample, {.residuals = residuals, .sigma2 = sigma2});
     ASSERT_TRUE(std::isfinite(ll));
     double variance = forecast.sigma[0] * forecast.sigma[0];
-    EXPECT_NEAR(variance, sigma2.back(), 1e-12 * sigma2.back());
+    EXPECT_NEAR(variance, sigma2.back(), tolerance * sigma2.back());
     double mean = extended.back() - residuals.back();
     EXPECT_NEAR(forecast.mean[0], mean, 1e-12 * (1.0 + std::abs(mean)));
 }
@@ -102,7 +108,8 @@ TEST(Forecast, FirstStepMatchesExtendedFilter)
     };
     for (Variant variant : {Variant{Model::SGarch, Dist::Norm}, Variant{Model::IGarch, Dist::Norm},
                             Variant{Model::GjrGarch, Dist::Norm}, Variant{Model::GjrGarch, Dist::Sstd},
-                            Variant{Model::CsGarch, Dist::Norm}})
+                            Variant{Model::CsGarch, Dist::Norm}, Variant{Model::EGarch, Dist::Norm},
+                            Variant{Model::EGarch, Dist::Std}, Variant{Model::ApArch, Dist::Ged}})
     {
         for (int arma : {0, 1})
         {
@@ -132,6 +139,27 @@ TEST(Forecast, FirstStepMatchesExtendedFilter)
     {
         SCOPED_TRACE(::testing::Message() << "archm " << archm);
         expect_first_step_matches_filter(ve::Spec{.model = Model::GjrGarch, .archm = archm});
+    }
+    for (int arma : {0, 1})
+    {
+        for (int mxreg : {0, 2})
+        {
+            SCOPED_TRACE(::testing::Message() << "arfima, arma " << arma << " mxreg " << mxreg);
+            expect_first_step_matches_filter(ve::Spec{.ar = arma, .ma = arma, .mxreg = mxreg, .arfima = true});
+        }
+    }
+}
+
+// The filter of the fit takes |z - eta2| as sqrt((z - eta2)^2 + 1e-6), rugarch's ugarchforecast as |z - eta2|:
+// the first step agrees only to that smoothing, which weighs most when the last z sits near eta2 (2.8e-5 relative
+// on ALLGARCH here). FGarchFirstStepUsesExactAbs pins the exact step.
+TEST(Forecast, FGarchFirstStepNearExtendedFilter)
+{
+    for (Model model : {Model::FGarchGarch, Model::FGarchTGarch, Model::FGarchAvGarch, Model::FGarchNGarch,
+                        Model::FGarchNaGarch, Model::FGarchApArch, Model::FGarchGjrGarch, Model::FGarchAllGarch})
+    {
+        SCOPED_TRACE(::testing::Message() << "model " << static_cast<int>(model));
+        expect_first_step_matches_filter(ve::Spec{.model = model}, 1e-4);
     }
 }
 
@@ -290,6 +318,136 @@ TEST(Forecast, UnitEquivariance)
         EXPECT_NEAR(b.sigma[h], 100.0 * a.sigma[h], 1e-12 * b.sigma[h]) << "h = " << h;
         EXPECT_NEAR(b.mean[h], 100.0 * a.mean[h], 1e-12 * std::abs(b.mean[h])) << "h = " << h;
     }
+}
+
+TEST(Forecast, FGarchFirstStepUsesExactAbs)
+{
+    ve::Spec spec{.model = Model::FGarchAllGarch};
+    ve::model::Layout layout = ve::model::layout_of(spec);
+    std::vector<double> theta(layout.count());
+    theta[layout.mu()] = 0.05;
+    theta[layout.omega()] = 0.02;
+    theta[layout.alpha_begin()] = 0.06;
+    theta[layout.beta_begin()] = 0.9;
+    theta[layout.eta1_begin()] = 0.3;
+    theta[layout.eta2_begin()] = 0.2;
+    theta[layout.power()] = 1.5;
+    const double e = 0.25;
+    const double variance = 1.3;
+    Forecast forecast = ve::forecast::forecast(at_point(spec, theta, {{e}, {variance}, {}, {e}}), 1);
+    double sigma = std::sqrt(variance);
+    double shift = e - 0.2 * sigma;
+    double exact = 0.02 + 0.06 * std::pow(std::abs(shift) - 0.3 * shift, 1.5) + 0.9 * std::pow(sigma, 1.5);
+    double smoothed = 0.02 + 0.06 * std::pow(std::sqrt(shift * shift + 1e-6 * variance) - 0.3 * shift, 1.5) +
+                      0.9 * std::pow(sigma, 1.5);
+    double got = std::pow(forecast.sigma[0], 1.5);
+    EXPECT_NEAR(got, exact, 1e-13 * exact);
+    EXPECT_GT(std::abs(got - smoothed), 1e-12 * exact);
+}
+
+TEST(Forecast, EGarchClosedForm)
+{
+    ve::Spec spec{.model = Model::EGarch};
+    ve::model::Layout layout = ve::model::layout_of(spec);
+    std::vector<double> theta(layout.count());
+    theta[layout.mu()] = 0.05;
+    theta[layout.omega()] = 0.01;
+    theta[layout.alpha_begin()] = -0.06;
+    theta[layout.beta_begin()] = 0.97;
+    theta[layout.gamma_begin()] = 0.12;
+    const double e = -0.6;
+    const double variance = 1.3;
+    Forecast forecast = ve::forecast::forecast(at_point(spec, theta, {{e}, {variance}, {}, {e}}), 40);
+    double z = e / std::sqrt(variance);
+    double first = 0.01 - 0.06 * z + 0.12 * (std::abs(z) - std::sqrt(2.0 / std::numbers::pi)) +
+                   0.97 * std::log(variance);
+    for (std::size_t h = 1; h <= 40; ++h)
+    {
+        double power = std::pow(0.97, static_cast<double>(h - 1));
+        double expected = 0.01 * (1.0 - power) / (1.0 - 0.97) + power * first;
+        double log_variance = 2.0 * std::log(forecast.sigma[h - 1]);
+        EXPECT_NEAR(log_variance, expected, 1e-13 * std::abs(expected)) << "h = " << h;
+    }
+}
+
+TEST(Forecast, PowerLongHorizon)
+{
+    struct Case
+    {
+        Model model;
+        std::vector<double> asymmetry;
+    };
+    for (const Case& c : {Case{Model::ApArch, {0.3}}, Case{Model::FGarchAllGarch, {0.3, 0.2}}})
+    {
+        ve::Spec spec{.model = c.model};
+        ve::model::Layout layout = ve::model::layout_of(spec);
+        std::vector<double> theta(layout.count());
+        theta[layout.mu()] = 0.05;
+        theta[layout.omega()] = 0.02;
+        theta[layout.alpha_begin()] = 0.06;
+        theta[layout.beta_begin()] = 0.9;
+        theta[layout.asymmetry_begin()] = c.asymmetry[0];
+        if (c.asymmetry.size() > 1)
+        {
+            theta[layout.eta2_begin()] = c.asymmetry[1];
+        }
+        theta[layout.power()] = 1.5;
+        double kappa = ve::model::shock_moment<double>(theta, layout, 0);
+        double level = 0.02 / (1.0 - 0.06 * kappa - 0.9);
+        Forecast forecast = ve::forecast::forecast(at_point(spec, theta, {{0.25}, {1.3}, {}, {0.25}}), 10000);
+        EXPECT_NEAR(std::pow(forecast.sigma.back(), 1.5), level, 1e-10 * level)
+            << "model " << static_cast<int>(c.model);
+    }
+}
+
+TEST(Forecast, ArfimaMeanByHand)
+{
+    const double mu = 0.05;
+    const double phi = 0.4;
+    const double theta1 = 0.3;
+    const double d = 0.3;
+    ve::Spec spec{.ar = 1, .ma = 1, .arfima = true};
+    std::vector<double> deviations{0.6, -0.3, 0.2, 0.5, -0.1};
+    const double e = 0.15;
+    ve::FitResult fit = at_point(spec, {mu, phi, theta1, d, 0.02, 0.08, 0.9}, {{e}, {1.2}, {}, deviations});
+    Forecast forecast = ve::forecast::forecast(fit, 3);
+    std::vector<double> pi(8, 1.0);
+    for (std::size_t k = 1; k < pi.size(); ++k)
+    {
+        pi[k] = pi[k - 1] * (static_cast<double>(k) - 1.0 - d) / static_cast<double>(k);
+    }
+    std::vector<double> series = deviations;
+    double w = 0.0;
+    for (std::size_t k = 0; k <= 4; ++k)
+    {
+        w += pi[k] * series[4 - k];
+    }
+    for (std::size_t h = 1; h <= 3; ++h)
+    {
+        std::size_t t = 4 + h;
+        double f = 0.0;
+        for (std::size_t k = 1; k <= t; ++k)
+        {
+            f -= pi[k] * series[t - k];
+        }
+        double next = f + phi * w + (h == 1 ? theta1 * e : 0.0);
+        EXPECT_NEAR(forecast.mean[h - 1], mu + next, 1e-14) << "h = " << h;
+        series.push_back(next);
+        w = next - f;
+    }
+}
+
+TEST(Forecast, ArfimaZeroIsPlain)
+{
+    std::vector<double> deviations{0.6, -0.3, 0.2, 0.5, -0.1};
+    ve::FitResult arfima = at_point(ve::Spec{.ar = 1, .ma = 1, .arfima = true},
+                                    {0.05, 0.4, 0.3, 0.0, 0.02, 0.08, 0.9}, {{0.15}, {1.2}, {}, deviations});
+    ve::FitResult plain =
+        at_point(ve::Spec{.ar = 1, .ma = 1}, {0.05, 0.4, 0.3, 0.02, 0.08, 0.9}, {{0.15}, {1.2}, {}, {-0.1}});
+    Forecast a = ve::forecast::forecast(arfima, 20);
+    Forecast b = ve::forecast::forecast(plain, 20);
+    EXPECT_EQ(a.mean, b.mean);
+    EXPECT_EQ(a.sigma, b.sigma);
 }
 
 }

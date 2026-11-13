@@ -68,6 +68,7 @@ add_library(volengine_core STATIC
     src/fit/fit.cpp
     src/fit/standard_errors.cpp
     src/forecast/forecast.cpp
+    src/forecast/variance_forecast.cpp
     src/linalg/cholesky.cpp
     src/linalg/least_squares.cpp
     src/model/layout.cpp
