@@ -30,11 +30,16 @@ using ad::logistic;
 
 // --- layout and names ---
 
-DccLayout counts_of(const DccSpec& spec)
+DccLayout counts_of(const DccSpec& spec, std::size_t m)
 {
     DccLayout layout;
     layout.model = spec.model;
     layout.has_shape = spec.dist == DccDist::MvT;
+    if (spec.model == DccModel::Static)
+    {
+        layout.c_count = correlation_coefficients(spec, m);
+        return layout;
+    }
     if (spec.model == DccModel::FDcc)
     {
         layout.a_count = static_cast<std::size_t>(std::ranges::max(spec.groups));
@@ -66,9 +71,9 @@ std::optional<std::size_t> index_of(const std::vector<std::string>& names, const
 }
 
 // The counts with the fixed and start values of spec, whose names the caller checked.
-DccLayout layout_with_values(const DccSpec& spec)
+DccLayout layout_with_values(const DccSpec& spec, std::size_t m)
 {
-    DccLayout layout = counts_of(spec);
+    DccLayout layout = counts_of(spec, m);
     const std::vector<std::string> names = parameter_names(layout);
     layout.fixed.assign(names.size(), false);
     layout.started.assign(names.size(), false);
@@ -111,13 +116,59 @@ std::optional<std::string> kind_problem(const DccSpec& spec)
 {
     const auto model = static_cast<int>(spec.model);
     const auto dist = static_cast<int>(spec.dist);
-    if (model < 0 || model > static_cast<int>(DccModel::FDcc))
+    const auto copula = static_cast<int>(spec.copula);
+    const auto method = static_cast<int>(spec.static_method);
+    if (model < 0 || model > static_cast<int>(DccModel::Static))
     {
         return "unknown dcc model " + std::to_string(model);
     }
     if (dist < 0 || dist > static_cast<int>(DccDist::MvLaplace))
     {
         return "unknown dcc dist " + std::to_string(dist);
+    }
+    if (copula < 0 || copula > static_cast<int>(DccCopula::Empirical))
+    {
+        return "unknown dcc copula " + std::to_string(copula);
+    }
+    if (method < 0 || method > static_cast<int>(StaticMethod::Ml))
+    {
+        return "unknown static_method " + std::to_string(method);
+    }
+    return std::nullopt;
+}
+
+bool starts_shape(const DccSpec& spec)
+{
+    return std::ranges::any_of(spec.start, [](const ParameterValue& entry) { return entry.name == "mshape"; });
+}
+
+// The combinations of plan 4b's "Entrada e erros" table.
+std::optional<std::string> copula_problem(const DccSpec& spec)
+{
+    const bool copula = spec.copula != DccCopula::None;
+    if (spec.model == DccModel::Static && !copula)
+    {
+        return "the static model needs a copula (parametric or empirical)";
+    }
+    if (spec.static_method != StaticMethod::Default && spec.model != DccModel::Static)
+    {
+        return "static_method is only for the static model";
+    }
+    if (!copula)
+    {
+        return std::nullopt;
+    }
+    if (spec.model == DccModel::FDcc)
+    {
+        return "the fdcc model has no copula";
+    }
+    if (spec.dist == DccDist::MvLaplace)
+    {
+        return "the mvlaplace copula is not supported; use mvnorm or mvt";
+    }
+    if (spec.dist == DccDist::MvT && starts_shape(spec))
+    {
+        return "a copula mshape takes no start: a bracketing search finds it; fix it or leave it free";
     }
     return std::nullopt;
 }
@@ -132,6 +183,10 @@ std::optional<std::string> order_problem(const DccSpec& spec)
     if (spec.model == DccModel::FDcc && (spec.p != 1 || spec.q != 1))
     {
         return "the fdcc model has order (1, 1)";
+    }
+    if (spec.model == DccModel::Static && (spec.p != 1 || spec.q != 1))
+    {
+        return "the static model takes no order; leave it at (1, 1)";
     }
     return std::nullopt;
 }
@@ -182,11 +237,11 @@ std::optional<std::string> unknown_name_problem(const DccSpec& spec, const std::
     return std::nullopt;
 }
 
-// The optimiser differentiates with ad::Dual, built up to kMaxParameterCount entries.
-std::optional<std::string> width_problem(const DccSpec& spec)
+// The optimiser differentiates with ad::Dual, built up to kMaxParameterCount entries; the static fit does not.
+std::optional<std::string> width_problem(const DccSpec& spec, std::size_t m)
 {
-    const std::size_t count = layout_with_values(spec).estimated_count();
-    if (count <= kMaxParameterCount)
+    const std::size_t count = layout_with_values(spec, m).estimated_count();
+    if (count <= kMaxParameterCount || spec.model == DccModel::Static)
     {
         return std::nullopt;
     }
@@ -409,10 +464,10 @@ std::size_t DccLayout::estimated_count() const
     return static_cast<std::size_t>(std::ranges::count(fixed, false));
 }
 
-DccLayout layout_of(const DccSpec& spec, [[maybe_unused]] std::size_t m)
+DccLayout layout_of(const DccSpec& spec, std::size_t m)
 {
     assert(!spec_problem(spec, m));
-    return layout_with_values(spec);
+    return layout_with_values(spec, m);
 }
 
 std::vector<std::string> parameter_names(const DccLayout& layout)
@@ -423,6 +478,7 @@ std::vector<std::string> parameter_names(const DccLayout& layout)
     append_block(names, fdcc ? "fdcca" : "dcca", layout.a_count);
     append_block(names, fdcc ? "fdccb" : "dccb", layout.b_count);
     append_block(names, "dccg", layout.g_count);
+    append_block(names, "C", layout.c_count);
     if (layout.has_shape)
     {
         names.emplace_back("mshape");
@@ -457,13 +513,35 @@ std::optional<std::string> spec_problem(const DccSpec& spec, std::size_t m)
     }
     if (!problem)
     {
-        problem = unknown_name_problem(spec, parameter_names(counts_of(spec)));
+        problem = copula_problem(spec);
     }
     if (!problem)
     {
-        problem = width_problem(spec);
+        problem = unknown_name_problem(spec, parameter_names(counts_of(spec, m)));
+    }
+    if (!problem)
+    {
+        problem = width_problem(spec, m);
     }
     return problem;
+}
+
+std::size_t correlation_coefficients(const DccSpec& spec, std::size_t m)
+{
+    if (spec.model != DccModel::Static || static_method_of(spec) != StaticMethod::Ml)
+    {
+        return 0;
+    }
+    return m * (m - 1) / 2;
+}
+
+StaticMethod static_method_of(const DccSpec& spec)
+{
+    if (spec.static_method == StaticMethod::Default)
+    {
+        return StaticMethod::Kendall;
+    }
+    return spec.static_method;
 }
 
 double constraint_delta(const StandardizedPanel& panel, const DccSpec& spec)
@@ -507,6 +585,13 @@ void to_natural(std::span<const T> u, std::span<T> theta, const DccLayout& layou
 {
     assert(u.size() == layout.count() && theta.size() == layout.count());
     write_fixed<T>(theta, layout);
+    for (std::size_t index = layout.c_begin(); index < layout.shape(); ++index)
+    {
+        if (layout.is_estimated(index))
+        {
+            theta[index] = u[index];
+        }
+    }
     if (layout.model == DccModel::FDcc)
     {
         for (std::size_t group = 0; group < layout.a_count; ++group)
@@ -514,7 +599,7 @@ void to_natural(std::span<const T> u, std::span<T> theta, const DccLayout& layou
             group_to_natural<T>(u, theta, group, layout.b_begin() + group, layout);
         }
     }
-    if (layout.model != DccModel::FDcc)
+    if (layout.model != DccModel::FDcc && layout.model != DccModel::Static)
     {
         weights_to_natural<T>(u, theta, layout, delta);
     }
@@ -538,6 +623,13 @@ void to_unconstrained(std::span<const double> theta, std::span<double> u, const 
 {
     assert(theta.size() == layout.count() && u.size() == layout.count());
     std::ranges::fill(u, 0.0);
+    for (std::size_t index = layout.c_begin(); index < layout.shape(); ++index)
+    {
+        if (layout.is_estimated(index))
+        {
+            u[index] = theta[index];
+        }
+    }
     if (layout.model == DccModel::FDcc)
     {
         for (std::size_t group = 0; group < layout.a_count; ++group)
@@ -545,7 +637,7 @@ void to_unconstrained(std::span<const double> theta, std::span<double> u, const 
             group_to_unconstrained(theta, u, group, layout.b_begin() + group, layout);
         }
     }
-    if (layout.model != DccModel::FDcc)
+    if (layout.model != DccModel::FDcc && layout.model != DccModel::Static)
     {
         weights_to_unconstrained(theta, u, layout, delta);
     }
@@ -570,6 +662,10 @@ bool is_valid(std::span<const double> theta, const DccLayout& layout, double del
     if (layout.model == DccModel::FDcc)
     {
         return groups_valid(theta, layout);
+    }
+    if (layout.model == DccModel::Static)
+    {
+        return true;
     }
     return weights_valid(theta, layout, delta);
 }

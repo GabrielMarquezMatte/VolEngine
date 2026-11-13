@@ -213,11 +213,77 @@ TEST(DccParameterMap, NamesAndProblems)
     DccSpec unknown = spec_of(DccModel::Dcc, 1, 1, DccDist::MvNorm);
     unknown.start = {{"mshape", 8.0}};
     EXPECT_TRUE(has_problem(unknown, 3, "unknown parameter mshape; the spec has: dcca1 dccb1"));
-    DccSpec bad_model = spec_of(static_cast<DccModel>(3), 1, 1, DccDist::MvNorm);
+    DccSpec bad_model = spec_of(static_cast<DccModel>(4), 1, 1, DccDist::MvNorm);
     EXPECT_TRUE(has_problem(bad_model, 3, "model"));
     DccSpec bad_dist = spec_of(DccModel::Dcc, 1, 1, static_cast<DccDist>(-1));
     EXPECT_TRUE(has_problem(bad_dist, 3, "dist"));
     EXPECT_FALSE(ve::dcc::spec_problem(fdcc_spec({1, 1, 2}, DccDist::MvT), 3).has_value());
+}
+
+DccSpec copula_spec(DccModel model, DccDist dist, ve::dcc::DccCopula copula, ve::dcc::StaticMethod method)
+{
+    DccSpec spec = spec_of(model, 1, 1, dist);
+    spec.copula = copula;
+    spec.static_method = method;
+    return spec;
+}
+
+TEST(DccParameterMap, CopulaCombinations)
+{
+    using Names = std::vector<std::string>;
+    using ve::dcc::DccCopula;
+    using ve::dcc::StaticMethod;
+    const DccSpec mvt_ml = copula_spec(DccModel::Static, DccDist::MvT, DccCopula::Parametric, StaticMethod::Ml);
+    const DccSpec mvt_kendall =
+        copula_spec(DccModel::Static, DccDist::MvT, DccCopula::Empirical, StaticMethod::Default);
+    const DccSpec mvnorm_kendall =
+        copula_spec(DccModel::Static, DccDist::MvNorm, DccCopula::Parametric, StaticMethod::Kendall);
+    const DccSpec mvnorm_ml = copula_spec(DccModel::Static, DccDist::MvNorm, DccCopula::Parametric, StaticMethod::Ml);
+    EXPECT_EQ(names_of(mvt_ml, 3), (Names{"C1", "C2", "C3", "mshape"}));
+    EXPECT_EQ(names_of(mvt_kendall, 3), (Names{"mshape"}));
+    EXPECT_EQ(names_of(mvnorm_kendall, 3), (Names{}));
+    EXPECT_EQ(names_of(mvnorm_ml, 3), (Names{"C1", "C2", "C3"}));
+    EXPECT_EQ(names_of(mvnorm_ml, 4).size(), 6U);
+    EXPECT_EQ(ve::dcc::correlation_coefficients(mvt_ml, 3), 3U);
+    EXPECT_EQ(ve::dcc::correlation_coefficients(mvt_kendall, 3), 0U);
+    EXPECT_EQ(ve::dcc::correlation_coefficients(mvnorm_kendall, 3), 0U);
+    EXPECT_EQ(ve::dcc::correlation_coefficients(mvnorm_ml, 3), 3U);
+    const DccSpec dynamic = copula_spec(DccModel::ADcc, DccDist::MvT, DccCopula::Parametric, StaticMethod::Default);
+    EXPECT_EQ(names_of(dynamic, 3), (Names{"dcca1", "dccb1", "dccg1", "mshape"}));
+    EXPECT_EQ(ve::dcc::correlation_coefficients(dynamic, 3), 0U);
+    // 210 free correlations for N = 21: the static fit does not differentiate with ad::Dual.
+    EXPECT_FALSE(ve::dcc::spec_problem(mvt_ml, 21).has_value());
+    for (const DccSpec& spec : {mvt_ml, mvt_kendall, mvnorm_kendall, mvnorm_ml, dynamic})
+    {
+        EXPECT_FALSE(ve::dcc::spec_problem(spec, 3).has_value());
+    }
+
+    // Review Focus 2: each row of the plan's "Entrada e erros" table.
+    EXPECT_TRUE(has_problem(copula_spec(DccModel::Static, DccDist::MvNorm, DccCopula::None, StaticMethod::Default), 3,
+                            "static model needs a copula"));
+    DccSpec fdcc = fdcc_spec({1, 1, 2}, DccDist::MvNorm);
+    fdcc.copula = DccCopula::Parametric;
+    EXPECT_TRUE(has_problem(fdcc, 3, "fdcc model has no copula"));
+    EXPECT_TRUE(has_problem(copula_spec(DccModel::Dcc, DccDist::MvLaplace, DccCopula::Empirical, StaticMethod::Default),
+                            3, "mvlaplace copula"));
+    EXPECT_TRUE(has_problem(copula_spec(DccModel::Dcc, DccDist::MvT, DccCopula::Parametric, StaticMethod::Ml), 3,
+                            "static_method"));
+    EXPECT_TRUE(has_problem(copula_spec(DccModel::Dcc, DccDist::MvT, DccCopula::None, StaticMethod::Kendall), 3,
+                            "static_method"));
+    DccSpec started = copula_spec(DccModel::Dcc, DccDist::MvT, DccCopula::Parametric, StaticMethod::Default);
+    started.start = {{"mshape", 8.0}};
+    EXPECT_TRUE(has_problem(started, 3, "mshape takes no start"));
+    started.copula = DccCopula::None;
+    EXPECT_FALSE(ve::dcc::spec_problem(started, 3).has_value());
+    DccSpec ordered = mvt_ml;
+    ordered.p = 2;
+    EXPECT_TRUE(has_problem(ordered, 3, "order"));
+    EXPECT_TRUE(has_problem(copula_spec(DccModel::Dcc, DccDist::MvNorm, static_cast<DccCopula>(3),
+                                        StaticMethod::Default),
+                            3, "copula"));
+    EXPECT_TRUE(has_problem(copula_spec(DccModel::Static, DccDist::MvNorm, DccCopula::Parametric,
+                                        static_cast<StaticMethod>(3)),
+                            3, "static_method"));
 }
 
 TEST(DccParameterMap, RejectsMoreParametersThanTheWidestDual)
