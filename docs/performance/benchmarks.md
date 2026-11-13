@@ -128,6 +128,29 @@ ended `MAX_ITER` in this run, while at `af6deb8` it ended `CONVERGED`.
 
 The ghyp case fits the nig series, since the C++ helper does not simulate ghyp.
 
+## Forecast (plan 3a)
+
+`BM_Forecast/<series>/h:60`: one `forecast::forecast` of 60 steps from a fit of the series of the same name, which is
+made once, outside the timing. Measured on the same machine on 2026-11-13. The core was at `542657a`, and the benchmark
+was registered in the commit after it. Each case ran 5 repetitions; the values are the medians, with the standard
+deviation.
+
+| Series | Median (us) | sd (us) |
+| --- | ---: | ---: |
+| `s11_norm` | 0.96 | 0.02 |
+| `egarch11_std` | 1.13 | 0.01 |
+| `csgarch11_std` | 3.09 | 0.02 |
+| `fgarch_allgarch11_norm` | 14.3 | 0.14 |
+| `arfima_sgarch11_norm` | 223.2 | 0.7 |
+
+- **csGARCH:** the closed form of `rugarch` from h = 2 on costs two `pow` per step.
+- **fGARCH:** ALLGARCH computes its shock moment κ, a quadrature, once per forecast.
+- **ARFIMA:** the forecast sums over the whole history at every step, which is O(n·H) with n = 5000. It is marked
+  `ponytail:` in `src/forecast/forecast.cpp`.
+
+A forecast costs well under a fit in every case. For example, the s11_norm forecast takes about 1 µs against 4.7 ms
+for its fit.
+
 ## Batch scaling
 
 `BM_Batch/threads:N` is one `ve_fit_batch` call with 20 series of T = 5000 and one spec (`s11_norm`), through the C API.
