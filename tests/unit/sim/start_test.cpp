@@ -169,6 +169,18 @@ TEST(SimulateSpec, Rejections)
     expect_rejected(fixed_spec(Model::SGarch, Dist::Std,
                                {{"mu", 0.0}, {"omega", 0.05}, {"alpha1", 0.1}, {"beta1", 0.85}, {"shape", 1.5}}),
                     "domain");
+    // Inside the distribution's domain and below persistence 1, but outside the model's.
+    expect_rejected(fixed_spec(Model::SGarch, Dist::Norm, {{"mu", 0.0}, {"omega", 0.05}, {"alpha1", -0.3}, {"beta1", 0.85}}),
+                    "model's domain");
+    expect_rejected(fixed_spec(Model::SGarch, Dist::Norm, {{"mu", 0.0}, {"omega", 0.05}, {"alpha1", 0.1}, {"beta1", -0.5}}),
+                    "model's domain");
+    expect_rejected(fixed_spec(Model::GjrGarch, Dist::Norm,
+                               {{"mu", 0.0}, {"omega", 0.05}, {"alpha1", 0.05}, {"beta1", 0.85}, {"gamma1", -0.2}}),
+                    "model's domain");
+    expect_rejected(fixed_spec(Model::ApArch, Dist::Norm,
+                               {{"mu", 0.0}, {"omega", 0.05}, {"alpha1", 0.01}, {"beta1", 0.85}, {"gamma1", 1.5},
+                                {"delta", 2.0}}),
+                    "model's domain");
 }
 
 TEST(SimulateSpec, PresampleComesFirst)
