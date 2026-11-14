@@ -26,7 +26,9 @@ enum class Stop
 struct LbfgsOptions
 {
     int max_iter = 500;
-    int memory = 10;
+    // At least the parameter count of nearly every fit (k <= 12 on the TCC grid), so L-BFGS behaves like full
+    // BFGS: on the grid it halves the evaluations of a memory of 10 (docs/performance/profile-5a.md).
+    int memory = 40;
     double gtol = 1e-6;
     // A step that decreases f by less than ftol * max(1, |f|) is flat: f cannot decrease measurably (1e-15 is about
     // 4.5 machine epsilons). A larger ftol stops on ill-conditioned ridges, where every step is small but the

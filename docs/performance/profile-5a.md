@@ -156,3 +156,25 @@ arithmetic of the same lane of the wider type, so values and gradients are bit-i
 | `BM_TccGridSample/threads:1` (ms) | 1122 | 994 (0.89) |
 
 The quick suite's other cases have k ≤ 8 or 13 and do not move (within noise, `arma22_s33_std/dual` 3%).
+
+### L-BFGS memory (10 to 40)
+
+With k ≤ 12 on the grid, a memory of 40 pairs makes L-BFGS behave like full BFGS
+(`Lbfgs.DefaultMemoryCoversTwelveParameters`: 37 iterations against 135 on a 12-parameter ill-conditioned quadratic).
+A slice of 2 series first (memory 5: 2.17× the time; 20: 0.57; 30: 0.52; 40: 0.50; 60: 0.50), then:
+
+| Measure | Memory 10 | Memory 40 |
+| --- | ---: | ---: |
+| Grid, 1 thread (s) | 61.3 | 30.5 (0.50) |
+| Grid, 16 threads (s) | 9.5 | 4.5 |
+| Grid evaluations | 1.00 | 0.47 |
+| Grid `CONVERGED` / `MAX_ITER` | 1066 / 14 | 1080 / 0 |
+| `BM_FitOne/arma22_s33_std` (ms) | 383, `MAX_ITER` | 75, `CONVERGED` |
+| `BM_FitOne/s21_std` (ms) | 16.7 | 11.7 |
+| `BM_DccGrid/m:21/T:5000/threads:1` (s) | 10.7 | 10.4 |
+| `BM_TccGridSample/threads:1` (ms) | 995 | 533 |
+
+Every oracle comparison passes. The overparametrized fits of the grid (sGARCH(p, q ≥ 2) on series simulated from
+sGARCH(1,1)) have several local optima, and the new path ends at another one on some series: 36 fits reach a
+log-likelihood higher by more than 1e-3 (up to +0.93), 19 a lower one (down to −2.83, among them fits that ended
+`MAX_ITER` before); the sum over the 1080 fits is −6.6. The author accepted the change with these numbers.

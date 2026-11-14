@@ -62,6 +62,27 @@ TEST(Lbfgs, CountsEvaluations)
     EXPECT_GE(result.evaluations, result.iterations + 1);
 }
 
+// The likelihoods have at most a few dozen parameters: a memory at least as long as k makes L-BFGS behave like full
+// BFGS: 37 iterations on this ill-conditioned quadratic with k = 12, against 135 with a memory of 10.
+TEST(Lbfgs, DefaultMemoryCoversTwelveParameters)
+{
+    auto ill_conditioned = [](std::span<const double> x, std::span<double> g)
+    {
+        double value = 0.0;
+        for (std::size_t i = 0; i < x.size(); ++i)
+        {
+            const double weight = std::pow(10.0, 3.0 * static_cast<double>(i) / 11.0);
+            value += 0.5 * weight * x[i] * x[i];
+            g[i] = weight * x[i];
+        }
+        return value;
+    };
+    std::vector<double> x(12, 1.0);
+    LbfgsResult result = ve::optim::lbfgs_minimize(ill_conditioned, x, {});
+    EXPECT_EQ(result.stop, Stop::Converged);
+    EXPECT_LE(result.iterations, 45);
+}
+
 TEST(Lbfgs, ResultValueIsObjectiveAtReturnedPoint)
 {
     std::vector<double> x{-1.2, 1.0};
