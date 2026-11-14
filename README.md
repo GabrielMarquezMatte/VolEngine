@@ -211,7 +211,10 @@ fitdf+3 and fitdf+5. Pearson uses 20, 30, 40 and 50 groups. The formulas and con
 [docs/guide/validation.md](docs/guide/validation.md#rugarch-diagnostics).
 
 `ctx.fit` also takes a `(T, N)` array (one fit per column), a list of specs, `starts` and `lengths` for series of
-different lengths, and `options=ve.FitOptions(var_init="backcast")` for the `arch` convention.
+different lengths, and `options=ve.FitOptions(var_init="backcast")` for the `arch` convention. For a grid chosen by a
+criterion, `options=ve.FitOptions(standard_errors=False)` skips the standard errors and Nyblom (about a tenth of the
+time of a fit): `f.estimate`, the criteria, the series, forecasts and simulations stay the same, and `f.coef()` raises
+until the chosen model is refitted with them.
 
 ## Build
 

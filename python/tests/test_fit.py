@@ -718,3 +718,17 @@ def test_regressor_and_archm_options_are_validated():
 def test_unknown_fit_keyword_raises(ctx, series):
     with pytest.raises(TypeError, match="bogus"):
         ctx.fit(ve.Spec(), series[:, 0], bogus=1)  # type: ignore[call-overload]
+
+
+def test_standard_errors_off(ctx, series):
+    with_errors = ctx.fit(ve.Spec(), series[:, 0])
+    without = ctx.fit(ve.Spec(), series[:, 0], options=ve.FitOptions(standard_errors=False))
+    with pytest.raises(ve.VolEngineError, match="ve_fit_options_set_standard_errors"):
+        without.coef()
+    with pytest.raises(ve.VolEngineError, match="ve_fit_options_set_standard_errors"):
+        without.nyblom()
+    np.testing.assert_array_equal(without.estimate, with_errors.coef().estimate)
+    np.testing.assert_array_equal(without.forecast(10).sigma, with_errors.forecast(10).sigma)
+    paths_with = ctx.simulate(with_errors, horizon=5, paths=3, seed=1).returns
+    paths_without = ctx.simulate(without, horizon=5, paths=3, seed=1).returns
+    np.testing.assert_array_equal(paths_without, paths_with)

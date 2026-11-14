@@ -438,6 +438,24 @@ extern "C" ve_status ve_fit_options_set_var_init(ve_fit_options* o, int32_t var_
         });
 }
 
+extern "C" ve_status ve_fit_options_set_standard_errors(ve_fit_options* o, int32_t on)
+{
+    return guard(
+        [&]
+        {
+            if (o == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "o must not be null");
+            }
+            if (on != 0 && on != 1)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "standard_errors must be 0 or 1");
+            }
+            o->config.standard_errors = on == 1;
+            return VE_OK;
+        });
+}
+
 extern "C" void ve_fit_options_free(ve_fit_options* o)
 {
     std::unique_ptr<ve_fit_options> owner(o);

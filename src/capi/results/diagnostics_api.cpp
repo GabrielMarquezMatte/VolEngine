@@ -88,6 +88,10 @@ extern "C" ve_status ve_fit_nyblom(const ve_fit* f, double* individual, double* 
 {
     return guard([&]
     {
+        if (f != nullptr && !f->result.config.standard_errors)
+        {
+            return ve::capi::no_standard_errors();
+        }
         const ve_status status = check_fit(f, individual);
         if (status != VE_OK)
         {

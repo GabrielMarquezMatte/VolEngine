@@ -101,6 +101,7 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_fit_options_set_max_iter": (_STATUS, [_HANDLE, _I32]),
     "ve_fit_options_set_tolerance": (_STATUS, [_HANDLE, _DOUBLE]),
     "ve_fit_options_set_var_init": (_STATUS, [_HANDLE, _I32]),
+    "ve_fit_options_set_standard_errors": (_STATUS, [_HANDLE, _I32]),
     "ve_fit_options_free": (None, [_HANDLE]),
     "ve_panel_create": (_STATUS, [_HANDLE, _SIZE, _SIZE, _OUT_HANDLE]),
     "ve_panel_set_strides": (_STATUS, [_HANDLE, ctypes.c_ssize_t, ctypes.c_ssize_t]),

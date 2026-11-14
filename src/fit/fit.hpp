@@ -56,7 +56,7 @@ struct LoglikSeries
 };
 
 // The log-likelihood at the natural-space theta, filling every series of out in the same pass. The series are
-// unspecified when the result is not finite.
+// unspecified when the result is not finite. With out.scores empty it evaluates in double and fills no scores.
 double loglik_with_scores(const LikelihoodProblem& problem, std::span<const double> theta,
                           const LoglikSeries& out);
 }

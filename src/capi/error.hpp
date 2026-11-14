@@ -12,6 +12,14 @@ ve_status set_error(ve_status status, std::string_view message);
 void clear_error();
 const char* last_error();
 
+// The error of an accessor of the inference at the estimate (standard errors, t and p values, Nyblom) on a fit made
+// with ve_fit_options_set_standard_errors(o, 0).
+inline ve_status no_standard_errors()
+{
+    return set_error(VE_INVALID_ARGUMENT,
+                     "standard errors were not computed: fit with ve_fit_options_set_standard_errors(o, 1)");
+}
+
 template <typename F>
 ve_status guard(F&& callable)
 {

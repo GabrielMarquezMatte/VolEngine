@@ -9,6 +9,14 @@ library whose ABI version differs).
 
 ## [Unreleased]
 
+### Added
+
+- `ve_fit_options_set_standard_errors(o, on)` (Python: `FitOptions(standard_errors=...)`, default on). Off, a fit skips
+  the inference at the estimate (Hessian and robust standard errors, scores, Nyblom), about a tenth of its time; the
+  standard-error, t, p and Nyblom accessors then return `VE_INVALID_ARGUMENT`. Estimates, log-likelihood, criteria,
+  series, forecasts, simulations and DCC fits from it are unchanged.
+- Python: `Fit.estimate`, the estimates without the standard errors.
+
 ### Changed
 
 - The cdf of the univariate distributions computes in `double` rather than Boost's promoted `long double`, so that

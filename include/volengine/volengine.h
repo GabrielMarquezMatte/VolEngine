@@ -181,6 +181,11 @@ VE_API ve_status ve_fit_options_create(ve_fit_options** out);
 VE_API ve_status ve_fit_options_set_max_iter(ve_fit_options* o, int32_t max_iter); /* >= 1 */
 VE_API ve_status ve_fit_options_set_tolerance(ve_fit_options* o, double tol);      /* finite, > 0 */
 VE_API ve_status ve_fit_options_set_var_init(ve_fit_options* o, int32_t var_init);
+/* Default 1. With 0 the fit skips the inference at the estimate (Hessian and robust standard errors, scores,
+   Nyblom): ve_fit_std_errors, ve_fit_t_values, ve_fit_p_values and ve_fit_nyblom then return
+   VE_INVALID_ARGUMENT, whatever the fit's status. Everything else is computed as before, and a DCC, forecast or
+   simulation from the fit gives the same numbers. Values other than 0 and 1 are VE_INVALID_ARGUMENT. */
+VE_API ve_status ve_fit_options_set_standard_errors(ve_fit_options* o, int32_t on);
 VE_API void ve_fit_options_free(ve_fit_options* o);
 
 /* Borrowed panel: `data` is not copied and must stay alive until the end of every call that uses

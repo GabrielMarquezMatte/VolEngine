@@ -37,6 +37,10 @@ ve_status bad_value(const char* name, int32_t value)
 
 ve_status std_errors_of(const ve::FitResult& result, int32_t se_kind, const std::vector<double>*& errors)
 {
+    if (!result.config.standard_errors)
+    {
+        return ve::capi::no_standard_errors();
+    }
     if (se_kind == VE_SE_HESSIAN)
     {
         errors = &result.se_hessian;

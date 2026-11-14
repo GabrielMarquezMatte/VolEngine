@@ -104,3 +104,20 @@ Dropped:
   on top of the `Dual` one (+0.33 of an evaluation each), more than the 20% rejected trials would save (−0.67 each):
   a net loss of about 13% of the optimizer time.
 - **(f) Allocations.** The optimizer's objective already reuses its buffers; no allocation shows in the profile.
+
+## Changes measured (A/B)
+
+Each row ran right after its baseline, in the same session (see [Measuring](measuring.md#ab)).
+
+### Standard-errors option (`ve_fit_options_set_standard_errors`)
+
+The grid with the option on (the default, as before) and off, `volengine_grid_profile`, one run each:
+
+| Threads | On (s) | Off (s) | Off / on |
+| --- | ---: | ---: | ---: |
+| 1 | 67.7 | 60.4 | 0.89 |
+| 16 | 10.3 | 9.4 | 0.91 |
+
+The estimates, iterations and log-likelihoods are the same (`compare-profile`: evaluation ratio 1.0, worst
+log-likelihood change 0.0, same status counts); off, the fit evaluates the log-likelihood at the estimate once in
+`double` and skips the 2k gradients of the Hessian, the scores and Nyblom.

@@ -99,6 +99,29 @@ TEST(Fit, InsufficientDataDoesNoOptimizerWork)
     EXPECT_EQ(result.work.evaluations, 0);
 }
 
+TEST(Fit, StandardErrorsOffSkipsInferenceOnly)
+{
+    ve::FitConfig off;
+    off.standard_errors = false;
+    FitResult with = fit_simulated(Spec{});
+    FitResult without = ve::fit_one(simulated(), Spec{}, off);
+    ASSERT_EQ(without.status, with.status);
+    for (std::size_t i = 0; i < with.estimate.size(); ++i)
+    {
+        EXPECT_EQ(bits(without.estimate[i]), bits(with.estimate[i]));
+    }
+    EXPECT_NEAR(without.loglik, with.loglik, 1e-12 * std::abs(with.loglik));
+    for (std::size_t t = 0; t < with.sigma.size(); ++t)
+    {
+        EXPECT_NEAR(without.sigma[t], with.sigma[t], 1e-14 * with.sigma[t]);
+    }
+    EXPECT_TRUE(all_nan(without.se_hessian));
+    EXPECT_TRUE(all_nan(without.se_robust));
+    EXPECT_TRUE(without.nyblom.individual.empty());
+    EXPECT_LT(without.work.seconds - without.work.optimizer_seconds,
+              with.work.seconds - with.work.optimizer_seconds);
+}
+
 TEST(Fit, NamesFollowRugarch)
 {
     FitResult with_mean = fit_simulated(Spec{});

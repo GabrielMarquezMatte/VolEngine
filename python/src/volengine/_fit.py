@@ -105,6 +105,11 @@ class Fit:
         scale = IC_PER_OBS if per_obs else IC_TOTAL
         return cast(float, read_scalar(ctypes.c_double, function, self._handle.pointer, scale))
 
+    @property
+    def estimate(self) -> NDArray[np.float64]:
+        """The estimates, in `names` order; also on a fit made with FitOptions(standard_errors=False)."""
+        return self._values(lib.ve_fit_estimates)
+
     def coef(self, se: str = "hessian") -> CoefTable:
         kind = code_of(SE_KINDS, "se", se)
         return CoefTable(

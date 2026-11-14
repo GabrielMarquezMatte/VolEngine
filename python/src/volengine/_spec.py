@@ -213,12 +213,19 @@ class Spec:
 
 @dataclass(frozen=True)
 class FitOptions:
-    """Optimizer settings for a fit."""
+    """Optimizer settings for a fit.
+
+    standard_errors=False skips the inference at the estimate (Hessian and robust standard errors, scores,
+    Nyblom): Fit.coef() and Fit.nyblom() then raise VolEngineError, while Fit.estimate, the criteria, the series,
+    forecasts, simulations and DCC fits stay the same. Useful for a grid chosen by a criterion; refit the chosen
+    model with standard errors.
+    """
 
     _: KW_ONLY
     max_iter: int = 500
     tol: float = 1e-6
     var_init: str = "sample"
+    standard_errors: bool = True
 
     def __post_init__(self) -> None:
         self.native_handle().close()
@@ -229,4 +236,5 @@ class FitOptions:
         check(lib.ve_fit_options_set_max_iter(handle.pointer, int32(self.max_iter, "max_iter")))
         check(lib.ve_fit_options_set_tolerance(handle.pointer, self.tol))
         check(lib.ve_fit_options_set_var_init(handle.pointer, var_init))
+        check(lib.ve_fit_options_set_standard_errors(handle.pointer, int(self.standard_errors)))
         return handle

@@ -172,6 +172,15 @@ double loglik_with_scores_with(const fit::LikelihoodProblem& problem, std::span<
     return loglik.value;
 }
 
+// The double evaluation of loglik_with_scores, without scores: one pass at the cost of the objective.
+double loglik_series_with_double(const fit::LikelihoodProblem& problem, std::span<const double> theta,
+                                 const fit::LoglikSeries& out)
+{
+    std::vector<double> terms(problem.data.r.size());
+    return model::loglik<double>(problem.data, theta, problem.layout, problem.var_init,
+                                 {terms, out.residuals, out.sigma2, out.deviations, out.permanent});
+}
+
 FitResult empty_result(const Spec& spec, const FitConfig& config, std::size_t nobs, FitStatus status)
 {
     FitResult result;
@@ -242,13 +251,32 @@ fit::Nyblom nyblom_at_estimate(std::span<const double> scores, const model::Layo
     return fit::nyblom_statistics(scores, layout.count(), {estimated.data(), layout.count()});
 }
 
+// The standard errors and Nyblom at the estimate, from the T x k scores of the estimate.
+void fill_inference(FitResult& result, const fit::LikelihoodProblem& problem,
+                    const model::Standardization& standardization, std::span<const double> scores)
+{
+    fit::StandardErrors errors = with_dual_width(
+        problem.layout.count(),
+        [&]<std::size_t N>()
+        {
+            LoglikGradient<N> loglik_gradient(problem);
+            fit::GradientFn gradient = [&loglik_gradient](std::span<const double> theta, std::span<double> grad)
+            { return loglik_gradient(theta, grad); };
+            return fit::standard_errors(gradient, result.estimate, scores, problem.layout, standardization);
+        });
+    result.se_hessian = std::move(errors.hessian);
+    result.se_robust = std::move(errors.robust);
+    result.nyblom = nyblom_at_estimate(scores, problem.layout);
+}
+
+// The log-likelihood, series and forecast state at the estimate, and the inference when the config asks for it.
 bool fill_at_estimate(FitResult& result, const fit::LikelihoodProblem& problem,
                       const model::Standardization& standardization)
 {
     std::span<const double> r = problem.data.r;
     std::vector<double> residuals(r.size());
     std::vector<double> sigma2(r.size());
-    std::vector<double> scores(r.size() * result.estimate.size());
+    std::vector<double> scores(result.config.standard_errors ? r.size() * result.estimate.size() : 0);
     std::vector<double> deviations(r.size());
     std::vector<double> permanent(problem.layout.model == Model::CsGarch ? r.size() : 0);
     fit::LoglikSeries series{residuals, sigma2, scores, deviations, permanent};
@@ -265,18 +293,10 @@ bool fill_at_estimate(FitResult& result, const fit::LikelihoodProblem& problem,
         result.estimate[problem.layout.omega()] =
             model::targeted_omega_at(problem.data, result.estimate, problem.layout);
     }
-    fit::StandardErrors errors = with_dual_width(
-        problem.layout.count(),
-        [&]<std::size_t N>()
-        {
-            LoglikGradient<N> loglik_gradient(problem);
-            fit::GradientFn gradient = [&loglik_gradient](std::span<const double> theta, std::span<double> grad)
-            { return loglik_gradient(theta, grad); };
-            return fit::standard_errors(gradient, result.estimate, scores, problem.layout, standardization);
-        });
-    result.se_hessian = std::move(errors.hessian);
-    result.se_robust = std::move(errors.robust);
-    result.nyblom = nyblom_at_estimate(scores, problem.layout);
+    if (result.config.standard_errors)
+    {
+        fill_inference(result, problem, standardization, scores);
+    }
     return true;
 }
 
@@ -397,8 +417,12 @@ double loglik_with_scores(const LikelihoodProblem& problem, std::span<const doub
                           const LoglikSeries& out)
 {
     std::size_t k = problem.layout.count();
-    assert(theta.size() == k && out.scores.size() == problem.data.r.size() * k);
+    assert(theta.size() == k && (out.scores.empty() || out.scores.size() == problem.data.r.size() * k));
     assert(out.residuals.size() == problem.data.r.size() && out.sigma2.size() == problem.data.r.size());
+    if (out.scores.empty())
+    {
+        return loglik_series_with_double(problem, theta, out);
+    }
     return with_dual_width(k,
                            [&]<std::size_t N>()
                            {

@@ -77,6 +77,8 @@ struct FitConfig
     int max_iter = 500;
     double tol = 1e-6;
     VarInit var_init = VarInit::Sample;
+    // false skips the inference at the estimate: Hessian and robust standard errors, scores and Nyblom.
+    bool standard_errors = true;
 };
 
 }

@@ -24,8 +24,8 @@ using ArrayReader = ve_status (*)(const ve_fit*, int32_t, double*);
 using SeriesView = ve_status (*)(const ve_fit*, const double**, std::size_t*);
 using CoreCriterion = double (*)(const ve::FitResult&, ve::IcScale);
 
-// A single sGARCH(1,1) fit of `series` through the C API.
-FitSet fit_series(const std::vector<double>& series, int32_t include_mean)
+// A single sGARCH(1,1) fit of `series` through the C API, with `options` when not null.
+FitSet fit_series(const std::vector<double>& series, int32_t include_mean, const ve_fit_options* options = nullptr)
 {
     ve::testing::ContextPtr context = ve::testing::make_context(1);
     ve::testing::SpecPtr spec = ve::testing::make_spec(include_mean);
@@ -35,8 +35,37 @@ FitSet fit_series(const std::vector<double>& series, int32_t include_mean)
     inputs.panel = panel.get();
     inputs.job_spec = {0};
     inputs.job_series = {0};
+    inputs.options = options;
     ve::testing::BatchPtr batch = ve::testing::build_batch(inputs);
     return ve::testing::fit_all(context.get(), batch.get());
+}
+
+constexpr const char* kNoStandardErrors =
+    "standard errors were not computed: fit with ve_fit_options_set_standard_errors(o, 1)";
+
+FitSet fit_without_standard_errors(const std::vector<double>& series)
+{
+    ve_fit_options* options = nullptr;
+    EXPECT_EQ(ve_fit_options_create(&options), VE_OK);
+    EXPECT_EQ(ve_fit_options_set_standard_errors(options, 0), VE_OK);
+    FitSet fits = fit_series(series, 1, options);
+    ve_fit_options_free(options);
+    return fits;
+}
+
+// Every accessor of the inference at the estimate refuses a fit made without it.
+void expect_inference_refused(const ve_fit* fit)
+{
+    std::vector<double> values(4);
+    for (const ArrayReader reader : {ve_fit_std_errors, ve_fit_t_values, ve_fit_p_values})
+    {
+        EXPECT_EQ(reader(fit, VE_SE_HESSIAN, values.data()), VE_INVALID_ARGUMENT);
+        EXPECT_STREQ(ve_last_error(), kNoStandardErrors);
+    }
+    double joint = 0.0;
+    std::vector<int32_t> estimated(4);
+    EXPECT_EQ(ve_fit_nyblom(fit, values.data(), &joint, estimated.data()), VE_INVALID_ARGUMENT);
+    EXPECT_STREQ(ve_last_error(), kNoStandardErrors);
 }
 
 std::vector<double> simulated()
@@ -264,4 +293,39 @@ TEST(CapiFit, FailedFitWithoutFinitePointReturnsNaN)
     std::size_t length = 5;
     EXPECT_EQ(ve_fit_sigma(fit, &data, &length), VE_OK);
     EXPECT_EQ(length, 0u);
+}
+
+namespace
+{
+
+TEST(CapiFit, StandardErrorsOffIsInvalidArgument)
+{
+    FitSet fits = fit_without_standard_errors(simulated());
+    ASSERT_EQ(fits.size(), 1u);
+    expect_inference_refused(fits[0]);
+    std::vector<double> estimates(4);
+    EXPECT_EQ(ve_fit_estimates(fits[0], estimates.data()), VE_OK);
+    EXPECT_TRUE(std::isfinite(estimates[0]));
+}
+
+TEST(CapiFit, StandardErrorsOffOnFailedFit)
+{
+    FitSet fits = fit_without_standard_errors(std::vector<double>(kT, 0.25));
+    ASSERT_EQ(fits.size(), 1u);
+    int32_t status = VE_FIT_CONVERGED;
+    ASSERT_EQ(ve_fit_status(fits[0], &status), VE_OK);
+    EXPECT_EQ(status, VE_FIT_FAILED);
+    expect_inference_refused(fits[0]);
+}
+
+TEST(CapiFit, StandardErrorsOptionRejectsOtherValues)
+{
+    ve_fit_options* options = nullptr;
+    ASSERT_EQ(ve_fit_options_create(&options), VE_OK);
+    EXPECT_EQ(ve_fit_options_set_standard_errors(options, 2), VE_INVALID_ARGUMENT);
+    EXPECT_STREQ(ve_last_error(), "standard_errors must be 0 or 1");
+    EXPECT_EQ(ve_fit_options_set_standard_errors(nullptr, 1), VE_INVALID_HANDLE);
+    ve_fit_options_free(options);
+}
+
 }

@@ -114,10 +114,6 @@ Options parse(std::span<char*> args)
     {
         throw std::invalid_argument("--series must be in 1..20");
     }
-    if (!options.standard_errors)
-    {
-        throw std::invalid_argument("--standard-errors off needs ve_fit_options_set_standard_errors");
-    }
     return options;
 }
 
@@ -149,6 +145,7 @@ std::vector<Record> run_grid(const Options& options, ve::Context& context, doubl
     ve::Batch batch;
     batch.specs = selected_specs(options.filter);
     batch.panel = &panel;
+    batch.config.standard_errors = options.standard_errors;
     for (std::size_t spec = 0; spec < batch.specs.size(); ++spec)
     {
         for (std::size_t series = 0; series < options.series; ++series)

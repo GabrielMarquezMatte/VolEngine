@@ -88,7 +88,8 @@ const std::vector<double>& dcc3_rows()
 
 // The univariate sGARCH(1,1) fits of the three series, estimated through the C API; with `regressors`, each has
 // one mean regressor.
-FitSet univariate_fits(bool regressors)
+// The three dcc3 univariates, with or without their standard errors (ve_fit_options_set_standard_errors).
+FitSet univariate_fits(bool regressors, bool standard_errors = true)
 {
     ve::testing::ContextPtr context = ve::testing::make_context(1);
     ve::testing::SpecPtr spec = ve::testing::make_spec(1);
@@ -109,7 +110,12 @@ FitSet univariate_fits(bool regressors)
     {
         inputs.mxreg = {mean.get(), mean.get(), mean.get()};
     }
+    ve_fit_options* options = nullptr;
+    EXPECT_EQ(ve_fit_options_create(&options), VE_OK);
+    EXPECT_EQ(ve_fit_options_set_standard_errors(options, standard_errors ? 1 : 0), VE_OK);
+    inputs.options = options;
     ve::testing::BatchPtr batch = ve::testing::build_batch(inputs);
+    ve_fit_options_free(options);
     return ve::testing::fit_all(context.get(), batch.get());
 }
 
@@ -411,6 +417,26 @@ TEST(CapiDcc, MatchesCore)
                   std::bit_cast<std::uint64_t>(ve::dcc::dcc_criterion(expected[i], ve::dcc::Criterion::Aic, false)));
         EXPECT_TRUE(std::isfinite(read_criterion(fit, VE_DCC_CRITERION_HQIC, VE_IC_PER_OBS)));
         EXPECT_TRUE(std::isfinite(read_criterion(fit, VE_DCC_CRITERION_SIC, VE_IC_PER_OBS)));
+    }
+}
+
+TEST(CapiDcc, UnivariatesWithoutStandardErrorsGiveSameDcc)
+{
+    FitSet with = univariate_fits(false, true);
+    FitSet without = univariate_fits(false, false);
+    const std::vector<DccSpecPtr> specs = three_specs();
+    DccOptionsPtr options = make_dcc_options(true);
+    ve::testing::ContextPtr context = ve::testing::make_context(1);
+    DccBatchPtr batch_with = build_dcc_batch({raw_specs(specs), handles_of(with), options.get()});
+    DccBatchPtr batch_without = build_dcc_batch({raw_specs(specs), handles_of(without), options.get()});
+    DccFits fits_with(3);
+    DccFits fits_without(3);
+    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch_with.get(), fits_with.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch_without.get(), fits_without.out()), VE_OK) << ve_last_error();
+    for (std::size_t i = 0; i < fits_with.size(); ++i)
+    {
+        SCOPED_TRACE(i);
+        expect_same_report(report_of(fits_without[i]), report_of(fits_with[i]));
     }
 }
 
