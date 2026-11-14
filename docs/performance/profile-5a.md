@@ -194,3 +194,10 @@ decreasing parameter count (ties in job order). Results do not depend on the ord
 
 The ordering gains little on this grid, whose costly specs are spread over it, but keeps a batch whose costliest
 specs come last from ending on one long fit.
+
+### Measured and dropped: interpolation in the zoom
+
+A safeguarded quadratic interpolation in `LineSearch::zoom` (instead of bisection) cut the grid's evaluations by
+2.2% and left its one-thread time within noise (30.5 s to 30.9 s), while moving some fits to other points of their
+flat optima. With a memory of 40 the line search takes 1.13 evaluations per iteration, so there is little left to
+save there; the bisection stays.
