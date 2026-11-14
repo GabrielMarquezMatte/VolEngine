@@ -242,17 +242,17 @@ One planned case moved, and two planned cases are kept as known divergences with
   `rugarch`'s by more than the one-sided tolerance (1e-6·|ℓ|, 2.9e-3 to 3.7e-3 here): by 4.6e-3
   (`aparch11_sged/fgarch_allgarch11_sstd`), 6.2e-3 (`aparch11_sged/fgarch_allgarch11_jsu`) and 4.6e-2
   (`egarch11_jsu/fgarch_allgarch11_sstd`). Both programs compute the same likelihood: at `rugarch`'s estimates
-  VolEngine's ℓ equals `rugarch`'s to 1e-16 (relative), and VolEngine started there stays there. The failure is
-  VolEngine's stop. On `aparch11_sged` the fits run along a ridge to the edge of the η₁ domain (η₁ → 1, with η₂
-  and λ ≈ 1.0 compensating): `rugarch` ends at η₁ = 0.9957 (sstd) and 0.9983 (jsu), interior by the rule, and
-  VolEngine at η₁ = 0.9928 and 0.9959, 1.5e-6 per observation lower in mean ℓ. There the largest component of
-  the unconstrained gradient of the mean negative ℓ is 1e-7 to 3e-7, above `tol`·max(1, |f|) = 1.3e-7 but within
-  √tol·max(1, |f|) = 4e-4. Until plan 5a a step that decreased f by less than ftol = 1e-12·max(1, |f|) ended the
-  fit `CONVERGED` there. Since plan 5a ftol is 1e-15, the resolution of f, and the fits stop with the gradient below
-  `tol`·max(1, |f|); their ℓ does not move (the same to 1e-6 for tol from 1e-7 to 1e-12): along this ridge no step
-  decreases f at its resolution, so the √tol acceptance of a failed line search ends them. On `egarch11_jsu` (λ̂ ≈ 1.1–1.2) the ALLGARCH-sstd likelihood
-  has a second local optimum: `rugarch` ends at η₂ = −0.128, VolEngine at η₂ = −0.044 (the point where both
-  programs put the jsu fit), with an unconstrained gradient of 1.5e-6 there. `test_oracles.py` keeps the three
+  VolEngine's ℓ equals `rugarch`'s to 1e-16 (relative), and VolEngine started there stays there. On `aparch11_sged`
+  the fits run along a ridge to the edge of the η₁ domain (η₁ → 1, with η₂ and λ ≈ 1.0 compensating): `rugarch` ends
+  at η₁ = 0.9957 (sstd) and 0.9983 (jsu), interior by the rule. Before plan 5a VolEngine stopped at η₁ = 0.9928 and
+  0.9959, 1.5e-6 per observation lower in mean ℓ, with the largest component of the unconstrained gradient of the mean
+  negative ℓ at 1e-7 to 3e-7: above `tol`·max(1, |f|) = 1.3e-7 but within √tol·max(1, |f|) = 4e-4, where a step that
+  decreased f by less than ftol = 1e-12·max(1, |f|) ended the fit `CONVERGED`. Since plan 5a (ftol = 1e-15, a memory
+  of 40 pairs) the three fits end by the ordinary test, the largest gradient component below `tol`·max(1, |f|)
+  (1.5e-8 to 6.6e-8 at `tol` = 1e-7), at the same ℓ to 1e-6, and no `tol` down to 1e-12 moves them: from its
+  default start VolEngine reaches a stationary point below `rugarch`'s. On `egarch11_jsu` (λ̂ ≈ 1.1–1.2) the
+  ALLGARCH-sstd likelihood has a second local optimum: `rugarch` ends at η₂ = −0.128, VolEngine at η₂ = −0.044 (the
+  point where both programs put the jsu fit). `test_oracles.py` keeps the three
   cases with their `rugarch` fixtures and marks the comparison `xfail(strict=True)` (`KNOWN_DIVERGENCES`); their
   interior check runs and passes. A fix to the optimizer turns them into unexpected passes, which fail until the
   marker is removed. The follow-up is item 4 of "Pendente na máquina de benchmark" in the plan-2c plan.

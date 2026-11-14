@@ -22,9 +22,11 @@ library whose ABI version differs).
 - The L-BFGS optimizer keeps 40 curvature pairs instead of 10, so fits with up to a few dozen parameters behave like
   full BFGS: about half the evaluations, and every fit of the TCC grid now ends `CONVERGED`. The overparametrized fits
   of that grid have several local optima; on some series the new path ends at another one (higher or lower).
-- A step is flat, and may end a fit, only when it decreases f by less than 1e-15·max(1, |f|), the resolution of f
-  (was 1e-12). Fits on ill-conditioned ridges no longer stop there labelled `CONVERGED` with a gradient up to √tol;
-  the `rugarch` apARCH variance-regressor comparison passes at the default tolerance.
+- A step is flat only when it decreases f by less than 1e-15·max(1, |f|) (was 1e-12). On an ill-conditioned ridge,
+  where every step decreases f by a little, a fit no longer ends `CONVERGED` early on such a step with a gradient up to
+  √tol; it goes on until the gradient is below `tol`. A step that cannot decrease f at all (a failed line search, or
+  a flat step) still ends the fit `CONVERGED` when the gradient is below √tol·max(1, |f|). The `rugarch` apARCH
+  variance-regressor comparison now passes at the default tolerance.
 - log Γ comes from Boost.Math in `double` instead of `std::lgamma`, which writes the global `signgam` (a data race
   between the pool's threads). Values move by about an ulp.
 - Batches run one fit per task, the specs with the most parameters first: the batch no longer ends on a block of

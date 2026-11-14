@@ -110,16 +110,41 @@ TEST(Fit, StandardErrorsOffSkipsInferenceOnly)
     {
         EXPECT_EQ(bits(without.estimate[i]), bits(with.estimate[i]));
     }
-    EXPECT_NEAR(without.loglik, with.loglik, 1e-12 * std::abs(with.loglik));
+    EXPECT_EQ(bits(without.loglik), bits(with.loglik));
+    ASSERT_EQ(without.sigma.size(), with.sigma.size());
     for (std::size_t t = 0; t < with.sigma.size(); ++t)
     {
-        EXPECT_NEAR(without.sigma[t], with.sigma[t], 1e-14 * with.sigma[t]);
+        ASSERT_EQ(bits(without.sigma[t]), bits(with.sigma[t])) << "t = " << t;
     }
     EXPECT_TRUE(all_nan(without.se_hessian));
     EXPECT_TRUE(all_nan(without.se_robust));
     EXPECT_TRUE(without.nyblom.individual.empty());
     EXPECT_LT(without.work.seconds - without.work.optimizer_seconds,
               with.work.seconds - with.work.optimizer_seconds);
+}
+
+// The forecast state at the estimate comes from the double pass when the inference is off: the csGARCH permanent
+// component and the ARFIMA deviations must be the bits of the Dual pass.
+TEST(Fit, StandardErrorsOffKeepsForecastState)
+{
+    Spec csgarch;
+    csgarch.model = ve::Model::CsGarch;
+    Spec arfima;
+    arfima.arfima = true;
+    ve::FitConfig off;
+    off.standard_errors = false;
+    for (const Spec& spec : {csgarch, arfima})
+    {
+        FitResult with = fit_simulated(spec);
+        FitResult without = ve::fit_one(simulated(), spec, off);
+        ASSERT_EQ(without.status, with.status);
+        EXPECT_EQ(bits(without.loglik), bits(with.loglik));
+        EXPECT_EQ(without.state.residuals, with.state.residuals);
+        EXPECT_EQ(without.state.sigma2, with.state.sigma2);
+        EXPECT_EQ(without.state.permanent, with.state.permanent);
+        EXPECT_EQ(without.state.deviations, with.state.deviations);
+        EXPECT_FALSE(with.state.permanent.empty() && with.state.deviations.empty());
+    }
 }
 
 TEST(Fit, NamesFollowRugarch)
