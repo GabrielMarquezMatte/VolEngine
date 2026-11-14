@@ -14,6 +14,7 @@
 #include "sim/samplers.hpp"
 #include "sim/simulate.hpp"
 #include "sim/start.hpp"
+#include "grids.hpp"
 #include "simulated_panel.hpp"
 #include "volengine/volengine.h"
 
@@ -36,6 +37,13 @@
 namespace
 {
 
+using ve::bench::kAllDists;
+using ve::bench::kModelCount;
+using ve::bench::kModelNames;
+using ve::bench::kSymmetricDists;
+using ve::bench::make_spec;
+using ve::bench::tcc_grid;
+
 constexpr std::size_t kObservations = 5000;
 constexpr std::size_t kBatchSeries = 20;
 
@@ -45,18 +53,6 @@ struct NamedSpec
     ve::Spec spec;
     std::optional<ve::testing::VariantProcess> process;
 };
-
-// p is the ARCH order and q the GARCH order: s21 is sGARCH(2, 1).
-ve::Spec make_spec(int p, int q, int ar, int ma, ve::Dist dist)
-{
-    ve::Spec spec;
-    spec.p = p;
-    spec.q = q;
-    spec.ar = ar;
-    spec.ma = ma;
-    spec.dist = dist;
-    return spec;
-}
 
 ve::Spec variant_spec(ve::Model model, ve::Dist dist)
 {
@@ -589,40 +585,7 @@ void run_batch(benchmark::State& state, const std::vector<ve::Spec>& specs, cons
     }
 }
 
-void append_orders(std::vector<ve::Spec>& grid, ve::Dist dist, int arma)
-{
-    for (int p = 1; p <= 3; ++p)
-    {
-        for (int q = 1; q <= 3; ++q)
-        {
-            grid.push_back(make_spec(p, q, arma, arma, dist));
-        }
-    }
-}
-
-constexpr std::array<ve::Dist, 3> kSymmetricDists{ve::Dist::Norm, ve::Dist::Std, ve::Dist::Ged};
-constexpr std::array<ve::Dist, 8> kAllDists{ve::Dist::Norm, ve::Dist::Std,  ve::Dist::Ged, ve::Dist::Sstd,
-                                            ve::Dist::Sged, ve::Dist::Nig, ve::Dist::Ghyp, ve::Dist::Jsu};
-
-std::vector<ve::Spec> tcc_grid(std::span<const ve::Dist> dists = kSymmetricDists)
-{
-    std::vector<ve::Spec> grid;
-    for (const ve::Dist dist : dists)
-    {
-        for (const int arma : {0, 1})
-        {
-            append_orders(grid, dist, arma);
-        }
-    }
-    return grid;
-}
-
-constexpr std::size_t kModelCount = 14;
 constexpr double kMaxFailureShare = 0.05;
-constexpr std::array<const char*, kModelCount> kModelNames{
-    "sgarch",       "egarch",        "gjrgarch",      "aparch",         "igarch",
-    "csgarch",      "fgarch_garch",  "fgarch_tgarch", "fgarch_avgarch", "fgarch_ngarch",
-    "fgarch_nagarch", "fgarch_aparch", "fgarch_gjrgarch", "fgarch_allgarch"};
 
 using ModelCounts = std::array<StatusCounts, kModelCount>;
 
