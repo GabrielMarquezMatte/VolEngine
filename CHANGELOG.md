@@ -19,6 +19,24 @@ library whose ABI version differs).
 
 ### Changed
 
+- The L-BFGS optimizer keeps 40 curvature pairs instead of 10, so fits with up to a few dozen parameters behave like
+  full BFGS: about half the evaluations, and every fit of the TCC grid now ends `CONVERGED`. The overparametrized fits
+  of that grid have several local optima; on some series the new path ends at another one (higher or lower).
+- A step is flat, and may end a fit, only when it decreases f by less than 1e-15·max(1, |f|), the resolution of f
+  (was 1e-12). Fits on ill-conditioned ridges no longer stop there labelled `CONVERGED` with a gradient up to √tol;
+  the `rugarch` apARCH variance-regressor comparison passes at the default tolerance.
+- log Γ comes from Boost.Math in `double` instead of `std::lgamma`, which writes the global `signgam` (a data race
+  between the pool's threads). Values move by about an ulp.
+- Batches run one fit per task, the specs with the most parameters first: the batch no longer ends on a block of
+  costly fits.
+
+### Performance
+
+- The TCC grid (1080 fits) on the Ryzen 7 5700X: see [docs/performance/benchmarks.md](docs/performance/benchmarks.md)
+  and [docs/performance/profile-5a.md](docs/performance/profile-5a.md) for the measurements of each change.
+
+### Changed
+
 - The cdf of the univariate distributions computes in `double` rather than Boost's promoted `long double`, so that
   it gives the same bits on every thread (on MinGW the Python main thread runs the x87 unit at 53 bits and the pool
   threads at 64). Values can move by an ulp.

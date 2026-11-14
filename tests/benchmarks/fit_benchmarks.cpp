@@ -467,7 +467,8 @@ Owned<ve_spec, ve_spec_free> create_spec(const ve::Spec& spec)
 class BatchWorkload
 {
 public:
-  BatchWorkload(const std::vector<ve::Spec>& specs, std::vector<double> data, std::size_t series, int threads)
+  BatchWorkload(const std::vector<ve::Spec>& specs, std::vector<double> data, std::size_t series, int threads,
+                bool standard_errors = true)
       : data_(std::move(data))
   {
       ve_context* ctx = nullptr;
@@ -475,6 +476,12 @@ public:
       context_.reset(ctx);
       require_ok(ve_context_set_threads(ctx, threads), "ve_context_set_threads");
       describe(specs, series);
+      ve_fit_options* options = nullptr;
+      require_ok(ve_fit_options_create(&options), "ve_fit_options_create");
+      const Owned<ve_fit_options, ve_fit_options_free> owner(options);
+      require_ok(ve_fit_options_set_standard_errors(options, standard_errors ? 1 : 0),
+                 "ve_fit_options_set_standard_errors");
+      require_ok(ve_batch_set_options(batch_.get(), options), "ve_batch_set_options");
   }
 
     std::size_t jobs() const { return jobs_; }
@@ -549,15 +556,21 @@ void report_counts(benchmark::State& state, const StatusCounts& counts, std::siz
         benchmark::Counter(static_cast<double>(jobs * state.iterations()), benchmark::Counter::kIsRate);
 }
 
-// Every spec on each of the first `series` series simulated from generator.
-void run_batch(benchmark::State& state, const std::vector<ve::Spec>& specs, const ve::Spec& generator, int threads,
-               std::size_t series)
+struct BatchRun
+{
+    int threads = 0;
+    std::size_t series = kBatchSeries;
+    bool standard_errors = true;
+};
+
+// Every spec on each of the first run.series series simulated from generator.
+void run_batch(benchmark::State& state, const std::vector<ve::Spec>& specs, const ve::Spec& generator, BatchRun run)
 {
     try
     {
         const std::vector<double> data =
-            ve::bench::simulate_panel(ve::bench::simulated_model_for(generator), kObservations, series);
-        BatchWorkload workload(specs, data, series, threads);
+            ve::bench::simulate_panel(ve::bench::simulated_model_for(generator), kObservations, run.series);
+        BatchWorkload workload(specs, data, run.series, run.threads, run.standard_errors);
         if (workload.jobs() == 0)
         {
             state.SkipWithError("the grid produced no jobs");
@@ -1442,7 +1455,7 @@ void register_all()
     for (const int threads : {1, 2, 4, 8, 0})
     {
         const std::string name = "BM_Batch/threads:" + thread_label(threads);
-        benchmark::RegisterBenchmark(name, run_batch, single, single.front(), threads, kBatchSeries)
+        benchmark::RegisterBenchmark(name, run_batch, single, single.front(), BatchRun{threads})
             ->Unit(benchmark::kMillisecond)
             ->UseRealTime();
     }
@@ -1450,16 +1463,21 @@ void register_all()
     // which is not the cost being measured.
     static const std::vector<ve::Spec> grid = tcc_grid();
     static const ve::Spec heavy_tails = make_spec(1, 1, 0, 0, ve::Dist::Std);
-    for (const int threads : {1, 0})
+    for (const bool standard_errors : {true, false})
     {
-        const std::string name = "BM_TccGrid/threads:" + thread_label(threads);
-        benchmark::RegisterBenchmark(name, run_batch, grid, heavy_tails, threads, kBatchSeries)
-            ->Unit(benchmark::kSecond)
-            ->UseRealTime()
-            ->Iterations(1);
+        for (const int threads : {1, 0})
+        {
+            const std::string name = std::string("BM_TccGrid/se:") + (standard_errors ? "on" : "off")
+                + "/threads:" + thread_label(threads);
+            const BatchRun run{threads, kBatchSeries, standard_errors};
+            benchmark::RegisterBenchmark(name, run_batch, grid, heavy_tails, run)
+                ->Unit(benchmark::kSecond)
+                ->UseRealTime()
+                ->Iterations(1);
+        }
     }
     static const std::vector<ve::Spec> sample = tcc_sample();
-    benchmark::RegisterBenchmark("BM_TccGridSample/threads:1", run_batch, sample, heavy_tails, 1, std::size_t{1})
+    benchmark::RegisterBenchmark("BM_TccGridSample/threads:1", run_batch, sample, heavy_tails, BatchRun{1, 1})
         ->Unit(benchmark::kMillisecond)
         ->UseRealTime()
         ->Iterations(1);

@@ -57,6 +57,85 @@ Also not done:
 Plan 2d added no benchmark. Fixed parameters, start values and variance targeting add branches only when the `Layout`
 has them, and a spec without them takes the path of plan 2c.
 
+## Plan 5a: measurement and the scalar path
+
+Measured on 2026-11-14 on the machine above, preset `gcc-bench`, code at `cb2b10d` plus the `se:{on,off}` parameter of
+`BM_TccGrid` (registered in the commit after it). Five repetitions, medians with the standard deviation; wall time.
+What each change gained, measured A/B, is in [Plan 5a profile](profile-5a.md); this section gives the state after
+all of them. The tables further down that predate it (single fits, batch scaling, TCC workload) are kept for the
+record: they were measured at `d4b3fae`, before plan 5a.
+
+```
+build/gcc-bench/volengine_benchmarks --benchmark_filter="^BM_TccGrid/" --benchmark_repetitions=5 --benchmark_report_aggregates_only=true
+```
+
+### TCC workload after plan 5a
+
+`BM_TccGrid/se:<on|off>/threads:<N>`: the 1080 fits of the TCC workload (below), with the standard errors and Nyblom
+(`se:on`, the default) or without them (`se:off`, `ve_fit_options_set_standard_errors(o, 0)`). Every fit ended
+`CONVERGED` in every repetition.
+
+| Run | Before plan 5a (s) | Median (s) | sd (s) | Fits per second |
+| --- | ---: | ---: | ---: | ---: |
+| `se:on`, 1 thread | 68.5 | 31.3 | 0.13 | 34.6 |
+| `se:on`, 16 threads | 10.7 | 4.24 | 0.03 | 254.6 |
+| `se:off`, 1 thread | — | 25.0 | 0.11 | 43.2 |
+| `se:off`, 16 threads | — | 3.34 | 0.02 | 323.4 |
+
+The 10 s goal of the design is met with all threads; the grid also takes 4.2 s with them, against 10.7 s before.
+The gains, in order of size: an L-BFGS memory of 40 (half the evaluations), `Dual<12>` for 9 to 12 parameters
+(−13%), one fit per block with the costliest first (−6% with 16 threads), and skipping the inference at the
+estimate when the user does not need it (−20% of what is left, `se:off`).
+
+### Single fits after plan 5a
+
+`BM_FitOne/<series>`, as in [Single fits](#single-fits), with the counters `iterations` and `evaluations` (the
+optimizer's, not the inference's). Every fit ended `CONVERGED`, including `arma22_s33_std`, which ended `MAX_ITER`
+before.
+
+| Series | Before (ms) | Median (ms) | sd (ms) | Iterations | Evaluations |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `s11_norm` | 4.69 | 4.77 | 0.29 | 18 | 19 |
+| `s21_std` | 16.4 | 12.0 | 0.23 | 25 | 26 |
+| `arma11_s11_ged` | 21.8 | 16.5 | 0.08 | 20 | 22 |
+| `arma22_s33_std` | 377 (`MAX_ITER`) | 77.7 | 0.41 | 86 | 93 |
+| `egarch11_std` | 17.6 | 18.3 | 0.56 | 27 | 31 |
+| `gjrgarch11_norm` | 5.76 | 5.67 | 0.02 | 19 | 21 |
+| `aparch11_ged` | 63.0 | 46.2 | 0.26 | 28 | 29 |
+| `igarch11_norm` | 3.55 | 3.24 | 0.01 | 12 | 13 |
+| `csgarch11_std` | 30.8 | 28.3 | 0.09 | 43 | 57 |
+| `fgarch_tgarch11_norm` | 13.0 | 13.4 | 0.03 | 23 | 25 |
+| `fgarch_allgarch11_norm` | 83.9 | 66.6 | 0.65 | 30 | 38 |
+| `gjrgarch11_sstd` | 22.2 | 16.4 | 0.34 | 25 | 26 |
+| `aparch11_sged` | 87.4 | 54.3 | 0.58 | 27 | 29 |
+| `egarch11_jsu` | 40.5 | 30.9 | 0.97 | 30 | 34 |
+| `sgarch11_nig` | 103 | 81.8 | 3.4 | 21 | 22 |
+| `sgarch11_ghyp` | 2248 | 1700 | 2.1 | 29 | 30 |
+| `arx_sgarch11_norm` | 9.53 | 9.81 | 0.14 | 26 | 31 |
+| `sgarch11_vx_std` | 29.2 | 20.9 | 0.11 | 55 | 65 |
+| `archm_gjrgarch11_norm` | 12.5 | 11.8 | 0.12 | 21 | 22 |
+| `archm2_egarch11_std` | 36.5 | 25.9 | 0.06 | 31 | 36 |
+| `arfima_sgarch11_norm` | 224 | 222 | 0.53 | 16 | 17 |
+
+The "Before" column is the table of [Single fits](#single-fits), from another day; read differences under about 5%
+as noise. Single fits with few parameters gain little: the memory of 40 matters when the iterations are many, and
+the scheduling only in batches.
+
+### Batch scaling and DCC after plan 5a
+
+| Benchmark | Before (ms) | Median (ms) | sd (ms) |
+| --- | ---: | ---: | ---: |
+| `BM_Batch/threads:1` | 89.9 | 83.9 | 0.8 |
+| `BM_Batch/threads:2` | 47.4 | 45.2 | 0.6 |
+| `BM_Batch/threads:4` | 27.5 | 24.4 | 0.4 |
+| `BM_Batch/threads:8` | 20.5 | 18.5 | 0.4 |
+| `BM_Batch/threads:hw` | 17.9 | 16.6 | 0.4 |
+| `BM_DccGrid/m:21/T:5000/threads:1` | 11 274 | 10 500 | 76 |
+| `BM_DccGrid/m:21/T:5000/threads:hw` | 2 354 | 2 350 | 87 |
+
+The DCC grid does not move beyond noise: its fits have 2 to 4 parameters, so neither the memory nor `Dual<12>`
+changes their work.
+
 ## Cost of the log-likelihood and of its gradient by AD
 
 `BM_Loglik/<series>/double` is one evaluation of `loglik<double>`, `BM_Loglik/<series>/dual` one of
@@ -262,7 +341,8 @@ of under 10 s on an 8-core CPU. The goal belongs to plan 5; here it is only meas
 | 1 | 68.5 | 0.88 | 15.8 | 1073 | 7 |
 | hw (16) | 10.7 | 0.22 | 101.2 | 1073 | 7 |
 
-On this machine the 1080-fit grid takes 10.7 s with all 16 hardware threads, which is above the 10 s goal.
+On this machine the 1080-fit grid took 10.7 s with all 16 hardware threads, above the 10 s goal; after plan 5a it
+takes 4.24 s ([Plan 5a](#plan-5a-measurement-and-the-scalar-path)).
 
 ## DCC workload (plan 4a)
 

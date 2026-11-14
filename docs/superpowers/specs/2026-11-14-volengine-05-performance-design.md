@@ -212,3 +212,32 @@ O objetivo é responder em segundos onde está o tempo e se uma mudança ajudou.
 - A bit-identidade entre um job sozinho e o mesmo job num grupo SIMD fica para o design de 5b.
 - Novo preset `gcc-profile` para o uProf, com as mesmas flags de otimização do `gcc-bench`.
 - 5b e 5c são redesenhados com os números de 5a antes de virar plano.
+
+## 10. 5a feito (2026-11-14)
+
+Plano `docs/superpowers/plans/2026-11-14-volengine-05a-medicao-escalar.md`, commits `22f2179..` em `master`. Números
+completos em `docs/performance/profile-5a.md` (A/B de cada mudança) e `docs/performance/benchmarks.md` (estado final).
+
+- **Grade de 1080, todas as threads:** 10,7 s → **4,24 s**; com a opção de erros-padrão desligada, 3,34 s. Com 1
+  thread: 68,5 s → 31,3 s (25,0 s sem erros-padrão). Todos os 1080 ajustes terminam `CONVERGED` (antes, 7 `MAX_ITER`).
+- **O que deu ganho, em ordem:**
+  - memória do L-BFGS 10 → 40: metade das avaliações. Aceita pelo autor com a ressalva de que ajustes
+    sobreparametrizados mudam de ótimo local nos dois sentidos;
+  - `Dual<12>` para k = 9..12: −13%, resultados bit-idênticos;
+  - um ajuste por bloco, os mais caros primeiro: −6% com 16 threads;
+  - opção `ve_fit_options_set_standard_errors`: −10% quando desligada.
+- **Correções:**
+  - `ftol` 1e-12 → 1e-15: o L-BFGS não para mais em ridge com |g| até √tol;
+  - `log_gamma` pela Boost sem a corrida do `signgam`.
+- **Medido e descartado:** interpolação no zoom (−2% de avaliações, tempo igual); f em `double` antes do gradiente
+  (perda líquida na conta).
+- **Achados que ficam para o design de 5b/5c:**
+  - o gradiente `Dual` em modo forward continua sendo quase todo o tempo (uProf). A opção (3) do autor: o gradiente
+    reverso (AD reverso genérico ou adjunto) ganha design próprio, antes ou junto do SIMD de 5b;
+  - os ajustes sobreparametrizados (p, q ≥ 2 em séries sGARCH(1,1)) são multimodais: qualquer mudança de caminho
+    (ulps do `log_gamma`, memória) troca o ótimo encontrado em alguns. Valores iniciais melhores (candidato (g)) e
+    multi-start são assunto de design;
+  - os 4 xfails `OPTIMIZER` (ALLGARCH skewed e ARFIMA csGARCH) não são parada precoce: param com |g| < tol, e `tol`
+    até 1e-12 não os move;
+  - o uProf não lê o build GCC (MinGW); perfis por `msvc-profile`. O build MSVC é 2,6× mais lento que o GCC no
+    mesmo recorte, o que pesa se as wheels de Windows forem MSVC (plano 6).
