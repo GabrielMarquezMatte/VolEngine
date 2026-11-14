@@ -141,3 +141,18 @@ old stop had labelled them converged on a ridge. Two of them, sGARCH(3,3)-ARMA(1
 sGARCH(1,3)-ARMA(1,1)-std, now end `MAX_ITER` instead of a false `CONVERGED`. In the quick suite `BM_Loglik`, which
 `ftol` does not touch, moved by up to 18% between the two runs: that is the noise of this session, and no
 `BM_FitOne` moved by more.
+
+### `Dual<12>` (k = 9..12)
+
+`fit::with_dual_width` runs fits with 9 to 12 parameters on `Dual<12>` instead of `Dual<16>`; each lane does the
+arithmetic of the same lane of the wider type, so values and gradients are bit-identical
+(`LikelihoodGrid.Dual12AgreesWithDual32`).
+
+| Measure | `Dual<16>` | `Dual<12>` |
+| --- | ---: | ---: |
+| Grid, 1 thread (s) | 70.8 | 61.3 (0.87) |
+| Grid, 16 threads (s) | — | 9.5 |
+| Grid evaluations, log-likelihoods, statuses | — | identical |
+| `BM_TccGridSample/threads:1` (ms) | 1122 | 994 (0.89) |
+
+The quick suite's other cases have k ≤ 8 or 13 and do not move (within noise, `arma22_s33_std/dual` 3%).

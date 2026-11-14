@@ -861,6 +861,8 @@ template double targeted_omega<double>(std::span<const double>, std::span<const 
                                     const RegressorMatrix&);
 template ad::Dual<8> targeted_omega<ad::Dual<8>>(std::span<const ad::Dual<8>>, std::span<const ad::Dual<8>>,
                                                  const Layout&, const RegressorMatrix&);
+template ad::Dual<12> targeted_omega<ad::Dual<12>>(std::span<const ad::Dual<12>>, std::span<const ad::Dual<12>>,
+                                                   const Layout&, const RegressorMatrix&);
 template ad::Dual<16> targeted_omega<ad::Dual<16>>(std::span<const ad::Dual<16>>, std::span<const ad::Dual<16>>,
                                                    const Layout&, const RegressorMatrix&);
 template ad::Dual<32> targeted_omega<ad::Dual<32>>(std::span<const ad::Dual<32>>, std::span<const ad::Dual<32>>,
@@ -880,6 +882,8 @@ template double loglik<double>(const Data&, std::span<const double>, const Layou
                                const LoglikOutputs<double>&);
 template ad::Dual<8> loglik<ad::Dual<8>>(const Data&, std::span<const ad::Dual<8>>, const Layout&,
                                          VarInit, const LoglikOutputs<ad::Dual<8>>&);
+template ad::Dual<12> loglik<ad::Dual<12>>(const Data&, std::span<const ad::Dual<12>>,
+                                           const Layout&, VarInit, const LoglikOutputs<ad::Dual<12>>&);
 template ad::Dual<16> loglik<ad::Dual<16>>(const Data&, std::span<const ad::Dual<16>>,
                                            const Layout&, VarInit, const LoglikOutputs<ad::Dual<16>>&);
 template ad::Dual<32> loglik<ad::Dual<32>>(const Data&, std::span<const ad::Dual<32>>,

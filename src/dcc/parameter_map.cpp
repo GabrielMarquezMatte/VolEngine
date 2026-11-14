@@ -612,6 +612,8 @@ void to_natural(std::span<const T> u, std::span<T> theta, const DccLayout& layou
 template void to_natural<double>(std::span<const double>, std::span<double>, const DccLayout&, double);
 template void to_natural<ad::Dual<8>>(std::span<const ad::Dual<8>>, std::span<ad::Dual<8>>, const DccLayout&,
                                       double);
+template void to_natural<ad::Dual<12>>(std::span<const ad::Dual<12>>, std::span<ad::Dual<12>>, const DccLayout&,
+                                       double);
 template void to_natural<ad::Dual<16>>(std::span<const ad::Dual<16>>, std::span<ad::Dual<16>>, const DccLayout&,
                                        double);
 template void to_natural<ad::Dual<32>>(std::span<const ad::Dual<32>>, std::span<ad::Dual<32>>, const DccLayout&,

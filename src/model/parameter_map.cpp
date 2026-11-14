@@ -644,9 +644,13 @@ template void to_natural<ad::Dual<8>>(std::span<const ad::Dual<8>>, std::span<ad
                                  const Standardization&);
 template ad::Dual<8> shock_moment<ad::Dual<8>>(std::span<const ad::Dual<8>>, const Layout&, std::size_t);
 template ad::Dual<8> persistence<ad::Dual<8>>(std::span<const ad::Dual<8>>, const Layout&);
+template void to_natural<ad::Dual<12>>(std::span<const ad::Dual<12>>, std::span<ad::Dual<12>>, const Layout&,
+                                 const Standardization&);
 template void to_natural<ad::Dual<16>>(std::span<const ad::Dual<16>>, std::span<ad::Dual<16>>, const Layout&,
                                  const Standardization&);
+template ad::Dual<12> shock_moment<ad::Dual<12>>(std::span<const ad::Dual<12>>, const Layout&, std::size_t);
 template ad::Dual<16> shock_moment<ad::Dual<16>>(std::span<const ad::Dual<16>>, const Layout&, std::size_t);
+template ad::Dual<12> persistence<ad::Dual<12>>(std::span<const ad::Dual<12>>, const Layout&);
 template ad::Dual<16> persistence<ad::Dual<16>>(std::span<const ad::Dual<16>>, const Layout&);
 template void to_natural<ad::Dual<32>>(std::span<const ad::Dual<32>>, std::span<ad::Dual<32>>, const Layout&,
                                  const Standardization&);

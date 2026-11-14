@@ -192,6 +192,9 @@ template void correlation_terms<double>(const StandardizedPanel&, const DccSpec&
 template void correlation_terms<ad::Dual<8>>(const StandardizedPanel&, const DccSpec&,
                                              const DccParameters<ad::Dual<8>>&, Stage,
                                              const CorrelationOutput<ad::Dual<8>>&);
+template void correlation_terms<ad::Dual<12>>(const StandardizedPanel&, const DccSpec&,
+                                              const DccParameters<ad::Dual<12>>&, Stage,
+                                              const CorrelationOutput<ad::Dual<12>>&);
 template void correlation_terms<ad::Dual<16>>(const StandardizedPanel&, const DccSpec&,
                                               const DccParameters<ad::Dual<16>>&, Stage,
                                               const CorrelationOutput<ad::Dual<16>>&);
@@ -205,6 +208,8 @@ template void correlation_terms<ad::Dual<kMaxParameterCount>>(const Standardized
 
 template double objective<double>(const StandardizedPanel&, const DccSpec&, std::span<const double>);
 template ad::Dual<8> objective<ad::Dual<8>>(const StandardizedPanel&, const DccSpec&, std::span<const ad::Dual<8>>);
+template ad::Dual<12> objective<ad::Dual<12>>(const StandardizedPanel&, const DccSpec&,
+                                              std::span<const ad::Dual<12>>);
 template ad::Dual<16> objective<ad::Dual<16>>(const StandardizedPanel&, const DccSpec&,
                                               std::span<const ad::Dual<16>>);
 template ad::Dual<32> objective<ad::Dual<32>>(const StandardizedPanel&, const DccSpec&,

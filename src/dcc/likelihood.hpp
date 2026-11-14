@@ -49,7 +49,7 @@ struct CorrelationOutput
 };
 
 // Fills out. spec.convention picks Nbar and the presample. Outside the domain of correlation_path every term and
-// every R_t is NaN. Instantiated for T = double, ad::Dual<8>, 16, 32 and kMaxParameterCount.
+// every R_t is NaN. Instantiated for T = double, ad::Dual<8>, 12, 16, 32 and kMaxParameterCount.
 template <class T>
 void correlation_terms(const StandardizedPanel& panel, const DccSpec& spec, const DccParameters<T>& theta,
                        Stage stage, const CorrelationOutput<T>& out);

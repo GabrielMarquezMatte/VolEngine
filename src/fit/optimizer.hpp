@@ -10,7 +10,7 @@
 namespace ve::fit
 {
 
-// The likelihoods and parameter maps exist only for ad::Dual<8>, 16, 32 and kMaxParameterCount: body runs with the
+// The likelihoods and parameter maps exist only for ad::Dual<8>, 12, 16, 32 and kMaxParameterCount: body runs with the
 // narrowest of them that holds k parameters. ad::variable writes grad[index] unchecked, so k must not exceed
 // kMaxParameterCount.
 template <class F>
@@ -20,6 +20,10 @@ decltype(auto) with_dual_width(std::size_t k, F&& body)
     if (k <= 8)
     {
         return body.template operator()<8>();
+    }
+    if (k <= 12)
+    {
+        return body.template operator()<12>();
     }
     if (k <= 16)
     {

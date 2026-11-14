@@ -10,8 +10,10 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <gtest/gtest.h>
 #include <numbers>
@@ -1378,6 +1380,26 @@ TEST_P(LikelihoodGrid, TermsSumToTotalAndScoresSumToGradient)
     for (std::size_t i = 0; i < theta.size(); ++i)
     {
         EXPECT_NEAR(sum.grad[i], ll.grad[i], 1e-9 * std::max(1.0, std::abs(ll.grad[i]))) << "parameter " << i;
+    }
+}
+
+// with_dual_width runs k = 9..12 on Dual<12>: each lane does the arithmetic of the same lane of Dual<32>, which the
+// finite-difference test above validates, so value and gradient agree bit for bit.
+TEST_P(LikelihoodGrid, Dual12AgreesWithDual32)
+{
+    if (theta.size() > 12)
+    {
+        GTEST_SKIP() << "k = " << theta.size() << " needs more than 12 lanes";
+    }
+    std::vector<Dual<12>> narrow_seeds = seeded<12>(theta);
+    std::vector<Dual<32>> wide_seeds = seeded<32>(theta);
+    Dual<12> narrow = loglik<Dual<12>>(r, narrow_seeds, layout, var_init, {});
+    Dual<32> wide = loglik<Dual<32>>(r, wide_seeds, layout, var_init, {});
+    EXPECT_EQ(std::bit_cast<std::uint64_t>(narrow.value), std::bit_cast<std::uint64_t>(wide.value));
+    for (std::size_t i = 0; i < theta.size(); ++i)
+    {
+        EXPECT_EQ(std::bit_cast<std::uint64_t>(narrow.grad[i]), std::bit_cast<std::uint64_t>(wide.grad[i]))
+            << "parameter " << i;
     }
 }
 

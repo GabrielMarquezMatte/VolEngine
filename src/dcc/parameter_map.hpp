@@ -85,7 +85,7 @@ std::vector<double> start_values(const DccLayout& layout);
 //   with one of them fixed at f, the other is sqrt(c^2 - f^2) logistic(u), c = 1 - 1e-8 (NaN when f >= c). The
 //   positive definite intercept is left to the objective.
 //   shape = 4 + 46 logistic(u).
-// delta > 0 is read by the aDCC only. Instantiated for T = double, ad::Dual<8>, 16, 32 and kMaxParameterCount.
+// delta > 0 is read by the aDCC only. Instantiated for T = double, ad::Dual<8>, 12, 16, 32 and kMaxParameterCount.
 template <class T>
 void to_natural(std::span<const T> u, std::span<T> theta, const DccLayout& layout, double delta);
 
