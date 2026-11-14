@@ -4,12 +4,15 @@
 #include "dcc/standard_errors.hpp"
 #include "fit/fit.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <iterator>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace
@@ -217,6 +220,26 @@ TEST(DccOracle, StandardErrors)
             EXPECT_NEAR(errors->robust[i], oracle.errors[i], 2e-3 * oracle.errors[i]);
         }
     }
+}
+
+// With the default config (tol 1e-6) the FDCC leaves its start and lands within the primary oracle tolerance; the
+// plan 4a review saw it reported Converged at the start, 0.007 below rmgarch's log-likelihood.
+TEST(DccOracle, Grid5FdccMvnormDefaultConfigLeavesStart)
+{
+    const auto oracle = std::ranges::find_if(kOracles, [](const auto& item)
+                                             { return std::string_view(item.id) == "grid5_FDCC_mvnorm"; });
+    ASSERT_NE(oracle, std::end(kOracles));
+    const auto fits = panel_fits(oracle->panel);
+    const auto pointers = pointers_of(fits);
+    auto panel = std::make_shared<const StandardizedPanel>(standardize(pointers));
+    const auto spec = oracle_spec(*oracle, pointers.size());
+    ve::FitConfig at_start;
+    at_start.max_iter = 0;
+    const auto start = fit_dcc(panel, spec, at_start);
+    const auto fit = fit_dcc(panel, spec, ve::FitConfig{});
+    ASSERT_EQ(fit.status, ve::FitStatus::Converged);
+    EXPECT_GE(fit.loglik, oracle->loglik - 1e-6 * std::fabs(oracle->loglik));
+    EXPECT_NE(fit.estimate, start.estimate);
 }
 
 TEST(DccOracle, Estimated)

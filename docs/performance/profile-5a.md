@@ -121,3 +121,23 @@ The grid with the option on (the default, as before) and off, `volengine_grid_pr
 The estimates, iterations and log-likelihoods are the same (`compare-profile`: evaluation ratio 1.0, worst
 log-likelihood change 0.0, same status counts); off, the fit evaluates the log-likelihood at the estimate once in
 `double` and skips the 2k gradients of the Hessian, the scores and Nyblom.
+
+### L-BFGS flat-step threshold (`ftol` 1e-12 to 1e-15)
+
+A step that decreased f by less than 1e-12·max(1, |f|) used to end a fit `CONVERGED` with a gradient up to √tol
+(Task 7, [Validation](../guide/validation.md#volengine-gradient-tolerance-tol--1e-7)). At 1e-15 a fit goes on along an
+ill-conditioned ridge until the gradient is below `tol`.
+
+| Measure | `ftol` 1e-12 | `ftol` 1e-15 |
+| --- | ---: | ---: |
+| Grid, 1 thread (s) | 67.7 | 67.8 |
+| Grid evaluations | 1.000 | 1.010 |
+| Grid `CONVERGED` / `MAX_ITER` | 1073 / 7 | 1071 / 9 |
+| `BM_DccGrid/m:21/T:5000/threads:1` (s, median of 3) | 10.70 | 10.77 (noise) |
+| `BM_TccGridSample/threads:1` (ms, median of 3) | 1129 | 1114 |
+
+No log-likelihood of the grid is lower. Five fits on series 11 and 18 now reach a higher one, by 1e-5 to 0.29: the
+old stop had labelled them converged on a ridge. Two of them, sGARCH(3,3)-ARMA(1,1)-norm (+0.29) and
+sGARCH(1,3)-ARMA(1,1)-std, now end `MAX_ITER` instead of a false `CONVERGED`. In the quick suite `BM_Loglik`, which
+`ftol` does not touch, moved by up to 18% between the two runs: that is the noise of this session, and no
+`BM_FitOne` moved by more.

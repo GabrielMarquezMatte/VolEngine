@@ -1,5 +1,6 @@
 #include "optim/lbfgs.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <gtest/gtest.h>
@@ -196,6 +197,33 @@ TEST(Lbfgs, LineSearchFailureWithNearlySmallGradientConverges)
     LbfgsResult result = ve::optim::lbfgs_minimize(quantized, x, {});
     EXPECT_EQ(result.stop, Stop::Converged);
     EXPECT_LE(std::abs(x[0]), 1e-4);
+}
+
+// A narrow curved valley (Rosenbrock with a steep wall): every step along its floor decreases f by less than 1e-12
+// while the gradient is still far above gtol. Reporting Converged there stops on the ridge, short of the optimum.
+TEST(Lbfgs, RidgeIsNotReportedConverged)
+{
+    auto steep_valley = [](std::span<const double> x, std::span<double> g)
+    {
+        constexpr double kWall = 1e8;
+        double a = 1.0 - x[0];
+        double b = x[1] - x[0] * x[0];
+        g[0] = -2.0 * a - 4.0 * kWall * x[0] * b;
+        g[1] = 2.0 * kWall * b;
+        return a * a + kWall * b * b;
+    };
+    std::vector<double> x{-1.2, 1.0};
+    LbfgsOptions options;
+    options.max_iter = 5000;
+    LbfgsResult result = ve::optim::lbfgs_minimize(steep_valley, x, options);
+    std::vector<double> g(2);
+    steep_valley(x, g);
+    const double scale = std::max(1.0, std::abs(result.f));
+    if (result.stop == Stop::Converged)
+    {
+        EXPECT_LE(std::max(std::abs(g[0]), std::abs(g[1])), options.gtol * scale);
+    }
+    EXPECT_LT(std::abs(x[0] - 1.0), 1e-4);
 }
 
 TEST(Lbfgs, ReportsLineSearchFailedWhenNoOtherPointIsFinite)

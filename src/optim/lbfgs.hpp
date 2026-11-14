@@ -28,7 +28,10 @@ struct LbfgsOptions
     int max_iter = 500;
     int memory = 10;
     double gtol = 1e-6;
-    double ftol = 1e-12;
+    // A step that decreases f by less than ftol * max(1, |f|) is flat: f cannot decrease measurably (1e-15 is about
+    // 4.5 machine epsilons). A larger ftol stops on ill-conditioned ridges, where every step is small but the
+    // gradient is still far above gtol.
+    double ftol = 1e-15;
 };
 
 struct LbfgsResult

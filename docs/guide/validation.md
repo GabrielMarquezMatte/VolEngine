@@ -247,9 +247,10 @@ One planned case moved, and two planned cases are kept as known divergences with
   and λ ≈ 1.0 compensating): `rugarch` ends at η₁ = 0.9957 (sstd) and 0.9983 (jsu), interior by the rule, and
   VolEngine at η₁ = 0.9928 and 0.9959, 1.5e-6 per observation lower in mean ℓ. There the largest component of
   the unconstrained gradient of the mean negative ℓ is 1e-7 to 3e-7, above `tol`·max(1, |f|) = 1.3e-7 but within
-  √tol·max(1, |f|) = 4e-4. A step decreases f by less than ftol·max(1, |f|), so the √tol acceptance of a flat
-  or failed line search in `src/optim/lbfgs.hpp` (`gradient_nearly_small`) ends the fit `CONVERGED`. Neither
-  tol = 1e-9 nor ftol = 0 moves the end point. On `egarch11_jsu` (λ̂ ≈ 1.1–1.2) the ALLGARCH-sstd likelihood
+  √tol·max(1, |f|) = 4e-4. Until plan 5a a step that decreased f by less than ftol = 1e-12·max(1, |f|) ended the
+  fit `CONVERGED` there. Since plan 5a ftol is 1e-15, the resolution of f, and the fits stop with the gradient below
+  `tol`·max(1, |f|); their ℓ does not move (the same to 1e-6 for tol from 1e-7 to 1e-12): along this ridge no step
+  decreases f at its resolution, so the √tol acceptance of a failed line search ends them. On `egarch11_jsu` (λ̂ ≈ 1.1–1.2) the ALLGARCH-sstd likelihood
   has a second local optimum: `rugarch` ends at η₂ = −0.128, VolEngine at η₂ = −0.044 (the point where both
   programs put the jsu fit), with an unconstrained gradient of 1.5e-6 there. `test_oracles.py` keeps the three
   cases with their `rugarch` fixtures and marks the comparison `xfail(strict=True)` (`KNOWN_DIVERGENCES`); their
@@ -388,7 +389,7 @@ added to both fixtures.
 | Every parameter fixed (`fit.loglik`, `fit.sigma`, criteria) | `ugarchfilter(spec, y)`: `likelihood`, `sigma`, `infocriteria` (k = 0) | `arch_model(...).fix(params)`: `.loglikelihood`, `.conditional_volatility` |
 
 Two numerical settings differ from the defaults, one on each side: `rugarch`'s Hessian step (`hess.d = 1e-3`,
-1e-4 for sged) and VolEngine's `tol = 1e-7` (`1e-10` for the apARCH variance-regressor comparison). Both are explained in [Numerical settings](#numerical-settings).
+1e-4 for sged) and VolEngine's `tol = 1e-7`. Both are explained in [Numerical settings](#numerical-settings).
 
 ## Conventions
 
@@ -990,24 +991,14 @@ unconstrained parametrization, is below `tol` = 1e-6 by default. On the ill-cond
 (1e-8, 1e-9) changes no estimate. The default is unchanged: the 4.7e-3 relative error in β̂₁ = 0.21 is
 9.7e-4 in absolute terms, 0.5% of its standard error (0.20).
 
-The `rugarch-sgarch11_vx_std/aparch11_vx_std` comparison uses `tol=1e-10`. At `1e-7`,
-VolEngine reports convergence with gamma1 `0.009081260685865455`, versus the oracle's
-`0.008940997509538143`: the absolute difference `1.40e-4` exceeds the unchanged `1e-5`
-criterion for a small coefficient, even though log-likelihood differs by only `-2.61e-6`.
-Tolerances `1e-8` and `1e-9` give the same point; at `1e-10`, with the default 500-iteration
-limit, gamma1 is `0.008935613373222129` (difference `5.38e-6`) and log-likelihood is
-`3.77e-8` above the oracle. Parameters, standard errors, sigma and criteria pass their
-original checks. This is a stricter optimizer setting for this oracle comparison only;
-the library default and assertion tolerances are unchanged. The case no longer needs to
-be excluded from the Python test suite.
-
-Why the point at `1e-7`, `1e-8` and `1e-9` is the same: L-BFGS (`src/optim/lbfgs.hpp`) also reports
-`Converged` when a step is flat (the decrease is below `ftol`) or its line search finds no decrease, provided the
-largest gradient entry is below `sqrt(tol)` times max(1, |f|), not `tol`. On this ridge the line search stalls
-there, so tightening `tol` changes nothing until `sqrt(tol)` drops below that gradient, at `1e-10`. A user at the
-default `tol` therefore gets gamma1 = 0.00908 labelled converged, 1.4e-4 from `rugarch`'s point, at a
-log-likelihood 2.6e-6 lower. Revisiting that stall acceptance is a plan-5 (optimizer) item; which commit made
-this case start to fail (it passed when the plan-2e table was written) was not bisected.
+The `rugarch-sgarch11_vx_std/aparch11_vx_std` comparison runs at `tol = 1e-7`, like the others, since plan 5a.
+Before it, L-BFGS (`src/optim/lbfgs.hpp`) also reported `Converged` when a step was flat, a decrease of f below
+ftol = 1e-12·max(1, |f|), provided the largest gradient entry was below `sqrt(tol)`·max(1, |f|), not `tol`. On this
+ridge every step was flat, so the fit stopped at gamma1 = 0.00908, 1.4e-4 from `rugarch`'s 0.00894, at a
+log-likelihood 2.6e-6 lower, labelled converged at the default `tol`; the comparison needed `tol = 1e-10`. Plan 5a
+set ftol to 1e-15, the resolution of f: a flat step now means that f cannot decrease measurably, and the fit goes on
+along the ridge until the gradient is below `tol`. A synthetic version of the same stall is
+`Lbfgs.RidgeIsNotReportedConverged` (a Rosenbrock valley with a wall of 1e8).
 
 ### VolEngine: Student-t near the normal limit
 

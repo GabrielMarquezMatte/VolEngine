@@ -83,10 +83,7 @@ def oracle_result(oracle: str, case_id: str) -> dict[str, Any]:
 
 
 def fit_options(oracle: Oracle, case: dict[str, Any]) -> ve.FitOptions:
-    tol = FIT_TOL
-    if oracle.name == "rugarch" and case["id"] == "sgarch11_vx_std/aparch11_vx_std":
-        tol = 1e-10
-    return ve.FitOptions(var_init=oracle.var_init, tol=tol)
+    return ve.FitOptions(var_init=oracle.var_init, tol=FIT_TOL)
 
 
 def case_spec(case: dict[str, Any]) -> ve.Spec:
@@ -166,7 +163,8 @@ ORACLE_CASE_IDS = [f"{oracle.name}-{case['id']}" for oracle, case in ORACLE_CASE
 OPTIMIZER = "VolEngine optimizer stops below the oracle's loglik (validation.md, known divergence)"
 QUADRATURE = "rugarch's fGARCH kappa quadrature enters its variance-targeting omega (validation.md, known divergence)"
 # docs/guide/validation.md, "Case selection", known divergences. strict, so that a fix has to remove the entry.
-# OPTIMIZER: VolEngine reports Converged below the oracle's log-likelihood. QUADRATURE: rugarch integrates the
+# OPTIMIZER: from its default start VolEngine stops (gradient below tol, or no decrease at the resolution of f) below
+# the oracle's log-likelihood; started at the oracle's estimate it stays there. QUADRATURE: rugarch integrates the
 # fGARCH kappa with integrate()'s default tolerance; under variance targeting that error moves its likelihood.
 KNOWN_DIVERGENCES = {
     "rugarch-aparch11_sged/fgarch_allgarch11_sstd": OPTIMIZER,
