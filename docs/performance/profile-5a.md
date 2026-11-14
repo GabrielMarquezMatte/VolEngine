@@ -201,3 +201,10 @@ A safeguarded quadratic interpolation in `LineSearch::zoom` (instead of bisectio
 2.2% and left its one-thread time within noise (30.5 s to 30.9 s), while moving some fits to other points of their
 flat optima. With a memory of 40 the line search takes 1.13 evaluations per iteration, so there is little left to
 save there; the bisection stays.
+
+### Profile after the changes
+
+The same uProf run as at the top (`msvc-profile`, 2 series, 1 thread) takes 8.1 s instead of 20.2 s. The hottest
+functions are the same kind: `Dual<12>` and `Dual<8>` arithmetic in `ad::chain`, `garch::sgarch_step`,
+`mean::arma_step_of` and the division. No new hot spot appeared; the forward-mode gradient is still where the time
+goes, which is the case for the reverse-mode gradient that follows plan 5a.
