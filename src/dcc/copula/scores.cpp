@@ -1,5 +1,7 @@
 #include "dcc/copula/scores.hpp"
 
+#include "ad/special.hpp"
+
 #include <boost/math/distributions/normal.hpp>
 #include <boost/math/policies/policy.hpp>
 #include <boost/math/distributions/students_t.hpp>
@@ -39,7 +41,7 @@ void student_scores(std::span<const double> u, double nu, std::span<double> epsi
 {
     const boost::math::students_t_distribution<double, DoublePolicy> student(nu);
     const double scale = std::sqrt((nu - 2.0) / nu);
-    const double constant = std::lgamma((nu + 1.0) / 2.0) - std::lgamma(nu / 2.0) -
+    const double constant = ve::ad::log_gamma((nu + 1.0) / 2.0) - ve::ad::log_gamma(nu / 2.0) -
                             0.5 * std::log(std::numbers::pi * (nu - 2.0));
     for (std::size_t k = 0; k < u.size(); ++k)
     {

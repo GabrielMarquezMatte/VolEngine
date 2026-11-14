@@ -34,12 +34,12 @@ struct Density
 template <class T>
 T density_constant(DccDist dist, double m, const T& shape)
 {
-    using std::lgamma;
+    using ve::ad::log_gamma;
     using std::log;
     const double log_two_pi = std::log(2.0 * std::numbers::pi);
     if (dist == DccDist::MvT)
     {
-        const T log_gamma_ratio = lgamma(0.5 * (shape + m)) - lgamma(0.5 * shape);
+        const T log_gamma_ratio = log_gamma(0.5 * (shape + m)) - log_gamma(0.5 * shape);
         return log_gamma_ratio - 0.5 * m * log(std::numbers::pi * (shape - 2.0));
     }
     if (dist == DccDist::MvLaplace)

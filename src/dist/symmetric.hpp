@@ -63,13 +63,13 @@ T stirling_series(const T& x)
 template <class T>
 T student_log_constant(const T& nu)
 {
-    using std::lgamma;
+    using ve::ad::log_gamma;
     using std::log;
     using std::log1p;
     T a = nu / 2.0;
     if (ad::value_of(a) < kStirlingThreshold)
     {
-        return (lgamma(a + 0.5) - lgamma(a)) - 0.5 * log(std::numbers::pi * (nu - 2.0));
+        return (log_gamma(a + 0.5) - log_gamma(a)) - 0.5 * log(std::numbers::pi * (nu - 2.0));
     }
     T expansion = (a * log1p(0.5 / a) - 0.5) + (stirling_series(a + 0.5) - stirling_series(a));
     return expansion - 0.5 * log1p(-1.0 / a) - 0.5 * std::log(2.0 * std::numbers::pi);
@@ -91,20 +91,20 @@ LogDensity<T> student_log_density(const T& nu)
 template <class T>
 T ged_log_scale(const T& nu)
 {
-    using std::lgamma;
+    using ve::ad::log_gamma;
     T inverse = 1.0 / nu;
-    return 0.5 * (-2.0 * inverse * std::numbers::ln2 + lgamma(inverse) - lgamma(3.0 * inverse));
+    return 0.5 * (-2.0 * inverse * std::numbers::ln2 + log_gamma(inverse) - log_gamma(3.0 * inverse));
 }
 
 template <class T>
 LogDensity<T> ged_log_density(const T& nu)
 {
     using std::exp;
-    using std::lgamma;
+    using ve::ad::log_gamma;
     using std::log;
     T inverse = 1.0 / nu;
     T log_lambda = ged_log_scale(nu);
-    T log_constant = log(nu) - log_lambda - (1.0 + inverse) * std::numbers::ln2 - lgamma(inverse);
+    T log_constant = log(nu) - log_lambda - (1.0 + inverse) * std::numbers::ln2 - log_gamma(inverse);
     return {Dist::Ged, log_constant, exp(log_lambda), nu};
 }
 
@@ -115,8 +115,8 @@ template <class T>
 T normal_abs_moment(const T& power)
 {
     using std::exp;
-    using std::lgamma;
-    T log_moment = 0.5 * power * std::numbers::ln2 + lgamma(0.5 * (power + 1.0));
+    using ve::ad::log_gamma;
+    T log_moment = 0.5 * power * std::numbers::ln2 + log_gamma(0.5 * (power + 1.0));
     return exp(log_moment) / std::sqrt(std::numbers::pi);
 }
 
@@ -126,14 +126,14 @@ T normal_abs_moment(const T& power)
 template <class T>
 T student_log_gamma_ratio(const T& nu, const T& power)
 {
-    using std::lgamma;
+    using ve::ad::log_gamma;
     using std::log;
     using std::log1p;
     T a = nu / 2.0;
     T b = -power / 2.0;
     if (ad::value_of(a + b) < kStirlingThreshold)
     {
-        return lgamma(a + b) - lgamma(a) - b * log(nu - 2.0);
+        return log_gamma(a + b) - log_gamma(a) - b * log(nu - 2.0);
     }
     T expansion = (a + b - 0.5) * log1p(b / a) - b - b * std::numbers::ln2 - b * log1p(-1.0 / a);
     return expansion + (stirling_series(a + b) - stirling_series(a));
@@ -144,8 +144,8 @@ template <class T>
 T student_abs_moment(const T& nu, const T& power)
 {
     using std::exp;
-    using std::lgamma;
-    T log_moment = student_log_gamma_ratio(nu, power) + lgamma(0.5 * (power + 1.0));
+    using ve::ad::log_gamma;
+    T log_moment = student_log_gamma_ratio(nu, power) + log_gamma(0.5 * (power + 1.0));
     return exp(log_moment) / std::sqrt(std::numbers::pi);
 }
 
@@ -155,9 +155,9 @@ template <class T>
 T ged_abs_moment(const T& nu, const T& power)
 {
     using std::exp;
-    using std::lgamma;
+    using ve::ad::log_gamma;
     T log_lambda = ged_log_scale(nu);
-    T log_gamma_ratio = lgamma((power + 1.0) / nu) - lgamma(1.0 / nu);
+    T log_gamma_ratio = log_gamma((power + 1.0) / nu) - log_gamma(1.0 / nu);
     return exp(power * log_lambda + (power / nu) * std::numbers::ln2 + log_gamma_ratio);
 }
 

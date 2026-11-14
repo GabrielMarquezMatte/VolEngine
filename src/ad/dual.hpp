@@ -312,9 +312,9 @@ Dual<N> pow(const Dual<N>& x, const Dual<N>& exponent)
 }
 
 template <std::size_t N>
-Dual<N> lgamma(const Dual<N>& x)
+Dual<N> log_gamma(const Dual<N>& x)
 {
-    return chain(x, std::lgamma(x.value), digamma(x.value));
+    return chain(x, log_gamma(x.value), digamma(x.value));
 }
 
 }

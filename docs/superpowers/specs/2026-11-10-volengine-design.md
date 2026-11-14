@@ -282,6 +282,7 @@ quando há evidência medida de que a própria é mais rápida.
 | SIMD | Google Highway (despacho em runtime AVX2/AVX-512/NEON). Intrínsecos diretos só em kernel com benchmark que prove ganho. |
 | Threads | BS::thread_pool (single header) |
 | Bessel K (nig, ghyp) | Boost.Math (só esse header); `std::cyl_bessel_k` não existe no libc++. Implementação própria se benchmark mostrar ganho. |
+| log Γ, quantis, beta incompleta | Boost.Math, com `promote_double<false>` (o `std::lgamma` escreve o `signgam` global, uma corrida entre threads; plano 5a). |
 | Otimizador | Próprio (L-BFGS em lote) |
 | Álgebra linear | Própria (Cholesky pequeno com SIMD); sem Eigen |
 | Densidades | Próprias (fórmulas fechadas) |

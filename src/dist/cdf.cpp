@@ -1,4 +1,6 @@
 #include "dist/cdf.hpp"
+
+#include "ad/special.hpp"
 #include "dist/moments.hpp"
 
 #include <boost/math/distributions/normal.hpp>
@@ -193,7 +195,7 @@ double kernel_lower_quantile(const LogDensity<double>& density, double tail)
     }
     // A large power puts the argument of the central quantiles below the double range (P(a, x) ~ x^a / Gamma(a + 1)
     // for a = 1/power): the same root, in logs.
-    double log_argument = (std::log1p(-2.0 * tail) + std::lgamma(order + 1.0)) * density.power;
+    double log_argument = (std::log1p(-2.0 * tail) + ve::ad::log_gamma(order + 1.0)) * density.power;
     return -density.scale * std::exp(order * (std::numbers::ln2 + log_argument));
 }
 
