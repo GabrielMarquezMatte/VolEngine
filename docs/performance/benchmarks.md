@@ -1,6 +1,7 @@
 # Benchmarks
 
-Results of the C++ Google Benchmark suite (`tests/benchmarks/fit_benchmarks.cpp`). Every number below comes from
+Results of the C++ Google Benchmark suite (`tests/benchmarks/fit_benchmarks.cpp`). For quick measurements, A/B
+comparisons and profiles, see [Measuring](measuring.md). Every number below comes from
 the one machine listed here. Compare only runs from the same machine: a number from another machine says nothing about
 this library. No other library is measured, so no comparison with one is made.
 

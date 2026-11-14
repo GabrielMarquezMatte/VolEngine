@@ -315,14 +315,16 @@ void report_status(benchmark::State& state, const StatusCounts& counts)
     state.counters["other"] = static_cast<double>(counts.other);
 }
 
-void run_fit_one(benchmark::State& state, const NamedSpec& named)
+// Times fit(), which returns a FitResult. The counters are the status and the optimizer work of the last fit;
+// every iteration repeats the same fit.
+template <class F>
+void time_fit(benchmark::State& state, F&& fit)
 {
-    const std::vector<double> r = series_of(named);
-    const ve::FitConfig config;
     StatusCounts counts;
+    ve::FitWork work;
     for (auto _ : state)
     {
-        ve::FitResult result = ve::fit_one(r, named.spec, config);
+        ve::FitResult result = fit();
         counts = StatusCounts{};
         counts.add(static_cast<int32_t>(result.status));
         if (counts.other != 0)
@@ -330,11 +332,20 @@ void run_fit_one(benchmark::State& state, const NamedSpec& named)
             state.SkipWithError("the fit ended neither CONVERGED nor MAX_ITER");
             return;
         }
+        work = result.work;
         benchmark::DoNotOptimize(result.loglik);
     }
     report_status(state, counts);
+    state.counters["iterations"] = work.iterations;
+    state.counters["evaluations"] = work.evaluations;
     state.counters["fits_per_s"] =
         benchmark::Counter(static_cast<double>(state.iterations()), benchmark::Counter::kIsRate);
+}
+
+void run_fit_one(benchmark::State& state, const NamedSpec& named)
+{
+    const std::vector<double> r = series_of(named);
+    time_fit(state, [&] { return ve::fit_one(r, named.spec, ve::FitConfig{}); });
 }
 
 // The regressor series of the unit tests, each fitted under the model that generated it.
@@ -420,23 +431,7 @@ void run_regressor_fit_one(benchmark::State& state, const RegressorCase& item)
 {
     const ve::testing::RegressorSeries series = ve::testing::simulate_regressor_process(item.process, 1, kObservations);
     const ve::model::Data data = regressor_data(series);
-    const ve::FitConfig config;
-    StatusCounts counts;
-    for (auto _ : state)
-    {
-        ve::FitResult result = ve::fit_one(data, item.spec, config);
-        counts = StatusCounts{};
-        counts.add(static_cast<int32_t>(result.status));
-        if (counts.other != 0)
-        {
-            state.SkipWithError("the fit ended neither CONVERGED nor MAX_ITER");
-            return;
-        }
-        benchmark::DoNotOptimize(result.loglik);
-    }
-    report_status(state, counts);
-    state.counters["fits_per_s"] =
-        benchmark::Counter(static_cast<double>(state.iterations()), benchmark::Counter::kIsRate);
+    time_fit(state, [&] { return ve::fit_one(data, item.spec, ve::FitConfig{}); });
 }
 
 template <class T, void (*Free)(T*)>
@@ -554,14 +549,15 @@ void report_counts(benchmark::State& state, const StatusCounts& counts, std::siz
         benchmark::Counter(static_cast<double>(jobs * state.iterations()), benchmark::Counter::kIsRate);
 }
 
-void run_batch(benchmark::State& state, const std::vector<ve::Spec>& specs, const ve::Spec& generator,
-               int threads)
+// Every spec on each of the first `series` series simulated from generator.
+void run_batch(benchmark::State& state, const std::vector<ve::Spec>& specs, const ve::Spec& generator, int threads,
+               std::size_t series)
 {
     try
     {
         const std::vector<double> data =
-            ve::bench::simulate_panel(ve::bench::simulated_model_for(generator), kObservations, kBatchSeries);
-        BatchWorkload workload(specs, data, kBatchSeries, threads);
+            ve::bench::simulate_panel(ve::bench::simulated_model_for(generator), kObservations, series);
+        BatchWorkload workload(specs, data, series, threads);
         if (workload.jobs() == 0)
         {
             state.SkipWithError("the grid produced no jobs");
@@ -583,6 +579,25 @@ void run_batch(benchmark::State& state, const std::vector<ve::Spec>& specs, cons
     {
         state.SkipWithError(error.what());
     }
+}
+
+// One spec per (p, q, ARMA) of the TCC grid, 18 in all, with the distribution kSymmetricDists[(p + q + arma) % 3]:
+// every order, ARMA and distribution of the grid, for a quick before/after.
+std::vector<ve::Spec> tcc_sample()
+{
+    std::vector<ve::Spec> sample;
+    for (const int arma : {0, 1})
+    {
+        for (int p = 1; p <= 3; ++p)
+        {
+            for (int q = 1; q <= 3; ++q)
+            {
+                const auto dist = kSymmetricDists[static_cast<std::size_t>(p + q + arma) % kSymmetricDists.size()];
+                sample.push_back(make_spec(p, q, arma, arma, dist));
+            }
+        }
+    }
+    return sample;
 }
 
 constexpr double kMaxFailureShare = 0.05;
@@ -901,23 +916,7 @@ void run_arfima_loglik(benchmark::State& state, bool with_gradient)
 void run_arfima_fit_one(benchmark::State& state)
 {
     const ArfimaCase& item = arfima_case();
-    const ve::FitConfig config;
-    StatusCounts counts;
-    for (auto _ : state)
-    {
-        ve::FitResult result = ve::fit_one(item.r, item.spec, config);
-        counts = StatusCounts{};
-        counts.add(static_cast<int32_t>(result.status));
-        if (counts.other != 0)
-        {
-            state.SkipWithError("the fit ended neither CONVERGED nor MAX_ITER");
-            return;
-        }
-        benchmark::DoNotOptimize(result.loglik);
-    }
-    report_status(state, counts);
-    state.counters["fits_per_s"] =
-        benchmark::Counter(static_cast<double>(state.iterations()), benchmark::Counter::kIsRate);
+    time_fit(state, [&] { return ve::fit_one(item.r, item.spec, ve::FitConfig{}); });
 }
 
 // One forecast of 60 steps from a fit made once, outside the timing: the cost of forecast::forecast alone.
@@ -1443,7 +1442,7 @@ void register_all()
     for (const int threads : {1, 2, 4, 8, 0})
     {
         const std::string name = "BM_Batch/threads:" + thread_label(threads);
-        benchmark::RegisterBenchmark(name, run_batch, single, single.front(), threads)
+        benchmark::RegisterBenchmark(name, run_batch, single, single.front(), threads, kBatchSeries)
             ->Unit(benchmark::kMillisecond)
             ->UseRealTime();
     }
@@ -1454,11 +1453,16 @@ void register_all()
     for (const int threads : {1, 0})
     {
         const std::string name = "BM_TccGrid/threads:" + thread_label(threads);
-        benchmark::RegisterBenchmark(name, run_batch, grid, heavy_tails, threads)
+        benchmark::RegisterBenchmark(name, run_batch, grid, heavy_tails, threads, kBatchSeries)
             ->Unit(benchmark::kSecond)
             ->UseRealTime()
             ->Iterations(1);
     }
+    static const std::vector<ve::Spec> sample = tcc_sample();
+    benchmark::RegisterBenchmark("BM_TccGridSample/threads:1", run_batch, sample, heavy_tails, 1, std::size_t{1})
+        ->Unit(benchmark::kMillisecond)
+        ->UseRealTime()
+        ->Iterations(1);
     benchmark::RegisterBenchmark("BM_TccGridAllModels/threads:hw", run_all_models, heavy_tails)
         ->Unit(benchmark::kSecond)
         ->UseRealTime()
