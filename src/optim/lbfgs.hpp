@@ -36,6 +36,8 @@ struct LbfgsResult
     Stop stop;
     int iterations;
     double f;
+    // Calls of the objective, the one at the start included.
+    int evaluations;
 };
 
 namespace detail
@@ -99,7 +101,7 @@ private:
     LbfgsResult finish(Stop stop, int iterations)
     {
         std::ranges::copy(current_.x, x_.begin());
-        return {stop, iterations, current_.f};
+        return {stop, iterations, current_.f, search_.evaluations() + 1};
     }
 
     double scale() const

@@ -47,6 +47,20 @@ TEST(Lbfgs, MinimizesRosenbrock)
     EXPECT_LT(std::abs(x[1] - 1.0), 1e-5);
 }
 
+TEST(Lbfgs, CountsEvaluations)
+{
+    int calls = 0;
+    auto counted = [&calls](std::span<const double> x, std::span<double> g)
+    {
+        ++calls;
+        return weighted_quadratic(x, g);
+    };
+    std::vector<double> x(10, 1.0);
+    LbfgsResult result = ve::optim::lbfgs_minimize(counted, x, {});
+    EXPECT_EQ(result.evaluations, calls);
+    EXPECT_GE(result.evaluations, result.iterations + 1);
+}
+
 TEST(Lbfgs, ResultValueIsObjectiveAtReturnedPoint)
 {
     std::vector<double> x{-1.2, 1.0};

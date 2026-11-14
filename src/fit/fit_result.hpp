@@ -21,6 +21,15 @@ enum class FitStatus : int32_t
     InsufficientData = 3
 };
 
+// The work of a fit, for profiling; not in the C API. Timing never feeds the computation.
+struct FitWork
+{
+    int iterations = 0;
+    int evaluations = 0;
+    double seconds = 0.0;
+    double optimizer_seconds = 0.0;
+};
+
 // Series (sigma, residuals, std_residuals, fitted) have length nobs, or are empty without a finite estimate.
 // sigma is the conditional standard deviation, not the variance.
 struct FitResult
@@ -40,6 +49,7 @@ struct FitResult
     std::vector<double> fitted;
     forecast::ForecastState state;
     fit::Nyblom nyblom;
+    FitWork work;
 };
 
 }

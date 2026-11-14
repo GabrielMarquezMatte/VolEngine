@@ -46,6 +46,12 @@ public:
         return accepted_by_fallback_;
     }
 
+    // Calls of the objective over every run.
+    int evaluations() const
+    {
+        return evaluations_;
+    }
+
     bool run(const Point& origin, std::span<const double> direction, double initial_step)
     {
         origin_ = &origin;
@@ -74,6 +80,7 @@ private:
         }
         trial_.f = objective_(std::span<const double>(trial_.x), std::span<double>(trial_.g));
         ++trials_used_;
+        ++evaluations_;
         if (!std::isfinite(trial_.f) || !all_finite(trial_.g))
         {
             return false;
@@ -164,6 +171,7 @@ private:
     std::span<const double> direction_{};
     double slope0_ = 0.0;
     int trials_used_ = 0;
+    int evaluations_ = 0;
     bool accepted_by_fallback_ = false;
     Point trial_;
     Point best_;

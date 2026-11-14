@@ -82,6 +82,23 @@ TEST(Fit, RecoversSimulatedParameters)
     EXPECT_EQ(result.nobs, kObservations);
 }
 
+TEST(Fit, ReportsItsWork)
+{
+    FitResult result = fit_simulated(Spec{});
+    ASSERT_EQ(result.status, FitStatus::Converged);
+    EXPECT_GT(result.work.iterations, 0);
+    EXPECT_GE(result.work.evaluations, result.work.iterations + 1);
+    EXPECT_GT(result.work.optimizer_seconds, 0.0);
+    EXPECT_GE(result.work.seconds, result.work.optimizer_seconds);
+}
+
+TEST(Fit, InsufficientDataDoesNoOptimizerWork)
+{
+    FitResult result = ve::fit_one(std::span<const double>(simulated()).first(3), Spec{}, ve::FitConfig{});
+    EXPECT_EQ(result.work.iterations, 0);
+    EXPECT_EQ(result.work.evaluations, 0);
+}
+
 TEST(Fit, NamesFollowRugarch)
 {
     FitResult with_mean = fit_simulated(Spec{});

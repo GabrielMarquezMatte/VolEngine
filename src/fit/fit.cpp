@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <functional>
@@ -28,6 +29,13 @@ namespace
 
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 constexpr double kInfinity = std::numeric_limits<double>::infinity();
+
+using Clock = std::chrono::steady_clock;
+
+double seconds_since(Clock::time_point start)
+{
+    return std::chrono::duration<double>(Clock::now() - start).count();
+}
 
 using fit::status_from;
 using fit::with_dual_width;
@@ -286,8 +294,12 @@ optim::Stop estimate_parameters(const fit::LikelihoodProblem& problem,
     std::size_t k = problem.layout.count();
     std::vector<double> u(k);
     model::to_unconstrained(theta, u, problem.layout, standardization);
+    const Clock::time_point start = Clock::now();
     optim::LbfgsResult outcome = with_dual_width(
         k, [&]<std::size_t N>() { return minimize<N>(problem, standardization, result.config, u); });
+    result.work.optimizer_seconds = seconds_since(start);
+    result.work.iterations = outcome.iterations;
+    result.work.evaluations = outcome.evaluations;
     if (outcome.stop == optim::Stop::NonFinite)
     {
         return outcome.stop;
@@ -329,8 +341,10 @@ FitStatus estimate(const model::Data& data, FitResult& result)
 
 FitResult fit_one(const model::Data& data, const Spec& spec, const FitConfig& config)
 {
+    const Clock::time_point start = Clock::now();
     FitResult result = empty_result(spec, config, data.r.size(), FitStatus::Failed);
     result.status = estimate(data, result);
+    result.work.seconds = seconds_since(start);
     return result;
 }
 
