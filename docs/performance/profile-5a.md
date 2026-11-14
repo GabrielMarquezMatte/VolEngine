@@ -178,3 +178,19 @@ Every oracle comparison passes. The overparametrized fits of the grid (sGARCH(p,
 sGARCH(1,1)) have several local optima, and the new path ends at another one on some series: 36 fits reach a
 log-likelihood higher by more than 1e-3 (up to +0.93), 19 a lower one (down to −2.83, among them fits that ended
 `MAX_ITER` before); the sum over the 1080 fits is −6.6. The author accepted the change with these numbers.
+
+### Job order and block size
+
+`ve::run_batch` ran contiguous blocks of jobs, 8 per thread, in job order; the grid's jobs are spec-major, so the
+costly sGARCH(3,3)-ARMA(1,1) fits of one spec ran next to each other. It now runs one fit per block, the jobs by
+decreasing parameter count (ties in job order). Results do not depend on the order (each job writes its own slot;
+`CapiFit.ResultIndependentOfThreadCount` with 1, 3, 4 and 16 threads). Grid with 16 threads, three runs each:
+
+| Scheduling | Wall (s) | `pool_use` |
+| --- | --- | ---: |
+| 8 blocks per thread, job order (before) | 4.62, 4.50, 4.48 | 0.92 |
+| One fit per block, job order | 4.47, 4.27, 4.26 | 0.98 |
+| One fit per block, costliest first (now) | 4.34, 4.23, 4.21 | 1.00 |
+
+The ordering gains little on this grid, whose costly specs are spread over it, but keeps a batch whose costliest
+specs come last from ending on one long fit.

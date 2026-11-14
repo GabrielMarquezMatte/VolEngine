@@ -529,13 +529,15 @@ TEST(CapiFit, ResultIndependentOfThreadCount)
 {
     ThirtyThreeJobs scenario;
     ve::testing::ContextPtr single = ve::testing::make_context(1);
-    ve::testing::ContextPtr many = ve::testing::make_context(4);
     const std::vector<Snapshot> one_thread =
         snapshots_of(ve::testing::fit_all(single.get(), scenario.batch.get()));
-    const std::vector<Snapshot> four_threads =
-        snapshots_of(ve::testing::fit_all(many.get(), scenario.batch.get()));
     ASSERT_EQ(one_thread.size(), kThirtyThreeJobs);
-    EXPECT_EQ(one_thread, four_threads);
+    for (const int32_t threads : {3, 4, 16})
+    {
+        ve::testing::ContextPtr many = ve::testing::make_context(threads);
+        EXPECT_EQ(snapshots_of(ve::testing::fit_all(many.get(), scenario.batch.get())), one_thread)
+            << threads << " threads";
+    }
 }
 
 TEST(CapiFit, SetThreadsDuringFitBatchKeepsResults)

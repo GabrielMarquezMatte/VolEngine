@@ -3,17 +3,18 @@
 #include "core/blocks.hpp"
 #include "fit/fit.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <functional>
+#include <numeric>
 
 namespace ve
 {
 
 namespace
 {
-
-constexpr std::size_t kBlocksPerThread = 8;
 
 std::optional<std::string> check_job_indices(const Batch& batch)
 {
@@ -227,17 +228,34 @@ FitResult run_job(const Batch& batch, std::size_t index)
     return fit_one(data, batch.specs[job.spec], batch.config);
 }
 
-// Every job writes only its own slot of `results`.
+// The jobs by decreasing parameter count of their spec, ties in job order: the costliest fits start first, so the
+// tail of the batch is made of cheap ones.
+std::vector<std::size_t> costliest_first(const Batch& batch)
+{
+    std::vector<std::size_t> counts;
+    for (const Spec& spec : batch.specs)
+    {
+        counts.push_back(model::layout_of(spec).estimated_count());
+    }
+    std::vector<std::size_t> order(batch.jobs.size());
+    std::iota(order.begin(), order.end(), std::size_t{0});
+    std::ranges::stable_sort(order, std::greater<>{}, [&](std::size_t job) { return counts[batch.jobs[job].spec]; });
+    return order;
+}
+
+// One fit per block, the costliest first. Every job writes only its own slot of `results`, so the order changes no
+// result.
 void run_blocks(BS::light_thread_pool& pool, int threads, const Batch& batch, std::vector<FitResult>& results)
 {
+    const std::vector<std::size_t> order = costliest_first(batch);
     auto run_block = [&](std::size_t first, std::size_t last)
     {
-        for (std::size_t job = first; job < last; ++job)
+        for (std::size_t position = first; position < last; ++position)
         {
-            results[job] = run_job(batch, job);
+            results[order[position]] = run_job(batch, order[position]);
         }
     };
-    run_in_blocks(pool, threads, results.size(), kBlocksPerThread, run_block);
+    run_in_blocks(pool, threads, results.size(), results.size(), run_block);
 }
 
 }
