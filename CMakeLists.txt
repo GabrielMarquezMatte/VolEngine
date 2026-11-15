@@ -156,7 +156,10 @@ if(MINGW)
         -Wl,--output-def,${CMAKE_CURRENT_BINARY_DIR}/volengine.def)
 elseif(NOT WIN32 AND NOT APPLE)
     # libstdc++.so.6 and libgcc_s.so.1 are not on every distribution (musl, minimal images).
-    target_link_options(volengine PRIVATE -static-libstdc++ -static-libgcc)
+    # --exclude-libs keeps the symbols of the static libstdc++ out of the export table: the library exports the C interface
+    # (ve_*) and nothing else, so it cannot interpose on the libstdc++ of the program that loads it, and the ABI dump
+    # lists only the interface.
+    target_link_options(volengine PRIVATE -static-libstdc++ -static-libgcc -Wl,--exclude-libs,ALL)
 endif()
 
 if(VE_BUILD_TESTS)
