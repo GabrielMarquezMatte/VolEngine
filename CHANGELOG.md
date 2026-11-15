@@ -9,8 +9,19 @@ library whose ABI version differs).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-15
+
 ### Added
 
+- `pip install volengine` without a compiler on Windows x64, macOS arm64 and x64, and Linux glibc (manylinux_2_28)
+  and musl (musllinux_1_2) on x64 and arm64. One `py3-none-<platform>` wheel per platform serves every Python from
+  3.11; the library inside has a static C++ runtime and runs on the baseline CPU of its architecture, with the SIMD
+  paths chosen at run time.
+- A tag `v*` publishes the wheels to PyPI and the native libraries (`volengine-native-<os>-<arch>.<ext>`, plus
+  `.dll.a` and `.lib` for Windows) with an SBOM to a GitHub Release; a tag with a `-` is a prerelease.
+- `python/scripts/build_native.py`, `check_native_deps.py` and `build_wheel.sh`: build the library for a wheel, fail
+  if it needs a compiler runtime a clean machine lacks, and fail if the wheel tag claims an older system than the
+  library needs.
 - `ve_fit_options_set_standard_errors(o, on)` (Python: `FitOptions(standard_errors=...)`, default on). Off, a fit skips
   the inference at the estimate (Hessian and robust standard errors, scores, Nyblom), about a tenth of its time; the
   standard-error, t, p and Nyblom accessors then return `VE_INVALID_ARGUMENT`. Estimates, log-likelihood, criteria,

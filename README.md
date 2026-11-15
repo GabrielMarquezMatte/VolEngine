@@ -7,7 +7,7 @@ not depend on the thread count. Univariate default conventions follow R's `rugar
 
 ## Status
 
-Version 0.1.0 (pre-release). Supported models, each with orders 1 to 6: sGARCH, eGARCH, gjrGARCH, apARCH, iGARCH,
+Version 0.9.0 (pre-release). Supported models, each with orders 1 to 6: sGARCH, eGARCH, gjrGARCH, apARCH, iGARCH,
 csGARCH and fGARCH with its eight submodels (garch, tgarch, avgarch, ngarch, nagarch, aparch, gjrgarch, allgarch).
 Every model takes an ARMA(m,n) conditional mean (orders 0 to 6, with or without a constant) and normal (`norm`),
 Student-t (`std`) or GED (`ged`) innovations, or the skewed ones: skewed Student-t (`sstd`), skewed GED (`sged`),
@@ -23,6 +23,22 @@ DCC and asymmetric DCC (aDCC) support orders 1 to 6; flexible DCC (FDCC) uses or
 groups. All three support `mvnorm`, `mvt` and `mvlaplace`, fixed parameters, start values and optional two-stage
 Hessian and robust standard errors. Public DCC conventions follow the papers; the internal `rmgarch` convention
 exists for numerical validation.
+
+## Install
+
+```
+pip install volengine
+```
+
+Python 3.11 or newer. The wheel carries the native library and needs no compiler. Wheels exist for:
+
+- Windows x64
+- macOS arm64 and x64 (macOS 11 or newer)
+- Linux glibc, x64 and arm64 (glibc 2.28 or newer)
+- Linux musl, x64 and arm64 (musl 1.2 or newer, as in Alpine)
+
+On another platform pip reports that no distribution matches; there is no source distribution. The native
+libraries alone are attached to each [GitHub Release](https://github.com/GabrielMarquezMatte/VolEngine/releases).
 
 ## Python example
 
@@ -230,8 +246,8 @@ ctest --preset gcc-release
 ```
 
 Other presets: `gcc-debug`, `msvc-release` and `native-release` (the default compiler, taken from `CC` and `CXX`).
-Install the Python package with `pip install -e "python[test]"` and point it to the built library with the
-`VOLENGINE_LIB` environment variable. See [CONTRIBUTING.md](CONTRIBUTING.md) for details and
+Run the Python tests with `uv run --project python pytest python/tests` and point the package to the built library
+with the `VOLENGINE_LIB` environment variable. See [CONTRIBUTING.md](CONTRIBUTING.md) for details and
 [ARCHITECTURE.md](ARCHITECTURE.md) for the code map. Measurements are in
 [docs/performance/benchmarks.md](docs/performance/benchmarks.md) (C++) and
 [docs/performance/python-vs-arch.md](docs/performance/python-vs-arch.md) (against `arch`).
