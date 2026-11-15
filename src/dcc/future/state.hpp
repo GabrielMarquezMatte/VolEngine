@@ -61,9 +61,8 @@ private:
     std::vector<double> score_ring_;
     std::vector<double> q_;
     std::vector<double> r_;
-    std::vector<double> z_products_;
-    std::vector<double> n_products_;
     std::vector<double> n_;
+    std::vector<double> scale_;
 };
 
 }

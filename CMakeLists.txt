@@ -114,6 +114,8 @@ add_library(volengine_core STATIC
     src/sim/samplers.cpp
     src/sim/simulate.cpp
     src/sim/start.cpp
+    src/simd/cholesky_kernels.cpp
+    src/simd/dcc_kernels.cpp
     src/simd/reduce.cpp)
 set_target_properties(volengine_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(volengine_core PUBLIC src include)
@@ -227,6 +229,8 @@ if(VE_BUILD_TESTS)
         tests/unit/sim/samplers_test.cpp
         tests/unit/sim/simulate_test.cpp
         tests/unit/sim/start_test.cpp
+        tests/unit/simd/cholesky_kernels_test.cpp
+        tests/unit/simd/dcc_kernels_test.cpp
         tests/unit/simd/reduce_test.cpp)
     target_include_directories(volengine_tests PRIVATE tests/unit)
     target_compile_definitions(volengine_tests PRIVATE VE_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/reference/data")

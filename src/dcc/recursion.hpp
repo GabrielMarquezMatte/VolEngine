@@ -4,11 +4,14 @@
 #include "dcc/panel.hpp"
 #include "dcc/spec.hpp"
 #include "linalg/cholesky.hpp"
+#include "simd/dcc_kernels.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <optional>
 #include <span>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -217,7 +220,8 @@ public:
     {
     }
 
-    std::span<const T> next()
+    // Q_t, packed, without the normalization: what the batched double likelihood takes.
+    std::span<const T> advance()
     {
         std::ranges::copy(weights_.intercept, q_.begin());
         for (std::size_t lag = 1; lag <= weights_.a.size() / count_; ++lag)
@@ -229,18 +233,29 @@ public:
             add_lagged_q(lag);
         }
         store_q();
-        correlation();
         ++t_;
+        return q_;
+    }
+
+    std::span<const T> next()
+    {
+        advance();
+        correlation();
         return r_;
     }
 
-    // The packed Q_t of the last next().
+    // The packed Q_t of the last next() or advance().
     std::span<const T> q() const { return q_; }
 
 private:
     template <class U>
     void add_weighted(std::span<const T> weights, std::span<const U> x)
     {
+        if constexpr (std::is_same_v<T, double> && std::is_same_v<U, double>)
+        {
+            simd::multiply_add(q_, weights, x);
+            return;
+        }
         for (std::size_t k = 0; k < count_; ++k)
         {
             q_[k] = q_[k] + weights[k] * x[k];
@@ -267,8 +282,33 @@ private:
         }
     }
 
+    // The double instantiation adds the weighted products of the scores without forming them.
+    void add_score_news(std::size_t lag)
+    {
+        const std::size_t m = panel_.m;
+        const std::span<const double> z(panel_.z.data() + (t_ - lag) * m, m);
+        simd::add_outer(q_, lag_block(weights_.a, lag), z);
+        if (weights_.g.empty())
+        {
+            return;
+        }
+        for (std::size_t i = 0; i < m; ++i)
+        {
+            n_[i] = z[i] < 0.0 ? z[i] : 0.0;
+        }
+        simd::add_outer(q_, lag_block(weights_.g, lag), n_);
+    }
+
     void add_news(std::size_t lag)
     {
+        if constexpr (std::is_same_v<T, double>)
+        {
+            if (t_ >= lag)
+            {
+                add_score_news(lag);
+                return;
+            }
+        }
         const bool presample = t_ < lag;
         if (!presample)
         {
@@ -304,6 +344,11 @@ private:
 
     void correlation()
     {
+        if constexpr (std::is_same_v<T, double>)
+        {
+            simd::correlation_from_q(q_, panel_.m, scale_, r_);
+            return;
+        }
         using std::sqrt;
         const std::size_t m = panel_.m;
         for (std::size_t i = 0; i < m; ++i)
@@ -337,23 +382,60 @@ private:
 
 }
 
+namespace detail
+{
+
+// The recursion of theta, or nothing when theta is outside the domain: an aDCC whose delta (of the convention) is
+// not finite, or an FDCC whose intercept is not positive definite.
+template <class T>
+std::optional<CorrelationRecursion<T>> recursion_of(const StandardizedPanel& panel, const DccSpec& spec,
+                                                    const DccParameters<T>& theta, Stage stage)
+{
+    StageMoments moments = stage_moments(panel, spec, stage);
+    Weights<T> weights = weights_of(theta, spec, moments);
+    std::optional<CorrelationRecursion<T>> recursion;
+    if (in_domain(panel, spec, weights))
+    {
+        recursion.emplace(panel, std::move(weights), std::move(moments));
+    }
+    return recursion;
+}
+
+}
+
+// Calls visit(t, Q_t) for t = 0..T-1, Q_t packed lower (m (m + 1) / 2), under the convention of spec and the
+// presample of stage, without the normalization to correlations. Returns false, without visiting, when theta is
+// outside the domain (see detail::recursion_of).
+template <class T, class Visit>
+bool q_path(const StandardizedPanel& panel, const DccSpec& spec, const DccParameters<T>& theta, Stage stage,
+            Visit&& visit)
+{
+    auto recursion = detail::recursion_of(panel, spec, theta, stage);
+    if (!recursion)
+    {
+        return false;
+    }
+    for (std::size_t t = 0; t < panel.t; ++t)
+    {
+        visit(t, recursion->advance());
+    }
+    return true;
+}
+
 // Calls visit(t, R_t) for t = 0..T-1, R_t row-major m x m, under the convention of spec and the presample of
-// stage. Returns false, without visiting, when theta is outside the domain: an aDCC whose delta (of the
-// convention) is not finite, or an FDCC whose intercept is not positive definite.
+// stage. Returns false, without visiting, when theta is outside the domain (see detail::recursion_of).
 template <class T, class Visit>
 bool correlation_path(const StandardizedPanel& panel, const DccSpec& spec, const DccParameters<T>& theta, Stage stage,
                       Visit&& visit)
 {
-    detail::StageMoments moments = detail::stage_moments(panel, spec, stage);
-    detail::Weights<T> weights = detail::weights_of(theta, spec, moments);
-    if (!detail::in_domain(panel, spec, weights))
+    auto recursion = detail::recursion_of(panel, spec, theta, stage);
+    if (!recursion)
     {
         return false;
     }
-    detail::CorrelationRecursion<T> recursion(panel, std::move(weights), std::move(moments));
     for (std::size_t t = 0; t < panel.t; ++t)
     {
-        visit(t, recursion.next());
+        visit(t, recursion->next());
     }
     return true;
 }

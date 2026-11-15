@@ -2,6 +2,8 @@
 #include "dcc/fit.hpp"
 #include "dcc/future/forecast.hpp"
 #include "dcc/future/simulate.hpp"
+#include "dcc/likelihood.hpp"
+#include "dcc/panel.hpp"
 #include "dcc/standard_errors.hpp"
 #include "diagnostics/gof.hpp"
 #include "diagnostics/portmanteau.hpp"
@@ -1239,8 +1241,65 @@ void run_dcc_standard_errors(benchmark::State& state)
     }
 }
 
+// One DCC objective evaluation, in double (the SIMD kernels) or in Dual<8> with the gradient lanes of the optimiser.
+std::vector<double> dcc_theta(const ve::dcc::DccSpec& spec)
+{
+    std::vector<double> theta{0.02, 0.95};
+    if (spec.model == ve::dcc::DccModel::ADcc)
+    {
+        theta.push_back(0.01);
+    }
+    if (spec.model == ve::dcc::DccModel::FDcc)
+    {
+        theta = {0.1, 0.1, 0.1, 0.95, 0.95, 0.95};
+    }
+    if (spec.dist == ve::dcc::DccDist::MvT)
+    {
+        theta.push_back(8.0);
+    }
+    return theta;
+}
+
+void run_dcc_loglik(benchmark::State& state, const ve::dcc::DccSpec& spec, bool dual)
+{
+    static const ve::dcc::StandardizedPanel panel = ve::dcc::standardize(dcc_fit_pointers());
+    const std::vector<double> theta = dcc_theta(spec);
+    using Number = ve::ad::Dual<8>;
+    std::vector<Number> lanes;
+    for (std::size_t i = 0; i < theta.size(); ++i)
+    {
+        lanes.push_back(ve::ad::variable<8>(theta[i], i));
+    }
+    for (auto _ : state)
+    {
+        if (dual)
+        {
+            benchmark::DoNotOptimize(ve::dcc::objective<Number>(panel, spec, lanes));
+            continue;
+        }
+        benchmark::DoNotOptimize(ve::dcc::objective<double>(panel, spec, theta));
+    }
+}
+
+void register_dcc_loglik()
+{
+    const auto specs = dcc_specs();
+    const std::array<std::string, 3> models{"dcc", "adcc", "fdcc"};
+    const std::array<std::string, 3> distributions{"mvnorm", "mvt", "mvlaplace"};
+    for (std::size_t i = 0; i < specs.size(); ++i)
+    {
+        for (const bool dual : {false, true})
+        {
+            const std::string name = "BM_DccLoglik/" + models[i / 3] + "_" + distributions[i % 3] + "/m:21/T:5000/" +
+                                     (dual ? "dual" : "double");
+            benchmark::RegisterBenchmark(name, run_dcc_loglik, specs[i], dual)->Unit(benchmark::kMillisecond);
+        }
+    }
+}
+
 void register_dcc()
 {
+    register_dcc_loglik();
     const auto specs = dcc_specs();
     const std::array<std::string, 3> models{"dcc", "adcc", "fdcc"};
     const std::array<std::string, 3> distributions{"mvnorm", "mvt", "mvlaplace"};

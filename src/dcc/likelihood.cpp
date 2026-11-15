@@ -4,12 +4,16 @@
 #include "core/spec.hpp"
 #include "dist/bessel.hpp"
 #include "linalg/cholesky.hpp"
+#include "simd/cholesky_kernels.hpp"
+#include "simd/dcc_kernels.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <limits>
 #include <numbers>
+#include <type_traits>
 #include <vector>
 
 namespace ve::dcc
@@ -117,22 +121,92 @@ void store_correlation(std::span<const T> r_t, std::size_t t, std::span<double> 
     }
 }
 
+// Matrices per call of the batched Cholesky kernel: a whole vector of t at every target (2, 4 or 8 lanes).
+constexpr std::size_t kBlock = 8;
+
+// The double instantiation: the packed Q_t of kBlock consecutive t go to the vector kernel together, which
+// normalizes them and gives log |R_t| and z_t' R_t^-1 z_t; the density per t stays scalar.
+class BlockedTerms
+{
+public:
+    BlockedTerms(const StandardizedPanel& panel, const Density<double>& density, const CorrelationOutput<double>& out)
+        : panel_(panel), density_(density), out_(out), cells_(panel.m * (panel.m + 1) / 2), q_(kBlock * cells_),
+          scale_(out.r.empty() ? 0 : panel.m)
+    {
+    }
+
+    void add(std::size_t t, std::span<const double> q_t)
+    {
+        std::ranges::copy(q_t, q_.begin() + static_cast<std::ptrdiff_t>((t - first_) * cells_));
+        if (!out_.r.empty())
+        {
+            const std::size_t square = panel_.m * panel_.m;
+            simd::correlation_from_q(q_t, panel_.m, scale_, out_.r.subspan(t * square, square));
+        }
+        if (t + 1 - first_ == kBlock || t + 1 == panel_.t)
+        {
+            flush(t + 1);
+        }
+    }
+
+private:
+    void flush(std::size_t end)
+    {
+        const std::size_t m = panel_.m;
+        const std::size_t count = end - first_;
+        std::array<double, kBlock> log_det;
+        std::array<double, kBlock> quadratic;
+        simd::log_det_and_quadratic(std::span<const double>(q_).first(count * cells_),
+                                    std::span<const double>(panel_.z).subspan(first_ * m, count * m), m,
+                                    std::span<double>(log_det).first(count),
+                                    std::span<double>(quadratic).first(count));
+        for (std::size_t lane = 0; lane < count; ++lane)
+        {
+            out_.terms[first_ + lane] =
+                std::isnan(log_det[lane]) ? kNaN : log_density(density_, log_det[lane], quadratic[lane]);
+        }
+        first_ = end;
+    }
+
+    const StandardizedPanel& panel_;
+    const Density<double>& density_;
+    const CorrelationOutput<double>& out_;
+    std::size_t cells_;
+    std::vector<double> q_;
+    std::vector<double> scale_;
+    std::size_t first_ = 0;
+};
+
+// True when theta is inside the domain of correlation_path and out has been filled.
+template <class T>
+bool fill_terms(const StandardizedPanel& panel, const DccSpec& spec, const DccParameters<T>& theta, Stage stage,
+                const Density<T>& density, const CorrelationOutput<T>& out)
+{
+    const std::size_t m = panel.m;
+    Workspace<T> work{std::vector<T>(m * m), std::vector<T>(m)};
+    return correlation_path(panel, spec, theta, stage, [&](std::size_t t, std::span<const T> r_t) {
+        const std::span<const double> z(panel.z.data() + t * m, m);
+        out.terms[t] = observation_term(r_t, z, density, work);
+        store_correlation(r_t, t, out.r);
+    });
+}
+
+bool fill_terms(const StandardizedPanel& panel, const DccSpec& spec, const DccParameters<double>& theta, Stage stage,
+                const Density<double>& density, const CorrelationOutput<double>& out)
+{
+    BlockedTerms blocked(panel, density, out);
+    return q_path(panel, spec, theta, stage, [&](std::size_t t, std::span<const double> q_t) { blocked.add(t, q_t); });
+}
+
 }
 
 template <class T>
 void correlation_terms(const StandardizedPanel& panel, const DccSpec& spec, const DccParameters<T>& theta,
                        Stage stage, const CorrelationOutput<T>& out)
 {
-    const std::size_t m = panel.m;
-    const auto dimension = static_cast<double>(m);
+    const auto dimension = static_cast<double>(panel.m);
     const Density<T> density{spec.dist, dimension, theta.shape, density_constant(spec.dist, dimension, theta.shape)};
-    Workspace<T> work{std::vector<T>(m * m), std::vector<T>(m)};
-    const auto visit = [&](std::size_t t, std::span<const T> r_t) {
-        const std::span<const double> z(panel.z.data() + t * m, m);
-        out.terms[t] = observation_term(r_t, z, density, work);
-        store_correlation(r_t, t, out.r);
-    };
-    if (correlation_path(panel, spec, theta, stage, visit))
+    if (fill_terms(panel, spec, theta, stage, density, out))
     {
         return;
     }

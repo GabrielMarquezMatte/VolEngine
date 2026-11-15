@@ -5,6 +5,7 @@
 #include "dcc/spec.hpp"
 #include "dcc3_panel.hpp"
 #include "linalg/cholesky.hpp"
+#include "simd/fixtures.hpp"
 
 #include <algorithm>
 #include <array>
@@ -460,6 +461,131 @@ TEST(DccLikelihood, DualGradientMatchesDifferences)
                 << c.name << ", parameter " << i;
         }
     }
+}
+
+// The double instantiation runs the SIMD kernels and the Dual one the scalar template, so their terms differ by
+// rounding: measured on this suite at 1e-15 relative (a few ulps of the sums over m^3/6 products); this leaves a
+// factor of 1000.
+constexpr double kDoubleDualTermTolerance = 1e-12;
+
+// A standardized panel of m series from a fixed stream, with qbar, nbar and the deltas computed from z.
+StandardizedPanel synthetic_panel(std::size_t m, std::size_t t)
+{
+    ve::test::Stream stream(100 + static_cast<unsigned>(m));
+    StandardizedPanel panel;
+    panel.t = t;
+    panel.m = m;
+    panel.z = stream.vector(m * t);
+    for (double& z : panel.z)
+    {
+        z *= 1.7;
+    }
+    panel.sigma.assign(m * t, 1.0);
+    ve::dcc::refresh_moments(panel);
+    return panel;
+}
+
+std::vector<int> groups_of(std::size_t m, std::size_t count)
+{
+    std::vector<int> groups(m);
+    for (std::size_t i = 0; i < m; ++i)
+    {
+        groups[i] = static_cast<int>(i * count / m) + 1;
+    }
+    return groups;
+}
+
+// DCC and aDCC: a, b (g); FDCC: a and b per group; then the mvt shape.
+std::vector<double> theta_for(const DccSpec& spec, std::size_t group_count)
+{
+    std::vector<double> theta{0.03, 0.9};
+    if (spec.model == DccModel::ADcc)
+    {
+        theta.push_back(0.02);
+    }
+    if (spec.model == DccModel::FDcc)
+    {
+        theta.assign(group_count, 0.2);
+        theta.insert(theta.end(), group_count, 0.95);
+    }
+    if (spec.dist == DccDist::MvT)
+    {
+        theta.push_back(7.0);
+    }
+    return theta;
+}
+
+std::vector<double> terms_of_double(const StandardizedPanel& panel, const DccSpec& spec, std::span<const double> theta)
+{
+    std::vector<double> terms(panel.t);
+    ve::dcc::correlation_terms<double>(panel, spec, ve::dcc::split_parameters(spec, theta),
+                                       ve::dcc::Stage::Objective, {terms});
+    return terms;
+}
+
+std::vector<double> values_of_dual(const StandardizedPanel& panel, const DccSpec& spec, std::span<const double> theta)
+{
+    using Number = ve::ad::Dual<8>;
+    std::vector<Number> constants;
+    for (const double x : theta)
+    {
+        constants.push_back(ve::ad::constant<8>(x));
+    }
+    std::vector<Number> terms(panel.t);
+    ve::dcc::correlation_terms<Number>(panel, spec, ve::dcc::split_parameters(spec, std::span<const Number>(constants)),
+                                       ve::dcc::Stage::Objective, {terms});
+    std::vector<double> values;
+    for (const Number& term : terms)
+    {
+        values.push_back(term.value);
+    }
+    return values;
+}
+
+TEST(DccLikelihood, DoubleMatchesDualValue)
+{
+    const std::vector<StandardizedPanel> panels{ve::testing::dcc3_panel(), synthetic_panel(5, 120),
+                                                synthetic_panel(21, 60)};
+    for (const StandardizedPanel& panel : panels)
+    {
+        const std::size_t group_count = panel.m == 21 ? 3 : 2;
+        for (const DccModel model : {DccModel::Dcc, DccModel::ADcc, DccModel::FDcc})
+        {
+            for (const DccDist dist : {DccDist::MvNorm, DccDist::MvT, DccDist::MvLaplace})
+            {
+                DccSpec spec = spec_of(model, dist, Convention::Standard);
+                spec.groups = model == DccModel::FDcc ? groups_of(panel.m, group_count) : std::vector<int>{};
+                const std::vector<double> theta = theta_for(spec, group_count);
+                const auto actual = terms_of_double(panel, spec, theta);
+                const auto expected = values_of_dual(panel, spec, theta);
+                for (std::size_t t = 0; t < panel.t; ++t)
+                {
+                    EXPECT_NEAR(actual[t], expected[t], kDoubleDualTermTolerance * std::max(std::fabs(expected[t]), 1.0))
+                        << "m = " << panel.m << ", model " << int(model) << ", dist " << int(dist) << ", t = " << t;
+                }
+            }
+        }
+    }
+}
+
+// Candidate weights whose recursion leaves the positive definite matrices somewhere along the path.
+TEST(DccLikelihood, NonPositiveDefiniteCorrelationGivesNanInBothPaths)
+{
+    const StandardizedPanel panel = synthetic_panel(5, 200);
+    const DccSpec spec = spec_of(DccModel::Dcc, DccDist::MvNorm, Convention::Standard);
+    bool found = false;
+    const std::vector<std::vector<double>> candidates{{0.5, -1.0}, {1.5, -0.9}, {-0.8, 0.5}, {2.0, 0.4}};
+    for (const std::vector<double>& theta : candidates)
+    {
+        const auto actual = terms_of_double(panel, spec, theta);
+        const auto expected = values_of_dual(panel, spec, theta);
+        for (std::size_t t = 0; t < panel.t; ++t)
+        {
+            EXPECT_EQ(std::isnan(actual[t]), std::isnan(expected[t])) << "t = " << t;
+            found = found || std::isnan(actual[t]);
+        }
+    }
+    EXPECT_TRUE(found) << "no candidate left the positive definite matrices";
 }
 
 }

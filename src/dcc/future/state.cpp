@@ -1,6 +1,7 @@
 #include "dcc/future/state.hpp"
 
 #include "dcc/likelihood.hpp"
+#include "simd/dcc_kernels.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -66,53 +67,29 @@ detail::Weights<double> weights_at(const DccEnd& end, const DccSpec& spec)
 CorrelationStepper::CorrelationStepper(const DccEnd& end, const DccSpec& spec, std::size_t m)
     : m_(m), count_(end.qbar.size()), constant_(!end.static_r.empty()), weights_(weights_at(end, spec)),
       q_ring_(end.q), score_ring_(end.scores), q_(count_), r_(constant_ ? end.static_r : std::vector<double>(m * m)),
-      z_products_(count_), n_products_(count_), n_(m)
+      n_(m), scale_(m)
 {
 }
 
 void CorrelationStepper::add_news(std::size_t lag)
 {
-    const double* z = score_ring_.data() + (lag - 1) * m_;
-    for (std::size_t i = 0; i < m_; ++i)
-    {
-        n_[i] = z[i] < 0.0 ? z[i] : 0.0;
-        for (std::size_t j = 0; j <= i; ++j)
-        {
-            z_products_[detail::packed_index(i, j)] = z[i] * z[j];
-            n_products_[detail::packed_index(i, j)] = n_[i] * n_[j];
-        }
-    }
+    const std::span<const double> z(score_ring_.data() + (lag - 1) * m_, m_);
     const std::size_t offset = (lag - 1) * count_;
-    for (std::size_t k = 0; k < count_; ++k)
-    {
-        q_[k] = q_[k] + weights_.a[offset + k] * z_products_[k];
-    }
+    simd::add_outer(q_, std::span<const double>(weights_.a).subspan(offset, count_), z);
     if (weights_.g.empty())
     {
         return;
     }
-    for (std::size_t k = 0; k < count_; ++k)
+    for (std::size_t i = 0; i < m_; ++i)
     {
-        q_[k] = q_[k] + weights_.g[offset + k] * n_products_[k];
+        n_[i] = z[i] < 0.0 ? z[i] : 0.0;
     }
+    simd::add_outer(q_, std::span<const double>(weights_.g).subspan(offset, count_), n_);
 }
 
 void CorrelationStepper::correlation()
 {
-    std::vector<double> scale(m_);
-    for (std::size_t i = 0; i < m_; ++i)
-    {
-        scale[i] = 1.0 / std::sqrt(q_[detail::packed_index(i, i)]);
-    }
-    for (std::size_t i = 0; i < m_; ++i)
-    {
-        r_[i * m_ + i] = 1.0;
-        for (std::size_t j = 0; j < i; ++j)
-        {
-            r_[i * m_ + j] = q_[detail::packed_index(i, j)] * scale[i] * scale[j];
-            r_[j * m_ + i] = r_[i * m_ + j];
-        }
-    }
+    simd::correlation_from_q(q_, m_, scale_, r_);
 }
 
 std::span<const double> CorrelationStepper::next()
@@ -129,10 +106,8 @@ std::span<const double> CorrelationStepper::next()
     for (std::size_t lag = 1; lag <= weights_.b.size() / count_; ++lag)
     {
         const std::size_t offset = (lag - 1) * count_;
-        for (std::size_t k = 0; k < count_; ++k)
-        {
-            q_[k] = q_[k] + weights_.b[offset + k] * q_ring_[offset + k];
-        }
+        simd::multiply_add(q_, std::span<const double>(weights_.b).subspan(offset, count_),
+                           std::span<const double>(q_ring_).subspan(offset, count_));
     }
     correlation();
     return r_;
