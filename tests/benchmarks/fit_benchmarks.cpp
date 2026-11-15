@@ -1,4 +1,5 @@
 #include "dist/bessel.hpp"
+#include "dist/cdf.hpp"
 #include "dcc/fit.hpp"
 #include "dcc/future/forecast.hpp"
 #include "dcc/future/simulate.hpp"
@@ -880,6 +881,32 @@ void run_log_bessel_k(benchmark::State& state, bool free_order)
         static_cast<double>(arguments.size() * state.iterations()), benchmark::Counter::kIsRate);
 }
 
+// The quantile of a standardized nig or ghyp at 200 probabilities in (0.001, 0.999).
+void run_dist_quantile(benchmark::State& state, ve::Dist dist, ve::dist::ShapeParameters<double> parameters)
+{
+    constexpr int kProbabilities = 200;
+    const auto evaluate = [&] {
+        double sum = 0.0;
+        for (int i = 0; i < kProbabilities; ++i)
+        {
+            const double u = 0.001 + 0.998 * (i + 0.5) / kProbabilities;
+            sum += ve::dist::quantile(dist, parameters, u);
+        }
+        return sum;
+    };
+    if (!std::isfinite(evaluate()))
+    {
+        state.SkipWithError("the quantile is not finite");
+        return;
+    }
+    for (auto _ : state)
+    {
+        benchmark::DoNotOptimize(evaluate());
+    }
+    state.counters["calls_per_s"] = benchmark::Counter(
+        static_cast<double>(kProbabilities * state.iterations()), benchmark::Counter::kIsRate);
+}
+
 int hardware_threads()
 {
     return static_cast<int>(std::max(1U, std::thread::hardware_concurrency()));
@@ -1567,6 +1594,10 @@ void register_all()
         ->Iterations(1);
     benchmark::RegisterBenchmark("BM_LogBesselK/fixed_order", run_log_bessel_k, false);
     benchmark::RegisterBenchmark("BM_LogBesselK/free_order", run_log_bessel_k, true);
+    benchmark::RegisterBenchmark("BM_DistQuantile/nig", run_dist_quantile, ve::Dist::Nig,
+                                 ve::dist::ShapeParameters<double>{.skew = -0.4, .shape = 1.5});
+    benchmark::RegisterBenchmark("BM_DistQuantile/ghyp", run_dist_quantile, ve::Dist::Ghyp,
+                                 ve::dist::ShapeParameters<double>{.skew = 0.3, .shape = 2.0, .ghlambda = -1.5});
 }
 
 }
