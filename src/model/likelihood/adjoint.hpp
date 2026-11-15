@@ -46,6 +46,7 @@ private:
     std::vector<double> residual_adjoint_;
     std::vector<double> sigma2_adjoint_;
     std::vector<double> log_sigma2_;
+    std::vector<double> inverse_sigma_;
 };
 
 }

@@ -184,9 +184,11 @@ double LoglikAdjoint::egarch_backward(std::span<const double> theta, const Layou
 {
     garch::EGarchParameters<double> p = egarch_parameters(theta, layout);
     log_sigma2_.resize(sigma2_.size());
+    inverse_sigma_.resize(sigma2_.size());
     for (std::size_t t = 0; t < sigma2_.size(); ++t)
     {
         log_sigma2_[t] = std::log(sigma2_[t]);
+        inverse_sigma_[t] = 1.0 / std::sqrt(sigma2_[t]);
         sigma2_adjoint_[t] *= sigma2_[t];
     }
     garch::EGarchAdjoint adjoint{residual_adjoint_,
@@ -197,7 +199,7 @@ double LoglikAdjoint::egarch_backward(std::span<const double> theta, const Layou
                                  grad.subspan(layout.gamma_begin(), p.gamma.size()),
                                  0.0,
                                  0.0};
-    garch::egarch_variance_backward(residuals_, p, presample, log_sigma2_, adjoint);
+    garch::egarch_variance_backward(residuals_, p, presample, {log_sigma2_, inverse_sigma_}, adjoint);
     grad[layout.omega()] += adjoint.omega;
     if (layout.has_shape())
     {

@@ -81,6 +81,13 @@ struct EGarchAdjoint
     double presample;
 };
 
+// The forward states the reverse of egarch_variance reads: h_t = log sigma2_t and 1 / sigma_t = exp(-h_t / 2).
+struct EGarchPath
+{
+    std::span<const double> log_sigma2;
+    std::span<const double> inverse_sigma;
+};
+
 namespace detail
 {
 
@@ -89,7 +96,7 @@ namespace detail
 // alpha_i gets g z, gamma_i gets g (|z| - E|z|), E|z| gets -g gamma_i, and d/dz = g (alpha_i + gamma_i sign z) (sign 0
 // at 0) passes exp(-h_{t-i} / 2) of itself to e_{t-i} and -z / 2 to h_{t-i}.
 inline void egarch_shock_backward(std::span<const double> residuals, const EGarchParameters<double>& p,
-                                  std::span<const double> log_sigma2, LagStep step, EGarchAdjoint& adjoint)
+                                  const EGarchPath& path, LagStep step, EGarchAdjoint& adjoint)
 {
     std::size_t i = step.lag;
     double gamma = p.gamma[i - 1];
@@ -100,7 +107,7 @@ inline void egarch_shock_backward(std::span<const double> residuals, const EGarc
         return;
     }
     std::size_t lag = step.t - i;
-    double scale = std::exp(-0.5 * log_sigma2[lag]);
+    double scale = path.inverse_sigma[lag];
     double z = residuals[lag] * scale;
     double sign = (z > 0.0) - (z < 0.0);
     adjoint.alpha[i - 1] += step.g * z;
@@ -112,14 +119,15 @@ inline void egarch_shock_backward(std::span<const double> residuals, const EGarc
 
 }
 
-// The reverse of egarch_variance over h_t = log sigma2_t (log_sigma2), t from the end down to held, with
+// The reverse of egarch_variance over h_t = log sigma2_t (path.log_sigma2), t from the end down to held, with
 // g = d/dh_t: omega gets g, the shocks go through detail::egarch_shock_backward, and beta_j gets g h_{t-j} while
 // d/dh_{t-j} gets g beta_j (log b, and the presample, before t = 0). The steps held at log b pass their adjoint to it.
 // No variance regressors (an empty intercept shift).
 inline void egarch_variance_backward(std::span<const double> residuals, const EGarchParameters<double>& p,
-                                     const Presample<double>& presample, std::span<const double> log_sigma2,
+                                     const Presample<double>& presample, const EGarchPath& path,
                                      EGarchAdjoint& adjoint)
 {
+    std::span<const double> log_sigma2 = path.log_sigma2;
     std::size_t held = std::min(presample.held, log_sigma2.size());
     double log_presample = std::log(presample.value);
     for (std::size_t t = log_sigma2.size(); t-- > held;)
@@ -128,7 +136,7 @@ inline void egarch_variance_backward(std::span<const double> residuals, const EG
         adjoint.omega += g;
         for (std::size_t i = 1; i <= p.alpha.size(); ++i)
         {
-            detail::egarch_shock_backward(residuals, p, log_sigma2, {t, i, g}, adjoint);
+            detail::egarch_shock_backward(residuals, p, path, {t, i, g}, adjoint);
         }
         for (std::size_t j = 1; j <= p.beta.size(); ++j)
         {

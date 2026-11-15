@@ -241,19 +241,23 @@ inline TermAdjoint normal_term_adjoint(double e, double sigma2)
 // d/ds = w u / s, d/dp = -log1p(u).
 inline TermAdjoint student_term_adjoint(const LogDensity<double>& density, double e, double sigma2)
 {
-    double u = e * e / sigma2 / density.scale;
+    double inverse_variance = 1.0 / sigma2;
+    double inverse_scale = 1.0 / density.scale;
+    double u = e * e * inverse_variance * inverse_scale;
     double w = density.power / (1.0 + u);
-    return {-2.0 * w * e / (sigma2 * density.scale), (w * u - 0.5) / sigma2, w * u / density.scale,
-            -std::log1p(u)};
+    return {-2.0 * w * e * inverse_variance * inverse_scale, (w * u - 0.5) * inverse_variance,
+            w * u * inverse_scale, -std::log1p(u)};
 }
 
 // y = |e| / (sigma lambda), v = y^p, slope = dv/dy: d/de = -slope sign(e) / (2 sigma lambda),
 // d/dsigma2 = (slope y / 4 - 1/2) / sigma2, d/dlambda = slope y / (2 lambda), d/dp = -v log(y) / 2.
 inline TermAdjoint ged_term_adjoint(const LogDensity<double>& density, double e, double sigma2)
 {
-    double sigma = std::sqrt(sigma2);
-    double y = std::fabs(e) / sigma / density.scale;
-    TermAdjoint adjoint{0.0, -0.5 / sigma2, 0.0, 0.0};
+    double inverse_variance = 1.0 / sigma2;
+    double inverse_sigma = 1.0 / std::sqrt(sigma2);
+    double inverse_scale = 1.0 / density.scale;
+    double y = std::fabs(e) * inverse_sigma * inverse_scale;
+    TermAdjoint adjoint{0.0, -0.5 * inverse_variance, 0.0, 0.0};
     if (y == 0.0)
     {
         return adjoint;
@@ -261,9 +265,9 @@ inline TermAdjoint ged_term_adjoint(const LogDensity<double>& density, double e,
     double v = std::pow(y, density.power);
     double slope = ad::detail::pow_slope(y, density.power, v);
     double sign = (e > 0.0) - (e < 0.0);
-    adjoint.e = -0.5 * slope * sign / (sigma * density.scale);
-    adjoint.sigma2 += 0.25 * slope * y / sigma2;
-    adjoint.scale = 0.5 * slope * y / density.scale;
+    adjoint.e = -0.5 * slope * sign * inverse_sigma * inverse_scale;
+    adjoint.sigma2 += 0.25 * slope * y * inverse_variance;
+    adjoint.scale = 0.5 * slope * y * inverse_scale;
     adjoint.power = -0.5 * v * std::log(y);
     return adjoint;
 }
