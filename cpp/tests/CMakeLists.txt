@@ -13,9 +13,12 @@ else()
 endif()
 
 add_executable(volengine_cpp_tests
-    error_test.cpp)
+    error_test.cpp
+    fit_test.cpp)
 target_link_libraries(volengine_cpp_tests PRIVATE volengine::volengine GTest::gtest_main)
 target_compile_options(volengine_cpp_tests PRIVATE ${VOLENGINE_TEST_WARNINGS})
+target_compile_definitions(volengine_cpp_tests PRIVATE
+    VOLENGINE_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/reference/data")
 # Before test discovery: discovery runs the executable, which needs the DLL beside it on Windows.
 volengine_copy_native_library(volengine_cpp_tests)
 gtest_discover_tests(volengine_cpp_tests)

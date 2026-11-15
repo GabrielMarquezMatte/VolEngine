@@ -5,5 +5,7 @@
 
 #include <volengine/context.hpp>
 #include <volengine/error.hpp>
+#include <volengine/fit.hpp>
+#include <volengine/input.hpp>
 
 #endif

@@ -3,6 +3,7 @@ project(VolEngineCpp VERSION 0.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 set(VOLENGINE_VERSION "" CACHE STRING
     "Release tag whose assets are downloaded (taken from `git describe --tags --exact-match` if empty)")
