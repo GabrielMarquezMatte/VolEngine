@@ -88,4 +88,28 @@ TEST(SimdSum, SurvivesAMillionCallsOnEveryStackAlignment)
     }
 }
 
+TEST(SimdDot, MatchesScalarOnEveryTarget)
+{
+    for (const auto target : ve::test::runnable_targets())
+    {
+        const ve::test::ForcedTarget forced(target);
+        for (const std::size_t n : {0U, 1U, 3U, 7U, 21U, 231U, 5000U})
+        {
+            const auto x = series(n);
+            std::vector<double> y(n);
+            long double expected = 0.0L;
+            double bound = 0.0;
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                y[i] = std::cos(0.11 * static_cast<double>(i)) + 0.5;
+                expected += static_cast<long double>(x[i]) * y[i];
+                bound += std::fabs(x[i] * y[i]);
+            }
+            EXPECT_NEAR(ve::simd::dot(x, y), static_cast<double>(expected),
+                        kMaxUlps * std::numeric_limits<double>::epsilon() * bound)
+                << "n = " << n;
+        }
+    }
+}
+
 }

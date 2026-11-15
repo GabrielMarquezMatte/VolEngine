@@ -66,3 +66,46 @@ kernels as the recursion, so it continues the fit to the bit.
 
 Profile of the new `double` evaluation (MSVC, `BM_DccLoglik/dcc_mvnorm/double`, 9.4 ms): the factor 2.1 s, the
 transpose and normalization 1.5 s, `add_outer` 1.2 s, the forward solve and the logs 1.1 s, `multiply_add` 0.1 s.
+
+## Task 4: the DCC gradient by tangents (2026-11-15)
+
+`gcc-bench`, same session, `base` = the build of the commit of Task 3 (the `Dual<8>` objective), m = 21, T = 5000, one
+fit per row (`--benchmark_min_time` default, `Iterations(1)`); two runs, the second in brackets.
+
+| Benchmark | base | new | new / base |
+|-----------|------|-----|-----------|
+| `BM_DccFit/dcc_mvnorm` | 0.885 s (0.866) | 0.132 s (0.140) | 0.15 |
+| `BM_DccFit/dcc_mvt` | 0.872 s (0.868) | 0.131 s (0.145) | 0.16 |
+| `BM_DccFit/dcc_mvlaplace` | 0.937 s (0.931) | 0.168 s (0.198) | 0.19 |
+| `BM_DccFit/adcc_mvnorm` | 0.913 s (0.912) | 0.158 s (0.169) | 0.18 |
+| `BM_DccFit/adcc_mvt` | 1.39 s (1.31) | 0.225 s (0.232) | 0.17 |
+| `BM_DccFit/adcc_mvlaplace` | 0.962 s (0.951) | 0.209 s (0.203) | 0.21 |
+| `BM_DccFit/fdcc_mvnorm` | 1.52 s (1.50) | 0.338 s (0.378) | 0.23 |
+| `BM_DccFit/fdcc_mvt` | 1.51 s (1.48) | 0.352 s (0.333) | 0.22 |
+| `BM_DccFit/fdcc_mvlaplace` | 1.65 s (1.63) | 0.410 s (0.430) | 0.25 |
+| `BM_DccGrid/threads:1` (the 9 fits) | 10.8 s (10.5) | 2.09 s (2.33) | 0.21 |
+| `BM_DccGrid/threads:hw` (16 threads) | 2.27 s (2.33) | 0.607 s (0.559) | 0.25 |
+
+All nine fits converge on both sides.
+
+Ruling: **go** (the gate of the plan asked for `BM_DccGrid/threads:1` under 0.9 of the `Dual` time; it is at 0.21).
+The tangent gradient is wired into `MeanObjective` for the nine listed specs.
+
+How it works, in the order of one observation t:
+1. the tangents dQ_t of every free parameter, from the same elementwise kernels as Q_t (`add_outer`, `multiply_add`),
+   with the derivatives of the weights taken from the existing `weights_of` evaluated on `ad::Dual` variables, once
+   per evaluation, so DCC, aDCC and FDCC share one code path and a block of weights that does not depend on a
+   parameter is skipped;
+2. eight observations at a time, `simd::CorrelationBlock::factor` (the batched Cholesky of Task 3, now keeping the
+   factors) and the partials of the density in log |R|, q and the shape from `log_density<Dual<3>>`;
+3. `CorrelationBlock::pull_back`: L^-1, R^-1 and w = R^-1 z in the lanes, then the gradient with respect to the packed
+   Q_t through the normalization, the diagonal from R R^-1 = I and R w = z instead of a sum over the row;
+4. the dot product of that gradient and each dQ_t, accumulated in the order of t.
+
+Ruling: the files are `src/dcc/likelihood/gradient.{hpp,cpp}` and `tests/unit/dcc/likelihood/gradient_test.cpp`, not
+`src/dcc/gradient.*`: `src/dcc` would have had nine modules (limit eight), and the layout copies
+`src/model/likelihood/adjoint.cpp`. `tests/unit/synthetic_panel.hpp` moved up for the same reason. Cost if wrong: none.
+
+The value of `ObjectiveGradient::evaluate` is bit-identical to `objective<double>` (asserted by `DccGradient.MatchesDual`
+on 4 panels x 2 conventions x 9 specs x 2 persistences x 2 shapes) and the gradient matches the `Dual` one to 1e-9 of
+its largest component, as the plan asked.

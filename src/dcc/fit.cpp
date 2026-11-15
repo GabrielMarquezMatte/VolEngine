@@ -6,6 +6,7 @@
 #include "dcc/copula/fit.hpp"
 #include "dcc/copula/scores.hpp"
 #include "dcc/future/state.hpp"
+#include "dcc/likelihood/gradient.hpp"
 #include "dcc/likelihood.hpp"
 #include "dcc/parameter_map.hpp"
 #include "dcc/standard_errors.hpp"
@@ -52,7 +53,9 @@ struct DccProblem
 };
 
 // objective / T over the free unconstrained parameters, so that the tolerances do not depend on the sample size.
-// The fixed positions of u stay 0: to_natural does not read them.
+// The fixed positions of u stay 0: to_natural does not read them. The specs ObjectiveGradient covers take the
+// gradient over the natural parameters from it and the chain rule through to_natural (its Dual lanes are the
+// Jacobian); the others run the whole objective in ad::Dual.
 template <std::size_t N>
 class MeanObjective
 {
@@ -62,6 +65,12 @@ public:
     explicit MeanObjective(const DccProblem& problem)
         : problem_(problem), u_(problem.layout.count()), theta_(problem.layout.count())
     {
+        if (has_fast_gradient(problem.spec))
+        {
+            fast_.emplace();
+            natural_.resize(problem.layout.count());
+            natural_grad_.resize(problem.layout.count());
+        }
     }
 
     double operator()(std::span<const double> x, std::span<double> grad)
@@ -71,6 +80,16 @@ public:
             u_[problem_.free[i]] = ad::variable<N>(x[i], i);
         }
         to_natural<Number>(u_, theta_, problem_.layout, problem_.delta);
+        if (fast_)
+        {
+            return fast_mean(grad);
+        }
+        return dual_mean(grad);
+    }
+
+private:
+    double dual_mean(std::span<double> grad) const
+    {
         const Number value = objective<Number>(problem_.panel, problem_.spec, theta_);
         if (!std::isfinite(value.value))
         {
@@ -85,10 +104,37 @@ public:
         return value.value / count;
     }
 
-private:
+    double fast_mean(std::span<double> grad)
+    {
+        for (std::size_t j = 0; j < theta_.size(); ++j)
+        {
+            natural_[j] = theta_[j].value;
+        }
+        const double value = fast_->evaluate(problem_.panel, problem_.spec, natural_, natural_grad_);
+        if (!std::isfinite(value))
+        {
+            std::ranges::fill(grad, 0.0);
+            return kInfinity;
+        }
+        const auto count = static_cast<double>(problem_.panel.t);
+        for (std::size_t i = 0; i < grad.size(); ++i)
+        {
+            double sum = 0.0;
+            for (std::size_t j = 0; j < theta_.size(); ++j)
+            {
+                sum += natural_grad_[j] * theta_[j].grad[i];
+            }
+            grad[i] = sum / count;
+        }
+        return value / count;
+    }
+
     const DccProblem& problem_;
     std::vector<Number> u_;
     std::vector<Number> theta_;
+    std::optional<ObjectiveGradient> fast_;
+    std::vector<double> natural_;
+    std::vector<double> natural_grad_;
 };
 
 template <std::size_t N>

@@ -247,6 +247,25 @@ public:
     // The packed Q_t of the last next() or advance().
     std::span<const T> q() const { return q_; }
 
+    // The index of the observation the next advance() or next() computes.
+    std::size_t time() const { return t_; }
+
+    const StageMoments& moments() const { return moments_; }
+
+    const Weights<T>& weights() const { return weights_; }
+
+    // Q_(t - lag) for the coming t, lag >= 1: Qbar before the sample. Valid until advance() or next().
+    std::span<const double> lagged_q(std::size_t lag) const
+        requires std::is_same_v<T, double>
+    {
+        if (t_ < lag)
+        {
+            return moments_.qbar;
+        }
+        const std::size_t slots = weights_.b.size() / count_;
+        return std::span<const double>(history_).subspan(((t_ - lag) % slots) * count_, count_);
+    }
+
 private:
     template <class U>
     void add_weighted(std::span<const T> weights, std::span<const U> x)
