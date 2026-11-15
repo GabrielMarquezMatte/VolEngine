@@ -50,9 +50,30 @@ jobs:
           path: volengine-native-win-x64.lib
           if-no-files-found: error
 
+  # The libabigail dump of the Linux x64 library: the baseline of the abidiff job of ci.yml for the next change.
+  abi-dump:
+    name: ABI dump
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install the toolchain and libabigail
+        run: bash scripts/install_abi_tools.sh
+
+      - name: Dump the ABI
+        run: bash scripts/abi_dump.sh volengine-abi-linux-x64.xml
+
+      - name: Upload the dump
+        uses: actions/upload-artifact@v4
+        with:
+          name: abi-linux-x64
+          path: volengine-abi-linux-x64.xml
+          if-no-files-found: error
+
   publish-github:
     name: GitHub Release
-    needs: [ wheels, windows-lib ]
+    needs: [ wheels, windows-lib, abi-dump ]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -63,6 +84,12 @@ jobs:
           pattern: native-*
           path: assets
           merge-multiple: true
+
+      - name: Download the ABI dump
+        uses: actions/download-artifact@v4
+        with:
+          name: abi-linux-x64
+          path: assets
 
       # The .def only feeds the .lib; it is not a release asset.
       - name: Drop the export list
@@ -92,6 +119,7 @@ jobs:
             assets/*.lib
             assets/*.so
             assets/*.dylib
+            assets/volengine-abi-linux-x64.xml
             volengine.spdx.json
 
   publish-pypi:

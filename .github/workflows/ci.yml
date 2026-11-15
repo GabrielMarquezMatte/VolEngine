@@ -146,3 +146,42 @@ jobs:
 
       - name: Run clang-tidy over src/
         run: git ls-files 'src/*.cpp' | xargs clang-tidy-20 -p build/tidy
+
+  # The binary interface against the last release: abidiff compares the library built now with the libabigail dump
+  # that the release attached (scripts/abi_dump.sh). Until 1.0 it only reports; from a 1.x release on, an
+  # incompatible change (a removed function, a changed type) fails. The contract file (build-test) catches the
+  # header; this catches what the header does not say, such as a struct layout behind a handle or a missing export.
+  abi:
+    name: ABI (abidiff)
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install the toolchain and libabigail
+        run: bash scripts/install_abi_tools.sh
+
+      - name: Dump the ABI of the current library
+        run: bash scripts/abi_dump.sh build/abi-out/current.xml
+
+      - name: Compare with the last release
+        run: |
+          tag=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+          if [ -z "$tag" ]; then echo "::notice::no release to compare with"; exit 0; fi
+          if ! gh release download "$tag" --pattern volengine-abi-linux-x64.xml --dir build/abi-out; then
+            echo "::notice::$tag has no ABI dump: nothing to compare with"
+            exit 0
+          fi
+          status=0
+          abidiff build/abi-out/volengine-abi-linux-x64.xml build/abi-out/current.xml || status=$?
+          # abidiff's exit status is a set of bits: 1 error, 2 usage error, 4 ABI change, 8 incompatible ABI change.
+          if (( status & 3 )); then exit 1; fi
+          major=${tag#v}
+          major=${major%%.*}
+          if (( status & 8 && major >= 1 )); then
+            echo "::error::incompatible ABI change since $tag"
+            exit 1
+          fi
+          if (( status & 12 )); then echo "::warning::the ABI differs from $tag (reported only before 1.0)"; fi
