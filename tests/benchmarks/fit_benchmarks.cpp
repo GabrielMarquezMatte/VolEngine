@@ -1251,13 +1251,14 @@ std::vector<const ve::FitResult*> dcc_fit_pointers()
     return pointers;
 }
 
-void run_dcc(benchmark::State& state, const std::vector<ve::dcc::DccSpec>& specs, int threads)
+void run_dcc_batch(benchmark::State& state, const std::vector<ve::dcc::DccSpec>& specs, int threads,
+                   bool standard_errors)
 {
     const auto fits = dcc_fit_pointers();
     ve::Context context;
     context.set_threads(threads);
     ve::dcc::DccOptions options;
-    options.standard_errors = false;
+    options.standard_errors = standard_errors;
     if (const auto problem = ve::dcc::check_dcc_batch(fits, specs, options))
     {
         state.SkipWithError(problem->c_str());
@@ -1280,6 +1281,17 @@ void run_dcc(benchmark::State& state, const std::vector<ve::dcc::DccSpec>& specs
         }
     }
     report_status(state, counts);
+}
+
+void run_dcc(benchmark::State& state, const std::vector<ve::dcc::DccSpec>& specs, int threads)
+{
+    run_dcc_batch(state, specs, threads, false);
+}
+
+// The grid with the two-stage standard errors of every converged spec (plan 5c-3).
+void run_dcc_with_standard_errors(benchmark::State& state, const std::vector<ve::dcc::DccSpec>& specs, int threads)
+{
+    run_dcc_batch(state, specs, threads, true);
 }
 
 void run_dcc_standard_errors(benchmark::State& state)
@@ -1377,6 +1389,14 @@ void register_dcc()
     {
         const std::string name = "BM_DccGrid/m:21/T:5000/threads:" + thread_label(threads);
         benchmark::RegisterBenchmark(name, run_dcc, specs, threads)
+            ->Unit(benchmark::kSecond)
+            ->UseRealTime()
+            ->Iterations(1);
+    }
+    for (const int threads : {1, 0})
+    {
+        const std::string name = "BM_DccGrid/m:21/T:5000/se:on/threads:" + thread_label(threads);
+        benchmark::RegisterBenchmark(name, run_dcc_with_standard_errors, specs, threads)
             ->Unit(benchmark::kSecond)
             ->UseRealTime()
             ->Iterations(1);

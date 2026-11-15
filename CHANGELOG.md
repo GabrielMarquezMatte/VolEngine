@@ -89,6 +89,11 @@ library whose ABI version differs).
   and its GOF 6.5 ms instead of 28.9 ms. A Copula-DCC simulation with nig or ghyp margins takes the quantile from a
   table built once per margin: 2.7 to 3.5 us per call instead of 109 to 143 us. See
   [docs/performance/profile-5c.md](docs/performance/profile-5c.md).
+- Standard errors of the DCC (plan 5c-3): the columns of the cross terms of every fit of a batch (and of a deferred
+  `ve_dcc_fit_standard_errors` call) are spread over the pool, so the grid of 9 specs at m = 21, T = 5000 with
+  standard errors takes 3.39 s instead of 5.09 s with all threads, and a refiltered series updates only its row and
+  column of the moments of the panel. Results are those of before to the bit. See
+  [docs/performance/profile-5c.md](docs/performance/profile-5c.md).
 - The TCC grid (1080 fits) on the Ryzen 7 5700X: see [docs/performance/benchmarks.md](docs/performance/benchmarks.md)
   and [docs/performance/profile-5a.md](docs/performance/profile-5a.md) for the measurements of each change.
 

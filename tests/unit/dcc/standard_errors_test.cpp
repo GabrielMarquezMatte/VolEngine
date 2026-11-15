@@ -462,4 +462,53 @@ TEST(DccStandardErrors, OptionMatchesExplicit)
     EXPECT_TRUE(std::isnan(stopped.se_robust[0]) && std::isnan(stopped.se_hessian[0]));
 }
 
+// The explicit function over the pool: the fits of one call share the pool (a column of the cross terms is a unit of
+// work), and every result is the one of the serial function, to the bit, whatever the number of threads.
+TEST(DccStandardErrors, PoolMatchesSerialToTheBit)
+{
+    const std::vector<FitResult> fits = default_fits();
+    const Pointers pointers = pointers_of(fits);
+    const std::vector<DccSpec> specs{spec_of(DccModel::Dcc, DccDist::MvNorm, Convention::Standard),
+                                     spec_of(DccModel::FDcc, DccDist::MvNorm, Convention::Rmgarch),
+                                     spec_of(DccModel::ADcc, DccDist::MvT, Convention::Standard)};
+    const std::vector<DccFitResult> fitted = run_batch(pointers, specs, DccOptions{FitConfig{}, false}, 1);
+    const std::vector<const DccFitResult*> list{&fitted[0], &fitted[1], &fitted[2]};
+    for (const int threads : {1, 4})
+    {
+        SCOPED_TRACE(threads);
+        ve::Context context;
+        context.set_threads(threads);
+        const auto pooled = context.with_pool(
+            [&](BS::light_thread_pool& pool, int count) { return ve::dcc::dcc_standard_errors(pool, count, list, pointers); });
+        ASSERT_EQ(pooled.size(), specs.size());
+        for (std::size_t i = 0; i < specs.size(); ++i)
+        {
+            const std::expected<DccStandardErrors, std::string> serial = ve::dcc::dcc_standard_errors(fitted[i], pointers);
+            ASSERT_TRUE(serial.has_value()) << serial.error();
+            ASSERT_TRUE(pooled[i].has_value()) << pooled[i].error();
+            EXPECT_TRUE(same_bits(pooled[i]->robust, serial->robust)) << i;
+            EXPECT_TRUE(same_bits(pooled[i]->hessian, serial->hessian)) << i;
+        }
+    }
+}
+
+TEST(DccStandardErrors, PoolReportsTheProblemOfEachFit)
+{
+    const std::vector<FitResult> fits = default_fits();
+    const Pointers pointers = pointers_of(fits);
+    const std::vector<DccFitResult> fitted =
+        run_batch(pointers, {spec_of(DccModel::Dcc, DccDist::MvNorm, Convention::Standard)}, DccOptions{FitConfig{}, false}, 1);
+    const Pointers fewer(pointers.begin(), pointers.begin() + 2);
+    const std::vector<const DccFitResult*> list{&fitted[0]};
+    ve::Context context;
+    context.set_threads(2);
+    const auto pooled = context.with_pool(
+        [&](BS::light_thread_pool& pool, int count) { return ve::dcc::dcc_standard_errors(pool, count, list, fewer); });
+    const std::expected<DccStandardErrors, std::string> serial = ve::dcc::dcc_standard_errors(fitted[0], fewer);
+    ASSERT_FALSE(serial.has_value());
+    ASSERT_EQ(pooled.size(), 1U);
+    ASSERT_FALSE(pooled[0].has_value());
+    EXPECT_EQ(pooled[0].error(), serial.error());
+}
+
 }

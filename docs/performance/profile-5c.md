@@ -302,3 +302,49 @@ same binary (cv 1%), a bimodality of the machine, not of the change.
 What is left of the ghyp: the Dual loglik is 8.7 times its double one (nig: 3.6): 443 ns per call of the trapezoid
 against 80 ns of Boost's value. A SIMD sum over the grid nodes is the next step (`ponytail:` not placed: the fit is
 4.6 times the nig one, under the 5x at which the spec asked for it).
+
+# Standard errors of the DCC (5c-3, done without a plan)
+
+`gcc-bench`, `build/base-5c3` (the code at `710f215` with the new benchmark) against the new code, same session.
+
+**Where the 1.35 s of `BM_DccStandardErrors` (m = 21, T = 5000, DCC mvnorm) goes**, by timers (one thread):
+
+| Stage | Time |
+| --- | ---: |
+| `two_stage_of` | 4 ms |
+| univariate Hessians and scores (21 series) | 31 ms |
+| DCC block and scores | 33 ms |
+| cross terms: 105 columns, one series refiltered each | 1377 ms (95%) |
+
+Inside a column (13 ms): the three evaluations of the DCC log-likelihood (`reported_total`) at 4 ms each take ~82%, the
+refresh of the moments of the panel 1.4 ms, the copy of the panel 0.5 ms, the refiltering 0.1 ms.
+
+**What does not help.** The plan of 5c-3 in the design spec said "the tangent path". For a plain DCC (2 parameters) a
+column needs 3 evaluations, and one tangent gradient costs about 3 evaluations (`BM_DccLoglik` double 4.1 ms, 0.21 of the
+Dual 61 ms = 13 ms), so differencing the gradient instead of the loglik gains nothing; it would only help specs with
+6 DCC parameters (FDCC), and it would change every digit of the cross terms. Not done.
+
+**What was done** (results bit for bit those of before, whatever the number of threads):
+1. `dcc_standard_errors` over a pool, for several fits in one call: the preparation of each fit, and then every
+   column of the cross terms of all fits together (the costliest first), are units of work of the pool.
+   `fit_dcc_batch` computes the standard errors after all fits, in one call, instead of inside each spec's task;
+   `ve_dcc_fit_standard_errors` runs on the pool of its context. Before, a deferred call was serial and in a batch a
+   spec's standard errors were one task, so the grid took as long as its slowest spec.
+2. `refresh_moments_of_column`: a refiltered series changes one column of z, so only the row and column of each moment
+   that hold it are recomputed (O(T m), with the arithmetic of the full refresh: bit for bit, tested).
+
+| Benchmark | Base | New |
+| --- | ---: | ---: |
+| `BM_DccGrid/se:on/threads:hw` (9 specs, with standard errors) | 5.09 s | 3.39 s |
+| `BM_DccGrid/se:on/threads:1` | 22.2 s | 20.8 s |
+| `BM_DccStandardErrors` (one spec, serial function) | 1.39 s | 1.30 s |
+| `BM_DccGrid/threads:hw` (no standard errors) | 0.563 s | 0.541 s |
+
+With 16 threads the standard-errors phase of the grid runs 6.2 times faster than with one thread on this 8-core machine,
+not 16 times (the phases of 9 preparations and the memory traffic of 16 recursions bound it). The standard errors are
+not part of the 1.88 s TCC pipeline of plan 5b, which fits with them off.
+
+**What is left:** the 3 evaluations per column. Only row and column c of Q_t change when one series is refiltered, so
+R_t moves by a rank-2 update and the log-determinant and the quadratic form could be updated from the stored R_t^-1 in
+O(m^2) per t instead of the O(m^3) Cholesky: perhaps 3 to 5 times less per evaluation, at the price of storing T m^2
+doubles per DCC parameter point and of a different rounding in the differences. A change of that size wants its own plan.

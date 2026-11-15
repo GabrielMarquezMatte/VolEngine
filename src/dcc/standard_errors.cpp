@@ -1,5 +1,6 @@
 #include "dcc/standard_errors.hpp"
 
+#include "core/blocks.hpp"
 #include "dcc/copula/fit.hpp"
 #include "dcc/copula/margins.hpp"
 #include "dcc/likelihood.hpp"
@@ -334,7 +335,8 @@ double univariate_step(const TwoStage& stage, const Series& series, std::size_t 
     return (x + step) - x;
 }
 
-// Column `column` of the DCC rows, a univariate parameter: its series is refiltered once, the others are kept.
+// Column `column` of the DCC rows, a univariate parameter: its series is refiltered once, the others are kept, and
+// with them every moment of the panel but the row and column of that series.
 void cross_column(const TwoStage& stage, const DccDifferences& differences, std::size_t column, Matrix& a)
 {
     const auto [index, entry] = stage.univariate[column];
@@ -344,7 +346,7 @@ void cross_column(const TwoStage& stage, const DccDifferences& differences, std:
     estimate[entry] += step;
     Point point = stage.base;
     filter_into(series, estimate, index, point);
-    refresh_moments(point.panel);
+    refresh_moments_of_column(point.panel, index);
     point.estimates[index] = estimate;
     if (stage.copula)
     {
@@ -482,40 +484,6 @@ std::optional<std::string> fits_problem(const DccFitResult& fit, std::span<const
     return std::nullopt;
 }
 
-std::expected<TwoStagePieces, std::string> two_stage_pieces(const DccFitResult& fit,
-                                                            std::span<const FitResult* const> fits)
-{
-    if (std::optional<std::string> problem = fits_problem(fit, fits))
-    {
-        return std::unexpected(std::move(*problem));
-    }
-    if (!std::ranges::all_of(fit.estimate, [](double v) { return std::isfinite(v); }))
-    {
-        return std::unexpected(std::string("the DCC fit has no finite estimate"));
-    }
-    if (std::optional<std::string> problem = standard_errors_problem(fits))
-    {
-        return std::unexpected(std::move(*problem));
-    }
-    const TwoStage stage = two_stage_of(fit, fits);
-    const std::size_t n = stage.parameters();
-    TwoStagePieces pieces{n, Matrix(n * n, 0.0), Matrix(fit.nobs * n, 0.0)};
-    std::size_t offset = 0;
-    for (const Series& one : stage.series)
-    {
-        univariate_block(one, offset, n, pieces.a, pieces.scores);
-        offset += one.free.size();
-    }
-    const DccDifferences differences = dcc_differences(stage);
-    dcc_block(stage, differences, pieces.a);
-    for (std::size_t column = 0; column < stage.univariate.size(); ++column)
-    {
-        cross_column(stage, differences, column, pieces.a);
-    }
-    dcc_scores(stage, pieces.scores);
-    return pieces;
-}
-
 std::vector<double> sandwich(const TwoStagePieces& pieces, Convention convention)
 {
     const std::size_t n = pieces.parameters;
@@ -552,23 +520,166 @@ std::vector<double> sandwich(const TwoStagePieces& pieces, Convention convention
     return v;
 }
 
-std::expected<DccStandardErrors, std::string> dcc_standard_errors(const DccFitResult& fit,
-                                                                  std::span<const FitResult* const> fits)
+namespace
 {
-    const std::expected<TwoStagePieces, std::string> pieces = two_stage_pieces(fit, fits);
-    if (!pieces)
+
+// Columns cost from 3 to 28 evaluations of the loglik, so the pool gets many small blocks, the costliest first.
+constexpr std::size_t kBlocksPerThread = 64;
+
+// Why the pieces of fit cannot be built: fits_problem, a fit without a finite estimate, or standard_errors_problem.
+std::optional<std::string> pieces_problem(const DccFitResult& fit, std::span<const FitResult* const> fits)
+{
+    if (std::optional<std::string> problem = fits_problem(fit, fits))
     {
-        return std::unexpected(pieces.error());
+        return problem;
+    }
+    if (!std::ranges::all_of(fit.estimate, [](double v) { return std::isfinite(v); }))
+    {
+        return std::string("the DCC fit has no finite estimate");
+    }
+    return standard_errors_problem(fits);
+}
+
+// The pieces of one fit, built in steps so that the columns of cross terms, which refilter one series each and write
+// only their own column of a, can be spread over a pool: prepare, then every cross_column, then the errors.
+struct Job
+{
+    std::optional<std::string> problem;
+    std::optional<TwoStage> stage;
+    DccDifferences differences;
+    TwoStagePieces pieces;
+};
+
+// Everything of the pieces but the cross columns.
+void prepare(Job& job, const DccFitResult& fit, std::span<const FitResult* const> fits)
+{
+    job.problem = pieces_problem(fit, fits);
+    if (job.problem)
+    {
+        return;
+    }
+    job.stage.emplace(two_stage_of(fit, fits));
+    const TwoStage& stage = *job.stage;
+    const std::size_t n = stage.parameters();
+    job.pieces = TwoStagePieces{n, Matrix(n * n, 0.0), Matrix(fit.nobs * n, 0.0)};
+    std::size_t offset = 0;
+    for (const Series& one : stage.series)
+    {
+        univariate_block(one, offset, n, job.pieces.a, job.pieces.scores);
+        offset += one.free.size();
+    }
+    job.differences = dcc_differences(stage);
+    dcc_block(stage, job.differences, job.pieces.a);
+    dcc_scores(stage, job.pieces.scores);
+}
+
+// The pieces of every fit, each phase run by run(count, work), which calls work(first, last) on blocks of 0 .. count
+// and returns when all have run. No result depends on how the blocks are spread.
+template <class Run>
+std::vector<Job> build_jobs(std::span<const DccFitResult* const> dcc_fits, std::span<const FitResult* const> fits,
+                            Run&& run)
+{
+    std::vector<Job> jobs(dcc_fits.size());
+    run(jobs.size(),
+        [&](std::size_t first, std::size_t last)
+        {
+            for (std::size_t i = first; i < last; ++i)
+            {
+                prepare(jobs[i], *dcc_fits[i], fits);
+            }
+        });
+    std::vector<std::pair<std::size_t, std::size_t>> columns;
+    for (std::size_t i = 0; i < jobs.size(); ++i)
+    {
+        for (std::size_t column = 0; jobs[i].stage && column < jobs[i].stage->univariate.size(); ++column)
+        {
+            columns.emplace_back(i, column);
+        }
+    }
+    std::ranges::stable_sort(columns,
+                             [&](const auto& a, const auto& b)
+                             { return jobs[a.first].stage->free.size() > jobs[b.first].stage->free.size(); });
+    run(columns.size(),
+        [&](std::size_t first, std::size_t last)
+        {
+            for (std::size_t k = first; k < last; ++k)
+            {
+                Job& job = jobs[columns[k].first];
+                cross_column(*job.stage, job.differences, columns[k].second, job.pieces.a);
+            }
+        });
+    return jobs;
+}
+
+std::expected<DccStandardErrors, std::string> errors_of(const DccFitResult& fit, const Job& job)
+{
+    if (job.problem)
+    {
+        return std::unexpected(*job.problem);
     }
     const std::size_t dcc = fit.estimate.size();
-    const std::size_t n = pieces->parameters;
+    const std::size_t n = job.pieces.parameters;
     const std::size_t u = n - dcc;
-    const Matrix v = sandwich(*pieces, fit.spec.convention);
-    DccStandardErrors errors{hessian_errors(*pieces, dcc), std::vector<double>(dcc)};
+    const Matrix v = sandwich(job.pieces, fit.spec.convention);
+    DccStandardErrors errors{hessian_errors(job.pieces, dcc), std::vector<double>(dcc)};
     for (std::size_t i = 0; i < dcc; ++i)
     {
         errors.robust[i] = std::sqrt(std::abs(v[(u + i) * n + u + i]));
     }
+    return errors;
+}
+
+void run_serial(std::size_t count, const auto& work)
+{
+    if (count != 0)
+    {
+        work(std::size_t{0}, count);
+    }
+}
+
+}
+
+std::expected<TwoStagePieces, std::string> two_stage_pieces(const DccFitResult& fit,
+                                                            std::span<const FitResult* const> fits)
+{
+    const DccFitResult* const one[] = {&fit};
+    std::vector<Job> jobs = build_jobs(one, fits, [](std::size_t count, const auto& work) { run_serial(count, work); });
+    if (jobs.front().problem)
+    {
+        return std::unexpected(std::move(*jobs.front().problem));
+    }
+    return std::move(jobs.front().pieces);
+}
+
+std::expected<DccStandardErrors, std::string> dcc_standard_errors(const DccFitResult& fit,
+                                                                  std::span<const FitResult* const> fits)
+{
+    const DccFitResult* const one[] = {&fit};
+    const std::vector<Job> jobs = build_jobs(one, fits, [](std::size_t count, const auto& work) { run_serial(count, work); });
+    return errors_of(fit, jobs.front());
+}
+
+std::vector<std::expected<DccStandardErrors, std::string>>
+dcc_standard_errors(BS::light_thread_pool& pool, int threads, std::span<const DccFitResult* const> dcc_fits,
+                    std::span<const FitResult* const> fits)
+{
+    const auto run = [&](std::size_t count, const auto& work)
+    {
+        if (count != 0)
+        {
+            run_in_blocks(pool, threads, count, kBlocksPerThread, work);
+        }
+    };
+    const std::vector<Job> jobs = build_jobs(dcc_fits, fits, run);
+    std::vector<std::expected<DccStandardErrors, std::string>> errors(jobs.size());
+    run(jobs.size(),
+        [&](std::size_t first, std::size_t last)
+        {
+            for (std::size_t i = first; i < last; ++i)
+            {
+                errors[i] = errors_of(*dcc_fits[i], jobs[i]);
+            }
+        });
     return errors;
 }
 

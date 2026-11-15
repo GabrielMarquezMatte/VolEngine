@@ -321,8 +321,6 @@ future::DccEnd end_of(const SpecBatch& batch, const DccFitResult& result)
     return end;
 }
 
-// With the option, a converged spec gets the standard errors of dcc_standard_errors, which check_dcc_batch made
-// sure the fits can give; the others keep NaN.
 DccFitResult fit_in_batch(const SpecBatch& batch, std::size_t index)
 {
     DccFitResult result = fit_one_spec(batch, batch.specs[index]);
@@ -333,15 +331,33 @@ DccFitResult fit_in_batch(const SpecBatch& batch, std::size_t index)
         result.series_end = batch.series_end;
         result.end = end_of(batch, result);
     }
-    if (!batch.options.standard_errors || result.status != FitStatus::Converged)
-    {
-        return result;
-    }
-    std::expected<DccStandardErrors, std::string> errors = dcc_standard_errors(result, batch.fits);
-    assert(errors.has_value());
-    result.se_hessian = std::move(errors->hessian);
-    result.se_robust = std::move(errors->robust);
     return result;
+}
+
+// With the option, every converged spec gets the standard errors of dcc_standard_errors, which check_dcc_batch made
+// sure the fits can give, all specs together so that the columns of their cross terms share the pool; the others keep
+// NaN.
+void add_standard_errors(BS::light_thread_pool& pool, int threads, const SpecBatch& batch,
+                         std::vector<DccFitResult>& results)
+{
+    std::vector<const DccFitResult*> converged;
+    std::vector<std::size_t> slots;
+    for (std::size_t i = 0; i < results.size() && batch.options.standard_errors; ++i)
+    {
+        if (results[i].status == FitStatus::Converged)
+        {
+            converged.push_back(&results[i]);
+            slots.push_back(i);
+        }
+    }
+    std::vector<std::expected<DccStandardErrors, std::string>> errors =
+        dcc_standard_errors(pool, threads, converged, batch.fits);
+    for (std::size_t k = 0; k < slots.size(); ++k)
+    {
+        assert(errors[k].has_value());
+        results[slots[k]].se_hessian = std::move(errors[k]->hessian);
+        results[slots[k]].se_robust = std::move(errors[k]->robust);
+    }
 }
 
 // Every spec writes only its own slot of results.
@@ -427,7 +443,12 @@ std::vector<DccFitResult> fit_dcc_batch(Context& context, std::span<const FitRes
     }
     const auto series_end = std::make_shared<const std::vector<future::SeriesEnd>>(std::move(ends));
     const SpecBatch batch{panel, specs, options, fits, stage, copula, series_end};
-    context.with_pool([&](BS::light_thread_pool& pool, int threads) { run_specs(pool, threads, batch, results); });
+    context.with_pool(
+        [&](BS::light_thread_pool& pool, int threads)
+        {
+            run_specs(pool, threads, batch, results);
+            add_standard_errors(pool, threads, batch, results);
+        });
     return results;
 }
 

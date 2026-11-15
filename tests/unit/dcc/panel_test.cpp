@@ -4,6 +4,7 @@
 #include "fit/fit.hpp"
 #include "linalg/symmetric_eigen.hpp"
 #include "simulated_garch.hpp"
+#include "synthetic_panel.hpp"
 
 #include <bit>
 #include <cmath>
@@ -161,6 +162,49 @@ TEST(DccPanel, Problems)
 
     const std::vector<FitResult> short_fits = two_simulated_fits(99);
     EXPECT_TRUE(mentions(ve::dcc::panel_problem(pointers(short_fits)), "100"));
+}
+
+bool same_bits(const std::vector<double>& a, const std::vector<double>& b)
+{
+    if (a.size() != b.size())
+    {
+        return false;
+    }
+    for (std::size_t i = 0; i < a.size(); ++i)
+    {
+        if (std::bit_cast<std::uint64_t>(a[i]) != std::bit_cast<std::uint64_t>(b[i]))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+// One series refiltered changes one column of z; its row and column of every moment are recomputed with the
+// arithmetic of the full refresh, and the rest are those of the panel before.
+TEST(DccPanel, RefreshOfOneColumnIsTheFullRefreshToTheBit)
+{
+    const ve::dcc::StandardizedPanel base = ve::testing::synthetic_panel(7, 300);
+    for (const std::size_t column : {std::size_t{0}, std::size_t{3}, std::size_t{6}})
+    {
+        ve::dcc::StandardizedPanel moved = base;
+        for (std::size_t row = 0; row < moved.t; ++row)
+        {
+            double& z = moved.z[row * moved.m + column];
+            z = 0.9 * z + 0.05 * static_cast<double>(row % 7) - 0.1;
+        }
+        ve::dcc::StandardizedPanel incremental = moved;
+        ve::dcc::refresh_moments(moved);
+        ve::dcc::refresh_moments_of_column(incremental, column);
+        EXPECT_TRUE(same_bits(incremental.qbar, moved.qbar)) << column;
+        EXPECT_TRUE(same_bits(incremental.qbar_raw, moved.qbar_raw)) << column;
+        EXPECT_TRUE(same_bits(incremental.nbar, moved.nbar)) << column;
+        EXPECT_TRUE(same_bits(incremental.nbar_centered, moved.nbar_centered)) << column;
+        EXPECT_EQ(std::bit_cast<std::uint64_t>(incremental.delta), std::bit_cast<std::uint64_t>(moved.delta)) << column;
+        EXPECT_EQ(std::bit_cast<std::uint64_t>(incremental.delta_centered),
+                  std::bit_cast<std::uint64_t>(moved.delta_centered))
+            << column;
+    }
 }
 
 }

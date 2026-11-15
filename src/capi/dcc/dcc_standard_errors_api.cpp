@@ -49,7 +49,10 @@ extern "C" ve_status ve_dcc_fit_standard_errors(ve_context* ctx, const ve_dcc_fi
             {
                 return set_error(VE_UNSUPPORTED, *problem);
             }
-            const auto errors = ve::dcc::dcc_standard_errors(f->result, pointers);
+            const std::vector<const ve::dcc::DccFitResult*> one{&f->result};
+            const auto errors = ctx->context.with_pool(
+                [&](BS::light_thread_pool& pool, int threads)
+                { return ve::dcc::dcc_standard_errors(pool, threads, one, pointers).front(); });
             if (!errors)
             {
                 return set_error(VE_INVALID_ARGUMENT, errors.error());

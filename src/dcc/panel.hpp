@@ -35,6 +35,11 @@ StandardizedPanel standardize(std::span<const FitResult* const> fits);
 // Recomputes Qbar, Nbar and the deltas from panel.z, after its columns changed.
 void refresh_moments(StandardizedPanel& panel);
 
+// The same, when only column `column` of panel.z changed since the moments were last refreshed (one series refiltered):
+// the row and column of each moment that hold it are recomputed with the arithmetic of second_moment and the others
+// are kept, so the result is refresh_moments' to the bit at O(T m) instead of O(T m^2).
+void refresh_moments_of_column(StandardizedPanel& panel, std::size_t column);
+
 // Of row-major T x m data x: the sum over t of (x_t - mean)(x_t - mean)' / divisor, m x m, with mean = 0 unless
 // centred.
 std::vector<double> second_moment(std::span<const double> x, std::size_t t, std::size_t m, bool centred,
