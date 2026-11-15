@@ -6,8 +6,10 @@
 #include "dcc/copula/scores.hpp"
 #include "dcc/fit.hpp"
 #include "dcc/spec.hpp"
+#include "fit/fit.hpp"
 #include "fit/fit_result.hpp"
 #include "linalg/cholesky.hpp"
+#include "simulated_garch.hpp"
 
 #include <algorithm>
 #include <array>
@@ -276,6 +278,49 @@ TEST(CopulaStatic, NonPositiveDefiniteKendallFails)
             EXPECT_TRUE(std::isnan(value));
         }
         EXPECT_EQ(fit.r, nullptr);
+    }
+}
+
+// m independent sGARCH(1,1)-std series, the shape of the benchmark panel.
+std::vector<FitResult> independent_fits(std::size_t m, std::size_t rows)
+{
+    ve::testing::SimulatedModel model;
+    model.dist = ve::Dist::Std;
+    model.shape = 8.0;
+    ve::Spec spec;
+    spec.dist = ve::Dist::Std;
+    std::vector<FitResult> fits;
+    for (std::size_t i = 0; i < m; ++i)
+    {
+        fits.push_back(ve::fit_one(ve::testing::simulate_arma_garch(model, i + 1, rows), spec, FitConfig{}));
+    }
+    return fits;
+}
+
+TEST(CopulaStatic, StudentFitsAtManySeries)
+{
+    // The static Student copula (Kendall and ML) used to fail at m = 21 with no finite point.
+    const std::vector<FitResult> fits = independent_fits(21, 1000);
+    const DccSpec kendall = static_spec(DccDist::MvT, DccCopula::Parametric, StaticMethod::Kendall);
+    const DccSpec ml = static_spec(DccDist::MvT, DccCopula::Parametric, StaticMethod::Ml);
+    const CopulaInputs inputs = inputs_of(fits, {kendall, ml});
+    double kendall_loglik = 0.0;
+    for (const DccSpec& spec : {kendall, ml})
+    {
+        SCOPED_TRACE(spec.static_method == StaticMethod::Ml ? "ml" : "kendall");
+        const DccFitResult fit = ve::dcc::copula::fit_copula(inputs, spec, FitConfig{});
+        EXPECT_EQ(fit.status, FitStatus::Converged);
+        ASSERT_TRUE(std::isfinite(fit.loglik));
+        const double nu = fit.estimate.back();
+        // Independent series: the profile rises to the ceiling, so nu is 50 itself.
+        EXPECT_GE(nu, 4.0);
+        EXPECT_LE(nu, 50.0);
+        if (spec.static_method == StaticMethod::Kendall)
+        {
+            kendall_loglik = fit.loglik;
+            continue;
+        }
+        EXPECT_GE(fit.loglik, kendall_loglik - 1e-6 * std::abs(kendall_loglik));
     }
 }
 

@@ -314,13 +314,16 @@ DccFitResult fit_copula(const CopulaInputs& inputs, const DccSpec& spec, const F
     const DccLayout layout = layout_of(spec, inputs.univariate->m);
     double nu = layout.has_shape ? layout.given[layout.shape()] : 0.0;
     bool ran_out = false;
-    if (layout.has_shape && layout.is_estimated(layout.shape()))
+    const bool profiled = layout.has_shape && layout.is_estimated(layout.shape());
+    if (profiled)
     {
         std::tie(nu, ran_out) = profile_shape(inputs, spec, config);
     }
-    // A fixed shape outside (4, 50) fails the spec, as on the plain DCC, for the static copula too.
+    // A fixed shape outside (4, 50) fails the spec, as on the plain DCC, for the static copula too. A profiled shape
+    // is inside [4, 50] by construction, and sits on an end when the loglik is monotone there (independent series
+    // put it at the ceiling).
     ProfilePoint point;
-    if (!layout.has_shape || (nu > kShapeFloor && nu < kShapeCeiling))
+    if (!layout.has_shape || profiled || (nu > kShapeFloor && nu < kShapeCeiling))
     {
         point = point_at(inputs, spec, nu, config);
     }
