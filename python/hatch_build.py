@@ -51,10 +51,13 @@ def platform_tag(library: bytes) -> str:
 
 class NativeLibraryBuildHook(BuildHookInterface):
     def initialize(self, version, build_data):
-        library = LIB_DIR / LIBRARIES[platform.system()]
         build_data["pure_python"] = False
         build_data["infer_tag"] = True
+        if version == "editable":
+            # An editable install loads the library from VOLENGINE_LIB or _lib at run time; _lib may be empty.
+            build_data["tag"] = f"py3-none-{next(iter(platform_tags()))}"
+            return
+        library = LIB_DIR / LIBRARIES[platform.system()]
         # Only the library goes in the wheel: the import library and .def next to it are for the release assets.
         build_data["force_include"][str(library)] = f"volengine/_lib/{library.name}"
-        tag = next(iter(platform_tags())) if version == "editable" else platform_tag(library.read_bytes())
-        build_data["tag"] = f"py3-none-{tag}"
+        build_data["tag"] = f"py3-none-{platform_tag(library.read_bytes())}"

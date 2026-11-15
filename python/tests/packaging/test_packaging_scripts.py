@@ -90,3 +90,12 @@ def test_other_architecture_or_platform_is_refused():
     assert not wheel_tag.tag_allowed("manylinux_2_17_aarch64", "manylinux_2_28_x86_64")
     assert not wheel_tag.tag_allowed("macosx_14_0_arm64", "macosx_11_0_arm64")
     assert not wheel_tag.tag_allowed("musllinux_1_2_x86_64", "manylinux_2_28_x86_64")
+
+
+def test_editable_build_needs_no_bundled_library(tmp_path, monkeypatch):
+    """CI and developers point VOLENGINE_LIB at a library, so _lib is empty during `uv run`'s editable build."""
+    monkeypatch.setattr(hook, "LIB_DIR", tmp_path)
+    build_data = {"force_include": {}}
+    hook.NativeLibraryBuildHook(str(tmp_path), {}, {}, None, str(tmp_path), "wheel").initialize("editable", build_data)
+    assert build_data["force_include"] == {}
+    assert build_data["tag"].startswith("py3-none-")
