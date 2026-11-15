@@ -1145,7 +1145,7 @@ TEST(CapiDcc, ForecastChecksTheFutureRegressors)
     DccFuturePtr two_series(raw);
     ve_dcc_forecast* out = nullptr;
     EXPECT_EQ(ve_dcc_forecast_create(fitted.fits[0], 12, two_series.get(), &out), VE_INVALID_ARGUMENT);
-    EXPECT_TRUE(mentions("series"));
+    EXPECT_TRUE(mentions("x holds 2 series of 12 rows, the fit needs 3 series of 12"));
     ASSERT_EQ(ve_dcc_future_create(kSeries, 11, &raw), VE_OK);
     DccFuturePtr short_horizon(raw);
     EXPECT_EQ(ve_dcc_forecast_create(fitted.fits[0], 12, short_horizon.get(), &out), VE_INVALID_ARGUMENT);

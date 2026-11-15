@@ -21,6 +21,10 @@ extern "C"
 
 #define VE_ABI_VERSION 0
 
+/* Every function returns a ve_status, except ve_abi_version, ve_last_error and the *_free functions (which accept
+   NULL and cannot fail). Every output array is caller-owned and sized by a count the interface gives: the
+   *_param_count, *_spec_count, *_job_count and *_horizon functions. */
+
 VE_API int32_t ve_abi_version(void);
 
 typedef int32_t ve_status;
@@ -112,7 +116,8 @@ VE_API ve_status ve_spec_create(int32_t model, ve_spec** out);
 /* p is the ARCH order (number of alpha terms, lagged squared residuals) and q the GARCH order (number
    of beta terms, lagged variances), as in arch's p and q and in rugarch's
    garchOrder = c(alpha order, beta order); rugarch calls those orders q and p, the other way round.
-   p, q outside 1 .. VE_MAX_ORDER is VE_INVALID_ARGUMENT and leaves the spec unchanged. */
+   p, q outside 1 .. VE_MAX_ORDER is VE_INVALID_ARGUMENT and leaves the spec unchanged; the message has no prefix,
+   while ve_fit_batch reports the same problem of a spec with "spec <i>: " before it. */
 VE_API ve_status ve_spec_set_order(ve_spec* s, int32_t p, int32_t q);
 /* ARMA(m, n) conditional mean; m, n in 0 .. VE_MAX_ORDER, else VE_INVALID_ARGUMENT and the spec is
    unchanged. The default is ARMA(0, 0). */
@@ -194,8 +199,8 @@ VE_API void ve_fit_options_free(ve_fit_options* o);
 VE_API ve_status ve_panel_create(const double* data, size_t t, size_t n, ve_panel** out);
 /* Element (t, j) is data[t * stride_t + j * stride_n]; strides are in elements and may be negative.
    With a negative stride, `data` must point at element (0, 0) (numpy convention), so the
-   remaining elements lie at negative offsets from it. A stride of 0 is rejected when the
-   corresponding dimension is greater than 1. */
+   remaining elements lie at negative offsets from it (a language that only has a bounded view of the data, such as
+   std::span, cannot express that). A stride of 0 is rejected when the corresponding dimension is greater than 1. */
 VE_API ve_status ve_panel_set_strides(ve_panel* p, ptrdiff_t stride_t, ptrdiff_t stride_n);
 /* Optional: series j uses rows starts[j] .. starts[j] + lengths[j] - 1. Copies n entries from each
    array. Both NULL clears the ranges (rectangular panel); exactly one NULL is invalid. */
@@ -301,7 +306,7 @@ VE_API ve_status ve_fit_arch_lm(const ve_fit* f, size_t lag, size_t fitdf, doubl
 /* individual and estimated have ve_fit_param_count entries in parameter order. estimated[i] is 1 for a parameter
  * the fit estimated and 0 for a fixed or derived one (variance-targeted omega, iGARCH beta_q), whose individual
  * statistic is NaN; the count of 1s is what ve_nyblom_critical takes for the joint statistic. An estimated
- * parameter can still get NaN, when its scores are all zero. */
+ * parameter can still get NaN, when its scores are all zero. joint is one double. */
 VE_API ve_status ve_fit_nyblom(const ve_fit* f, double* individual, double* joint, int32_t* estimated);
 /* Critical values at 10%, 5%, 1%, for 1..20 estimated parameters. */
 VE_API ve_status ve_nyblom_critical(size_t parameters, double* out);
@@ -334,8 +339,8 @@ VE_API void ve_forecast_free(ve_forecast* fc);
    Paths of `horizon` steps from a fit (continuing after its last observation, as rugarch's ugarchsim with
    startMethod = "sample") or from a spec with every parameter fixed (from its unconditional state, as rugarch's
    ugarchpath). Each step draws z from the distribution of the spec, e = sigma z and r = the conditional mean + e.
-   The same seed, source and library version give the same paths on every machine with the same ISA and for any
-   number of threads; a new version may change them (see the CHANGELOG). The first k paths of a simulation are
+   The same seed, source and library version give the same paths on every machine with the same ISA and the same SIMD
+   target (chosen at run time) and for any number of threads; a new version may change them (see the CHANGELOG). The first k paths of a simulation are
    those of any simulation of the same seed with more paths, and its steps the first of any longer one. */
 typedef struct ve_sim_options ve_sim_options;
 typedef struct ve_sim ve_sim;
@@ -379,8 +384,12 @@ typedef struct ve_dcc_fit ve_dcc_fit;
 #define VE_DCC_DIST_MVT 1
 #define VE_DCC_DIST_MVLAPLACE 2
 VE_API ve_status ve_dcc_spec_create(int32_t model, ve_dcc_spec** out);
+/* p is the number of shock terms (dcca1..dccap, and dccg1..dccgp in the aDCC) and q the number of persistence terms
+   (dccb1..dccbq), both in 1 .. VE_MAX_ORDER; the FDCC and the static model need (1, 1). */
 VE_API ve_status ve_dcc_spec_set_order(ve_dcc_spec* s, int32_t p, int32_t q);
 VE_API ve_status ve_dcc_spec_set_dist(ve_dcc_spec* s, int32_t dist);
+/* FDCC only. groups has one entry per series (count = the number of series of the fit), labelling its group from 1,
+   with every label 1..G used; the model has fdcca1..fdccaG and fdccb1..fdccbG. */
 VE_API ve_status ve_dcc_spec_set_groups(ve_dcc_spec* s, const int32_t* groups, size_t count);
 VE_API ve_status ve_dcc_spec_set_fixed(ve_dcc_spec* s, const char* name, double value);
 VE_API ve_status ve_dcc_spec_set_start(ve_dcc_spec* s, const char* name, double value);
@@ -415,6 +424,8 @@ VE_API ve_status ve_dcc_fit_batch(ve_context* ctx, const ve_dcc_batch* b, ve_dcc
 VE_API ve_status ve_dcc_fit_status(const ve_dcc_fit* f, int32_t* out);
 VE_API ve_status ve_dcc_fit_nobs(const ve_dcc_fit* f, size_t* out);
 VE_API ve_status ve_dcc_fit_series(const ve_dcc_fit* f, size_t* out);
+/* The parameters of the correlation model that were estimated: dcca*, dccb*, dccg* (aDCC), fdcca*, fdccb* (FDCC), C1..
+   (static ML copula) and mshape (mvt), in that order; a fixed one is not listed. */
 VE_API ve_status ve_dcc_fit_param_count(const ve_dcc_fit* f, size_t* out);
 VE_API ve_status ve_dcc_fit_param_name(const ve_dcc_fit* f, size_t i, const char** out);
 VE_API ve_status ve_dcc_fit_estimates(const ve_dcc_fit* f, double* out);
@@ -422,7 +433,10 @@ VE_API ve_status ve_dcc_fit_std_errors(const ve_dcc_fit* f, int32_t se_kind, dou
 VE_API ve_status ve_dcc_fit_t_values(const ve_dcc_fit* f, int32_t se_kind, double* out);
 VE_API ve_status ve_dcc_fit_p_values(const ve_dcc_fit* f, int32_t se_kind, double* out);
 VE_API ve_status ve_dcc_fit_loglik(const ve_dcc_fit* f, double* out);
-/* scale is VE_IC_PER_OBS or VE_IC_TOTAL; which is VE_CRITERION_*. */
+/* scale is VE_IC_PER_OBS or VE_IC_TOTAL; which is VE_CRITERION_*. The criterion counts the parameters of the two
+   stages, as rmgarch does: the parameters the univariate criteria count in each series' fit, the ones listed by
+   ve_dcc_fit_param_count, and the m (m - 1) / 2 entries of the correlation intercept Qbar. It is therefore larger than
+   ve_dcc_fit_param_count. */
 VE_API ve_status ve_dcc_fit_criterion(const ve_dcc_fit* f, int32_t which, int32_t scale, double* out);
 /* Zero-copy T x m x m row-major views, valid until f is freed. H is computed once, on first access. */
 VE_API ve_status ve_dcc_fit_correlation(const ve_dcc_fit* f, const double** data, size_t* len);
