@@ -18,6 +18,10 @@ The C interface is frozen. The audit of its 133 functions is in `docs/superpower
   `ve_hqic` and `ve_sic`; `VE_DCC_CRITERION_*` is now `VE_CRITERION_*` and serves both `ve_fit_criterion` and
   `ve_dcc_fit_criterion`. C++: `ve::Criterion` replaces `ve::DccCriterion`, and `Fit::criterion` is new.
 - `ve_dcc_fit_standard_errors` is now `ve_dcc_standard_errors`.
+- A DCC fit lists every parameter of its model, as a univariate fit does: with a fixed parameter (`DccSpec(fixed=...)`),
+  `ve_dcc_fit_param_count`, `_name`, `_estimates`, `_std_errors`, `_t_values` and `_p_values` include it, with its value
+  and NaN statistics, so positions follow `parameter_names` whatever is fixed. It used to be left out of the table.
+  The criteria still count the estimated parameters only.
 - A DCC fit made with `ve_dcc_options_set_standard_errors(o, 0)` answers `ve_dcc_fit_std_errors`, `_t_values` and
   `_p_values` with `VE_INVALID_ARGUMENT`, as the univariate fit does, not with `VE_OK` and NaN. Python: `DccFit.coef()`
   raises `VolEngineError` on such a fit, and `DccFit.estimate` reads its estimates. C++: the same, as an `ve::Error`.

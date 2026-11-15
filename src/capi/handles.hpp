@@ -1,5 +1,6 @@
 #pragma once
 
+#include "capi/dcc/table.hpp"
 #include "capi/results/regressor_rows.hpp"
 #include "core/context.hpp"
 #include "dcc/fit.hpp"
@@ -87,6 +88,8 @@ struct ve_dcc_batch
 struct ve_dcc_fit
 {
     ve::dcc::DccFitResult result;
+    // Every parameter, fixed ones included; result holds the estimated ones (src/capi/dcc/table.hpp).
+    ve::capi::dcc::DccTable table;
     mutable std::once_flag covariance_once;
     mutable std::vector<double> covariance;
 };

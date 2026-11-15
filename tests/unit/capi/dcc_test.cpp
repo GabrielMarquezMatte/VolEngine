@@ -591,6 +591,40 @@ TEST(CapiDcc, StandardErrorsLater)
     }
 }
 
+// As the univariate fit, the table lists every parameter: a fixed one keeps its value and has NaN statistics.
+TEST(CapiDcc, FixedParametersStayInTheTable)
+{
+    FitSet univariate = univariate_fits(false);
+    DccSpecPtr spec = make_dcc_spec(VE_DCC_MODEL_DCC, VE_DCC_DIST_MVNORM);
+    ASSERT_EQ(ve_dcc_spec_set_fixed(spec.get(), "dcca1", 0.03), VE_OK);
+    const std::vector<DccSpecPtr> specs = [&] { std::vector<DccSpecPtr> one; one.push_back(std::move(spec)); return one; }();
+    DccBatchPtr batch = build_dcc_batch({raw_specs(specs), handles_of(univariate), nullptr});
+    ve::testing::ContextPtr context = ve::testing::make_context(2);
+    DccFits fits(1);
+    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(read_status(fits[0]), VE_FIT_CONVERGED);
+    std::size_t count = 0;
+    ASSERT_EQ(ve_dcc_fit_param_count(fits[0], &count), VE_OK);
+    ASSERT_EQ(count, 2U);
+    const char* name = nullptr;
+    ASSERT_EQ(ve_dcc_fit_param_name(fits[0], 0, &name), VE_OK);
+    EXPECT_STREQ(name, "dcca1");
+    ASSERT_EQ(ve_dcc_fit_param_name(fits[0], 1, &name), VE_OK);
+    EXPECT_STREQ(name, "dccb1");
+    const std::vector<double> estimates = read_estimates(fits[0]);
+    EXPECT_EQ(estimates[0], 0.03);
+    EXPECT_TRUE(std::isfinite(estimates[1]));
+    for (const int32_t kind : {VE_SE_HESSIAN, VE_SE_ROBUST})
+    {
+        for (const Reader reader : {ve_dcc_fit_std_errors, ve_dcc_fit_t_values, ve_dcc_fit_p_values})
+        {
+            const std::vector<double> values = read_table(fits[0], reader, kind);
+            EXPECT_TRUE(std::isnan(values[0]));
+            EXPECT_TRUE(std::isfinite(values[1]));
+        }
+    }
+}
+
 TEST(CapiDcc, ANonConvergedSpecKeepsItsOwnStatus)
 {
     FitSet univariate = univariate_fits(false);

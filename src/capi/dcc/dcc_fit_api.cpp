@@ -50,10 +50,10 @@ ve_status fill_statistic(const ve_dcc_fit* f, int32_t kind, double* out, Statist
             {
                 return ve::capi::no_dcc_standard_errors();
             }
-            const auto& errors = kind == VE_SE_HESSIAN ? f->result.se_hessian : f->result.se_robust;
+            const auto& errors = kind == VE_SE_HESSIAN ? f->table.se_hessian : f->table.se_robust;
             for (size_t i = 0; i < errors.size(); ++i)
             {
-                out[i] = statistic(f->result.estimate[i], errors[i]);
+                out[i] = statistic(f->table.estimate[i], errors[i]);
             }
             return VE_OK;
         });
@@ -150,7 +150,7 @@ extern "C" ve_status ve_dcc_fit_param_count(const ve_dcc_fit* f, size_t* out)
             {
                 return status;
             }
-            *out = f->result.names.size();
+            *out = f->table.names.size();
             return VE_OK;
         });
 }
@@ -180,11 +180,11 @@ extern "C" ve_status ve_dcc_fit_param_name(const ve_dcc_fit* f, size_t i, const 
             {
                 return status;
             }
-            if (i >= f->result.names.size())
+            if (i >= f->table.names.size())
             {
                 return set_error(VE_INVALID_ARGUMENT, "i must be < param_count");
             }
-            *out = f->result.names[i].c_str();
+            *out = f->table.names[i].c_str();
             return VE_OK;
         });
 }
@@ -199,7 +199,7 @@ extern "C" ve_status ve_dcc_fit_estimates(const ve_dcc_fit* f, double* out)
             {
                 return status;
             }
-            std::ranges::copy(f->result.estimate, out);
+            std::ranges::copy(f->table.estimate, out);
             return VE_OK;
         });
 }

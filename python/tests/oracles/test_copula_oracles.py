@@ -134,7 +134,8 @@ def test_copula_estimates_near_rmgarch(case):
     fit = fitted(case["id"])
     assert fit.status == "converged"
     params = dict(zip(fit.names, fit.estimate, strict=True))
-    assert set(params) == set(case["params"])
+    fixed = case["fixed"] or {}
+    assert set(params) - set(fixed) == set(case["params"])
     for name, expected in case["params"].items():
         if abs(expected) < 1e-6:
             assert abs(params[name]) < 1e-3, name
@@ -144,6 +145,9 @@ def test_copula_estimates_near_rmgarch(case):
 
 @pytest.mark.parametrize("case", [case for case in CASES if case["params"]], ids=lambda case: case["id"])
 def test_copula_robust_errors_are_positive(case):
-    errors = fitted(case["id"]).standard_errors(univariate_fits()).coef(se="robust").std_error
+    table = fitted(case["id"]).standard_errors(univariate_fits()).coef(se="robust")
+    fixed = np.array([name in (case["fixed"] or {}) for name in table.names])
+    assert np.isnan(table.std_error[fixed]).all()
+    errors = table.std_error[~fixed]
     assert np.isfinite(errors).all()
     assert (errors > 0).all()

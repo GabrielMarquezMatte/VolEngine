@@ -126,6 +126,7 @@ void publish(std::vector<ve::dcc::DccFitResult> results, ve_dcc_fit** out)
     {
         auto handle = std::make_unique<ve_dcc_fit>();
         handle->result = std::move(result);
+        handle->table = ve::capi::dcc::table_of(handle->result);
         handles.push_back(std::move(handle));
     }
     for (size_t i = 0; i < handles.size(); ++i)

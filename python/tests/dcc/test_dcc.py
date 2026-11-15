@@ -107,12 +107,15 @@ def test_dcc_standard_errors_later(ctx, univariate):
     np.testing.assert_array_equal(later.R, on.R)
 
 
-def test_dcc_fixed_parameters_leave_the_table(ctx, univariate):
+def test_dcc_fixed_parameters_stay_in_the_table(ctx, univariate):
     spec = ve.DccSpec("dcc", fixed={"dcca1": 0.03}, start={"dccb1": 0.9})
     fit = ctx.fit_dcc(spec, univariate)
-    assert fit.names == ("dccb1",)
-    assert fit.coef().estimate.shape == (1,)
-    assert fit.coef(se="robust").std_error.shape == (1,)
+    assert fit.names == ("dcca1", "dccb1")
+    table = fit.coef(se="robust")
+    assert table.estimate[0] == 0.03
+    assert np.isnan(table.std_error[0]) and np.isnan(table.t_value[0]) and np.isnan(table.p_value[0])
+    assert np.isfinite(table.estimate[1]) and np.isfinite(table.std_error[1])
+    assert fit.estimate.shape == (2,)
 
 
 def test_dcc_non_converged_spec_keeps_its_own_status(ctx, univariate):

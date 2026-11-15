@@ -160,6 +160,9 @@ def test_dcc_estimates_near_rmgarch(case):
     fit = fitted_case(case["id"])
     params = dict(zip(fit.names, fit.estimate, strict=True))
     for name in fit.names:
+        if name in (case["fixed"] or {}):
+            assert params[name] == case["fixed"][name]
+            continue
         if case["model"] == "aDCC" and name.startswith("dccg"):
             assert params[name] >= 0
             continue
@@ -169,6 +172,9 @@ def test_dcc_estimates_near_rmgarch(case):
 @pytest.mark.parametrize("case", CASES, ids=lambda case: case["id"])
 def test_dcc_robust_errors_are_positive(case):
     fit = fitted_case(case["id"], True)
-    errors = fit.standard_errors(panel_fits(case["panel"])).coef(se="robust").std_error
+    table = fit.standard_errors(panel_fits(case["panel"])).coef(se="robust")
+    fixed = np.array([name in (case["fixed"] or {}) for name in table.names])
+    assert np.isnan(table.std_error[fixed]).all()
+    errors = table.std_error[~fixed]
     assert np.isfinite(errors).all()
     assert (errors > 0).all()

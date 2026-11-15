@@ -128,6 +128,20 @@ TEST(Dcc, StandardErrorsOffAreAnError)
     EXPECT_TRUE(fit.estimates().has_value());
 }
 
+// Like Fit, a DccFit lists every parameter: a fixed one keeps its value and its statistics are NaN.
+TEST(Dcc, FixedParametersStayInTheTable)
+{
+    const auto context = ve::Context::create(1).value();
+    const auto fits = ve::testing::dcc3_univariate_fits(context);
+    const auto fit = context.fit_dcc(ve::DccSpec{.fixed = {{"dcca1", 0.03}}}, fits).value();
+    const auto names = fit.param_names().value();
+    ASSERT_EQ(names.size(), 2U);
+    EXPECT_EQ(names[0], "dcca1");
+    EXPECT_EQ(fit.estimates().value()[0], 0.03);
+    EXPECT_TRUE(std::isnan(fit.std_errors(ve::SeKind::robust).value()[0]));
+    EXPECT_TRUE(std::isfinite(fit.std_errors(ve::SeKind::robust).value()[1]));
+}
+
 TEST(Dcc, CopulaAndStaticModelsConverge)
 {
     const auto context = ve::Context::create(1).value();

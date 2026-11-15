@@ -424,8 +424,9 @@ VE_API ve_status ve_dcc_fit_batch(ve_context* ctx, const ve_dcc_batch* b, ve_dcc
 VE_API ve_status ve_dcc_fit_status(const ve_dcc_fit* f, int32_t* out);
 VE_API ve_status ve_dcc_fit_nobs(const ve_dcc_fit* f, size_t* out);
 VE_API ve_status ve_dcc_fit_series(const ve_dcc_fit* f, size_t* out);
-/* The parameters of the correlation model that were estimated: dcca*, dccb*, dccg* (aDCC), fdcca*, fdccb* (FDCC), C1..
-   (static ML copula) and mshape (mvt), in that order; a fixed one is not listed. */
+/* Every parameter of the correlation model, as ve_fit_param_count does for a univariate fit: dcca*, dccb*, dccg* (aDCC),
+   fdcca*, fdccb* (FDCC), C1.. (static ML copula) and mshape (mvt), in that order. A fixed parameter is listed with its
+   value, NaN standard errors, t and p values, and is not counted by the criteria. */
 VE_API ve_status ve_dcc_fit_param_count(const ve_dcc_fit* f, size_t* out);
 VE_API ve_status ve_dcc_fit_param_name(const ve_dcc_fit* f, size_t i, const char** out);
 VE_API ve_status ve_dcc_fit_estimates(const ve_dcc_fit* f, double* out);
@@ -434,9 +435,9 @@ VE_API ve_status ve_dcc_fit_t_values(const ve_dcc_fit* f, int32_t se_kind, doubl
 VE_API ve_status ve_dcc_fit_p_values(const ve_dcc_fit* f, int32_t se_kind, double* out);
 VE_API ve_status ve_dcc_fit_loglik(const ve_dcc_fit* f, double* out);
 /* scale is VE_IC_PER_OBS or VE_IC_TOTAL; which is VE_CRITERION_*. The criterion counts the parameters of the two
-   stages, as rmgarch does: the parameters the univariate criteria count in each series' fit, the ones listed by
-   ve_dcc_fit_param_count, and the m (m - 1) / 2 entries of the correlation intercept Qbar. It is therefore larger than
-   ve_dcc_fit_param_count. */
+   stages, as rmgarch does: the parameters the univariate criteria count in each series' fit, the estimated
+   ones among those listed by ve_dcc_fit_param_count, and the m (m - 1) / 2 entries of the correlation intercept Qbar.
+   It is therefore larger than ve_dcc_fit_param_count. */
 VE_API ve_status ve_dcc_fit_criterion(const ve_dcc_fit* f, int32_t which, int32_t scale, double* out);
 /* Zero-copy T x m x m row-major views, valid until f is freed. H is computed once, on first access. */
 VE_API ve_status ve_dcc_fit_correlation(const ve_dcc_fit* f, const double** data, size_t* len);

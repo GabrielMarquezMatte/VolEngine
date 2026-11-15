@@ -63,6 +63,7 @@ extern "C" ve_status ve_dcc_standard_errors(ve_context* ctx, const ve_dcc_fit* f
             handle->result.se_hessian = errors->hessian;
             handle->result.se_robust = errors->robust;
             handle->result.standard_errors = true;
+            handle->table = ve::capi::dcc::table_of(handle->result);
             *out = handle.release();
             return VE_OK;
         });
