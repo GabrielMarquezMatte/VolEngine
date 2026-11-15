@@ -1,0 +1,17 @@
+# Achados da ABI no wrapper C++ (plano 6b)
+
+O wrapper é o segundo consumidor da interface C. Cada linha abaixo é um atrito que ele encontrou, para a auditoria do
+6c decidir. Nenhuma mudança de ABI foi feita no 6b. As 133 funções `VE_API` são chamadas pelo wrapper
+(`cpp/scripts/check_abi_coverage.py`).
+
+| # | Função | Atrito | O que o wrapper fez | Pede mudança no 6c? |
+|---|---|---|---|---|
+| 1 | `ve_spec_set_order`, `ve_fit_batch` | Um mesmo erro (ordem 0) tem duas formas de mensagem: o setter recusa na hora (`p out of range`, sem prefixo) e o lote recusa outras specs com `spec <i>: ...`. Quem monta a spec e quem ajusta veem formatos diferentes. | `Spec::make_handle` devolve o erro do setter; o lote devolve o dele. Teste dos dois casos. | Não precisa; vale uma frase no header. |
+| 2 | `ve_panel_set_strides` | O passo negativo exige que `data` aponte para o elemento (0, 0), com os demais em deslocamentos negativos. Um `std::span` não diz o que existe antes do seu início. | `Panel::create_strided` recusa passos negativos e confere que o span cobre a extensão. | Não; documentar que passo negativo só serve a quem tem o ponteiro bruto. |
+| 3 | `ve_fit_options_set_standard_errors` | O header diz que o resto é "computed as before", mas o `loglik` com erros-padrão desligados difere do ligado no 13º dígito (-5058.3596260735821 contra ...867) com estimativas idênticas bit a bit. | O teste compara com 1e-11 relativo. | Investigar: a documentação promete mais do que o código faz, ou o caminho do `loglik` muda. |
+| 4 | `ve_dcc_fit_std_errors`, `_t_values`, `_p_values` | Com `ve_dcc_options_set_standard_errors(0)` devolvem `VE_OK` com NaN; o univariado, na mesma situação, devolve `VE_INVALID_ARGUMENT`. Contrato diferente para a mesma ideia. | O `DccFit` expõe NaN; o `Fit` expõe erro. Testes dos dois. | Sim: escolher um comportamento antes da 1.0 (mudar depois quebra). |
+| 5 | `ve_dcc_fit_criterion`, `ve_dcc_fit_param_count` | O critério conta a primeira etapa e o intercepto de correlação (17 parâmetros para 3 séries com 4 cada, 2 do DCC e 3 de Qbar), enquanto `param_count` devolve 2. O header não diz. | O teste fixa k = 17 e o comentário do wrapper explica. | Documentar no header; considerar `ve_dcc_fit_criterion_count`. |
+| 6 | `ve_dcc_forecast_create` | O erro para um `ve_dcc_future` com número de séries diferente do ajuste não nomeia a série nem as duas contagens. | O teste confere só `invalid_argument` e mensagem não vazia. | Não; melhorar a mensagem. |
+| 7 | `ve_dcc_fit_batch` | O tamanho de `out` é o de `ve_dcc_batch_spec_count`, que exige criar o lote antes; não há como saber o número de specs só pelo `out`. | O wrapper lê a contagem do lote. | Não. |
+| 8 | Windows, `.def` e import library | O `.dll.a` do MinGW grava `libvolengine.dll` nos descritores de importação, e o `.lib` do release foi feito com `/name:volengine-native-win-x64.dll`. Dois nomes de DLL para o mesmo asset. | O download salva a DLL com o nome que o import library espera (`libvolengine.dll` no MinGW, o nome do asset no MSVC). | Sim, no pipeline: gerar o `.lib` com `/name:libvolengine.dll` e o asset da DLL com esse nome, para um só nome. |
+| 9 | `ve_fit_param_name`, `ve_dcc_fit_param_name` | O ponteiro vale até o handle ser liberado, mas a função devolve um `ve_status` por nome: ler N nomes são N chamadas. | O wrapper lê todos de uma vez e devolve `string_view`s presos ao `Fit`. | Não. |

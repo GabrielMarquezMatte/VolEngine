@@ -28,3 +28,10 @@ volengine_copy_native_library(volengine_cpp_tests)
 gtest_discover_tests(volengine_cpp_tests)
 
 add_test(NAME asset_names COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/asset_names.cmake)
+
+# Every VE_API function of the C header has to be called by the wrapper headers.
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_FOUND)
+    add_test(NAME abi_coverage
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check_abi_coverage.py)
+endif()
