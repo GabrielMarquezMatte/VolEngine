@@ -156,3 +156,52 @@ The `double` loglik and the `Dual` one now differ by rounding in the density: `D
 grid cases) and the three fit tests that compared a `Dual` loglik with `loglik<double>` bit for bit use a relative
 tolerance of 1e-14, which every case meets (some do not at 1e-15). The variance (sigma2) and the residuals are the same
 code in both and stay bit for bit. All oracles (rugarch, rmgarch, arch) pass at their tolerances.
+
+## Task 6: the pipeline and the platforms (2026-11-15)
+
+`gcc-bench`, A/B in the same session, `base` = the build of `5ef1313` (the commit before the kernels), `new` = the
+code of this plan; one run of each benchmark.
+
+| Benchmark | base | new | new / base |
+|-----------|------|-----|-----------|
+| `BM_TccGrid/se:on/threads:hw` | 2.72 s | 1.31 s | 0.48 |
+| `BM_TccGrid/se:on/threads:1` | 22.0 s | 11.1 s | 0.50 |
+| `BM_TccGrid/se:off/threads:hw` | 2.11 s | 1.03 s | 0.49 |
+| `BM_TccGrid/se:off/threads:1` | 17.3 s | 8.58 s | 0.50 |
+| `BM_DccGrid/threads:hw` | 2.33 s | 0.573 s | 0.25 |
+| `BM_DccGrid/threads:1` | 10.5 s | 2.08 s | 0.20 |
+| **`BM_TccGrid` + `BM_DccGrid`, all threads, `se:on`** | **5.05 s** | **1.88 s** | **0.37** |
+| `BM_DccFit/dcc_mvnorm`, `dcc_mvt`, `dcc_mvlaplace` | 0.892, 0.906, 0.955 s | 0.145, 0.134, 0.169 s | 0.16, 0.15, 0.18 |
+| `BM_DccFit/adcc_mvnorm`, `adcc_mvt`, `adcc_mvlaplace` | 0.908, 1.32, 0.970 s | 0.164, 0.227, 0.199 s | 0.18, 0.17, 0.21 |
+| `BM_DccFit/fdcc_mvnorm`, `fdcc_mvt`, `fdcc_mvlaplace` | 1.51, 1.68, 1.62 s | 0.347, 0.325, 0.404 s | 0.23, 0.19, 0.25 |
+| `BM_DccStandardErrors/dcc_mvnorm` | 2.89 s | 1.35 s | 0.47 |
+| `BM_CopulaFit/dcc_mvnorm_param`, `adcc_mvnorm_param` | 0.961, 1.00 s | 0.960, 0.964 s | 1.0 |
+| `BM_CopulaFit/dcc_mvt_param`, `adcc_mvt_param` | 36.8, 36.6 s | 36.2, 36.8 s | 1.0 |
+| `BM_CopulaFit/static_mvnorm_kendall_param` | 3.76 s | 3.80 s | 1.0 |
+| `BM_Loglik/*/double` (`quick.py`, 4 cases) | 50 to 173 us | 32 to 93 us | 0.40 to 0.64 |
+| `BM_Loglik/*/dual` | 157 to 646 us | the same | 1.0 |
+| `BM_FitOne` (5 cases of `quick.py`) | 3.1 to 36.7 ms | 2.3 to 22.3 ms | 0.38 to 0.74 |
+| `BM_TccGridSample/threads:1` | 403 ms | 210 ms | 0.52 |
+| Python against `arch`, `threads=1`, matched work | 2.77x | 5.43x | |
+| Python against `arch`, all cores | 12.98x | 25.7x | |
+
+The goal, "the pipeline with all threads falls from 2.72 + 2.35 s", is met: 5.05 s to 1.88 s. The copula-DCC fits
+(`src/dcc/copula/fit.cpp`) have their own objective, still in `ad::Dual`: they share the recursion kernels only
+through the `double` path (the final loglik), so they do not move. `BM_CopulaFit/static_mvt_*` fail on both sides
+("the DCC fit has no finite point"), as they did before this plan.
+
+**The grid profile** (`grid_profile` and `quick.py compare-profile`, the 1080 fits of `BM_TccGrid` once, all
+threads): time ratio 0.48, evaluation ratio 0.9997, every fit `CONVERGED` on both sides.
+
+Ruling: the worst log-likelihood change of that comparison is -4.4e-8 relative (`sgarch_p3q3_arma00_std`, series 19),
+beyond the 1e-9 that `measuring.md` allows an optimizer change, and it is not a regression: the sample is symmetric
+(8 fits below -1e-9, 9 above +1e-9, of 1080; 89 move by more than 1e-12), all of them over-parametrized sGARCH(p >= 2)
+fits with the std or ged density, whose likelihood is nearly flat along a ridge. The objective of the optimizer now
+differs from the old one by rounding in the density (the vector log1p and exp), the steps by ulps, and a fit that stops
+on a ridge stops a few iterations earlier or later (the evaluation ratio is 1.00). Cost if wrong: a fit of the grid could
+end at a likelihood lower by up to 4e-8 relative than before, on a ridge where the parameters are not identified.
+
+**Platforms.** MSVC (`msvc-release`, VS 2026): builds and passes the whole suite (4983 of 4983 tests; the kernels run on its AVX2 and SSE2 targets, the ones MSVC compiles). Clang is not installed on this machine, so it was not
+tried. GCC 16.2.0 (MSYS2 UCRT64): every kernel test runs on AVX2, SSE4, SSSE3 and SSE2, which is what this CPU
+supports; AVX3 (AVX-512) targets are compiled but this CPU cannot run them, so they are untested here (see
+[Measuring](measuring.md#simd-targets)).

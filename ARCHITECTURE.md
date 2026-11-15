@@ -38,12 +38,15 @@ Laplace likelihoods and optional two-stage standard errors.
         src/core   context, spec, panel
 
   src/linalg   Cholesky, least squares (depends on nothing; used by model and fit)
+  src/simd     vector kernels over std::span<double>, run-time dispatched (used by model and dcc)
 ```
 
 Dependencies point one way: `core` <- `ad` <- `mean`, `garch`, `dist` <- `model` <- `fit` <- `forecast` <- `sim` <- `capi`,
 and `optim` <- `fit`. `fit` includes only `forecast/state.hpp` from `forecast`: the plain `ForecastState` that a
 `FitResult` carries. `linalg` sits beside the stack: it depends on nothing, and both `model` (the start values and the
-backcast with mean regressors) and `fit` (the standard errors) use it. Nothing in `src/` includes from `src/capi/` except `capi` itself. Everything below the C API is
+backcast with mean regressors) and `fit` (the standard errors) use it. `simd` sits beside it: the only place that
+includes Google Highway, so no header outside `src/simd/` shows a vector type; `model` calls it for the density terms
+and `dcc` for the correlation recursion, the Cholesky and its pullback. Nothing in `src/` includes from `src/capi/` except `capi` itself. Everything below the C API is
 internal and may change in any release; only the header is a contract, and the Python package is a consumer of it
 like any other wrapper would be.
 
@@ -84,8 +87,10 @@ depends on `dcc` and `dcc` on it for that dispatch only: `dist` <- `dcc/copula` 
 | `src/linalg/cholesky.*`, `least_squares.*` | Cholesky factor and solve; minimum-norm least squares by the normal equations, with a Jacobi pseudo-inverse when they are singular |
 | `src/linalg/symmetric_eigen.*` | Largest relative eigenvalue for the aDCC stationarity constraint, by power iteration after a Cholesky transform |
 | `src/linalg/lu.*` | Pivoted LU solves for the nonsymmetric two-stage standard-error system |
+| `src/simd/*.{hpp,cpp}` | Google Highway kernels with run-time dispatch (generic x86-64 build, no `-march=native`): `reduce` (sum, dot), `dcc_kernels` (the elementwise recursion of Q_t, never fused), `cholesky_kernels` (the Cholesky, log determinant, quadratic form and their pullback for a vector of matrices of different t), `density_kernels` (the norm, std and ged terms of the likelihood, with the partials of the adjoint) |
 | `src/dcc/spec.hpp`, `panel.*` | DCC models, distributions and internal conventions; standardized panel, covariance moments and aDCC stationarity bound |
 | `src/dcc/recursion.hpp`, `likelihood.*` | DCC/aDCC/FDCC correlation paths and multivariate normal, Student-t and Laplace log-densities, templated for AD |
+| `src/dcc/density.hpp`, `likelihood/gradient.*` | The multivariate log-densities in the three arguments that matter (log determinant, quadratic form, shape); `ObjectiveGradient`: the DCC objective and its gradient without dual numbers, by tangents of the recursion and a per-observation pullback (plan 5b) |
 | `src/dcc/parameter_map.*`, `fit.*` | Parameter layout and constraints, L-BFGS estimation, deterministic batches, full likelihood criteria and covariance paths |
 | `src/dcc/copula/` | Copula-DCC: margins to uniforms (`margins.*`), scores (`scores.*`), static Kendall/ML correlation (`static_fit.*`), profile fit and copula likelihood (`fit.*`) |
 | `src/dcc/future/` | The future of a DCC fit (plan 4c): the final state of the correlation recursion and the `CorrelationStepper` that advances Q and R one step (`state.*`), `forecast_dcc` (`forecast.*`) and `simulate_dcc` (`simulate.*`) |

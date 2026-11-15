@@ -136,6 +136,31 @@ the scheduling only in batches.
 The DCC grid does not move beyond noise: its fits have 2 to 4 parameters, so neither the memory nor `Dual<12>`
 changes their work.
 
+## Plan 5b: SIMD inside one evaluation
+
+Measured on 2026-11-15 on the machine above, preset `gcc-bench` (generic x86-64, run-time dispatch: the AVX2 target
+here), A/B in the same session against the build of the commit before plan 5b's kernels (`5ef1313`), one run of each
+benchmark. What each step gained is in [Plan 5b profile](profile-5b.md).
+
+| Benchmark | Before | After | After / before |
+| --- | ---: | ---: | ---: |
+| `BM_TccGrid/se:on/threads:hw` (1080 fits) | 2.72 s | 1.31 s | 0.48 |
+| `BM_DccGrid/m:21/T:5000/threads:hw` (9 DCC fits) | 2.33 s | 0.573 s | 0.25 |
+| **TCC pipeline, all threads** (the two above) | **5.05 s** | **1.88 s** | **0.37** |
+| `BM_TccGrid/se:on/threads:1` | 22.0 s | 11.1 s | 0.50 |
+| `BM_TccGrid/se:off/threads:1` | 17.3 s | 8.58 s | 0.50 |
+| `BM_DccGrid/m:21/T:5000/threads:1` | 10.5 s | 2.08 s | 0.20 |
+| `BM_DccFit/dcc_mvnorm/m:21` | 0.892 s | 0.145 s | 0.16 |
+| `BM_DccFit/adcc_mvt/m:21` | 1.32 s | 0.227 s | 0.17 |
+| `BM_DccFit/fdcc_mvnorm/m:21` | 1.51 s | 0.347 s | 0.23 |
+| `BM_DccStandardErrors/dcc_mvnorm/m:21` | 2.89 s | 1.35 s | 0.47 |
+| `BM_CopulaFit/*` | 0.96 to 36.8 s | the same | 1.0 (the copula objective is unchanged) |
+
+The other `BM_DccFit` rows and the `BM_FitOne` and `BM_Loglik` rows are in [Plan 5b profile](profile-5b.md). Every
+fit of the TCC grid and of the DCC grid ends `CONVERGED` on both sides; the log-likelihoods of the grid agree (see
+the profile for the 17 fits that move by more than 1e-9 relative). Two cases of `BM_CopulaFit`
+(`static_mvt_{kendall,ml}_param`) report "the DCC fit has no finite point" on both sides: they predate plan 5b.
+
 ## Adjoint gradient
 
 Measured on 2026-11-14 on the machine above, preset `gcc-bench`, code at `855a0a6`: the optimizer and the numerical

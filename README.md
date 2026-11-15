@@ -219,8 +219,9 @@ until the chosen model is refitted with them.
 ## Build
 
 Needs CMake 3.28+ and a C++23 compiler (GCC 15+, a recent MSVC or Clang); the presets use Ninja, except
-`msvc-release` (Visual Studio) and `native-release` (the default generator). GoogleTest, BS::thread_pool and the
-headers of Boost.Math (modified Bessel functions for `nig` and `ghyp`) are fetched by CMake.
+`msvc-release` (Visual Studio) and `native-release` (the default generator). GoogleTest, BS::thread_pool, Google Highway
+(the SIMD kernels, dispatched at run time) and the headers of Boost.Math (modified Bessel functions for `nig` and
+`ghyp`) are fetched by CMake.
 
 ```
 cmake --preset gcc-release

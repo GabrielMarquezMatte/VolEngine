@@ -19,6 +19,13 @@ library whose ABI version differs).
 
 ### Changed
 
+- The `double` log-likelihood and the `Dual` one differ by rounding. The `double` instantiation reads the norm, std and
+  ged terms of the univariate likelihood, and the Cholesky, the solve and the log determinant of the DCC, from SIMD
+  kernels (Google Highway: the vector `log`, `log1p` and `exp`, sums by lanes, fused multiply-adds on AVX2); the
+  `Dual` one keeps the scalar libm path. The two agree to 1e-14 relative on the log-likelihood in the tests, and the
+  variance and the residuals stay bit for bit. Results on the same machine do not depend on the number of threads;
+  across machines with different instruction sets (SSE4, AVX2, AVX-512) the results agree only within a tolerance,
+  not bit for bit.
 - The L-BFGS optimizer keeps 40 curvature pairs instead of 10, so fits with up to a few dozen parameters behave like
   full BFGS: about half the evaluations, and every fit of the TCC grid now ends `CONVERGED`. The overparametrized fits
   of that grid have several local optima; on some series the new path ends at another one (higher or lower).
@@ -34,6 +41,14 @@ library whose ABI version differs).
 
 ### Performance
 
+- SIMD inside one evaluation (plan 5b; Google Highway 1.2.0, run-time dispatch in a generic x86-64 build). The TCC
+  pipeline with all threads (the 1080-fit univariate grid and the 9 DCC fits over 21 series) takes 1.88 s instead of
+  5.05 s: the univariate grid 0.48 of its time and the DCC grid 0.25. Three changes: the norm, std and ged terms of the
+  likelihood come from one vector loop in every model, fused with the adjoint's partials; the DCC recursion, Cholesky
+  and quadratic form run in vector lanes over observations; and the DCC gradient no longer uses forward-mode AD on the
+  matrices: tangents of the correlation recursion plus a per-observation pullback (every DCC, aDCC and FDCC fit with
+  the mvnorm, mvt or mvlaplace takes 0.15 to 0.25 of its time). The two-stage standard errors of the DCC take 0.47.
+  See [docs/performance/profile-5b.md](docs/performance/profile-5b.md).
 - sGARCH, iGARCH, gjrGARCH and eGARCH fits with norm, std or ged innovations and an ARMA mean (no regressors,
   ARCH-in-mean, ARFIMA or variance targeting) take the gradient of the log-likelihood from a hand-written adjoint
   instead of forward-mode AD, in the optimizer and in the Hessian of the standard errors: the TCC grid takes 0.71 of

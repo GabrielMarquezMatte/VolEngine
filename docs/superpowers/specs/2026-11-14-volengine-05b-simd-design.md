@@ -191,3 +191,27 @@ sobre a matriz.
 2. Portão de medida cedo para o gradiente do DCC (§5).
 3. Um único laço vetorial de densidade para todos os modelos (§4.4).
 4. Toolchain verificada na primeira task (§5).
+
+## 11. Feito (2026-11-15)
+
+Resultados em `docs/performance/profile-5b.md` e `docs/performance/benchmarks.md`. O pipeline do TCC com todas as
+threads (`BM_TccGrid` + `BM_DccGrid`) caiu de 5,05 s para 1,88 s (0,37).
+
+- **Toolchain (§5):** o AVX2 roda no MinGW-GCC (o GCC bug 54412 não aparece: um milhão de chamadas em todo alinhamento
+  de pilha, em todo target); o AVX3 compila, mas esta CPU não o executa. O MSVC precisou de `/wd4701` (um aviso do
+  Boost no passo de geração de código, com `/WX`).
+- **Profile (§5):** Cholesky e solve ~80% do objetivo em `Dual`, recursão ~15%.
+- **Kernels de valor (§4.2):** em vez de produtos internos por linha da matriz (que mediu 2x mais lento que o
+  escalar), as lanes vetoriais levam *observações t diferentes* (as R_t são independentes dado Q_t); a recursão é
+  elemento a elemento e sem fusão, igual ao escalar, bit a bit.
+- **Gradiente do DCC (§4.3), portão cedo:** passou com folga (`BM_DccGrid/threads:1` a 0,21 do tempo, limite 0,9). As
+  tangentes dos pesos saem do `weights_of` instanciado em `Dual` (o mesmo código serve DCC, aDCC e FDCC), o pullback
+  por t vai a Q_t sem Cholesky tangente, e o valor é o de `objective<double>` bit a bit.
+- **Univariado (§4.4):** um laço vetorial de norm, std e ged em todo modelo, fundido com as parciais do adjunto; o
+  ℓ do adjunto continua bit-idêntico ao de `loglik<double>`.
+- **Bit-identidade (§4.5):** `double` e `Dual` diferem em ulps (tolerância de 1e-14 relativa, medida, nos testes
+  do par); na mesma máquina, resultados independentes do número de threads; entre ISAs, dentro de tolerância.
+- **Plataformas (§5):** GCC e MSVC compilam e passam; o Clang não está instalado nesta máquina.
+- **Fora do que foi feito:** as cópulas DCC têm objetivo próprio, ainda em `Dual`, e não ganham (`BM_CopulaFit`
+  inalterado); e os erros-padrão do DCC ficam em diferenças centrais do valor `double` (0,47 do tempo, só pelo kernel
+  de valor), sem passar ao caminho tangente.

@@ -12,20 +12,20 @@ time of the fits it covers.
 
 - Machine: AMD Ryzen 7 5700X 8-Core Processor, 8 cores, 16 hardware threads, 32 GiB RAM, Windows-10-10.0.19045-SP0
 - Versions: volengine 0.1.0, arch 8.0.0, numpy 2.5.4, Python 3.14.7
-- Date: 2026-11-14
+- Date: 2026-11-15
 - Work: 20 series of 5000 observations, 16 specs, 320 fits per library; median wall time of 5 repetitions.
 
 | Run | Wall time (s) | Fits per second | Relative to arch on this machine |
 | --- | ---: | ---: | ---: |
-| arch, sequential (matched work) | 11.10 | 28.8 | 1.00x |
-| volengine, threads=1 (matched work) | 4.00 | 80.0 | 2.77x |
-| volengine, threads=0 (all cores; not matched work) | 0.86 | 374.1 | 12.98x |
+| arch, sequential (matched work) | 11.40 | 28.1 | 1.00x |
+| volengine, threads=1 (matched work) | 2.10 | 152.4 | 5.43x |
+| volengine, threads=0 (all cores; not matched work) | 0.44 | 721.4 | 25.70x |
 
 | Model (matched work) | Fits | arch (s) | volengine, threads=1 (s) | Relative to arch on this machine |
 | --- | ---: | ---: | ---: | ---: |
-| sGARCH | 200 | 6.50 | 2.33 | 2.79x |
-| gjrGARCH | 60 | 2.09 | 0.57 | 3.69x |
-| eGARCH | 60 | 2.50 | 1.10 | 2.27x |
+| sGARCH | 200 | 6.73 | 1.17 | 5.78x |
+| gjrGARCH | 60 | 2.13 | 0.27 | 7.98x |
+| eGARCH | 60 | 2.54 | 0.67 | 3.80x |
 
 | Spec | Worst relative loglik difference over the series |
 | --- | ---: |
@@ -43,7 +43,7 @@ time of the fits it covers.
 | gjrGARCH(1,1) std | 4.9e-11 |
 | gjrGARCH(1,1) ged | 3.6e-11 |
 | eGARCH(1,1) norm | 1.0e-09 |
-| eGARCH(1,1) std | 4.3e-11 |
+| eGARCH(1,1) std | 4.4e-10 |
 | eGARCH(1,1) ged | 5.2e-11 |
 
 Notes:
