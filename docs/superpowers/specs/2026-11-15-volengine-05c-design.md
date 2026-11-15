@@ -165,3 +165,133 @@ Ficou para o autor (medido, não otimizado):
   perturbação, e o painel de uniformes e de scores poderia recalcular só essa coluna.
 - `DccFitResult` não guarda o número de iterações do ajuste; sem ele, as iterações médias do ajuste interno antes e
   depois da partida a quente não foram registradas (só os pontos do perfil: 38 → 37, e ~0,96 s → ~0,098 s por ponto).
+
+## 11. 5c-2: distribuições
+
+### 11.1 Intenção e o porquê
+
+Os quatro itens de distribuições de §2, para uma biblioteca de uso geral. Duas promessas quebradas e dois custos:
+- **Bit-identidade:** `dist/bessel.cpp` e `diagnostics/tails.cpp` chamam a Boost com a política padrão, que no GCC
+  calcula em long double (x87); no MinGW as threads do pool rodam o x87 com outra precisão que a thread principal.
+  Um ajuste nig, ghyp ou DCC-mvlaplace pode mudar com o número de threads.
+- **Precisão:** `shifted_moment` e `probability_below_zero` erram com ged/sged em ν grande (1,106 contra o limite
+  uniforme 1,0845 em ν = 1000, `tests/unit/sim/samplers_test.cpp`, `GedWithLargeShape`). O ν do ged não tem teto no
+  ajuste (`shape = exp(x)`), e a persistência do apARCH/fGARCH usa esse momento.
+- **Custo do ghyp:** o `Dual` com ordem livre faz 7 chamadas de K em long double (o valor, duas para a razão de ∂x e
+  quatro do Richardson em λ).
+- **Custo do quantil nig/ghyp:** ~290 µs por quantil na simulação de Copula-DCC com essas margens.
+
+### 11.2 O que a medida mostrou
+
+`gcc-bench`, uma thread, código em `baf5eb5`:
+
+| Medida | Tempo |
+| --- | ---: |
+| `BM_LogBesselK/fixed_order` (5 mil argumentos) | 1,78 ms (356 ns por chamada) |
+| `BM_LogBesselK/free_order` (`Dual`) | 25,9 ms (5,2 µs por chamada) |
+| `BM_Loglik/sgarch11_ghyp/double` | 0,586 ms |
+| `BM_Loglik/sgarch11_ghyp/dual` | 24,4 ms (41x o `double`) |
+| `BM_FitOne/sgarch11_ghyp` | 1843 ms (nig: 86 ms) |
+
+Spike descartável, contra a Boost em long double, v de −3,3 a 50 e x de 1e-8 a 700:
+
+| Caminho | Por chamada | Erro relativo |
+| --- | ---: | --- |
+| Boost long double (hoje) | 765 ns | referência |
+| Boost `double` (`promote_double<false>`) | 158 ns; ordem inteira 17,5 ns | ulps |
+| Trapézio em K_v(x) = ½ ∫ exp(−x cosh t + v t) dt: valor, ∂x e ∂v numa soma | 296 ns (~39 nós) | log K ≤ 1,1e-14; ∂x ≤ 4e-15 |
+
+O Richardson atual erra ∂v em até 3e-10 relativo com x pequeno (v = 0,1, x = 1e-8): o passo de 1e-3 encontra a
+curvatura de log K em v. O trapézio não tem esse erro. Para o valor sozinho ele perde da Boost em `double`, por isso
+só entra onde dá as derivadas.
+
+### 11.3 Objetivos
+
+1. **Toda chamada da Boost em `double`.** `promote_double<false>` no `log_bessel_k` e no `diagnostics/tails.cpp`
+   (`gamma_q`, `ibeta`), e em qualquer outra chamada de função especial sem política explícita em `src/`. Os valores
+   nig, ghyp e mvlaplace mudam por ulps; quem chama K fica ~5x mais rápido.
+2. **Derivadas em ordem livre pelo trapézio (decisão do autor: abordagem B).** Os overloads `Dual` com ordem `T`
+   (`log_bessel_k(const T&, const T&)` e o `_scaled`) tiram ∂x e ∂v de uma soma do trapézio:
+   ∂x log K = −Σ cosh(t_k) w_k / Σ w_k, ∂v log K = Σ t_k w_k / Σ w_k. O valor continua o da Boost em `double`,
+   igual ao do caminho `double`, então `objective<double>` e o valor do `Dual` seguem bit-idênticos. O Richardson
+   (`order_slope`) sai. Os overloads de ordem fixa mantêm a razão K_(v−1)/K_v (mais barata em ordem inteira).
+   Estimativa: `BM_LogBesselK/free_order` de 5,2 µs para ~0,5 µs, e o ajuste ghyp de 1843 ms para 200–400 ms.
+3. **Quantil nig/ghyp por tabela e polimento (decisão do autor: opção 2).**
+   - **Tabela:** cdf por margem numa grade em z, construída uma vez por chamada de simulação, acumulando segmentos
+     como o `sorted_cdf`.
+   - **Chute:** Hermite cúbico de z em u, com inclinação 1/f nos nós.
+   - **Polimento:** um passo de Newton, com a cdf no chute = cdf do nó vizinho + um segmento curto de Gauss-Legendre.
+   - **Fora da tabela** (u além da grade, nas caudas): o `solved_quantile` atual.
+   - **Meta:** a precisão atual (~1e-14 relativo em z, `eps_tolerance(48)`), poucos µs por quantil.
+4. **ged/sged em ν grande.** A densidade é quase plana até |z| ≈ λ 2^(1/ν) e cai numa borda de largura ~λ/ν. A
+   quadratura ganha pontos de divisão nessas bordas (em cada lado do sged, com sua escala) e refinamentos na escala da
+   borda, pela mesma máquina de `add_refinements`. A causa é confirmada antes por um teste vermelho; se for outra,
+   corrige-se a causa.
+
+### 11.4 Não-objetivos
+
+- K próprio para valores: a Boost em `double` ganha do trapézio no valor.
+- SIMD no trapézio: `ponytail:` com os números, se o ghyp ainda dominar algum benchmark.
+- Mudar `kMaxHyperbolicShape`, a parametrização do ghyp ou o caminho de x ≥ 700 (Hankel e recorrência).
+- Interface C ou Python novas.
+- Os itens de 5c-3.
+
+### 11.5 Anti-objetivos
+
+- Ajuste nig, ghyp ou mvlaplace que mude com o número de threads (com a ISA pode, dentro da tolerância).
+- Estimativa nig/ghyp fora dos oráculos `rugarch`/`rmgarch` além das tolerâncias atuais.
+- Quantil por tabela menos preciso que o solve atual, ou tabela que dependa da ordem dos sorteios ou das threads.
+- Ganho sem A/B registrado em `docs/performance/`.
+
+### 11.6 Restrições
+
+- **Módulos:** `src/dist/` já tem 8 módulos, o teto do `STYLEGUIDE.md`. O trapézio entra em `bessel.*`; a tabela em
+  `cdf.*` ou no módulo de quem a usa. Nenhum módulo novo em `src/dist/`.
+- **Testes:**
+  - **Bit-identidade entre threads:** `DistQuantile.SameBitsOnAnyThread` ganha nig e ghyp, e um teste igual cobre
+    `log_bessel_k` em ordem fracionária. Os dois ficam vermelhos antes do item 1, mostrando o defeito nesta máquina.
+    Se não ficarem, registra-se isso e o item segue pela promessa.
+  - **Trapézio:** ∂v e ∂x conferem com referência independente a ~1e-13 relativo, num domínio de v e x declarado no
+    código. Referências: a forma fechada em v = ½ (`OrderDerivativeMatchesClosedFormAtHalf`) e diferenças em long
+    double com passo pequeno, longe de x minúsculo. `Bessel.DerivativesMatchFiniteDifferences` segue verde.
+  - **Quantil:** `quantile(cdf(z))` volta a z, e a tabela confere com o `solved_quantile` a ~1e-13 em nig e ghyp, com
+    u nas caudas e no centro.
+  - **ged/sged:** o ged com η₂ = 0 tem forma fechada ((1 − η₁)^p + (1 + η₁)^p)/2 E|z|^p, e o P(z < 0) do sged tem a
+    cdf fechada do `skewed_cdf`. São os oráculos de ν = 2 a 1000. `GedWithLargeShape` volta a conferir `P(z < 0)` e
+    o momento deslocado.
+- **Oráculos `rugarch`/`rmgarch`** verdes nas mesmas tolerâncias: nig, ghyp, mvlaplace, cópulas com margens nig/ghyp,
+  forecast e simulação.
+- **A/B** na mesma sessão contra o build de `baf5eb5`:
+  - `BM_LogBesselK`, `BM_Loglik` e `BM_FitOne` de nig e ghyp;
+  - `BM_Diagnostics/sgarch11_ghyp/gof`;
+  - `BM_DccLoglik/dcc_mvlaplace`;
+  - um benchmark de quantil nig/ghyp (novo, se nenhum existir).
+
+  O conjunto rápido não pode piorar.
+
+### 11.7 Deixado ao builder
+
+- **Passo e janela do trapézio.** O spike usou:
+  - h = min(0,2; 0,4 σ), com σ = (x² + v²)^(−1/4);
+  - a grade centrada no pico t* = asinh(|v|/x), com corte em exp(−40) do pico;
+  - cosh(t_k) por recorrência de e^(t_k).
+
+  O domínio validado vai declarado no código. Fora dele (|v| ou x além do testado) vale o mais simples e correto: o
+  Richardson atual ou a mesma soma com mais nós.
+- **Sinal de ∂v:** K é par em v, então ∂v log K_v = sign(v) D(|v|), com derivada 0 em v = 0.
+- **A tabela:** o número de nós e a faixa em u; onde ela mora (`cdf.*` ou `dcc/future/simulate`); se o Newton
+  precisa de um segundo passo; PCHIP no lugar do Hermite se este não for monótono.
+- **Ordem das tasks,** desde que:
+  - a medição de base venha primeiro;
+  - os testes vermelhos de thread venham antes do item 1;
+  - o item 1 venha antes do 2 (o 2 parte dos valores em `double`);
+  - cada mudança venha com seu teste e seu A/B.
+
+### 11.8 Decisões tomadas pelo Claude (para conferir)
+
+- O valor de K segue da Boost, e o trapézio dá só as derivadas em ordem livre. É o refinamento de B depois do spike
+  (o trapézio é 2x mais lento que a Boost em `double` no valor).
+- A auditoria x87 cobre toda a `src/`, não só `bessel.cpp`: `diagnostics/tails.cpp` tem o mesmo defeito.
+- O quantil fora da tabela (caudas) segue pelo solve, sem extrapolação inventada.
+- O item ged/sged não teve escolha de abordagem: os pontos de divisão nas bordas seguem o padrão dos refinamentos
+  existentes.
