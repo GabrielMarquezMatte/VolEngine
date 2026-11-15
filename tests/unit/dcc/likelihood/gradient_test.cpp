@@ -150,6 +150,67 @@ TEST(DccGradient, MatchesDual)
     }
 }
 
+// Orders above (1, 1): the lags of the news and of the earlier Q read the ring of dQ_(t - k) and the presample moments
+// of every lag, which a single lag never does.
+TEST(DccGradient, MatchesDualForHigherOrders)
+{
+    struct Orders
+    {
+        DccModel model;
+        int p;
+        int q;
+    };
+    const std::vector<Orders> cases{{DccModel::Dcc, 2, 1}, {DccModel::Dcc, 1, 2}, {DccModel::Dcc, 3, 2},
+                                    {DccModel::ADcc, 2, 2}, {DccModel::ADcc, 2, 1}};
+    for (const StandardizedPanel& panel : {ve::testing::dcc3_panel(), ve::testing::synthetic_panel(3, 60)})
+    {
+        for (const Orders& orders : cases)
+        {
+            for (const DccDist dist : {DccDist::MvNorm, DccDist::MvT})
+            {
+                DccSpec spec = spec_of(orders.model, dist, Convention::Standard, {});
+                spec.p = orders.p;
+                spec.q = orders.q;
+                std::vector<double> theta;
+                for (int j = 0; j < orders.p; ++j)
+                {
+                    theta.push_back(0.03 / (j + 1));
+                }
+                for (int k = 0; k < orders.q; ++k)
+                {
+                    theta.push_back(0.85 / (k + 1) / orders.q + 0.02 * k);
+                }
+                for (int j = 0; orders.model == DccModel::ADcc && j < orders.p; ++j)
+                {
+                    theta.push_back(0.01 / (j + 1));
+                }
+                if (dist == DccDist::MvT)
+                {
+                    theta.push_back(7.0);
+                }
+                SCOPED_TRACE("model " + std::to_string(static_cast<int>(orders.model)) + ", p " +
+                             std::to_string(orders.p) + ", q " + std::to_string(orders.q) + ", dist " +
+                             std::to_string(static_cast<int>(dist)));
+                const double expected_value = ve::dcc::objective<double>(panel, spec, theta);
+                ASSERT_TRUE(std::isfinite(expected_value));
+                std::vector<double> gradient(theta.size());
+                ve::dcc::ObjectiveGradient evaluator;
+                EXPECT_EQ(evaluator.evaluate(panel, spec, theta, gradient), expected_value);
+                const std::vector<double> expected = dual_gradient(panel, spec, theta);
+                double scale = 1.0;
+                for (const double g : expected)
+                {
+                    scale = std::max(scale, std::fabs(g));
+                }
+                for (std::size_t i = 0; i < theta.size(); ++i)
+                {
+                    EXPECT_NEAR(gradient[i], expected[i], kGradientTolerance * scale) << "parameter " << i;
+                }
+            }
+        }
+    }
+}
+
 // An evaluator keeps its buffers between calls: the second call at another point is not contaminated by the first.
 TEST(DccGradient, ReusingTheEvaluatorGivesTheSameResults)
 {
