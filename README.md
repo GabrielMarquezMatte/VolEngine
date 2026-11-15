@@ -34,7 +34,7 @@ Python 3.11 or newer. The wheel carries the native library and needs no compiler
 
 - Windows x64
 - macOS arm64 and x64 (macOS 11 or newer)
-- Linux glibc, x64 and arm64 (glibc 2.28 or newer)
+- Linux glibc, x64 and arm64 (glibc 2.25 or newer)
 - Linux musl, x64 and arm64 (musl 1.2 or newer, as in Alpine)
 
 On another platform pip reports that no distribution matches; there is no source distribution. The native

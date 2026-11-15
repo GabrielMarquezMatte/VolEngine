@@ -13,8 +13,8 @@ library whose ABI version differs).
 
 ### Added
 
-- `pip install volengine` without a compiler on Windows x64, macOS arm64 and x64, and Linux glibc (manylinux_2_28)
-  and musl (musllinux_1_2) on x64 and arm64. One `py3-none-<platform>` wheel per platform serves every Python from
+- `pip install volengine` without a compiler on Windows x64, macOS arm64 and x64, and Linux glibc (2.25
+  or newer) and musl (musllinux_1_2) on x64 and arm64. One `py3-none-<platform>` wheel per platform serves every Python from
   3.11; the library inside has a static C++ runtime and runs on the baseline CPU of its architecture, with the SIMD
   paths chosen at run time.
 - A tag `v*` publishes the wheels to PyPI and the native libraries (`volengine-native-<os>-<arch>.<ext>`, plus

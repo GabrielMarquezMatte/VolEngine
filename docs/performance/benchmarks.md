@@ -547,6 +547,19 @@ no ISA flags) is as fast as the local build. `build_native.py` refuses `-march`,
 `CFLAGS` and `CXXFLAGS`, so a wheel binary never needs more than the baseline of its compiler; Highway dispatches
 on the CPU at run time.
 
+The release builds, from the `wheels.yml` run of commit `37509da` (all seven jobs green):
+
+| Platform | Toolchain | Wheel tag |
+| --- | --- | --- |
+| Linux glibc x64, arm64 | GCC 14 (gcc-toolset-14) in `manylinux_2_28` | `manylinux_2_25` |
+| Linux musl x64, arm64 | GCC 14.2 in `musllinux_1_2` | `musllinux_1_2` |
+| macOS arm64, x64 | Apple Clang of the runner, `MACOSX_DEPLOYMENT_TARGET=11.0` | `macosx_11_0` |
+| Windows x64 | GCC (MSYS2 UCRT64), static libgcc, libstdc++ and winpthread | `win_amd64` |
+
+GCC 14 compiled the core, so the `manylinux_2_34` fallback was not needed, and the macOS target stayed at 11.0. The
+glibc wheels are tagged `manylinux_2_25`, not `2_28`: the newest `GLIBC_2.N` symbol the library imports is 2.25
+(the static libstdc++ reads `getentropy`), and `build_wheel.sh` accepts a floor at or below the image's.
+
 ## What the benchmarks fit
 
 - The series are simulated by `tests/benchmarks/simulated_panel.hpp` and `tests/unit/simulated_garch.hpp`. They reuse
