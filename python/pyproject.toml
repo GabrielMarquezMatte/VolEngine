@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "packaging"]
 build-backend = "hatchling.build"
 
 [project]
@@ -10,11 +10,15 @@ requires-python = ">=3.11"
 dependencies = ["numpy"]
 
 [dependency-groups]
-dev = ["pytest", "mypy"]
+dev = ["pytest", "mypy", "hatchling"]
 bench = ["arch"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/volengine"]
+exclude = ["src/volengine/_lib"]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
