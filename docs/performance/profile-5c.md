@@ -1,4 +1,4 @@
-# Profile and measurements of plan 5c-1
+# Profile and measurements of plans 5c-1 and 5c-2
 
 Plan 5c-1 speeds up the copula fits. This file records the base, the cause of the static Student copula failure and,
 below, the A/B of each step. Measures: preset `gcc-bench`, one thread, m = 21, T = 5000, same session, medians of
@@ -137,3 +137,26 @@ hand the panel of the point to its loglik.
 recomputes the uniforms of the 21 margins at the perturbed point and the normal scores), the terms of the copula
 1.10 s in 325 calls (3.4 ms each). Candidate for the author: the uniforms and scores change only for the series
 whose parameter moved, so a perturbation could recompute one column.
+
+# Plan 5c-2: distributions
+
+Measures: preset `gcc-bench`, one thread, same session, medians of three repetitions. The base is the build of
+`881e7a7` (plan 5c-2 task 1, code identical to `baf5eb5` but for the new `BM_DistQuantile`), in `build/base-5c2/`.
+
+## 5c-2 base (2026-11-15)
+
+| Benchmark | Base |
+| --- | ---: |
+| `BM_LogBesselK/fixed_order` (5 thousand arguments) | 1.78 ms |
+| `BM_LogBesselK/free_order` | 28.6 ms |
+| `BM_Loglik/sgarch11_nig/double` | 0.591 ms |
+| `BM_Loglik/sgarch11_nig/dual` | 2.31 ms |
+| `BM_FitOne/sgarch11_nig` | 79.6 ms |
+| `BM_Loglik/sgarch11_ghyp/double` | 0.589 ms |
+| `BM_Loglik/sgarch11_ghyp/dual` | 23.8 ms |
+| `BM_FitOne/sgarch11_ghyp` | 1765 ms |
+| `BM_Diagnostics/sgarch11_ghyp/gof` | 29.0 ms |
+| `BM_DccLoglik/dcc_mvlaplace/double` (m = 21, T = 5000) | 4.12 ms |
+| `BM_DccLoglik/dcc_mvlaplace/dual` | 61.0 ms |
+| `BM_DistQuantile/nig` (200 quantiles) | 57.1 ms (286 us per call) |
+| `BM_DistQuantile/ghyp` (200 quantiles) | 97.8 ms (489 us per call) |
