@@ -11,6 +11,8 @@ import sys
 WINDOWS_FORBIDDEN = ("libstdc++", "libgcc", "libwinpthread")
 LINUX_FORBIDDEN = ("libstdc++", "libgcc_s")
 MACOS_ALLOWED = ("/usr/lib/", "/System/")
+# Symbols the toolchain adds to the dynamic table of a shared library (musl, aarch64): not ours.
+TOOLCHAIN_SYMBOLS = {"_init", "_fini", ".init", ".fini", "__bss_start", "_edata", "_end"}
 
 
 def forbidden(system: str, needed: list[str]) -> list[str]:
@@ -33,7 +35,7 @@ def foreign_exports(system: str, lines: list[str]) -> list[str]:
             names.append(fields[7].split("@")[0])
         elif len(fields) == 3:
             names.append(fields[2].removeprefix("_"))
-    return [name for name in names if not name.startswith("ve_")]
+    return [name for name in names if not name.startswith("ve_") and name not in TOOLCHAIN_SYMBOLS]
 
 
 def exports(system: str, path: str) -> list[str]:

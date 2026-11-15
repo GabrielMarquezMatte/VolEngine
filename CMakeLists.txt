@@ -160,6 +160,10 @@ elseif(NOT WIN32 AND NOT APPLE)
     # (ve_*) and nothing else, so it cannot interpose on the libstdc++ of the program that loads it, and the ABI dump
     # lists only the interface.
     target_link_options(volengine PRIVATE -static-libstdc++ -static-libgcc -Wl,--exclude-libs,ALL)
+elseif(APPLE)
+    # libc++ marks the typeinfo of its templates (std::function, ...) visible whatever -fvisibility says, and they end up
+    # in the export table; only the C interface is exported.
+    target_link_options(volengine PRIVATE "LINKER:-exported_symbol,_ve_*")
 endif()
 
 if(VE_BUILD_TESTS)
