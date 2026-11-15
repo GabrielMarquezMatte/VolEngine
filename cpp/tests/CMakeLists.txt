@@ -13,6 +13,7 @@ else()
 endif()
 
 add_executable(volengine_cpp_tests
+    dcc_test.cpp
     diagnostics_test.cpp
     error_test.cpp
     fit_test.cpp

@@ -5,7 +5,9 @@
 #include <expected>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 #include <volengine/volengine.h>
 
 namespace ve
@@ -61,6 +63,64 @@ inline Result<void> check_abi_version(std::int32_t native, std::int32_t expected
     return std::unexpected(Error{Status::unsupported,
         "the VolEngine library has ABI version " + std::to_string(native) + ", but these headers need version " +
             std::to_string(expected)});
+}
+
+// `fill` writes one double.
+template <class Fill>
+Result<double> scalar(Fill fill)
+{
+    double value = 0.0;
+    if (auto read = check(fill(&value)); !read)
+    {
+        return failure(read);
+    }
+    return value;
+}
+
+// `fill` writes `size` doubles.
+template <class Fill>
+Result<std::vector<double>> values(std::size_t size, Fill fill)
+{
+    std::vector<double> result(size);
+    if (auto read = check(fill(result.data())); !read)
+    {
+        return failure(read);
+    }
+    return result;
+}
+
+// A count read by `function(handle, &count)`.
+template <class Handle>
+Result<std::size_t> count(const Handle* handle, ve_status (*function)(const Handle*, std::size_t*))
+{
+    std::size_t value = 0;
+    if (auto read = check(function(handle, &value)); !read)
+    {
+        return failure(read);
+    }
+    return value;
+}
+
+// The names `function(handle, i, &name)` gives for i < size; they live as long as the handle.
+template <class Handle>
+Result<std::vector<std::string_view>> names(
+    const Handle* handle, const Result<std::size_t>& size, ve_status (*function)(const Handle*, std::size_t, const char**))
+{
+    if (!size)
+    {
+        return std::unexpected(size.error());
+    }
+    std::vector<std::string_view> result;
+    for (std::size_t i = 0; i < *size; ++i)
+    {
+        const char* name = nullptr;
+        if (auto read = check(function(handle, i, &name)); !read)
+        {
+            return failure(read);
+        }
+        result.emplace_back(name);
+    }
+    return result;
 }
 
 template <class T, void (*Free)(T*)>

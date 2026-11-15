@@ -5,6 +5,7 @@
 #include <span>
 #include <utility>
 #include <vector>
+#include <volengine/dcc.hpp>
 #include <volengine/error.hpp>
 #include <volengine/fit.hpp>
 #include <volengine/input.hpp>
@@ -137,6 +138,59 @@ public:
             { return ve_simulate_spec(handle_.get(), native->get(), sim_options, out); });
     }
 
+    // Every DCC spec over the same univariate fits (at least two, finite, of one length >= 100), in spec order.
+    Result<std::vector<DccFit>> fit_dcc(
+        std::span<const DccSpec> specs, std::span<const Fit> univariate, const DccOptions& options = {}) const
+    {
+        auto batch = make_dcc_batch(specs, univariate, options);
+        if (!batch)
+        {
+            return detail::failure(batch);
+        }
+        const auto count = detail::count(batch->get(), ve_dcc_batch_spec_count);
+        if (!count)
+        {
+            return std::unexpected(count.error());
+        }
+        std::vector<ve_dcc_fit*> raw(*count, nullptr);
+        if (auto fitted = detail::check(ve_dcc_fit_batch(handle_.get(), batch->get(), raw.data())); !fitted)
+        {
+            return detail::failure(fitted);
+        }
+        std::vector<DccFit> fits;
+        fits.reserve(raw.size());
+        for (ve_dcc_fit* handle : raw)
+        {
+            fits.emplace_back(handle);
+        }
+        return fits;
+    }
+
+    Result<DccFit> fit_dcc(
+        const DccSpec& spec, std::span<const Fit> univariate, const DccOptions& options = {}) const
+    {
+        auto fits = fit_dcc(std::span<const DccSpec>(&spec, 1), univariate, options);
+        if (!fits)
+        {
+            return detail::failure(fits);
+        }
+        return std::move(fits->front());
+    }
+
+    // The same fit with its standard errors, computed from the univariate fits it came from (in the same order).
+    Result<DccFit> standard_errors(const DccFit& fit, std::span<const Fit> univariate) const
+    {
+        const auto pointers = fit_pointers(univariate);
+        ve_dcc_fit* raw = nullptr;
+        if (auto computed = detail::check(
+                ve_dcc_fit_standard_errors(handle_.get(), fit.native(), pointers.data(), pointers.size(), &raw));
+            !computed)
+        {
+            return detail::failure(computed);
+        }
+        return DccFit{raw};
+    }
+
     ve_context* native() const noexcept
     {
         return handle_.get();
@@ -144,6 +198,53 @@ public:
 
 private:
     using Handle = detail::Owned<ve_context, ve_context_free>;
+
+    static std::vector<const ve_fit*> fit_pointers(std::span<const Fit> fits)
+    {
+        std::vector<const ve_fit*> pointers;
+        for (const Fit& fit : fits)
+        {
+            pointers.push_back(fit.native());
+        }
+        return pointers;
+    }
+
+    static Result<detail::DccBatchHandle> make_dcc_batch(
+        std::span<const DccSpec> specs, std::span<const Fit> univariate, const DccOptions& options)
+    {
+        ve_dcc_batch* raw = nullptr;
+        if (auto created = detail::check(ve_dcc_batch_create(&raw)); !created)
+        {
+            return detail::failure(created);
+        }
+        detail::DccBatchHandle batch{raw};
+        std::vector<detail::DccSpecHandle> handles;
+        std::vector<const ve_dcc_spec*> pointers;
+        for (const DccSpec& spec : specs)
+        {
+            auto handle = spec.make_handle();
+            if (!handle)
+            {
+                return detail::failure(handle);
+            }
+            pointers.push_back(handle->get());
+            handles.push_back(std::move(*handle));
+        }
+        const auto fits = fit_pointers(univariate);
+        auto native_options = options.make_handle();
+        if (!native_options)
+        {
+            return detail::failure(native_options);
+        }
+        auto described = detail::check(ve_dcc_batch_set_specs(raw, pointers.data(), pointers.size()))
+                             .and_then([&] { return detail::check(ve_dcc_batch_set_fits(raw, fits.data(), fits.size())); })
+                             .and_then([&] { return detail::check(ve_dcc_batch_set_options(raw, native_options->get())); });
+        if (!described)
+        {
+            return detail::failure(described);
+        }
+        return batch;
+    }
 
     template <class Run>
     static Result<Simulation> simulate_with(const SimOptions& options, Run run)

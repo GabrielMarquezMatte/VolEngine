@@ -147,32 +147,17 @@ public:
 
     Result<std::size_t> nobs() const
     {
-        return count(ve_fit_nobs);
+        return detail::count(handle_.get(), ve_fit_nobs);
     }
 
     Result<std::size_t> param_count() const
     {
-        return count(ve_fit_param_count);
+        return detail::count(handle_.get(), ve_fit_param_count);
     }
 
     Result<std::vector<std::string_view>> param_names() const
     {
-        const auto size = param_count();
-        if (!size)
-        {
-            return std::unexpected(size.error());
-        }
-        std::vector<std::string_view> names;
-        for (std::size_t i = 0; i < *size; ++i)
-        {
-            const char* name = nullptr;
-            if (auto read = detail::check(ve_fit_param_name(handle_.get(), i, &name)); !read)
-            {
-                return detail::failure(read);
-            }
-            names.emplace_back(name);
-        }
-        return names;
+        return detail::names(handle_.get(), param_count(), ve_fit_param_name);
     }
 
     Result<std::vector<double>> estimates() const
@@ -183,7 +168,7 @@ public:
     // NaN, with success, when the fit has no finite point.
     Result<double> loglik() const
     {
-        return scalar([&](double* out) { return ve_loglik(handle_.get(), out); });
+        return detail::scalar([&](double* out) { return ve_loglik(handle_.get(), out); });
     }
 
     // Standard errors, t values and p values of the estimated parameters (NaN for fixed and derived ones). They fail
@@ -205,22 +190,22 @@ public:
 
     Result<double> aic(IcScale scale = IcScale::per_obs) const
     {
-        return scalar([&](double* out) { return ve_aic(handle_.get(), as_int(scale), out); });
+        return detail::scalar([&](double* out) { return ve_aic(handle_.get(), as_int(scale), out); });
     }
 
     Result<double> bic(IcScale scale = IcScale::per_obs) const
     {
-        return scalar([&](double* out) { return ve_bic(handle_.get(), as_int(scale), out); });
+        return detail::scalar([&](double* out) { return ve_bic(handle_.get(), as_int(scale), out); });
     }
 
     Result<double> hqic(IcScale scale = IcScale::per_obs) const
     {
-        return scalar([&](double* out) { return ve_hqic(handle_.get(), as_int(scale), out); });
+        return detail::scalar([&](double* out) { return ve_hqic(handle_.get(), as_int(scale), out); });
     }
 
     Result<double> sic(IcScale scale = IcScale::per_obs) const
     {
-        return scalar([&](double* out) { return ve_sic(handle_.get(), as_int(scale), out); });
+        return detail::scalar([&](double* out) { return ve_sic(handle_.get(), as_int(scale), out); });
     }
 
     // Views of nobs values, valid until the Fit is destroyed; sigma is the conditional standard deviation. A fit
@@ -312,16 +297,6 @@ public:
 private:
     using Handle = detail::Owned<ve_fit, ve_fit_free>;
 
-    Result<std::size_t> count(ve_status (*function)(const ve_fit*, std::size_t*)) const
-    {
-        std::size_t value = 0;
-        if (auto read = detail::check(function(handle_.get(), &value)); !read)
-        {
-            return detail::failure(read);
-        }
-        return value;
-    }
-
     // `fill` writes param_count doubles.
     template <class Fill>
     Result<std::vector<double>> per_parameter(Fill fill) const
@@ -331,30 +306,13 @@ private:
         {
             return std::unexpected(size.error());
         }
-        std::vector<double> values(*size);
-        if (auto read = detail::check(fill(values.data())); !read)
-        {
-            return detail::failure(read);
-        }
-        return values;
+        return detail::values(*size, fill);
     }
 
     template <class Enum>
     static std::int32_t as_int(Enum value) noexcept
     {
         return static_cast<std::int32_t>(value);
-    }
-
-    // `fill` writes one double.
-    template <class Fill>
-    static Result<double> scalar(Fill fill)
-    {
-        double value = 0.0;
-        if (auto read = detail::check(fill(&value)); !read)
-        {
-            return detail::failure(read);
-        }
-        return value;
     }
 
     // `fill` writes [statistic, p-value].

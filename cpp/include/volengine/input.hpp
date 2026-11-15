@@ -57,9 +57,10 @@ namespace detail
 
 using SpecHandle = Owned<ve_spec, ve_spec_free>;
 using OptionsHandle = Owned<ve_fit_options, ve_fit_options_free>;
-using NamedSetter = ve_status (*)(ve_spec*, const char*, double);
 
-inline Result<void> apply_named(ve_spec* spec, const NamedValues& values, NamedSetter set)
+// Sets each named value on a spec of either kind (`set` is ve_spec_set_fixed, ve_dcc_spec_set_start, ...).
+template <class Spec>
+Result<void> apply_named(Spec* spec, const NamedValues& values, ve_status (*set)(Spec*, const char*, double))
 {
     for (const auto& [name, value] : values)
     {
