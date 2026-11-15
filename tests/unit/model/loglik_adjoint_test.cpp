@@ -171,7 +171,8 @@ TEST_P(LoglikAdjointGrid, MatchesDual)
 }
 
 INSTANTIATE_TEST_SUITE_P(PhaseOne, LoglikAdjointGrid,
-                         ::testing::Combine(::testing::Values(Model::SGarch, Model::IGarch, Model::GjrGarch),
+                         ::testing::Combine(::testing::Values(Model::SGarch, Model::IGarch, Model::GjrGarch,
+                                                              Model::EGarch),
                                             ::testing::Values(Orders{1, 1}, Orders{2, 1}, Orders{1, 2},
                                                               Orders{3, 3}),
                                             ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1},
@@ -242,6 +243,28 @@ TEST(LoglikAdjoint, ZeroResidualWithGedMatchesDual)
     }
 }
 
+// A zero return with ARMA(0,0) and no mean is z = 0 in the eGARCH |z|, its kink: the adjoint follows the Dual's sign 0.
+TEST(LoglikAdjoint, EgarchZeroShockMatchesDual)
+{
+    std::vector<double> r = ve::testing::simulate_garch_series(4, 300);
+    r[100] = 0.0;
+    for (Dist dist : {Dist::Norm, Dist::Std})
+    {
+        SCOPED_TRACE(::testing::Message() << "dist " << static_cast<int>(dist));
+        Layout layout = ve::model::layout_of({.model = Model::EGarch, .dist = dist, .include_mean = false});
+        std::vector<double> theta = point(layout, 0.9, 8.0);
+        std::vector<double> grad(theta.size());
+        ve::model::LoglikAdjoint adjoint;
+        adjoint.evaluate(ve::model::Data{r}, theta, layout, VarInit::Sample, grad);
+        DualMax dual = dual_loglik(r, theta, layout, VarInit::Sample);
+        for (std::size_t i = 0; i < theta.size(); ++i)
+        {
+            ASSERT_EQ(std::isfinite(grad[i]), std::isfinite(dual.grad[i])) << "parameter " << i;
+        }
+        expect_matches_dual(r, theta, layout, VarInit::Sample);
+    }
+}
+
 bool covered(const ve::Spec& spec, VarInit var_init = VarInit::Sample)
 {
     return ve::model::has_adjoint(ve::model::layout_of(spec), var_init);
@@ -249,7 +272,7 @@ bool covered(const ve::Spec& spec, VarInit var_init = VarInit::Sample)
 
 TEST(LoglikAdjoint, CoversPhaseOneOnly)
 {
-    for (Model model : {Model::SGarch, Model::IGarch, Model::GjrGarch})
+    for (Model model : {Model::SGarch, Model::IGarch, Model::GjrGarch, Model::EGarch})
     {
         for (Dist dist : {Dist::Norm, Dist::Std, Dist::Ged})
         {
@@ -257,7 +280,7 @@ TEST(LoglikAdjoint, CoversPhaseOneOnly)
             EXPECT_TRUE(covered({.model = model, .dist = dist, .include_mean = false}, VarInit::Backcast));
         }
     }
-    for (Model model : {Model::ApArch, Model::CsGarch, Model::FGarchAllGarch, Model::EGarch})
+    for (Model model : {Model::ApArch, Model::CsGarch, Model::FGarchAllGarch})
     {
         EXPECT_FALSE(covered({.model = model})) << static_cast<int>(model);
     }

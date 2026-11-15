@@ -58,4 +58,12 @@ T lagged_square(std::span<const T> residuals, std::size_t t, std::size_t lag, co
     return e * e;
 }
 
+// Where a reverse pass stands: step t, lag `lag` of it, with g = the adjoint of step t's state.
+struct LagStep
+{
+    std::size_t t;
+    std::size_t lag;
+    double g;
+};
+
 }

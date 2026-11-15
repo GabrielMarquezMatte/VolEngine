@@ -1,7 +1,9 @@
 #include "model/likelihood/adjoint.hpp"
 
 #include "ad/dual.hpp"
+#include "dist/moments.hpp"
 #include "dist/symmetric.hpp"
+#include "garch/egarch.hpp"
 #include "garch/gjrgarch.hpp"
 #include "garch/sgarch.hpp"
 #include "mean/arma.hpp"
@@ -27,7 +29,7 @@ bool is_sgarch_family(Model model)
 
 bool is_covered_model(Model model)
 {
-    return is_sgarch_family(model) || model == Model::GjrGarch;
+    return is_sgarch_family(model) || model == Model::GjrGarch || model == Model::EGarch;
 }
 
 bool is_covered_dist(Dist dist)
@@ -122,6 +124,10 @@ void LoglikAdjoint::variance_backward(std::span<const double> theta, const Layou
     {
         presample_adjoint = sgarch_backward(theta, layout, presample, grad);
     }
+    if (layout.model == Model::EGarch)
+    {
+        presample_adjoint = egarch_backward(theta, layout, presample, grad);
+    }
     if (var_init == VarInit::Sample)
     {
         double slope = 2.0 * presample_adjoint / static_cast<double>(residuals_.size());
@@ -169,6 +175,38 @@ double LoglikAdjoint::gjrgarch_backward(std::span<const double> theta, const Lay
     garch::gjrgarch_variance_backward(residuals_, p, presample, sigma2_, adjoint);
     grad[layout.omega()] += adjoint.omega;
     return adjoint.presample;
+}
+
+// The recursion runs on h_t = log sigma2_t, whose adjoint is sigma2_t d/dsigma2_t; returns the presample's adjoint,
+// d/db = (d/dlog b) / b. E|z| depends on the shape alone and passes its adjoint on through a Dual<1>.
+double LoglikAdjoint::egarch_backward(std::span<const double> theta, const Layout& layout,
+                                      const garch::Presample<double>& presample, std::span<double> grad)
+{
+    garch::EGarchParameters<double> p = egarch_parameters(theta, layout);
+    log_sigma2_.resize(sigma2_.size());
+    for (std::size_t t = 0; t < sigma2_.size(); ++t)
+    {
+        log_sigma2_[t] = std::log(sigma2_[t]);
+        sigma2_adjoint_[t] *= sigma2_[t];
+    }
+    garch::EGarchAdjoint adjoint{residual_adjoint_,
+                                 sigma2_adjoint_,
+                                 0.0,
+                                 grad.subspan(layout.alpha_begin(), p.alpha.size()),
+                                 grad.subspan(layout.beta_begin(), p.beta.size()),
+                                 grad.subspan(layout.gamma_begin(), p.gamma.size()),
+                                 0.0,
+                                 0.0};
+    garch::egarch_variance_backward(residuals_, p, presample, log_sigma2_, adjoint);
+    grad[layout.omega()] += adjoint.omega;
+    if (layout.has_shape())
+    {
+        dist::ShapeParameters<ad::Dual<1>> shape{};
+        shape.shape = ad::variable<1>(theta[layout.shape()], 0);
+        ad::Dual<1> moment = dist::abs_moment(layout.dist, shape, ad::constant<1>(1.0));
+        grad[layout.shape()] += adjoint.abs_moment * moment.grad[0];
+    }
+    return adjoint.presample / presample.value;
 }
 
 void LoglikAdjoint::mean_backward(const Data& data, std::span<const double> theta, const Layout& layout,

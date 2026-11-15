@@ -86,8 +86,11 @@ namespace detail
 // The reverse of gjr_shock with g = d/dsigma2_t. Before t = 0 the shock is (alpha_i + gamma_i / 2) b; for
 // e = e_{t-i} < 0 it is (alpha_i + gamma_i) e^2, otherwise alpha_i e^2 (the indicator has slope 0).
 inline void gjr_shock_backward(std::span<const double> residuals, const GjrGarchParameters<double>& p, double b,
-                               std::size_t t, std::size_t i, double g, GjrGarchAdjoint& adjoint)
+                               LagStep step, GjrGarchAdjoint& adjoint)
 {
+    std::size_t t = step.t;
+    std::size_t i = step.lag;
+    double g = step.g;
     if (i > t)
     {
         adjoint.alpha[i - 1] += g * b;
@@ -122,7 +125,7 @@ inline void gjrgarch_variance_backward(std::span<const double> residuals, const 
         adjoint.omega += g;
         for (std::size_t i = 1; i <= p.alpha.size(); ++i)
         {
-            detail::gjr_shock_backward(residuals, p, b, t, i, g, adjoint);
+            detail::gjr_shock_backward(residuals, p, b, {t, i, g}, adjoint);
         }
         for (std::size_t j = 1; j <= p.beta.size(); ++j)
         {
