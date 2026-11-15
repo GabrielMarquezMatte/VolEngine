@@ -84,7 +84,9 @@ jobs:
         run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
-        run: cmake --build --preset ${{ matrix.preset }}
+        # --parallel: the native-release preset uses the default generator (Makefiles, Visual Studio), which
+        # compiles one file at a time without it.
+        run: cmake --build --preset ${{ matrix.preset }} --parallel
 
       - name: Test (C++ and style)
         run: ctest --preset ${{ matrix.preset }}
