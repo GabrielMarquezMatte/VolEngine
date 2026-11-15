@@ -208,3 +208,63 @@ The same uProf run as at the top (`msvc-profile`, 2 series, 1 thread) takes 8.1 
 functions are the same kind: `Dual<12>` and `Dual<8>` arithmetic in `ad::chain`, `garch::sgarch_step`,
 `mean::arma_step_of` and the division. No new hot spot appeared; the forward-mode gradient is still where the time
 goes, which is the case for the reverse-mode gradient that follows plan 5a.
+
+## Adjoint gradient (after plan 5a)
+
+Design: `docs/superpowers/specs/2026-11-14-volengine-05-adjoint-design.md`. For sGARCH, iGARCH, gjrGARCH and eGARCH
+with norm, std or ged innovations and an ARMA mean (`model::has_adjoint`), the optimizer and the numerical Hessian
+take the gradient of the log-likelihood from a hand-written adjoint instead of the forward `Dual`. The forward pass is
+`model::loglik<double>`, so the value does not change; each component (density, variance recursion, presample,
+ARMA) then runs its reverse sweep. Everything else, and the per-observation scores, stays on the `Dual`.
+
+### What the spike measured first
+
+A throwaway spike compared, on sGARCH-ARMA-std with T = 5000, a generic reverse-mode tape (a `Var` scalar recording
+every operation), the `Dual` with AVX2, and a hand-written adjoint. Per evaluation with gradient, against a `double`
+evaluation without one: the tape took 5–6 times (about 165 000 nodes, 4 MB, per evaluation), twice the `Dual`; AVX2
+cut the `Dual` by 0 to 20%; the adjoint took 1.3–1.5 times. Only the adjoint was built.
+
+### One evaluation (`BM_Loglik`, µs, median of 3)
+
+| Series | k | `double` (no gradient) | `Dual` | Adjoint | Adjoint / `Dual` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `s11_norm` | 4 | 50 | 151 | 91 | 0.60 |
+| `igarch11_norm` | 4 | 51 | 158 | 94 | 0.59 |
+| `gjrgarch11_norm` | 5 | 51 | 172 | 112 | 0.65 |
+| `s21_std` | 6 | 100 | 291 | 190 | 0.65 |
+| `egarch11_std` | 6 | 186 | 406 | 327 | 0.81 |
+| `arma11_s11_ged` | 7 | 169 | 433 | 373 | 0.86 |
+| `arma22_s33_std` | 13 | 155 | 644 | 290 | 0.45 |
+
+The adjoint costs about twice a `double` evaluation, and its gain grows with k. It costs more than the spike's
+1.3–1.5 times because the forward is the general `loglik<double>`: the reverse recomputes the transcendentals the
+forward already took for the term's partials (`log1p` for std, about a quarter of the adjoint's time; `pow` and `log`
+for ged), and eGARCH recomputes log σ² and 1/σ per step. A forward fused with the density partials would remove
+that, at the price of a second implementation of the terms.
+
+### Fits (A/B in one session, base `172818c`, adjoint `855a0a6`)
+
+| Measure | `Dual` | Adjoint | Ratio |
+| --- | ---: | ---: | ---: |
+| Grid, 1 thread, `se:on` (s) | 31.1 | 22.0 | 0.71 |
+| Grid, 1 thread, `se:off` (s) | 24.2 | 17.2 | 0.71 |
+| Grid, 16 threads, `se:on` (s) | 4.16 | 2.70 | 0.65 |
+| Grid, 16 threads, `se:off` (s) | 3.28 | 2.25 | 0.69 |
+| Grid evaluations | 1.000 | 1.001 | — |
+| Grid `CONVERGED` | 1080 | 1080 | — |
+| `BM_TccGridSample/threads:1` (ms) | 539 | 423 | 0.79 |
+| `BM_FitOne/s11_norm` (ms) | 4.96 | 3.12 | 0.63 |
+| `BM_FitOne/s21_std` (ms) | 12.1 | 8.26 | 0.68 |
+| `BM_FitOne/arma11_s11_ged` (ms) | 16.5 | 14.3 | 0.87 |
+| `BM_FitOne/arma22_s33_std` (ms) | 75.5 | 36.7 | 0.49 |
+| `BM_FitOne/egarch11_std` (ms) | 18.1 | 15.2 | 0.84 |
+| `BM_FitOne/gjrgarch11_norm` (ms) | 5.78 | 4.02 | 0.70 |
+| `BM_FitOne/igarch11_norm` (ms) | 3.29 | 2.16 | 0.66 |
+| `BM_FitOne/aparch11_ged`, not covered (ms) | 45.2 | 45.9 | noise |
+| `BM_DccGrid/m:21/T:5000/threads:1` (s) | 10.7 | 10.4 | noise |
+| `BM_DccStandardErrors/dcc_mvnorm/m:21` (s) | 2.95 | 2.93 | noise |
+
+By distribution, on the grid with 1 thread and `se:off`: norm 0.63, std 0.70, ged 0.81 of the time; ARMA(1,1) 0.71,
+ARMA(0,0) 0.79. The log-likelihoods of the grid move by at most 3.4e-8 (`compare-profile`), every status stays
+`CONVERGED`, and the evaluations are the same within 0.2%: the adjoint's gradient differs from the `Dual`'s only in
+the last digits (the property test holds it within 1e-10 of the largest partial).

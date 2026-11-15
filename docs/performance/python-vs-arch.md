@@ -17,15 +17,15 @@ time of the fits it covers.
 
 | Run | Wall time (s) | Fits per second | Relative to arch on this machine |
 | --- | ---: | ---: | ---: |
-| arch, sequential (matched work) | 11.06 | 28.9 | 1.00x |
-| volengine, threads=1 (matched work) | 4.50 | 71.1 | 2.46x |
-| volengine, threads=0 (all cores; not matched work) | 0.87 | 365.8 | 12.65x |
+| arch, sequential (matched work) | 11.10 | 28.8 | 1.00x |
+| volengine, threads=1 (matched work) | 4.00 | 80.0 | 2.77x |
+| volengine, threads=0 (all cores; not matched work) | 0.86 | 374.1 | 12.98x |
 
 | Model (matched work) | Fits | arch (s) | volengine, threads=1 (s) | Relative to arch on this machine |
 | --- | ---: | ---: | ---: | ---: |
-| sGARCH | 200 | 6.52 | 2.66 | 2.45x |
-| gjrGARCH | 60 | 2.05 | 0.67 | 3.08x |
-| eGARCH | 60 | 2.49 | 1.17 | 2.13x |
+| sGARCH | 200 | 6.50 | 2.33 | 2.79x |
+| gjrGARCH | 60 | 2.09 | 0.57 | 3.69x |
+| eGARCH | 60 | 2.50 | 1.10 | 2.27x |
 
 | Spec | Worst relative loglik difference over the series |
 | --- | ---: |
@@ -43,8 +43,8 @@ time of the fits it covers.
 | gjrGARCH(1,1) std | 4.9e-11 |
 | gjrGARCH(1,1) ged | 3.6e-11 |
 | eGARCH(1,1) norm | 1.0e-09 |
-| eGARCH(1,1) std | 8.1e-08 |
-| eGARCH(1,1) ged | 4.8e-11 |
+| eGARCH(1,1) std | 4.3e-11 |
+| eGARCH(1,1) ged | 5.2e-11 |
 
 Notes:
 

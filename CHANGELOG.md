@@ -34,6 +34,11 @@ library whose ABI version differs).
 
 ### Performance
 
+- sGARCH, iGARCH, gjrGARCH and eGARCH fits with norm, std or ged innovations and an ARMA mean (no regressors,
+  ARCH-in-mean, ARFIMA or variance targeting) take the gradient of the log-likelihood from a hand-written adjoint
+  instead of forward-mode AD, in the optimizer and in the Hessian of the standard errors: the TCC grid takes 0.71 of
+  its time with one thread (31.3 s to 22.0 s; 4.24 s to 2.72 s with all threads). Estimates move only in the last
+  digits; other specs are unchanged.
 - The TCC grid (1080 fits) on the Ryzen 7 5700X: see [docs/performance/benchmarks.md](docs/performance/benchmarks.md)
   and [docs/performance/profile-5a.md](docs/performance/profile-5a.md) for the measurements of each change.
 

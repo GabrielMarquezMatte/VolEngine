@@ -136,6 +136,24 @@ the scheduling only in batches.
 The DCC grid does not move beyond noise: its fits have 2 to 4 parameters, so neither the memory nor `Dual<12>`
 changes their work.
 
+## Adjoint gradient
+
+Measured on 2026-11-14 on the machine above, preset `gcc-bench`, code at `855a0a6`: the optimizer and the numerical
+Hessian take the gradient from a hand-written adjoint for sGARCH, iGARCH, gjrGARCH and eGARCH with norm, std or ged
+and an ARMA mean. The A/B against the code before it, and the cost of one evaluation, are in
+[Plan 5a profile](profile-5a.md#adjoint-gradient-after-plan-5a). Five repetitions, medians; every fit ended
+`CONVERGED`.
+
+| Run | After plan 5a (s) | Median (s) | sd (s) | Fits per second |
+| --- | ---: | ---: | ---: | ---: |
+| `BM_TccGrid/se:on/threads:1` | 31.3 | 22.0 | 0.18 | 49.1 |
+| `BM_TccGrid/se:on/threads:hw` | 4.24 | 2.72 | 0.01 | 397.1 |
+| `BM_TccGrid/se:off/threads:1` | 25.0 | 17.2 | 0.06 | 62.8 |
+| `BM_TccGrid/se:off/threads:hw` | 3.34 | 2.13 | 0.04 | 507.0 |
+
+Python against `arch` on matched work: 2.77 times as fast with one thread (2.46 after plan 5a), in
+[Python package against arch](python-vs-arch.md).
+
 ## Cost of the log-likelihood and of its gradient by AD
 
 `BM_Loglik/<series>/double` is one evaluation of `loglik<double>`, `BM_Loglik/<series>/dual` one of

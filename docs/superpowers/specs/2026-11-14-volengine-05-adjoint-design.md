@@ -188,3 +188,21 @@ coberto, não do que falta. Uma combinação nova cai no `Dual` por padrão.
 - Tolerância do teste de propriedade: 1e-10 relativa à norma ∞ do gradiente, contra 1e-12 a 4e-13 observados no
   spike.
 - Os blocos univariados dos erros-padrão do DCC herdam o adjunto pelo `LoglikGradient`.
+
+## 10. Feito (2026-11-14)
+
+Plano `docs/superpowers/plans/2026-11-14-volengine-05-adjunto.md`, commits `bec4f04..` em `master`. Números em
+`docs/performance/profile-5a.md` (seção "Adjoint gradient") e `docs/performance/benchmarks.md`.
+
+- **Grade de 1080:** 1 thread 31,1 s → 22,0 s (0,71); todas as threads 4,24 s → 2,72 s; sem erros-padrão 2,13 s.
+  Todos `CONVERGED`, ℓ muda no máximo 3,4e-8, avaliações iguais (razão 1,001).
+- **Python contra `arch`:** 2,46× → 2,77×.
+- **Abaixo da estimativa da §2 (0,55):** o adjunto custa ~2× uma avaliação `double`, não 1,3–1,5× como no spike.
+  O reverse recalcula os transcendentais que o forward `loglik<double>` já fez: `log1p` na std (~27% do adjunto),
+  `pow`/`log` na ged. Por distribuição na grade: norm 0,63, std 0,70, ged 0,81.
+- **Decisão pendente do autor:** um forward fundido com as parciais dos termos (o valor seguiria bit-idêntico, com
+  teste) tiraria esse recálculo, ao custo de uma segunda implementação dos termos da densidade, o que hoje é
+  anti-objetivo da §7.
+- `src/model/` passou de 8 módulos: os internos da verossimilhança foram para `src/model/likelihood/` (`terms.hpp`,
+  `parameters.hpp`, `adjoint.{hpp,cpp}`).
+

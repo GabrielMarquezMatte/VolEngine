@@ -10,6 +10,7 @@
 #include "forecast/forecast.hpp"
 #include "model/layout.hpp"
 #include "model/likelihood.hpp"
+#include "model/likelihood/adjoint.hpp"
 #include "sim/philox.hpp"
 #include "sim/samplers.hpp"
 #include "sim/simulate.hpp"
@@ -282,6 +283,18 @@ void run_loglik(benchmark::State& state, const NamedSpec& named, bool with_gradi
     }
     const auto seeds = dual_seeds<16>(theta);
     time_evaluations(state, parameters, [&] { return dual_loglik<16>(r, seeds, layout); });
+}
+
+// The log-likelihood and its gradient by the adjoint, for the specs model::has_adjoint covers.
+void run_loglik_adjoint(benchmark::State& state, const NamedSpec& named)
+{
+    const std::vector<double> r = series_of(named);
+    const ve::model::Layout layout = ve::model::layout_of(named.spec);
+    const std::vector<double> theta = reference_theta(named, layout);
+    std::vector<double> grad(theta.size());
+    ve::model::LoglikAdjoint adjoint;
+    time_evaluations(state, theta.size(),
+                     [&] { return adjoint.evaluate(ve::model::Data{r}, theta, layout, ve::VarInit::Sample, grad); });
 }
 
 struct StatusCounts
@@ -1432,6 +1445,10 @@ void register_all()
     {
         benchmark::RegisterBenchmark("BM_Loglik/" + named.name + "/double", run_loglik, named, false);
         benchmark::RegisterBenchmark("BM_Loglik/" + named.name + "/dual", run_loglik, named, true);
+        if (ve::model::has_adjoint(ve::model::layout_of(named.spec), ve::VarInit::Sample))
+        {
+            benchmark::RegisterBenchmark("BM_Loglik/" + named.name + "/adjoint", run_loglik_adjoint, named);
+        }
         benchmark::RegisterBenchmark("BM_FitOne/" + named.name, run_fit_one, named)
             ->Unit(benchmark::kMillisecond);
     }
