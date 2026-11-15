@@ -453,7 +453,7 @@ VE_API void ve_dcc_fit_free(ve_dcc_fit* f);
    total persistence (the aDCC g does not enter; the FDCC takes k per element; a static copula keeps its R) and
    Rbar the correlation of Qbar. H_h = D R_h D with D = diag(sigma_h). A DCC fit keeps the final state of each series
    and of its recursion: it forecasts and simulates after the univariate fits are freed, but only a fit made by
-   ve_dcc_fit_batch has it (VE_INVALID_ARGUMENT otherwise, and for a fit with no finite point, whose message says
+   ve_dcc_fit_batch or ve_dcc_standard_errors has it (VE_INVALID_ARGUMENT otherwise, and for a fit with no finite point, whose message says
    "no finite point"). A VE_FIT_FAILED fit that has a finite point forecasts from it.
    ve_dcc_future holds the regressors of the horizon of each series: series from 0, panels of `horizon` rows without
    ranges, NULL for none. They are checked against each series' spec when used (the error names the series from 1).

@@ -149,8 +149,9 @@ jobs:
 
   # The binary interface against the last release: abidiff compares the library built now with the libabigail dump
   # that the release attached (scripts/abi_dump.sh). Until 1.0 it only reports; from a 1.x release on, an
-  # incompatible change (a removed function, a changed type) fails. The contract file (build-test) catches the
-  # header; this catches what the header does not say, such as a struct layout behind a handle or a missing export.
+  # incompatible change (a removed function or exported symbol, a changed signature in the binary) fails. The contract
+  # file (build-test) catches the header; this catches what the header does not say, such as a symbol the library no
+  # longer exports. Types behind a handle are private (--drop-private-types) and are not part of the interface.
   abi:
     name: ABI (abidiff)
     runs-on: ubuntu-24.04
@@ -170,10 +171,12 @@ jobs:
         run: |
           tag=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
           if [ -z "$tag" ]; then echo "::notice::no release to compare with"; exit 0; fi
-          if ! gh release download "$tag" --pattern volengine-abi-linux-x64.xml --dir build/abi-out; then
+          # Only a release that has no dump skips the comparison; a failed download fails the job.
+          if ! gh release view "$tag" --json assets --jq '.assets[].name' | grep -qx volengine-abi-linux-x64.xml; then
             echo "::notice::$tag has no ABI dump: nothing to compare with"
             exit 0
           fi
+          gh release download "$tag" --pattern volengine-abi-linux-x64.xml --dir build/abi-out
           status=0
           abidiff build/abi-out/volengine-abi-linux-x64.xml build/abi-out/current.xml || status=$?
           # abidiff's exit status is a set of bits: 1 error, 2 usage error, 4 ABI change, 8 incompatible ABI change.
@@ -184,4 +187,6 @@ jobs:
             echo "::error::incompatible ABI change since $tag"
             exit 1
           fi
-          if (( status & 12 )); then echo "::warning::the ABI differs from $tag (reported only before 1.0)"; fi
+          if (( status & 12 )); then
+            echo "::warning::the ABI differs from $tag (before 1.0 this is only reported; from 1.0 only compatible additions get here)"
+          fi

@@ -38,7 +38,9 @@ Python 3.11 or newer. The wheel carries the native library and needs no compiler
 - Linux musl, x64 and arm64 (musl 1.2 or newer, as in Alpine)
 
 On another platform pip reports that no distribution matches; there is no source distribution. The native
-libraries alone are attached to each [GitHub Release](https://github.com/GabrielMarquezMatte/VolEngine/releases).
+libraries alone are attached to each [GitHub Release](https://github.com/GabrielMarquezMatte/VolEngine/releases)
+(`volengine-native-<os>-<arch>`). Save them under the name the loader asks for: `libvolengine.dll` on Windows (both import
+libraries, the `.lib` and the `.dll.a`, record it), `libvolengine.so` on Linux and `libvolengine.dylib` on macOS.
 
 From C++23, the header-only wrapper in [cpp/](cpp/README.md) is used through `FetchContent` or `find_package`:
 

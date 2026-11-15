@@ -51,9 +51,22 @@ def function_line(prefix: str, name: str, parameters: str) -> str:
     return f"function {returned} {name}({', '.join(types)})"
 
 
+def refuse_unreadable(text: str) -> None:
+    """Raises for anything the contract format cannot hold: it must never be silently left out of the contract."""
+    code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    for statement in re.findall(r"\bVE_API\b[^;{}]*;", code):
+        if not FUNCTION.fullmatch(statement.strip()):
+            raise ValueError(f"cannot read this declaration into the contract: {' '.join(statement.split())}")
+    if re.search(r"\benum\b", code):
+        raise ValueError("enum is not part of the contract format: use #define values")
+    if re.search(r"\btypedef\b[^;]*\{", code):
+        raise ValueError("a typedef struct with a body is not part of the contract format: use an opaque struct")
+
+
 def contract_lines(header_text: str) -> list[str]:
     """The contract of a header, in header order."""
     text = COMMENTS.sub(" ", header_text)
+    refuse_unreadable(text)
     found: list[tuple[int, str]] = []
     for match in DEFINE.finditer(text):
         if match.group(1) not in PLATFORM_MACROS:

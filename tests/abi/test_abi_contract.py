@@ -43,6 +43,32 @@ class ContractLines(unittest.TestCase):
         self.assertEqual(a, b)
 
 
+class Unparsed(unittest.TestCase):
+    """A declaration the parser cannot read must be an error, never a line missing from the contract."""
+
+    def test_function_pointer_parameter_is_refused(self) -> None:
+        with self.assertRaisesRegex(ValueError, "ve_on_progress"):
+            abi_contract.contract_lines("VE_API void ve_on_progress(void (*callback)(int), void* data);")
+
+    def test_trailing_attribute_is_refused(self) -> None:
+        with self.assertRaisesRegex(ValueError, "ve_old"):
+            abi_contract.contract_lines("VE_API void ve_old(void) VE_DEPRECATED;")
+
+    def test_name_without_prefix_is_refused(self) -> None:
+        with self.assertRaisesRegex(ValueError, "other_name"):
+            abi_contract.contract_lines("VE_API void other_name(void);")
+
+    def test_anonymous_enum_and_struct_are_refused(self) -> None:
+        with self.assertRaisesRegex(ValueError, "enum"):
+            abi_contract.contract_lines("enum { A = 1 };")
+        with self.assertRaisesRegex(ValueError, "struct"):
+            abi_contract.contract_lines("typedef struct { int a; } ve_pair;")
+
+    def test_extern_c_braces_are_allowed(self) -> None:
+        text = 'extern "C"\n{\nVE_API void ve_f(void);\n}'
+        self.assertEqual(abi_contract.contract_lines(text), ["function void ve_f(void)"])
+
+
 class Comparisons(unittest.TestCase):
     def test_removed_line_fails_base(self) -> None:
         self.assertEqual(abi_contract.removed_lines(["define A 1", "define B 2"], ["define A 1"]), ["define B 2"])

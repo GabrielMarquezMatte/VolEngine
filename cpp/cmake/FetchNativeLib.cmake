@@ -19,6 +19,12 @@ function(volengine_asset_name os arch out)
     set(${out} "volengine-native-${os}-${arch}.${_ext}" PARENT_SCOPE)
 endfunction()
 
+# volengine_cache_directory(<build dir> <tag> <out>): where the library of a release is downloaded. One directory per tag,
+# so a build directory that moves to the next release downloads it instead of reusing the files of the old one.
+function(volengine_cache_directory build_directory tag out)
+    set(${out} "${build_directory}/volengine-native/${tag}" PARENT_SCOPE)
+endfunction()
+
 function(volengine_host_platform os_out arch_out)
     if(WIN32)
         set(_os "win")
@@ -109,7 +115,7 @@ function(volengine_released_library lib_out implib_out)
     volengine_host_platform(_os _arch)
     volengine_asset_name("${_os}" "${_arch}" _asset)
     set(_base "https://github.com/GabrielMarquezMatte/VolEngine/releases/download/${VOLENGINE_VERSION}")
-    set(_cache "${CMAKE_BINARY_DIR}/volengine-native")
+    volengine_cache_directory("${CMAKE_BINARY_DIR}" "${VOLENGINE_VERSION}" _cache)
     file(MAKE_DIRECTORY "${_cache}")
     string(REGEX REPLACE "\.[a-z]+$" "" _stem "${_asset}")
     if(WIN32 AND MSVC)

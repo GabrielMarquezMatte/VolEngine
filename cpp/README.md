@@ -57,7 +57,10 @@ volengine_copy_native_library(app)
 
 The library asset is `volengine-native-<os>-<arch>.<so|dylib|dll>` for Windows x64, macOS arm64 and x64, and Linux glibc
 and musl on x64 and arm64. On Windows the DLL is built by MinGW; the release carries a `.lib` for MSVC and a `.dll.a`
-for MinGW, so both compilers link it.
+for MinGW, so both compilers link it. Both import libraries record `libvolengine.dll`, so a DLL downloaded by hand has to
+be saved under that name (the CMake module does); the Linux and macOS libraries likewise as `libvolengine.so` and
+`libvolengine.dylib`. The CMake module downloads into one directory per tag, so a build directory that moves to a
+new release fetches it again.
 
 ## Building and testing
 

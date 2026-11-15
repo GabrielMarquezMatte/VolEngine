@@ -95,7 +95,7 @@ def test_dcc_standard_errors_later(ctx, univariate):
     on = ctx.fit_dcc(spec, univariate)
     off = ctx.fit_dcc(spec, univariate, standard_errors=False)
     for kind in ("hessian", "robust"):
-        with pytest.raises(ve.VolEngineError, match="standard errors were not computed"):
+        with pytest.raises(ve.VolEngineError, match="ve_dcc_standard_errors"):
             off.coef(se=kind)
     later = off.standard_errors(univariate)
     assert later is not off

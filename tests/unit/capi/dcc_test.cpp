@@ -291,7 +291,8 @@ void expect_standard_errors_not_computed(const ve_dcc_fit* fit)
         for (Reader reader : {ve_dcc_fit_std_errors, ve_dcc_fit_t_values, ve_dcc_fit_p_values})
         {
             EXPECT_EQ(reader(fit, kind, values.data()), VE_INVALID_ARGUMENT);
-            EXPECT_NE(std::string(ve_last_error()).find("standard errors were not computed"), std::string::npos);
+            EXPECT_NE(std::string(ve_last_error()).find("ve_dcc_standard_errors"), std::string::npos);
+            EXPECT_EQ(std::string(ve_last_error()).find("ve_fit_options"), std::string::npos);
         }
     }
 }

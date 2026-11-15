@@ -20,6 +20,14 @@ inline ve_status no_standard_errors()
                      "standard errors were not computed: fit with ve_fit_options_set_standard_errors(o, 1)");
 }
 
+// The same for a DCC fit made with ve_dcc_options_set_standard_errors(o, 0).
+inline ve_status no_dcc_standard_errors()
+{
+    return set_error(VE_INVALID_ARGUMENT,
+                     "standard errors were not computed: fit with ve_dcc_options_set_standard_errors(o, 1) or call "
+                     "ve_dcc_standard_errors");
+}
+
 template <typename F>
 ve_status guard(F&& callable)
 {
