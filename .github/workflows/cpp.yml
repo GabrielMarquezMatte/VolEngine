@@ -1,0 +1,122 @@
+name: C++ wrapper
+
+# Builds the library, then tests the header-only wrapper in cpp/ against it and checks that a downstream project can use
+# the package through FetchContent and through find_package. On Windows the wrapper is compiled by MSVC over the DLL that
+# MinGW built, the combination a user of the release gets.
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'cpp/**'
+      - 'include/**'
+      - 'src/**'
+      - 'CMakeLists.txt'
+      - 'python/scripts/build_native.py'
+      - '.github/workflows/cpp.yml'
+  pull_request:
+    paths:
+      - 'cpp/**'
+      - 'include/**'
+      - 'src/**'
+      - 'CMakeLists.txt'
+      - 'python/scripts/build_native.py'
+      - '.github/workflows/cpp.yml'
+
+concurrency:
+  group: cpp-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: linux-gcc
+    runs-on: ubuntu-24.04
+    env:
+      CC: gcc-14
+      CXX: g++-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install GCC 14 and Ninja
+        run: sudo apt-get install -y g++-14 ninja-build
+
+      - name: Build the library
+        run: python3 python/scripts/build_native.py
+
+      - name: Test the wrapper and the consumers
+        env:
+          VOLENGINE_NATIVE_LIB: ${{ github.workspace }}/python/src/volengine/_lib/libvolengine.so
+          CPP_CMAKE_ARGS: -DCMAKE_CXX_COMPILER=g++-14
+        run: bash cpp/scripts/ci_check.sh
+
+      # The library is not instrumented; the wrapper's own code is, which is where a leaked handle or a dangling view
+      # would be.
+      - name: Test the wrapper under ASan and UBSan
+        env:
+          VOLENGINE_NATIVE_LIB: ${{ github.workspace }}/python/src/volengine/_lib/libvolengine.so
+        run: |
+          cmake -S cpp -B build/cpp-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=g++-14 \
+            -DVOLENGINE_BUILD_TESTS=ON "-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-sanitize-recover=all"
+          cmake --build build/cpp-asan
+          ctest --test-dir build/cpp-asan --output-on-failure
+
+  macos:
+    name: macos-clang
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: brew install ninja
+
+      - name: Build the library
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
+        run: python3 python/scripts/build_native.py
+
+      - name: Test the wrapper and the consumers
+        env:
+          VOLENGINE_NATIVE_LIB: ${{ github.workspace }}/python/src/volengine/_lib/libvolengine.dylib
+        run: bash cpp/scripts/ci_check.sh
+
+  windows:
+    name: windows-msvc
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          path-type: inherit
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+
+      - name: Build the library with MinGW
+        shell: msys2 {0}
+        run: uv run --no-project --python 3.14 python python/scripts/build_native.py
+
+      - name: Set up the MSVC tools
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Test the wrapper and the consumers with MSVC
+        shell: bash
+        env:
+          VOLENGINE_NATIVE_LIB: ${{ github.workspace }}/python/src/volengine/_lib/libvolengine.dll
+          CPP_CMAKE_ARGS: -DCMAKE_CXX_COMPILER=cl
+        run: |
+          # Git's /usr/bin/link.exe would be found before MSVC's linker.
+          rm -f /usr/bin/link.exe
+          bash cpp/scripts/ci_check.sh

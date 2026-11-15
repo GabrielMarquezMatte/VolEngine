@@ -1,0 +1,28 @@
+@PACKAGE_INIT@
+
+# Rebuilds the two targets cpp/CMakeLists.txt defines for an in-tree build, pointed at the installed copies. Nothing is
+# downloaded here: the native library was resolved once, at install time, so find_package() never touches the network.
+
+if(NOT TARGET volengine::native)
+    add_library(volengine::native SHARED IMPORTED)
+    set_target_properties(volengine::native PROPERTIES
+        IMPORTED_LOCATION "@PACKAGE_VOLENGINE_INSTALLED_NATIVE_DIR@/@VOLENGINE_INSTALLED_NATIVE_NAME@")
+    if(WIN32)
+        set_target_properties(volengine::native PROPERTIES
+            IMPORTED_IMPLIB "@PACKAGE_VOLENGINE_INSTALLED_IMPLIB_DIR@/@VOLENGINE_INSTALLED_IMPLIB_NAME@")
+    else()
+        set_target_properties(volengine::native PROPERTIES IMPORTED_SONAME "@VOLENGINE_INSTALLED_SONAME@")
+    endif()
+endif()
+
+if(NOT TARGET volengine::volengine)
+    add_library(volengine::volengine INTERFACE IMPORTED)
+    set_target_properties(volengine::volengine PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "@PACKAGE_VOLENGINE_INSTALLED_INCLUDE_DIR@"
+        INTERFACE_COMPILE_FEATURES cxx_std_23
+        INTERFACE_LINK_LIBRARIES volengine::native)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/CopyNativeLibrary.cmake")
+
+check_required_components(volengine)
