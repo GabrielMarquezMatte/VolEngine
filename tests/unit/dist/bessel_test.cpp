@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <boost/math/special_functions/bessel.hpp>
 #include <cmath>
 #include <gtest/gtest.h>
 #include <limits>
@@ -79,7 +80,7 @@ TEST(Bessel, OrderDerivativeMatchesClosedFormAtHalf)
     for (const auto& [x, expected] : references)
     {
         auto value = log_bessel_k(ve::ad::variable<2>(0.5, 0), ve::ad::variable<2>(x, 1));
-        expect_relative(value.grad[0], expected, 1e-8);
+        expect_relative(value.grad[0], expected, 1e-13);
     }
 }
 
@@ -101,7 +102,7 @@ TEST(Bessel, DerivativesMatchFiniteDifferences)
             auto fixed = log_bessel_k(order, ve::ad::variable<8>(x, 1));
             EXPECT_EQ(fixed.value, dual.value);
             EXPECT_EQ(fixed.grad[0], 0.0);
-            EXPECT_EQ(fixed.grad[1], dual.grad[1]);
+            EXPECT_NEAR(fixed.grad[1], dual.grad[1], 1e-13 * std::max(1.0, std::fabs(dual.grad[1])));
         }
     }
 }
@@ -130,6 +131,114 @@ TEST(Bessel, SmoothAroundFiveHalves)
             (five_halves_recurrence(2.5 + step, x) - five_halves_recurrence(2.5 - step, x)) / (2.0 * step);
         auto dual = log_bessel_k(ve::ad::variable<1>(2.5, 0), ve::ad::Dual<1>{x});
         EXPECT_NEAR(dual.grad[0], slope, 1e-9 * std::max(1.0, std::fabs(slope))) << x;
+    }
+}
+
+// log K_|order|(x) in long double, the reference of the slope tests; Boost's K is even in the order.
+long double reference_log_k(long double order, long double x)
+{
+    return std::log(boost::math::cyl_bessel_k(std::fabs(order), x));
+}
+
+// Richardson on central differences of the long double reference, accurate to O(step^4).
+long double reference_order_slope(double order, double x, long double step)
+{
+    auto f = [&](long double v) { return reference_log_k(v, x); };
+    long double fine = (f(order + step) - f(order - step)) / (2.0L * step);
+    long double coarse = (f(order + 2.0L * step) - f(order - 2.0L * step)) / (4.0L * step);
+    return (4.0L * fine - coarse) / 3.0L;
+}
+
+// d log K_v / dx = -K_(v-1) / K_v - v / x in long double.
+long double reference_x_slope(double order, double x)
+{
+    long double v = std::fabs(static_cast<long double>(order));
+    return -std::exp(reference_log_k(v - 1.0L, x) - reference_log_k(v, x)) - v / x;
+}
+
+void expect_near_reference(double actual, long double reference, double tolerance, const char* what, double order,
+                           double x)
+{
+    EXPECT_NEAR(actual, static_cast<double>(reference), tolerance * std::max(1.0, std::fabs(static_cast<double>(reference))))
+        << what << " at order " << order << ", x " << x;
+}
+
+// Orders that skip 5/2, where Boost's long double K switches to a truncated Hankel series that is neither accurate
+// nor smooth in v (see SmoothAroundFiveHalves) and so is no reference.
+TEST(Bessel, SlopesMatchLongDoubleReference)
+{
+    for (double order : {-3.3, -1.5, -0.5, 0.0, 0.1, 0.4999, 0.5, 1.0, 2.4, 3.7, 10.0, 50.0, 200.0})
+    {
+        for (double x : {0.01, 0.1, 1.0, 1.78, 10.0, 31.6, 300.0, 699.0})
+        {
+            if (!std::isfinite(static_cast<double>(reference_log_k(order, x))))
+            {
+                continue;
+            }
+            ve::dist::detail::LogBesselSlopes slopes = ve::dist::detail::log_bessel_k_slopes(order, x);
+            expect_near_reference(slopes.order, reference_order_slope(order, x, 1e-4L), 1e-12, "order slope", order, x);
+            expect_near_reference(slopes.x, reference_x_slope(order, x), 1e-12, "x slope", order, x);
+        }
+    }
+}
+
+TEST(Bessel, OrderSlopeAtSmallArgument)
+{
+    for (double x : {1e-8, 1e-6, 1e-4})
+    {
+        ve::dist::detail::LogBesselSlopes slopes = ve::dist::detail::log_bessel_k_slopes(0.1, x);
+        expect_near_reference(slopes.order, reference_order_slope(0.1, x, 1e-6L), 1e-11, "order slope", 0.1, x);
+    }
+}
+
+TEST(Bessel, OrderSlopeIsOddInTheOrder)
+{
+    for (double x : {0.3, 5.0})
+    {
+        EXPECT_EQ(ve::dist::detail::log_bessel_k_slopes(0.0, x).order, 0.0);
+        double above = ve::dist::detail::log_bessel_k_slopes(1e-9, x).order;
+        double below = ve::dist::detail::log_bessel_k_slopes(-1e-9, x).order;
+        EXPECT_EQ(above, -below);
+        EXPECT_LT(std::fabs(above), 1e-6);
+        EXPECT_EQ(ve::dist::detail::log_bessel_k_slopes(-1.5, x).order, -ve::dist::detail::log_bessel_k_slopes(1.5, x).order);
+    }
+}
+
+// At x >= 700 the value comes from the Hankel series with a recurrence; the slopes must agree with its differences.
+TEST(Bessel, SlopesAtLargeArgumentMatchScaledDifferences)
+{
+    for (double x : {900.0, 5000.0})
+    {
+        for (double order : {0.3, 2.5, 40.0})
+        {
+            double step = 1e-4;
+            double d_order = (ve::dist::log_bessel_k_scaled(order + step, x) -
+                              ve::dist::log_bessel_k_scaled(order - step, x)) / (2.0 * step);
+            double d_x = (ve::dist::log_bessel_k_scaled(order, x + step * x) -
+                          ve::dist::log_bessel_k_scaled(order, x - step * x)) / (2.0 * step * x);
+            auto scaled = ve::dist::log_bessel_k_scaled(ve::ad::variable<2>(order, 0), ve::ad::variable<2>(x, 1));
+            EXPECT_NEAR(scaled.grad[0], d_order, 1e-7 * std::max(1.0, std::fabs(d_order))) << order << ", " << x;
+            EXPECT_NEAR(scaled.grad[1], d_x, 1e-7 * std::max(1.0, std::fabs(d_x))) << order << ", " << x;
+        }
+    }
+}
+
+TEST(Bessel, FreeOrderDualNeverThrows)
+{
+    constexpr double kNan = std::numeric_limits<double>::quiet_NaN();
+    constexpr double kInf = std::numeric_limits<double>::infinity();
+    for (double order : {kNan, 1e5, 0.5})
+    {
+        for (double x : {kNan, -1.0, 0.0, kInf})
+        {
+            double plain = log_bessel_k(order, x);
+            double scaled_plain = ve::dist::log_bessel_k_scaled(order, x);
+            auto dual = ve::dist::log_bessel_k(ve::ad::variable<2>(order, 0), ve::ad::variable<2>(x, 1));
+            auto scaled = ve::dist::log_bessel_k_scaled(ve::ad::variable<2>(order, 0), ve::ad::variable<2>(x, 1));
+            EXPECT_TRUE(dual.value == plain || (std::isnan(dual.value) && std::isnan(plain))) << order << ", " << x;
+            EXPECT_TRUE(scaled.value == scaled_plain || (std::isnan(scaled.value) && std::isnan(scaled_plain)))
+                << order << ", " << x;
+        }
     }
 }
 

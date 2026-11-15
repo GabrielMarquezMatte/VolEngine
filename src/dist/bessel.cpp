@@ -109,6 +109,76 @@ double log_k_avoiding_five_halves_shortcut(double order, double x)
     return above + std::log(2.0 * (order - 1.0) / x + std::exp(below - above));
 }
 
+// log K_v(x) = log(1/2 int exp(-x cosh t + v t) dt), the trapezoid rule on a grid of step h centred on the peak of
+// the integrand, t* = asinh(v / x). The integrand is analytic and decays double exponentially on the upper side and
+// exponentially (e^(v t)) on the lower one, so the rule converges to rounding for h <= 0.4 sigma, sigma the width of
+// the peak (x^2 + v^2)^(-1/4) (measured at 1e-14 on log K, 4e-15 on the slope in x), and the same sum divided by its
+// total gives both slopes, E[-cosh t] in x and E[t] in the order. The sum stops where the integrand falls below
+// exp(-kSlopeCutoff) of its peak. Validated for |order| <= kSlopeMaxOrder and x >= kSlopeMinX: for a smaller x the
+// lower tail needs more than ~2e3 nodes at an order of 0.1, and past kSlopeMaxOrder it was not tested.
+constexpr double kSlopeMaxOrder = 200.0;
+constexpr double kSlopeMinX = 1e-8;
+constexpr double kSlopeCutoff = 40.0;
+constexpr double kSlopeMaxStep = 0.2;
+constexpr double kSlopeStepOverSigma = 0.4;
+
+// The integrand exp(-x cosh t + order t) and the grid peak + k step.
+struct TrapezoidGrid
+{
+    double order;
+    double x;
+    double peak;
+    double step;
+};
+
+struct TrapezoidSums
+{
+    double total;
+    double cosh_moment;
+    double t_moment;
+};
+
+// One side of the grid, t = peak + direction k h, k >= 1, to the cutoff; e^t by recurrence.
+void add_trapezoid_side(const TrapezoidGrid& grid, double direction, TrapezoidSums& sums)
+{
+    double cosh_peak = std::cosh(grid.peak);
+    double ratio = std::exp(direction * grid.step);
+    double up = std::exp(grid.peak);
+    double down = 1.0 / up;
+    for (int k = 1;; ++k)
+    {
+        up *= ratio;
+        down /= ratio;
+        double cosh_t = 0.5 * (up + down);
+        double t = grid.peak + direction * grid.step * k;
+        double exponent = -grid.x * (cosh_t - cosh_peak) + grid.order * (t - grid.peak);
+        if (!(exponent >= -kSlopeCutoff))
+        {
+            return;
+        }
+        double weight = std::exp(exponent);
+        sums.total += weight;
+        sums.cosh_moment += cosh_t * weight;
+        sums.t_moment += t * weight;
+    }
+}
+
+detail::LogBesselSlopes trapezoid_slopes(double order, double x)
+{
+    double v = std::fabs(order);
+    double peak = std::asinh(v / x);
+    double sigma = std::pow(x * x + v * v, -0.25);
+    double step = std::min(kSlopeMaxStep, kSlopeStepOverSigma * sigma);
+    double cosh_peak = std::cosh(peak);
+    TrapezoidSums sums{1.0, cosh_peak, peak};
+    TrapezoidGrid grid{v, x, peak, step};
+    add_trapezoid_side(grid, 1.0, sums);
+    add_trapezoid_side(grid, -1.0, sums);
+    double sign = std::copysign(1.0, order);
+    double order_slope = order == 0.0 ? 0.0 : sign * sums.t_moment / sums.total;
+    return {order_slope, -sums.cosh_moment / sums.total};
+}
+
 }
 
 double log_bessel_k(double order, double x)
@@ -135,6 +205,28 @@ double log_bessel_k_scaled(double order, double x)
         return scaled_recurrence_log_k(std::fabs(order), x);
     }
     return log_bessel_k(order, x) + x;
+}
+
+namespace detail
+{
+
+LogBesselSlopes log_bessel_k_slopes(double order, double x)
+{
+    constexpr double kNan = std::numeric_limits<double>::quiet_NaN();
+    if (std::isnan(order) || !(x > 0.0) || !std::isfinite(x))
+    {
+        return {kNan, kNan};
+    }
+    if (std::fabs(order) <= kSlopeMaxOrder && x >= kSlopeMinX)
+    {
+        return trapezoid_slopes(order, x);
+    }
+    // ponytail: beyond the validated domain, Richardson on log K and the ratio K_(v-1) / K_v: ~1e-10 on the slope in
+    // the order and exact in x; widen the trapezoid's domain if a model ever lives there.
+    double d_order = order_slope([](double v, double y) { return log_bessel_k(v, y); }, order, x);
+    return {d_order, log_bessel_k_slope(order, x)};
+}
+
 }
 
 }

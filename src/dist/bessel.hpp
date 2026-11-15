@@ -45,6 +45,16 @@ double order_slope(F f, double order, double x)
     return (4.0 * fine - coarse) / 3.0;
 }
 
+
+struct LogBesselSlopes
+{
+    double order;
+    double x;
+};
+
+// d log K_order(x) / d order and / d x (the unscaled K: the slope in x of log(e^x K) is this + 1).
+LogBesselSlopes log_bessel_k_slopes(double order, double x);
+
 }
 
 // Derivative in x only.
@@ -55,14 +65,14 @@ T log_bessel_k(double order, const T& x)
     return ad::chain(x, v, detail::log_bessel_k_slope(order, ad::value_of(x)));
 }
 
-// Derivative in order by finite differences of log K (the one approximate derivative of the engine), in x as above.
+// Derivatives in order and in x from the trapezoid sum of detail::log_bessel_k_slopes; the value is the double one.
 template <class T>
 T log_bessel_k(const T& order, const T& x)
 {
     double nu = ad::value_of(order);
     double xv = ad::value_of(x);
-    double d_order = detail::order_slope([](double v, double y) { return log_bessel_k(v, y); }, nu, xv);
-    return ad::chain(order, x, log_bessel_k(nu, xv), d_order, detail::log_bessel_k_slope(nu, xv));
+    detail::LogBesselSlopes slopes = detail::log_bessel_k_slopes(nu, xv);
+    return ad::chain(order, x, log_bessel_k(nu, xv), slopes.order, slopes.x);
 }
 
 // The scaled log of each overload above, with the same derivatives plus 1 in x.
@@ -78,9 +88,8 @@ T log_bessel_k_scaled(const T& order, const T& x)
 {
     double nu = ad::value_of(order);
     double xv = ad::value_of(x);
-    double d_order = detail::order_slope([](double v, double y) { return log_bessel_k_scaled(v, y); }, nu, xv);
-    double slope = detail::log_bessel_k_scaled_slope(nu, xv);
-    return ad::chain(order, x, log_bessel_k_scaled(nu, xv), d_order, slope);
+    detail::LogBesselSlopes slopes = detail::log_bessel_k_slopes(nu, xv);
+    return ad::chain(order, x, log_bessel_k_scaled(nu, xv), slopes.order, slopes.x + 1.0);
 }
 
 }

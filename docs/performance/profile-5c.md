@@ -187,3 +187,21 @@ before the change.
 | `BM_DistQuantile/ghyp` (200 quantiles) | 97.8 ms | 28.9 ms (144 us per call) |
 
 The long double evaluation was the cost, not only the bit-identity: every function that calls K is 2.3x to 5x faster.
+
+## Task 3: slopes of K by the trapezoid rule
+
+The `Dual` overloads of `log_bessel_k` and `log_bessel_k_scaled` with a free order take both slopes from one trapezoid
+sum (`detail::log_bessel_k_slopes`); the value is still Boost's, in double. The Richardson difference of the order
+slope (step 1e-3) differed from a long double reference by up to 1e-11 relative at x = 300 and 1e-10 at x = 1e-8; the
+trapezoid agrees to 1e-12 on the whole grid of the test (orders −3.3 to 200, x 0.01 to 699) and 1e-11 at x = 1e-8.
+Outside |order| <= 200, x >= 1e-8 the old Richardson stays, marked `ponytail:`.
+
+| Benchmark | Base | Task 2 | Task 3 |
+| --- | ---: | ---: | ---: |
+| `BM_LogBesselK/free_order` | 28.6 ms | 5.39 ms | 2.21 ms (443 ns per call) |
+| `BM_Loglik/sgarch11_ghyp/dual` | 23.8 ms | 5.29 ms | 2.13 ms |
+| `BM_FitOne/sgarch11_ghyp` | 1765 ms | 377 ms | 139 ms |
+| `BM_FitOne/sgarch11_nig` | 79.6 ms | 30.3 ms | 30.5 ms |
+
+The ghyp fit is now 4.6 times the nig one (was 22), under the 5x at which the spec asks for a `ponytail:` on SIMD in the
+trapezoid.
