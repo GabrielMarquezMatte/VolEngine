@@ -48,25 +48,20 @@ The Python benchmark against `arch` runs the same fits on both libraries (`volen
 `arch` convention), checks that the log-likelihoods agree and writes a report with the machine and versions:
 
 ```
-VOLENGINE_LIB=$PWD/build/gcc-release/libvolengine.dll python/.venv/Scripts/python python/benchmarks/bench_vs_arch.py --out docs/performance/python-vs-arch.md
+VOLENGINE_LIB=$PWD/build/gcc-release/libvolengine.dll uv run --project python --group bench python python/benchmarks/bench_vs_arch.py --out docs/performance/python-vs-arch.md
 ```
 
-It needs `arch` in the venv. The result is in [docs/performance/python-vs-arch.md](docs/performance/python-vs-arch.md).
+It needs the `bench` group (`arch`). The result is in [docs/performance/python-vs-arch.md](docs/performance/python-vs-arch.md).
 
 ## Python tests
 
-Create the test environment from the Windows Python, not from the MSYS2 Python that comes first on `PATH`
-(it has no numpy wheels):
-
-```
-py -3.14 -m venv python/.venv
-python/.venv/Scripts/python -m pip install -e "python[test]"
-```
+The Python package is managed with [uv](https://docs.astral.sh/uv/). `uv sync --project python` creates
+`python/.venv` with the `dev` group (pytest, mypy); the `bench` group adds `arch` for the benchmarks.
 
 Point the package at the library you built with `VOLENGINE_LIB`, then run pytest:
 
 ```
-VOLENGINE_LIB=$PWD/build/gcc-release/libvolengine.dll python/.venv/Scripts/python -m pytest python/tests -q
+VOLENGINE_LIB=$PWD/build/gcc-release/libvolengine.dll uv run --project python pytest python/tests -q
 ```
 
 The library is `libvolengine.dll` (MinGW), `Release/volengine.dll` (MSVC), `libvolengine.so` or

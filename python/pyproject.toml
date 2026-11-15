@@ -9,8 +9,9 @@ description = "GARCH volatility estimation over the VolEngine C API"
 requires-python = ">=3.11"
 dependencies = ["numpy"]
 
-[project.optional-dependencies]
-test = ["pytest", "numpy", "mypy"]
+[dependency-groups]
+dev = ["pytest", "mypy"]
+bench = ["arch"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/volengine"]
