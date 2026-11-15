@@ -38,7 +38,10 @@ constexpr double kFiveHalvesBand = 0x1p-13;
 
 namespace policies = boost::math::policies;
 
-using IgnoreErrors = policies::policy<policies::overflow_error<policies::ignore_error>,
+// promote_double<false>: Boost computes in double, not long double. On MinGW a pool thread runs the x87 unit at
+// another precision than the Python main thread, so a long double evaluation would differ between threads.
+using IgnoreErrors = policies::policy<policies::promote_double<false>,
+                                      policies::overflow_error<policies::ignore_error>,
                                       policies::underflow_error<policies::ignore_error>,
                                       policies::domain_error<policies::ignore_error>,
                                       policies::evaluation_error<policies::ignore_error>>;

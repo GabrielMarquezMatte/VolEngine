@@ -1,12 +1,14 @@
 #include "diagnostics/portmanteau.hpp"
 #include "diagnostics/tails.hpp"
 #include "diagnostics/diagnostics_series.hpp"
+#include "x87_precision.hpp"
 
 #include <gtest/gtest.h>
 
 #include <array>
 #include <cmath>
 #include <limits>
+#include <vector>
 
 namespace
 {
@@ -89,6 +91,22 @@ TEST(Portmanteau, UpperTailsRetainSmallProbabilities)
     EXPECT_LT(chi_squared_upper(100.0, 1.0), 1e-20);
     EXPECT_DOUBLE_EQ(student_two_sided(0.0, 10.0), 1.0);
     EXPECT_DOUBLE_EQ(student_two_sided(-2.0, 10.0), student_two_sided(2.0, 10.0));
+}
+
+TEST(Portmanteau, TailsSameBitsAtAnyX87Precision)
+{
+    const auto values = [] {
+        std::vector<double> out;
+        for (double x : {0.5, 3.0, 25.0, 100.0})
+        {
+            out.push_back(chi_squared_upper(x, 3.0));
+            out.push_back(gamma_upper(x, 1.7, 2.0));
+            out.push_back(student_two_sided(x / 10.0, 7.3));
+        }
+        return out;
+    };
+    const auto [extended, rounded] = ve::testing::at_both_x87_precisions(values);
+    EXPECT_EQ(extended, rounded);
 }
 
 }

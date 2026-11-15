@@ -160,3 +160,30 @@ Measures: preset `gcc-bench`, one thread, same session, medians of three repetit
 | `BM_DccLoglik/dcc_mvlaplace/dual` | 61.0 ms |
 | `BM_DistQuantile/nig` (200 quantiles) | 57.1 ms (286 us per call) |
 | `BM_DistQuantile/ghyp` (200 quantiles) | 97.8 ms (489 us per call) |
+
+## Task 2: Boost in double
+
+`log_bessel_k` and the tail p-values of `diagnostics/tails.cpp` (`gamma_q`, `ibeta`) took Boost's default policy, which
+computes in long double (x87). The other Boost calls in `src/` (`ad/special.cpp`, `dist/cdf.cpp`,
+`dcc/copula/scores.cpp`) already carried `promote_double<false>`. The new tests run the same computation with the x87
+precision-control field at 64 and at 53 bits and compare bit for bit (`Bessel.SameBitsAtAnyX87Precision`,
+`Portmanteau.TailsSameBitsAtAnyX87Precision`, `DistQuantile.HyperbolicSameBitsAtAnyX87Precision`); all three failed
+before the change.
+
+| Benchmark | Base | Task 2 |
+| --- | ---: | ---: |
+| `BM_LogBesselK/fixed_order` | 1.78 ms | 0.398 ms |
+| `BM_LogBesselK/free_order` | 28.6 ms | 5.39 ms |
+| `BM_Loglik/sgarch11_nig/double` | 0.591 ms | 0.253 ms |
+| `BM_Loglik/sgarch11_nig/dual` | 2.31 ms | 0.862 ms |
+| `BM_FitOne/sgarch11_nig` | 79.6 ms | 30.3 ms |
+| `BM_Loglik/sgarch11_ghyp/double` | 0.589 ms | 0.254 ms |
+| `BM_Loglik/sgarch11_ghyp/dual` | 23.8 ms | 5.29 ms |
+| `BM_FitOne/sgarch11_ghyp` | 1765 ms | 377 ms |
+| `BM_Diagnostics/sgarch11_ghyp/gof` | 29.0 ms | 6.46 ms |
+| `BM_DccLoglik/dcc_mvlaplace/double` | 4.12 ms | 3.58 ms |
+| `BM_DccLoglik/dcc_mvlaplace/dual` | 61.0 ms | 59.2 ms |
+| `BM_DistQuantile/nig` (200 quantiles) | 57.1 ms | 21.7 ms (108 us per call) |
+| `BM_DistQuantile/ghyp` (200 quantiles) | 97.8 ms | 28.9 ms (144 us per call) |
+
+The long double evaluation was the cost, not only the bit-identity: every function that calls K is 2.3x to 5x faster.

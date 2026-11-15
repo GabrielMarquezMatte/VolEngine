@@ -1,5 +1,6 @@
 #include "ad/dual.hpp"
 #include "dist/bessel.hpp"
+#include "x87_precision.hpp"
 
 #include <algorithm>
 #include <array>
@@ -7,6 +8,7 @@
 #include <gtest/gtest.h>
 #include <limits>
 #include <numbers>
+#include <vector>
 
 namespace
 {
@@ -129,6 +131,26 @@ TEST(Bessel, SmoothAroundFiveHalves)
         auto dual = log_bessel_k(ve::ad::variable<1>(2.5, 0), ve::ad::Dual<1>{x});
         EXPECT_NEAR(dual.grad[0], slope, 1e-9 * std::max(1.0, std::fabs(slope))) << x;
     }
+}
+
+// Boost computes in long double by default, and on MinGW a pool thread runs the x87 unit at another precision
+// than the Python main thread, so a fit could change with the thread it runs on.
+TEST(Bessel, SameBitsAtAnyX87Precision)
+{
+    const auto values = [] {
+        std::vector<double> out;
+        for (double order : {-1.5, 0.3, 1.7, 2.5})
+        {
+            for (double x : {0.2, 3.0, 40.0})
+            {
+                out.push_back(log_bessel_k(order, x));
+                out.push_back(ve::dist::log_bessel_k_scaled(order, x));
+            }
+        }
+        return out;
+    };
+    const auto [extended, rounded] = ve::testing::at_both_x87_precisions(values);
+    EXPECT_EQ(extended, rounded);
 }
 
 TEST(Bessel, NeverThrows)

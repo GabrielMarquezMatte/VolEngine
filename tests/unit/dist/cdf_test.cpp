@@ -1,5 +1,6 @@
 #include "dist/cdf.hpp"
 #include "dist/moments.hpp"
+#include "x87_precision.hpp"
 
 #include <gtest/gtest.h>
 
@@ -244,8 +245,11 @@ TEST(DistQuantile, OutsideTheDomain)
 
 TEST(DistQuantile, SameBitsOnAnyThread)
 {
-    const std::array<std::pair<Dist, ve::dist::ShapeParameters<double>>, 2> cases{
-        {{Dist::Std, {.shape = 5.311179277998689}}, {Dist::Sged, {.skew = 0.8, .shape = 1.6}}}};
+    const std::array<std::pair<Dist, ve::dist::ShapeParameters<double>>, 4> cases{
+        {{Dist::Std, {.shape = 5.311179277998689}},
+         {Dist::Sged, {.skew = 0.8, .shape = 1.6}},
+         {Dist::Nig, {.skew = -0.4, .shape = 1.5}},
+         {Dist::Ghyp, {.skew = 0.3, .shape = 2.0, .ghlambda = -1.5}}}};
     for (const auto& [dist, parameters] : cases)
     {
         std::vector<double> main_thread;
@@ -284,6 +288,26 @@ void set_x87_control(unsigned short word)
     __asm__ volatile("fldcw %0" : : "m"(word));
 }
 
+}
+
+TEST(DistQuantile, HyperbolicSameBitsAtAnyX87Precision)
+{
+    const std::array<std::pair<Dist, ve::dist::ShapeParameters<double>>, 2> cases{
+        {{Dist::Nig, {.skew = -0.4, .shape = 1.5}}, {Dist::Ghyp, {.skew = 0.3, .shape = 2.0, .ghlambda = -1.5}}}};
+    for (const auto& [dist, parameters] : cases)
+    {
+        const auto values = [&, dist = dist, parameters = parameters] {
+            std::vector<double> out;
+            for (double u : {1e-4, 0.01, 0.3, 0.5, 0.9, 0.999})
+            {
+                out.push_back(ve::dist::quantile(dist, parameters, u));
+                out.push_back(ve::dist::cdf(dist, parameters, out.back()));
+            }
+            return out;
+        };
+        const auto [extended, rounded] = ve::testing::at_both_x87_precisions(values);
+        EXPECT_EQ(extended, rounded) << static_cast<int>(dist);
+    }
 }
 
 TEST(Cdf, SameBitsAtAnyX87Precision)
