@@ -35,6 +35,16 @@ struct Chunk
     double* z;
 };
 
+// Where the results of one chunk go, and what it reads: its z, its size and how many of its lanes are real.
+struct Block
+{
+    const double* z;
+    std::size_t m;
+    std::size_t used;
+    double* log_det;
+    double* quadratic;
+};
+
 // The doubles of the state of one chunk of m x m matrices.
 constexpr std::size_t ChunkSize(std::size_t m, std::size_t lanes)
 {
@@ -127,9 +137,13 @@ hn::Mask<D> Factor(D d, double* a, std::size_t m, double* inverse_pivots)
 // z' R^-1 z = |L^-1 z|^2, with y = L^-1 z by forward substitution, one lane per matrix; log |R| = 2 sum log L_kk.
 // Keeps z and y in the chunk and writes the first `used` lanes of the two results.
 template <class D>
-void Summarise(D d, const Chunk& chunk, const double* z, std::size_t m, hn::Mask<D> valid, double* log_det,
-               double* quadratic, std::size_t used)
+void Summarise(D d, const Chunk& chunk, const Block& block, hn::Mask<D> valid)
 {
+    const std::size_t m = block.m;
+    const std::size_t used = block.used;
+    const double* z = block.z;
+    double* log_det = block.log_det;
+    double* quadratic = block.quadratic;
     const std::size_t lanes = hn::Lanes(d);
     auto sum_squares = hn::Zero(d);
     auto sum_logs = hn::Zero(d);
@@ -158,15 +172,14 @@ void Summarise(D d, const Chunk& chunk, const double* z, std::size_t m, hn::Mask
     std::copy_n(out.begin(), used, quadratic);
 }
 
-void FactorChunk(const double* q, const double* z, std::size_t m, std::size_t used, const Chunk& chunk,
-                 double* log_det, double* quadratic)
+void FactorChunk(const double* q, const Block& block, const Chunk& chunk)
 {
     const hn::ScalableTag<double> d;
     const std::size_t lanes = hn::Lanes(d);
-    Transpose(q, m * (m + 1) / 2, used, lanes, chunk.factor);
-    Normalize(d, chunk.factor, m, chunk.scales);
-    const auto valid = Factor(d, chunk.factor, m, chunk.inverse_pivots);
-    Summarise(d, chunk, z, m, valid, log_det, quadratic, used);
+    Transpose(q, block.m * (block.m + 1) / 2, block.used, lanes, chunk.factor);
+    Normalize(d, chunk.factor, block.m, chunk.scales);
+    const auto valid = Factor(d, chunk.factor, block.m, chunk.inverse_pivots);
+    Summarise(d, chunk, block, valid);
 }
 
 std::size_t LanesImpl()
@@ -174,30 +187,42 @@ std::size_t LanesImpl()
     return hn::Lanes(hn::ScalableTag<double>());
 }
 
-void LogDetQuadraticImpl(const double* q, const double* z, std::size_t m, std::size_t count, double* log_det,
-                         double* quadratic)
+// Factors the matrices a chunk at a time; with keep, each chunk has its own state, else one chunk is reused.
+void FactorChunks(const detail::BatchArgs& a, double* state, bool keep)
 {
     const std::size_t lanes = LanesImpl();
-    std::vector<double> state(ChunkSize(m, lanes));
-    const Chunk chunk = ChunkAt(state.data(), m, lanes);
-    for (std::size_t first = 0; first < count; first += lanes)
+    const std::size_t cells = a.m * (a.m + 1) / 2;
+    for (std::size_t first = 0; first < a.count; first += lanes)
     {
-        const std::size_t used = std::min(lanes, count - first);
-        FactorChunk(q + first * (m * (m + 1) / 2), z + first * m, m, used, chunk, log_det + first, quadratic + first);
+        const std::size_t used = std::min(lanes, a.count - first);
+        const std::size_t offset = keep ? (first / lanes) * ChunkSize(a.m, lanes) : 0;
+        const Block block{a.z + first * a.m, a.m, used, a.log_det + first, a.quadratic + first};
+        FactorChunk(a.q + first * cells, block, ChunkAt(state + offset, a.m, lanes));
     }
 }
 
-void FactorBlockImpl(const double* q, const double* z, std::size_t m, std::size_t count, double* state,
-                     double* log_det, double* quadratic)
+void LogDetQuadraticImpl(const detail::BatchArgs& a)
 {
-    const std::size_t lanes = LanesImpl();
-    for (std::size_t first = 0; first < count; first += lanes)
-    {
-        const std::size_t used = std::min(lanes, count - first);
-        const Chunk chunk = ChunkAt(state + (first / lanes) * ChunkSize(m, lanes), m, lanes);
-        FactorChunk(q + first * (m * (m + 1) / 2), z + first * m, m, used, chunk, log_det + first, quadratic + first);
-    }
+    std::vector<double> state(ChunkSize(a.m, LanesImpl()));
+    FactorChunks(a, state.data(), false);
 }
+
+void FactorBlockImpl(const detail::BatchArgs& a, double* state)
+{
+    FactorChunks(a, state, true);
+}
+
+// The buffers of the pullback of one chunk (cells lanes each for the first three, m lanes for w, a lane each for the
+// partials).
+struct Scratch
+{
+    double* inverse;
+    double* correlation_inverse;
+    double* gradient;
+    double* w;
+    double* a;
+    double* b;
+};
 
 // L^-1, packed lower, row by row: (L^-1)_ij = - (1 / L_ii) sum_(k = j..i-1) L_ik (L^-1)_kj.
 template <class D>
@@ -235,9 +260,11 @@ void Invert(D d, const Chunk& chunk, std::size_t m, double* inverse)
 // R^-1 = (L^-1)' L^-1, packed lower: (R^-1)_ij = sum_(k >= i) (L^-1)_ki (L^-1)_kj for j <= i; and
 // w = R^-1 z = (L^-1)' y with y = L^-1 z.
 template <class D>
-void InvertCorrelation(D d, const Chunk& chunk, std::size_t m, const double* inverse, double* correlation_inverse,
-                       double* w)
+void InvertCorrelation(D d, const Chunk& chunk, std::size_t m, const Scratch& scratch)
 {
+    const double* inverse = scratch.inverse;
+    double* correlation_inverse = scratch.correlation_inverse;
+    double* w = scratch.w;
     const std::size_t lanes = hn::Lanes(d);
     const auto zero = hn::Zero(d);
     for (std::size_t k = 0; k < m * (m + 1) / 2; ++k)
@@ -269,9 +296,13 @@ void InvertCorrelation(D d, const Chunk& chunk, std::size_t m, const double* inv
 // - s_i^2 (a (1 - (R^-1)_ii) - b w_i (z_i - w_i)) on it, which is - (sum_(j != i) G_ij R_ij) / Q_ii written with
 // R R^-1 = I and R w = z over the unit diagonal of R.
 template <class D>
-void PullBackChunkTo(D d, const Chunk& chunk, std::size_t m, const double* correlation_inverse, const double* w,
-                     const double* a_lanes, const double* b_lanes, double* g)
+void PullBackChunkTo(D d, const Chunk& chunk, std::size_t m, const Scratch& scratch)
 {
+    const double* correlation_inverse = scratch.correlation_inverse;
+    const double* w = scratch.w;
+    const double* a_lanes = scratch.a;
+    const double* b_lanes = scratch.b;
+    double* g = scratch.gradient;
     const std::size_t lanes = hn::Lanes(d);
     const auto one = hn::Set(d, 1.0);
     const auto a = hn::LoadU(d, a_lanes);
@@ -297,35 +328,36 @@ void PullBackChunkTo(D d, const Chunk& chunk, std::size_t m, const double* corre
 }
 
 // scratch: L^-1, R^-1 and the gradient (cells lanes each), then w (m lanes) and the two partials (a lane each).
-void PullBackImpl(double* state, std::size_t m, std::size_t count, const double* d_log_det, const double* d_quadratic,
-                  double* g, double* scratch)
+void PullBackImpl(const detail::PullBackArgs& args)
 {
     const hn::ScalableTag<double> d;
     const std::size_t lanes = hn::Lanes(d);
+    const std::size_t m = args.m;
     const std::size_t cells = m * (m + 1) / 2;
-    double* inverse = scratch;
-    double* correlation_inverse = inverse + cells * lanes;
-    double* gradient = correlation_inverse + cells * lanes;
-    double* w = gradient + cells * lanes;
-    double* a_lanes = w + m * lanes;
-    double* b_lanes = a_lanes + lanes;
-    for (std::size_t first = 0; first < count; first += lanes)
+    Scratch scratch{};
+    scratch.inverse = args.scratch;
+    scratch.correlation_inverse = scratch.inverse + cells * lanes;
+    scratch.gradient = scratch.correlation_inverse + cells * lanes;
+    scratch.w = scratch.gradient + cells * lanes;
+    scratch.a = scratch.w + m * lanes;
+    scratch.b = scratch.a + lanes;
+    for (std::size_t first = 0; first < args.count; first += lanes)
     {
-        const std::size_t used = std::min(lanes, count - first);
-        const Chunk chunk = ChunkAt(state + (first / lanes) * ChunkSize(m, lanes), m, lanes);
+        const std::size_t used = std::min(lanes, args.count - first);
+        const Chunk chunk = ChunkAt(args.state + (first / lanes) * ChunkSize(m, lanes), m, lanes);
         for (std::size_t lane = 0; lane < lanes; ++lane)
         {
-            a_lanes[lane] = d_log_det[first + (lane < used ? lane : 0)];
-            b_lanes[lane] = d_quadratic[first + (lane < used ? lane : 0)];
+            scratch.a[lane] = args.d_log_det[first + (lane < used ? lane : 0)];
+            scratch.b[lane] = args.d_quadratic[first + (lane < used ? lane : 0)];
         }
-        Invert(d, chunk, m, inverse);
-        InvertCorrelation(d, chunk, m, inverse, correlation_inverse, w);
-        PullBackChunkTo(d, chunk, m, correlation_inverse, w, a_lanes, b_lanes, gradient);
+        Invert(d, chunk, m, scratch.inverse);
+        InvertCorrelation(d, chunk, m, scratch);
+        PullBackChunkTo(d, chunk, m, scratch);
         for (std::size_t lane = 0; lane < used; ++lane)
         {
             for (std::size_t k = 0; k < cells; ++k)
             {
-                g[(first + lane) * cells + k] = gradient[lanes * k + lane];
+                args.g[(first + lane) * cells + k] = scratch.gradient[lanes * k + lane];
             }
         }
     }
@@ -349,7 +381,7 @@ void log_det_and_quadratic(std::span<const double> q, std::span<const double> z,
 {
     const std::size_t count = log_det.size();
     assert(q.size() == count * (m * (m + 1) / 2) && z.size() == count * m && quadratic.size() == count);
-    HWY_DYNAMIC_DISPATCH(LogDetQuadraticImpl)(q.data(), z.data(), m, count, log_det.data(), quadratic.data());
+    HWY_DYNAMIC_DISPATCH(LogDetQuadraticImpl)({q.data(), z.data(), m, count, log_det.data(), quadratic.data()});
 }
 
 CorrelationBlock::CorrelationBlock(std::size_t m) : m_(m)
@@ -367,16 +399,16 @@ void CorrelationBlock::factor(std::span<const double> q, std::span<const double>
     count_ = log_det.size();
     assert(count_ <= kCapacity && q.size() == count_ * (m_ * (m_ + 1) / 2) && z.size() == count_ * m_ &&
            quadratic.size() == count_);
-    HWY_DYNAMIC_DISPATCH(FactorBlockImpl)(q.data(), z.data(), m_, count_, state_.data(), log_det.data(),
-                                          quadratic.data());
+    HWY_DYNAMIC_DISPATCH(FactorBlockImpl)({q.data(), z.data(), m_, count_, log_det.data(), quadratic.data()},
+                                          state_.data());
 }
 
 void CorrelationBlock::pull_back(std::span<const double> d_log_det, std::span<const double> d_quadratic,
                                  std::span<double> g)
 {
     assert(d_log_det.size() == count_ && d_quadratic.size() == count_ && g.size() == count_ * (m_ * (m_ + 1) / 2));
-    HWY_DYNAMIC_DISPATCH(PullBackImpl)(state_.data(), m_, count_, d_log_det.data(), d_quadratic.data(), g.data(),
-                                       scratch_.data());
+    HWY_DYNAMIC_DISPATCH(PullBackImpl)(
+        {state_.data(), m_, count_, d_log_det.data(), d_quadratic.data(), g.data(), scratch_.data()});
 }
 
 }

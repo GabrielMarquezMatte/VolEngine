@@ -105,7 +105,10 @@ HWY_INLINE Lanes<D> GedLanes(D d, const Constants& c, hn::Vec<D> e, hn::Vec<D> s
     // the others y^power is y itself: 0, +infinity (an overflowed term) or NaN.
     const auto positive = hn::And(hn::Gt(y, zero), hn::Lt(y, hn::Inf(d)));
     const auto log_y = hn::Log(d, hn::IfThenElse(positive, y, one));
-    const auto v = hn::IfThenElse(positive, hn::Exp(d, hn::Mul(power, log_y)), y);
+    // The vector exp wraps above about 709.78: past it y^power is +infinity, as std::pow gives.
+    const auto exponent = hn::Mul(power, log_y);
+    const auto exp_v = hn::IfThenElse(hn::Gt(exponent, hn::Set(d, 709.78)), hn::Inf(d), hn::Exp(d, exponent));
+    const auto v = hn::IfThenElse(positive, exp_v, y);
     const auto density = hn::Sub(hn::Set(d, c.log_constant), hn::Mul(half, v));
     Lanes<D> lanes{hn::Sub(density, hn::Mul(half, log_sigma2)), zero, zero, zero, zero};
     if (kPartials)

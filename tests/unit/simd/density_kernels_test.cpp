@@ -302,4 +302,40 @@ TEST(DensityKernels, AZeroResidualFollowsTheDualConvention)
     }
 }
 
+// The vector exp is only defined up to about 709.78 (above it, it wraps): y^power must still overflow to +infinity
+// like std::pow, so the term is -infinity and the sum invalid, for a huge y with a small power and for a y a little
+// above 1 with a huge power.
+TEST(DensityKernels, AGedPowerThatOverflowsGivesTheInvalidLoglik)
+{
+    struct Overflow
+    {
+        double shape;
+        double e;
+        double sigma2;
+    };
+    for (const auto target : ve::test::runnable_targets())
+    {
+        const ve::test::ForcedTarget forced(target);
+        for (const double shape : {3.0, 22026.0})
+        {
+            const LogDensity<double> density = ve::dist::make_log_density(Dist::Ged, shape);
+            Series series{std::vector<double>(7, 0.5), std::vector<double>(7, 1.0)};
+            // y = 1e250 / scale for the small power, y = 1.07 for the huge one.
+            series.e[3] = shape < 100.0 ? 1e100 : 1.07 * density.scale;
+            series.sigma2[3] = shape < 100.0 ? 1e-300 : 1.0;
+            std::vector<double> d_e(7);
+            std::vector<double> d_sigma2(7);
+            ve::simd::SymmetricPartials partials{d_e, d_sigma2};
+            EXPECT_EQ(std::pow(std::fabs(series.e[3]) / std::sqrt(series.sigma2[3]) / density.scale, density.power),
+                      std::numeric_limits<double>::infinity())
+                << "the scalar power overflows too, shape " << shape;
+            EXPECT_EQ(ve::simd::symmetric_terms(density, series.e, series.sigma2, {}), ve::model::kInvalidLoglik)
+                << "shape " << shape;
+            EXPECT_EQ(ve::simd::symmetric_terms_with_partials(density, {series.e, series.sigma2, {}}, partials),
+                      ve::model::kInvalidLoglik)
+                << "shape " << shape;
+        }
+    }
+}
+
 }

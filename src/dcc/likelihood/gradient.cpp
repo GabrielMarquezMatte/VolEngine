@@ -155,9 +155,11 @@ private:
     }
 
     // dq += w o (the scores of lag t - lag, or their presample moments).
-    void add_news(std::span<double> dq, std::span<const double> w, std::size_t t, std::size_t lag, bool negative,
-                  const detail::StageMoments& moments)
+    void add_news(std::span<double> dq, std::span<const double> w, std::size_t lag, bool negative,
+                  const detail::CorrelationRecursion<double>& recursion)
     {
+        const std::size_t t = recursion.time();
+        const detail::StageMoments& moments = recursion.moments();
         if (t < lag)
         {
             simd::multiply_add(dq, w, negative ? moments.nn : moments.zz);
@@ -172,19 +174,18 @@ private:
 
     void add_direct_terms(std::size_t p, const detail::CorrelationRecursion<double>& recursion, std::span<double> dq)
     {
-        const std::size_t t = recursion.time();
         for (std::size_t lag = 1; lag <= tangents_.a_lags; ++lag)
         {
             if (tangents_.active(p, lag))
             {
-                add_news(dq, tangents_.block(p, lag), t, lag, false, recursion.moments());
+                add_news(dq, tangents_.block(p, lag), lag, false, recursion);
             }
         }
         for (std::size_t lag = 1; lag <= tangents_.g_lags; ++lag)
         {
             if (tangents_.active(p, tangents_.g_block(lag)))
             {
-                add_news(dq, tangents_.block(p, tangents_.g_block(lag)), t, lag, true, recursion.moments());
+                add_news(dq, tangents_.block(p, tangents_.g_block(lag)), lag, true, recursion);
             }
         }
         for (std::size_t lag = 1; lag <= tangents_.b_lags; ++lag)
