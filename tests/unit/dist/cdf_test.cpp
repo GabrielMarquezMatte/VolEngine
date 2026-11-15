@@ -185,6 +185,31 @@ std::vector<CdfCase> quantile_cases()
     return cases;
 }
 
+// The cdf of a ged at a large shape: 0.5 (|z| / scale)^nu underflows to 0 well inside the support, which turned the
+// cdf there into the cdf of the centre. It must equal the integral of the density between two points inside.
+TEST(Cdf, GedLargeShapeMatchesTheDensityIntegral)
+{
+    for (double shape : {200.0, 500.0, 1000.0})
+    {
+        const ve::dist::ShapeParameters<double> parameters{.shape = shape};
+        const ve::dist::Density<double> density = ve::dist::make_density(Dist::Ged, parameters);
+        const std::array<double, 5> points{-1.2, -0.5, 0.0, 0.3, 1.0};
+        for (std::size_t i = 1; i < points.size(); ++i)
+        {
+            constexpr int kSteps = 200000;
+            const double width = (points[i] - points[i - 1]) / kSteps;
+            double integral = 0.0;
+            for (int k = 0; k < kSteps; ++k)
+            {
+                integral += width * std::exp(ve::dist::log_density(density, points[i - 1] + (k + 0.5) * width));
+            }
+            EXPECT_NEAR(ve::dist::cdf(Dist::Ged, parameters, points[i]) - ve::dist::cdf(Dist::Ged, parameters, points[i - 1]),
+                        integral, 1e-9)
+                << "shape " << shape << " from " << points[i - 1] << " to " << points[i];
+        }
+    }
+}
+
 constexpr std::array<double, 9> kProbabilities{1e-12, 1e-6, 0.01, 0.3, 0.5, 0.7, 0.99, 1.0 - 1e-6, 1.0 - 1e-12};
 
 TEST(DistQuantile, InvertsTheCdf)

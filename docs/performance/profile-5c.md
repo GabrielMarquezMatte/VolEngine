@@ -231,3 +231,35 @@ call (a cold call was 9.5 us, one step with constants is ~2.5 us).
 
 The base (Task 1) was 286 and 489 us per call; the part of the gain in the `quantile` column is Task 2. A copula
 simulation of 1000 paths x 60 steps x 21 nig margins goes from ~6 min (base) to ~3 s plus 21 constructions (~30 ms).
+
+## Task 5: ged and sged at large shapes
+
+Three defects, found by tests against closed forms (a ged at eta2 = 0, the closed cdf of the sged, a brute-force
+integral of the density):
+- **Edges.** A ged kernel exp(-|y / scale|^nu / 2) is flat to |y| ~ scale and falls within scale / nu: no piece of the
+  quadrature resolved it. Relative error of the ged shifted moment against its closed form, before and after splitting
+  at nine points around each edge (`kEdgeOffsets`, from nu = 6 on; below it the points and the values are those of
+  before):
+
+  | nu | before | after |
+  | ---: | ---: | ---: |
+  | 5 | 1e-12 | 1e-12 (unchanged) |
+  | 20 | 3.5e-6 | < 1e-11 |
+  | 50 | 1.3e-3 | < 1e-11 |
+  | 200 | 1.2e-2 | < 1e-11 |
+  | 1000 | 1.6e-2 | < 1e-11 |
+
+  A power of 1.5 stays at 7e-11 (nu = 2) to 2e-10 (nu = 1000): the cusp of |z|^1.5 at the kink, where 64-node
+  Gauss-Legendre converges algebraically. The shifted moment of the sged at nu = 1000 (skew 1.2, eta1 0.3, eta2 0.2,
+  power 1.5) was 1.0726 against the uniform limit 1.0845, and is 1.0845.
+- **The cdf.** `kernel_cdf` of the ged took 0.5 (|z| / scale)^nu as 0 where it underflows, which at nu = 500 and 1000 is
+  well inside the support, and returned the cdf of the centre there (P(z < 0) of the sged 0.61 instead of 0.5). It takes
+  P(a, x) = x^a / Gamma(a + 1) from the log of the argument below 1e-290. This is a defect of `dist::cdf`, which the
+  GOF and the parametric copula margins use, not of the moments.
+- **The gradient.** The derivative in the shape of every ged and sged moment was NaN from nu ~ 100: the quadrature visits
+  z ~ 3e3, where 0.5 (|z| / scale)^nu overflows and exp(-inf) times the infinite slope is NaN. `density_at` returns an
+  exact 0 where the log density is -inf. It was also wrong at nu = 50 (a gradient of 0.045 in the skew against
+  -0.0002), from the same missing edges.
+
+No fit benchmark moved: `BM_FitOne/aparch11_ged` 44.5 -> 44.3 ms, `aparch11_sged` 53.0 -> 55.0 ms (noise),
+`gjrgarch11_sstd` 15.6 -> 15.5 ms.

@@ -56,6 +56,21 @@ bool infinite_moment(Dist dist, const ShapeParameters<T>& parameters, const T& p
     return has_student_tail(dist) && ad::value_of(parameters.shape) <= ad::value_of(power);
 }
 
+// f(z), exactly 0 with no derivative where the log density is -inf: a ged with a large shape has 0.5 (|z| / scale)^shape
+// overflow in the far tails the quadrature visits, and exp(-inf) times the infinite slope of that power in the shape
+// is NaN, not the 0 that is the derivative of a density that is 0 there.
+template <class T>
+T density_at(const Density<T>& density, const T& z)
+{
+    using std::exp;
+    T log_value = log_density(density, z);
+    if (ad::value_of(log_value) == -std::numeric_limits<double>::infinity())
+    {
+        return T{0.0};
+    }
+    return exp(log_value);
+}
+
 // (|z - eta2| - eta1 (z - eta2))^power f(z).
 template <class T>
 struct ShockPowerIntegrand
@@ -71,7 +86,7 @@ struct ShockPowerIntegrand
         using std::exp;
         using std::pow;
         T shift = z - eta2;
-        return pow(abs(shift) - eta1 * shift, power) * exp(log_density(density, z));
+        return pow(abs(shift) - eta1 * shift, power) * density_at(density, z);
     }
 };
 
@@ -83,8 +98,7 @@ struct DensityIntegrand
 
     T operator()(const T& z) const
     {
-        using std::exp;
-        return exp(log_density(density, z));
+        return density_at(density, z);
     }
 };
 
@@ -151,6 +165,14 @@ constexpr std::size_t kMaxRefinements = 12;
 constexpr double kRefinedBelow = 0.5;
 constexpr double kRefinementRatio = 4.0;
 
+// A ged or sged kernel exp(-|y / scale|^nu / 2) with a large nu is flat to |y| ~ scale and falls within ~scale / nu of
+// it, an edge no piece of unit scale resolves: the quadrature missed 3e-6 of a moment at nu = 20 and 1.5% at nu = 1000.
+// From kEdgeShapeFrom on, each edge gets split points at kEdgeOffsets edge widths (scale / nu) from it, which span the
+// zone where |y / scale|^nu goes from e^-8 to e^8 (the density from flat to e^-1490). The points are values only, as
+// every split point that is not a kink or the cusp: the density is smooth there.
+constexpr double kEdgeShapeFrom = 6.0;
+constexpr std::array<double, 9> kEdgeOffsets{-8.0, -4.0, -2.0, -1.0, 0.0, 1.0, 2.0, 4.0, 8.0};
+
 // The z-scale of the density on each side of its kink: 1 / (xi sigma) below and xi / sigma above for sstd and
 // sged, 1 for the others. The sged ones are scaled by the kernel's lambda when below 1: a small nu puts the
 // kernel's core within lambda << 1 of the kink.
@@ -182,7 +204,7 @@ SideScales side_scales(const Density<T>& density)
 template <class T>
 struct Breakpoints
 {
-    std::array<T, 2 * kMaxRefinements + 3> points{};
+    std::array<T, 2 * kMaxRefinements + 3 + 2 * kEdgeOffsets.size()> points{};
     std::size_t count = 0;
 
     void add(const T& point)
@@ -245,12 +267,54 @@ void add_location_refinements(Breakpoints<T>& breakpoints, const Density<T>& den
 }
 
 template <class T>
+void add_edge_points(Breakpoints<T>& breakpoints, double position, double width)
+{
+    for (double offset : kEdgeOffsets)
+    {
+        breakpoints.add(T{position + offset * width});
+    }
+}
+
+// The edges of a ged (at +-scale) or of the kernel of an sged (at -scale / (skew stretch) and scale skew / stretch from
+// the kink), when its shape is above kEdgeShapeFrom.
+template <class T>
+void add_edge_refinements(Breakpoints<T>& breakpoints, const Density<T>& density, const T& kink)
+{
+    const LogDensity<T>* kernel = std::get_if<LogDensity<T>>(&density);
+    double below = 1.0;
+    double above = 1.0;
+    if (kernel == nullptr)
+    {
+        const SkewedLogDensity<T>* skewed = std::get_if<SkewedLogDensity<T>>(&density);
+        if (skewed == nullptr)
+        {
+            return;
+        }
+        kernel = &skewed->kernel;
+        double skew = ad::value_of(skewed->skew);
+        double stretch = ad::value_of(skewed->stretch);
+        below = 1.0 / (skew * stretch);
+        above = skew / stretch;
+    }
+    double shape = ad::value_of(kernel->power);
+    if (kernel->dist != Dist::Ged || !(shape > kEdgeShapeFrom))
+    {
+        return;
+    }
+    double scale = ad::value_of(kernel->scale);
+    double center = ad::value_of(kink);
+    add_edge_points(breakpoints, center - scale * below, scale * below / shape);
+    add_edge_points(breakpoints, center + scale * above, scale * above / shape);
+}
+
+template <class T>
 void add_side_refinements(Breakpoints<T>& breakpoints, const Density<T>& density, const T& kink)
 {
     SideScales scales = side_scales(density);
     add_refinements(breakpoints, kink, -1.0, scales.below);
     add_refinements(breakpoints, kink, 1.0, scales.above);
     add_location_refinements(breakpoints, density);
+    add_edge_refinements(breakpoints, density, kink);
 }
 
 // int over [points[0] - 1, points.back()], one piece between each pair of neighbouring points.

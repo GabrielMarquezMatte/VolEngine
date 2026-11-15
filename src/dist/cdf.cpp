@@ -35,6 +35,23 @@ double normal_cdf(double z)
     return 0.5 * std::erfc(-z / std::numbers::sqrt2);
 }
 
+// Below this the argument of the ged's incomplete gamma has underflowed (or is about to) and gamma_q would take it as 0.
+constexpr double kTinyArgument = 1e-290;
+
+// Q(1 / power, argument) for the ged, argument = (|z| / scale)^power / 2. At a large power the argument is below the
+// double range well inside the support (0.5 0.3^1000 = 0), and Q(a, 0) = 1 would make the cdf there that of the centre;
+// P(a, x) = x^a / Gamma(a + 1) to rounding for such x, taken from the log of the argument, which does not underflow.
+double ged_upper_gamma(const LogDensity<double>& density, double z, double argument)
+{
+    double order = 1.0 / density.power;
+    if (argument >= kTinyArgument)
+    {
+        return boost::math::gamma_q(order, argument, DoublePolicy{});
+    }
+    double log_argument = std::log(0.5) + density.power * std::log(std::abs(z) / density.scale);
+    return 1.0 - std::exp(order * log_argument - ve::ad::log_gamma(order + 1.0));
+}
+
 double kernel_cdf(const LogDensity<double>& density, double z)
 {
     if (density.dist == Dist::Norm)
@@ -52,7 +69,7 @@ double kernel_cdf(const LogDensity<double>& density, double z)
         return 1.0 - tail;
     }
     double argument = 0.5 * std::pow(std::abs(z) / density.scale, density.power);
-    double tail = 0.5 * boost::math::gamma_q(1.0 / density.power, argument, DoublePolicy{});
+    double tail = 0.5 * ged_upper_gamma(density, z, argument);
     if (z < 0.0)
     {
         return tail;
@@ -188,8 +205,6 @@ bool needs_quadrature(Dist dist)
 }
 
 
-// Below this gamma_q_inv has underflowed (it returns 0 or a denormal).
-constexpr double kTinyArgument = 1e-290;
 
 using NormalDistribution = boost::math::normal_distribution<double, DoublePolicy>;
 

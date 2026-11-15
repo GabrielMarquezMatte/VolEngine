@@ -1,4 +1,5 @@
 #include "ad/dual.hpp"
+#include "dist/cdf.hpp"
 #include "dist/densities.hpp"
 #include "dist/moments.hpp"
 #include "dist/reference_quadrature.hpp"
@@ -440,6 +441,64 @@ TEST(Moments, SkewedDerivativesMatchFiniteDifferences)
         expect_skewed_gradients_match(c.dist, {p.skew, p.shape, p.ghlambda, 0.3, 0.4, 1.5});
         expect_skewed_gradients_match(c.dist, {p.skew, p.shape, p.ghlambda, -0.2, -0.3, 0.8});
     }
+}
+
+// A ged or sged with a large shape is nearly uniform, flat to |y| ~ scale and falling within ~scale / shape of it: the
+// edges are not smooth at the unit scale of the quadrature (plan 5c-2). The ged has closed forms at eta2 = 0, and the
+// sged has the closed cdf of skewed_cdf.
+constexpr std::array<double, 9> kLargeShapes{2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0};
+
+TEST(Moments, GedLargeShapeMatchesClosedForm)
+{
+    for (double shape : kLargeShapes)
+    {
+        const ve::dist::ShapeParameters<double> parameters{.shape = shape};
+        for (double eta1 : {0.0, 0.3})
+        {
+            for (double power : {1.0, 1.5, 2.0})
+            {
+                SCOPED_TRACE("shape " + std::to_string(shape) + ", eta1 " + std::to_string(eta1) + ", power " +
+                             std::to_string(power));
+                // |z|^1.5 has a cusp at the kink, where 64-node Gauss-Legendre converges algebraically (7e-11 at
+                // nu = 2, 2e-10 at 1000): a limit of the rule, not of the edges.
+                const double tolerance = power == 1.5 ? 1e-9 : 1e-11;
+                expect_relative(shifted_moment(Dist::Ged, parameters, eta1, 0.0, power),
+                                asymmetric_moment(Dist::Ged, parameters, eta1, power), tolerance);
+            }
+        }
+    }
+}
+
+TEST(Moments, SgedLargeShapeProbabilityBelowZero)
+{
+    for (double shape : kLargeShapes)
+    {
+        for (double skew : {0.05, 0.8, 1.2, 20.0})
+        {
+            const ve::dist::ShapeParameters<double> parameters{.skew = skew, .shape = shape};
+            EXPECT_NEAR(probability_below_zero(Dist::Sged, parameters), ve::dist::cdf(Dist::Sged, parameters, 0.0), 1e-12)
+                << "shape " << shape << ", skew " << skew;
+        }
+    }
+}
+
+// E(z^2) = 1 for the standardized sged: a shifted moment with eta1 = 0, eta2 = 0, power 2.
+TEST(Moments, SgedLargeShapeSecondMoment)
+{
+    for (double shape : kLargeShapes)
+    {
+        for (double skew : {0.05, 0.8, 1.2, 20.0})
+        {
+            const ve::dist::ShapeParameters<double> parameters{.skew = skew, .shape = shape};
+            EXPECT_NEAR(shifted_moment(Dist::Sged, parameters, 0.0, 0.0, 2.0), 1.0, 1e-11)
+                << "shape " << shape << ", skew " << skew;
+        }
+    }
+}
+
+TEST(Moments, SgedLargeShapeDerivativesMatchFiniteDifferences)
+{
+    expect_skewed_gradients_match(Dist::Sged, {1.2, 300.0, 0.0, 0.3, 0.2, 1.5});
 }
 
 // jsu is z = c (sqrt(w) sinh(omega) + sinh((r + nu) / tau)) of a standard normal r, with w = exp(1 / tau^2),

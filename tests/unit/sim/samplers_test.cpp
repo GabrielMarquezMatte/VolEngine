@@ -124,9 +124,7 @@ TEST(Samplers, StandardizedMoments)
 }
 
 // A ged or sged with a large nu draws G ~ Gamma(1 / nu) in logs: G(1 + 1/nu) u^nu underflowed to 0 there, which
-// made exact zeros (48% at nu = 1000) and a variance below 1. dist's quadratures of P(z < 0) and of the shifted
-// moment lose accuracy at such nu (1.106 against the uniform limit 1.0845 for the shifted moment at nu = 1000), so
-// only the moments of stable forms are checked.
+// made exact zeros (48% at nu = 1000) and a variance below 1.
 TEST(Samplers, GedWithLargeShape)
 {
     using ve::Dist;
@@ -140,8 +138,13 @@ TEST(Samplers, GedWithLargeShape)
         EXPECT_EQ(std::count(draws.begin(), draws.end(), 0.0), 0) << c.name;
         expect_mean(draws, [](double z) { return z; }, 0.0, c.name + " mean");
         expect_mean(draws, [](double z) { return z * z; }, 1.0, c.name + " variance");
+        expect_mean(draws, [](double z) { return z < 0.0 ? 1.0 : 0.0; },
+                    ve::dist::probability_below_zero(c.dist, c.parameters), c.name + " P(z < 0)");
         expect_mean(draws, [](double z) { return std::abs(z); }, ve::dist::abs_moment(c.dist, c.parameters, 1.0),
                     c.name + " E|z|");
+        expect_mean(draws,
+                    [](double z) { return std::pow(std::abs(z - 0.2) - 0.3 * (z - 0.2), 1.5); },
+                    ve::dist::shifted_moment(c.dist, c.parameters, 0.3, 0.2, 1.5), c.name + " shifted moment");
     }
 }
 
