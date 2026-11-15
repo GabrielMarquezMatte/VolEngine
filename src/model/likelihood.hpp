@@ -2,6 +2,7 @@
 
 #include "ad/dual.hpp"
 #include "core/var_init.hpp"
+#include "garch/presample.hpp"
 #include "model/data.hpp"
 #include "model/layout.hpp"
 
@@ -51,5 +52,11 @@ T targeted_omega(std::span<const T> residuals, std::span<const T> theta, const L
 // targeted_omega<double> from the residuals the likelihood itself targets: those of the mean without the
 // ARCH-in-mean term (the e^0 of the presample), with the variance regressors of data. theta[omega] is not read.
 double targeted_omega_at(const Data& data, std::span<const double> theta, const Layout& layout);
+
+// The presample the likelihood uses at theta: under VarInit::Sample the mean square of e0 (the residuals of the mean
+// without the ARCH-in-mean term), held for the first max(ar, ma, arch, garch) steps, or the mean of |e0|^power to
+// 2 / power in apARCH and fGARCH; under Backcast arch's backcast of data, which no parameter moves, held for none.
+garch::Presample<double> presample_at(const Data& data, std::span<const double> e0, std::span<const double> theta,
+                                      const Layout& layout, VarInit var_init);
 
 }

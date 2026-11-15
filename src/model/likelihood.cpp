@@ -10,7 +10,8 @@
 #include "linalg/least_squares.hpp"
 #include "mean/arma.hpp"
 #include "mean/fractional.hpp"
-#include "model/likelihood_terms.hpp"
+#include "model/likelihood/terms.hpp"
+#include "model/likelihood/parameters.hpp"
 #include "model/parameter_map.hpp"
 
 #include <algorithm>
@@ -96,45 +97,6 @@ double backcast(const Data& data, bool include_mean)
         return backcast_around(ols_residuals(data, include_mean), 0.0);
     }
     return backcast_around(data.r, include_mean ? sample_mean(data.r) : 0.0);
-}
-
-template <class T>
-std::span<const T> block(std::span<const T> theta, std::size_t begin, int count)
-{
-    return theta.subspan(begin, static_cast<std::size_t>(count));
-}
-
-template <class T>
-mean::ArmaParameters<T> arma_parameters(std::span<const T> theta, const Layout& layout)
-{
-    T mu{0.0};
-    if (layout.include_mean)
-    {
-        mu = theta[layout.mu()];
-    }
-    return {mu, block(theta, layout.ar_begin(), layout.ar), block(theta, layout.ma_begin(), layout.ma)};
-}
-
-template <class T>
-garch::SGarchParameters<T> sgarch_parameters(std::span<const T> theta, const Layout& layout)
-{
-    return {theta[layout.omega()], block(theta, layout.alpha_begin(), layout.arch),
-            block(theta, layout.beta_begin(), layout.garch)};
-}
-
-template <class T>
-garch::EGarchParameters<T> egarch_parameters(std::span<const T> theta, const Layout& layout)
-{
-    garch::SGarchParameters<T> s = sgarch_parameters(theta, layout);
-    return {s.omega, s.alpha, s.beta, block(theta, layout.gamma_begin(), layout.gamma),
-            dist::abs_moment(layout.dist, shape_parameters_of(theta, layout), T{1.0})};
-}
-
-template <class T>
-garch::GjrGarchParameters<T> gjrgarch_parameters(std::span<const T> theta, const Layout& layout)
-{
-    garch::SGarchParameters<T> s = sgarch_parameters(theta, layout);
-    return {s.omega, s.alpha, s.beta, block(theta, layout.gamma_begin(), layout.gamma)};
 }
 
 template <class T>
@@ -273,18 +235,7 @@ garch::SGarchParameters<T> igarch_parameters(std::span<const T> theta, const Lay
 {
     garch::SGarchParameters<T> p = sgarch_parameters(theta, layout);
     p.intercept_shift = start.intercept_shift;
-    std::ranges::copy(p.beta, beta.begin());
-    T last{1.0};
-    for (const T& alpha : p.alpha)
-    {
-        last = last - alpha;
-    }
-    for (const T& earlier : p.beta.first(p.beta.size() - 1))
-    {
-        last = last - earlier;
-    }
-    beta[p.beta.size() - 1] = last;
-    p.beta = std::span<const T>(beta).first(p.beta.size());
+    p.beta = igarch_beta(p, beta);
     return p;
 }
 
@@ -870,6 +821,12 @@ template ad::Dual<32> targeted_omega<ad::Dual<32>>(std::span<const ad::Dual<32>>
 using DualMax = ad::Dual<kMaxParameterCount>;
 template DualMax targeted_omega<DualMax>(std::span<const DualMax>, std::span<const DualMax>, const Layout&,
                                          const RegressorMatrix&);
+
+garch::Presample<double> presample_at(const Data& data, std::span<const double> e0, std::span<const double> theta,
+                                      const Layout& layout, VarInit var_init)
+{
+    return presample<double>(data, e0, theta, layout, var_init);
+}
 
 double targeted_omega_at(const Data& data, std::span<const double> theta, const Layout& layout)
 {

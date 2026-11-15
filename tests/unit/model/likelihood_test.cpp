@@ -1,7 +1,7 @@
 #include "linalg/least_squares.hpp"
 #include "model/data.hpp"
 #include "model/likelihood.hpp"
-#include "model/likelihood_terms.hpp"
+#include "model/likelihood/terms.hpp"
 #include "model/parameter_map.hpp"
 
 #include "garch/csgarch.hpp"

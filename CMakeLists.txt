@@ -93,6 +93,7 @@ add_library(volengine_core STATIC
     src/linalg/symmetric_eigen.cpp
     src/model/layout.cpp
     src/model/likelihood.cpp
+    src/model/likelihood/adjoint.cpp
     src/model/parameter_map.cpp
     src/model/start_values.cpp
     src/sim/path.cpp
@@ -202,6 +203,7 @@ if(VE_BUILD_TESTS)
         tests/unit/mean/fractional_test.cpp
         tests/unit/model/layout_test.cpp
         tests/unit/model/likelihood_test.cpp
+        tests/unit/model/loglik_adjoint_test.cpp
         tests/unit/model/parameter_map_test.cpp
         tests/unit/model/start_values_test.cpp
         tests/unit/optim/lbfgs_test.cpp
