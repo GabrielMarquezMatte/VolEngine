@@ -375,8 +375,8 @@ TEST(CapiFit, IGarchCriteriaCountEstimated)
     ASSERT_EQ(count, 4u);
     double loglik = 0.0;
     double aic = 0.0;
-    ASSERT_EQ(ve_loglik(fit, &loglik), VE_OK);
-    ASSERT_EQ(ve_aic(fit, VE_IC_TOTAL, &aic), VE_OK);
+    ASSERT_EQ(ve_fit_loglik(fit, &loglik), VE_OK);
+    ASSERT_EQ(ve_fit_criterion(fit, VE_CRITERION_AIC, VE_IC_TOTAL, &aic), VE_OK);
     EXPECT_NEAR(aic, -2.0 * loglik + 2.0 * static_cast<double>(count - 1), 1e-9);
 }
 
@@ -519,8 +519,8 @@ TEST(CapiFit, AllFixedFitEvaluatesWithoutEstimating)
     }
     double loglik = 0.0;
     double aic = 0.0;
-    ASSERT_EQ(ve_loglik(fit, &loglik), VE_OK);
-    ASSERT_EQ(ve_aic(fit, VE_IC_PER_OBS, &aic), VE_OK);
+    ASSERT_EQ(ve_fit_loglik(fit, &loglik), VE_OK);
+    ASSERT_EQ(ve_fit_criterion(fit, VE_CRITERION_AIC, VE_IC_PER_OBS, &aic), VE_OK);
     EXPECT_TRUE(std::isfinite(loglik));
     EXPECT_NEAR(aic, -2.0 * loglik / static_cast<double>(kShortT), 1e-12);
 }

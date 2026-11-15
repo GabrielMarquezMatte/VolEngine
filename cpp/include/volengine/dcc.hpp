@@ -46,14 +46,6 @@ enum class StaticMethod : std::int32_t
     ml = VE_DCC_STATIC_ML,
 };
 
-enum class DccCriterion : std::int32_t
-{
-    aic = VE_DCC_CRITERION_AIC,
-    bic = VE_DCC_CRITERION_BIC,
-    hqic = VE_DCC_CRITERION_HQIC,
-    sic = VE_DCC_CRITERION_SIC,
-};
-
 namespace detail
 {
 
@@ -268,7 +260,7 @@ private:
 class DccFit
 {
 public:
-    // Takes ownership of a handle made by ve_dcc_fit_batch or ve_dcc_fit_standard_errors.
+    // Takes ownership of a handle made by ve_dcc_fit_batch or ve_dcc_standard_errors.
     explicit DccFit(ve_dcc_fit* raw) noexcept : handle_(raw)
     {
     }
@@ -333,7 +325,7 @@ public:
         return detail::scalar([&](double* out) { return ve_dcc_fit_loglik(handle_.get(), out); });
     }
 
-    Result<double> criterion(DccCriterion which, IcScale scale = IcScale::per_obs) const
+    Result<double> criterion(Criterion which, IcScale scale = IcScale::per_obs) const
     {
         return detail::scalar(
             [&](double* out)

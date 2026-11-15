@@ -195,7 +195,7 @@ inline Snapshot read_snapshot(const ve_fit* fit)
     EXPECT_EQ(ve_fit_param_count(fit, &count), VE_OK);
     snapshot.estimate.resize(count);
     EXPECT_EQ(ve_fit_estimates(fit, snapshot.estimate.data()), VE_OK);
-    EXPECT_EQ(ve_loglik(fit, &snapshot.loglik), VE_OK);
+    EXPECT_EQ(ve_fit_loglik(fit, &snapshot.loglik), VE_OK);
     const double* data = nullptr;
     std::size_t length = 0;
     EXPECT_EQ(ve_fit_sigma(fit, &data, &length), VE_OK);

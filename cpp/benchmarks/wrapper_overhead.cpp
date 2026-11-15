@@ -108,7 +108,7 @@ double fit_with_c(ve_context* context, const Workload& workload)
     for (ve_fit* fit : fits)
     {
         double loglik = 0.0;
-        check(ve_loglik(fit, &loglik));
+        check(ve_fit_loglik(fit, &loglik));
         total += loglik;
         ve_fit_free(fit);
     }

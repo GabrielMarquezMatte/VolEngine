@@ -276,11 +276,14 @@ VE_API ve_status ve_fit_t_values(const ve_fit* f, int32_t se_kind, double* out);
 VE_API ve_status ve_fit_p_values(const ve_fit* f, int32_t se_kind, double* out);
 /* NaN with VE_OK when the fit has no finite point (see ve_fit_status); the criteria below behave the
    same. */
-VE_API ve_status ve_loglik(const ve_fit* f, double* out);
-VE_API ve_status ve_aic(const ve_fit* f, int32_t scale, double* out);
-VE_API ve_status ve_bic(const ve_fit* f, int32_t scale, double* out);
-VE_API ve_status ve_hqic(const ve_fit* f, int32_t scale, double* out);
-VE_API ve_status ve_sic(const ve_fit* f, int32_t scale, double* out);
+VE_API ve_status ve_fit_loglik(const ve_fit* f, double* out);
+/* which is VE_CRITERION_*, scale VE_IC_PER_OBS or VE_IC_TOTAL; anything else is VE_INVALID_ARGUMENT. Also
+   ve_dcc_fit_criterion. */
+#define VE_CRITERION_AIC 0
+#define VE_CRITERION_BIC 1
+#define VE_CRITERION_HQIC 2
+#define VE_CRITERION_SIC 3
+VE_API ve_status ve_fit_criterion(const ve_fit* f, int32_t which, int32_t scale, double* out);
 /* Views stay valid until the handle is freed and are read-only. *len is nobs, or 0 when the fit has
    no series (no finite point, see ve_fit_status; then *data is NULL). sigma is the conditional
    standard deviation. */
@@ -375,10 +378,6 @@ typedef struct ve_dcc_fit ve_dcc_fit;
 #define VE_DCC_DIST_MVNORM 0
 #define VE_DCC_DIST_MVT 1
 #define VE_DCC_DIST_MVLAPLACE 2
-#define VE_DCC_CRITERION_AIC 0
-#define VE_DCC_CRITERION_BIC 1
-#define VE_DCC_CRITERION_HQIC 2
-#define VE_DCC_CRITERION_SIC 3
 VE_API ve_status ve_dcc_spec_create(int32_t model, ve_dcc_spec** out);
 VE_API ve_status ve_dcc_spec_set_order(ve_dcc_spec* s, int32_t p, int32_t q);
 VE_API ve_status ve_dcc_spec_set_dist(ve_dcc_spec* s, int32_t dist);
@@ -401,7 +400,7 @@ VE_API ve_status ve_dcc_spec_set_copula(ve_dcc_spec* s, int32_t transformation);
 VE_API ve_status ve_dcc_spec_set_static_method(ve_dcc_spec* s, int32_t method);
 /* Standard errors are enabled by default; regressors make them VE_UNSUPPORTED. With 0, ve_dcc_fit_std_errors,
    ve_dcc_fit_t_values and ve_dcc_fit_p_values return VE_INVALID_ARGUMENT, as ve_fit_std_errors does; everything else
-   is computed as before, and ve_dcc_fit_standard_errors gives a fit that has them. */
+   is computed as before, and ve_dcc_standard_errors gives a fit that has them. */
 VE_API ve_status ve_dcc_options_create(ve_dcc_options** out);
 VE_API ve_status ve_dcc_options_set_standard_errors(ve_dcc_options* o, int32_t on);
 VE_API void ve_dcc_options_free(ve_dcc_options* o);
@@ -423,14 +422,14 @@ VE_API ve_status ve_dcc_fit_std_errors(const ve_dcc_fit* f, int32_t se_kind, dou
 VE_API ve_status ve_dcc_fit_t_values(const ve_dcc_fit* f, int32_t se_kind, double* out);
 VE_API ve_status ve_dcc_fit_p_values(const ve_dcc_fit* f, int32_t se_kind, double* out);
 VE_API ve_status ve_dcc_fit_loglik(const ve_dcc_fit* f, double* out);
-/* scale is VE_IC_PER_OBS or VE_IC_TOTAL; which is VE_DCC_CRITERION_*. */
+/* scale is VE_IC_PER_OBS or VE_IC_TOTAL; which is VE_CRITERION_*. */
 VE_API ve_status ve_dcc_fit_criterion(const ve_dcc_fit* f, int32_t which, int32_t scale, double* out);
 /* Zero-copy T x m x m row-major views, valid until f is freed. H is computed once, on first access. */
 VE_API ve_status ve_dcc_fit_correlation(const ve_dcc_fit* f, const double** data, size_t* len);
 VE_API ve_status ve_dcc_fit_covariance(const ve_dcc_fit* f, const double** data, size_t* len);
 /* Returns a new immutable fit sharing R; fits must match the original univariate estimates and order. */
-VE_API ve_status ve_dcc_fit_standard_errors(ve_context* ctx, const ve_dcc_fit* f,
-                                          const ve_fit* const* fits, size_t m, ve_dcc_fit** out);
+VE_API ve_status ve_dcc_standard_errors(ve_context* ctx, const ve_dcc_fit* f, const ve_fit* const* fits, size_t m,
+                                        ve_dcc_fit** out);
 VE_API void ve_dcc_fit_free(ve_dcc_fit* f);
 
 /* ---- DCC forecast and simulation ----

@@ -183,7 +183,7 @@ public:
         const auto pointers = fit_pointers(univariate);
         ve_dcc_fit* raw = nullptr;
         if (auto computed = detail::check(
-                ve_dcc_fit_standard_errors(handle_.get(), fit.native(), pointers.data(), pointers.size(), &raw));
+                ve_dcc_standard_errors(handle_.get(), fit.native(), pointers.data(), pointers.size(), &raw));
             !computed)
         {
             return detail::failure(computed);

@@ -3,6 +3,7 @@
 #include "fit/criteria.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <memory>
@@ -113,26 +114,8 @@ ve_status fill_statistic(const ve_fit* f, int32_t se_kind, double* out, Statisti
 
 using Criterion = double (*)(const ve::FitResult&, ve::IcScale);
 
-ve_status read_criterion(const ve_fit* f, int32_t scale, double* out, Criterion criterion)
-{
-    return guard(
-        [&]
-        {
-            const ve_status status = check_fit(f, out, "out");
-            if (status != VE_OK)
-            {
-                return status;
-            }
-            ve::IcScale parsed = ve::IcScale::PerObs;
-            const ve_status scale_status = to_scale(scale, parsed);
-            if (scale_status != VE_OK)
-            {
-                return scale_status;
-            }
-            *out = criterion(f->result, parsed);
-            return VE_OK;
-        });
-}
+// Indexed by VE_CRITERION_*.
+constexpr std::array<Criterion, 4> kCriteria{ve::aic, ve::bic, ve::hqic, ve::sic};
 
 using SeriesMember = std::vector<double> ve::FitResult::*;
 
@@ -258,7 +241,7 @@ extern "C" ve_status ve_fit_p_values(const ve_fit* f, int32_t se_kind, double* o
     return fill_statistic(f, se_kind, out, p_value);
 }
 
-extern "C" ve_status ve_loglik(const ve_fit* f, double* out)
+extern "C" ve_status ve_fit_loglik(const ve_fit* f, double* out)
 {
     return guard(
         [&]
@@ -273,24 +256,29 @@ extern "C" ve_status ve_loglik(const ve_fit* f, double* out)
         });
 }
 
-extern "C" ve_status ve_aic(const ve_fit* f, int32_t scale, double* out)
+extern "C" ve_status ve_fit_criterion(const ve_fit* f, int32_t which, int32_t scale, double* out)
 {
-    return read_criterion(f, scale, out, ve::aic);
-}
-
-extern "C" ve_status ve_bic(const ve_fit* f, int32_t scale, double* out)
-{
-    return read_criterion(f, scale, out, ve::bic);
-}
-
-extern "C" ve_status ve_hqic(const ve_fit* f, int32_t scale, double* out)
-{
-    return read_criterion(f, scale, out, ve::hqic);
-}
-
-extern "C" ve_status ve_sic(const ve_fit* f, int32_t scale, double* out)
-{
-    return read_criterion(f, scale, out, ve::sic);
+    return guard(
+        [&]
+        {
+            const ve_status status = check_fit(f, out, "out");
+            if (status != VE_OK)
+            {
+                return status;
+            }
+            if (which < VE_CRITERION_AIC || which > VE_CRITERION_SIC)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "unknown criterion");
+            }
+            ve::IcScale parsed = ve::IcScale::PerObs;
+            const ve_status scale_status = to_scale(scale, parsed);
+            if (scale_status != VE_OK)
+            {
+                return scale_status;
+            }
+            *out = kCriteria[static_cast<std::size_t>(which)](f->result, parsed);
+            return VE_OK;
+        });
 }
 
 extern "C" ve_status ve_fit_sigma(const ve_fit* f, const double** data, size_t* len)

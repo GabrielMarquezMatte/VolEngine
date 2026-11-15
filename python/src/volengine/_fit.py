@@ -87,23 +87,23 @@ class Fit:
 
     @property
     def loglik(self) -> float:
-        return cast(float, read_scalar(ctypes.c_double, lib.ve_loglik, self._handle.pointer))
+        return cast(float, read_scalar(ctypes.c_double, lib.ve_fit_loglik, self._handle.pointer))
 
     def aic(self, *, per_obs: bool = True) -> float:
-        return self._criterion(lib.ve_aic, per_obs)
+        return self._criterion(0, per_obs)
 
     def bic(self, *, per_obs: bool = True) -> float:
-        return self._criterion(lib.ve_bic, per_obs)
+        return self._criterion(1, per_obs)
 
     def hqic(self, *, per_obs: bool = True) -> float:
-        return self._criterion(lib.ve_hqic, per_obs)
+        return self._criterion(2, per_obs)
 
     def sic(self, *, per_obs: bool = True) -> float:
-        return self._criterion(lib.ve_sic, per_obs)
+        return self._criterion(3, per_obs)
 
-    def _criterion(self, function: Callable[..., int], per_obs: bool) -> float:
+    def _criterion(self, kind: int, per_obs: bool) -> float:
         scale = IC_PER_OBS if per_obs else IC_TOTAL
-        return cast(float, read_scalar(ctypes.c_double, function, self._handle.pointer, scale))
+        return cast(float, read_scalar(ctypes.c_double, lib.ve_fit_criterion, self._handle.pointer, kind, scale))
 
     @property
     def estimate(self) -> NDArray[np.float64]:

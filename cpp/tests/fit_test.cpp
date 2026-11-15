@@ -239,6 +239,16 @@ TEST(FitResults, CriteriaMatchRugarchAndScale)
     EXPECT_GT(fit.bic().value(), fit.aic().value());
 }
 
+TEST(FitResults, CriterionByKindMatchesTheShortcuts)
+{
+    const auto fit = fit_oracle_series(ve::FitOptions{.tol = 1e-7});
+    EXPECT_EQ(fit.criterion(ve::Criterion::aic).value(), fit.aic().value());
+    EXPECT_EQ(fit.criterion(ve::Criterion::bic, ve::IcScale::total).value(), fit.bic(ve::IcScale::total).value());
+    EXPECT_EQ(fit.criterion(ve::Criterion::hqic).value(), fit.hqic().value());
+    EXPECT_EQ(fit.criterion(ve::Criterion::sic).value(), fit.sic().value());
+    EXPECT_FALSE(fit.criterion(static_cast<ve::Criterion>(9)).has_value());
+}
+
 TEST(FitResults, SeriesViewsHaveNobsLength)
 {
     const auto fit = fit_oracle_series(ve::FitOptions{});

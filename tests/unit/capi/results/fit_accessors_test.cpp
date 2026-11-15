@@ -129,21 +129,32 @@ TEST(CapiFit, CriteriaMatchCoreAndRescale)
     FitSet fits = fit_series(series, 1);
     const ve_fit* fit = fits[0];
     const ve::FitResult expected = ve::fit_one(series, ve::Spec{}, ve::FitConfig{});
-    const ArrayReader readers[] = {ve_aic, ve_bic, ve_hqic, ve_sic};
+    const int32_t kinds[] = {VE_CRITERION_AIC, VE_CRITERION_BIC, VE_CRITERION_HQIC, VE_CRITERION_SIC};
     const CoreCriterion cores[] = {ve::aic, ve::bic, ve::hqic, ve::sic};
     for (std::size_t i = 0; i < 4; ++i)
     {
         double per_obs = 0.0;
         double total = 0.0;
-        ASSERT_EQ(readers[i](fit, VE_IC_PER_OBS, &per_obs), VE_OK);
-        ASSERT_EQ(readers[i](fit, VE_IC_TOTAL, &total), VE_OK);
+        ASSERT_EQ(ve_fit_criterion(fit, kinds[i], VE_IC_PER_OBS, &per_obs), VE_OK);
+        ASSERT_EQ(ve_fit_criterion(fit, kinds[i], VE_IC_TOTAL, &total), VE_OK);
         EXPECT_EQ(per_obs, cores[i](expected, ve::IcScale::PerObs));
         EXPECT_EQ(total, cores[i](expected, ve::IcScale::Total));
         EXPECT_NEAR(per_obs * static_cast<double>(kT), total, 1e-9);
     }
     double loglik = 0.0;
-    ASSERT_EQ(ve_loglik(fit, &loglik), VE_OK);
+    ASSERT_EQ(ve_fit_loglik(fit, &loglik), VE_OK);
     EXPECT_EQ(loglik, expected.loglik);
+}
+
+TEST(CapiFit, CriterionRejectsUnknownKindAndScale)
+{
+    FitSet fits = fit_series(simulated(), 1);
+    double value = 0.0;
+    EXPECT_EQ(ve_fit_criterion(fits[0], VE_CRITERION_SIC + 1, VE_IC_TOTAL, &value), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_criterion(fits[0], -1, VE_IC_TOTAL, &value), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_criterion(fits[0], VE_CRITERION_AIC, 2, &value), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_criterion(fits[0], VE_CRITERION_AIC, VE_IC_TOTAL, nullptr), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_criterion(nullptr, VE_CRITERION_AIC, VE_IC_TOTAL, &value), VE_INVALID_HANDLE);
 }
 
 TEST(CapiFit, NoMeanSpecHasThreeParameters)
@@ -192,13 +203,13 @@ TEST(CapiFit, AccessorsRejectBadArguments)
     EXPECT_EQ(ve_fit_std_errors(fit, -1, values), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_fit_t_values(fit, 7, values), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_fit_p_values(fit, 7, values), VE_INVALID_ARGUMENT);
-    EXPECT_EQ(ve_aic(fit, 2, values), VE_INVALID_ARGUMENT);
-    EXPECT_EQ(ve_bic(fit, -1, values), VE_INVALID_ARGUMENT);
-    EXPECT_EQ(ve_hqic(fit, 2, values), VE_INVALID_ARGUMENT);
-    EXPECT_EQ(ve_sic(fit, 2, values), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_criterion(fit, VE_CRITERION_AIC, 2, values), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_criterion(fit, VE_CRITERION_BIC, -1, values), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_criterion(fit, VE_CRITERION_HQIC, 2, values), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_criterion(fit, VE_CRITERION_SIC, 2, values), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_fit_estimates(fit, nullptr), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_fit_std_errors(fit, VE_SE_HESSIAN, nullptr), VE_INVALID_ARGUMENT);
-    EXPECT_EQ(ve_loglik(fit, nullptr), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_loglik(fit, nullptr), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_fit_sigma(fit, nullptr, &length), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_fit_sigma(fit, &data, nullptr), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_fit_status(fit, nullptr), VE_INVALID_ARGUMENT);
@@ -207,7 +218,7 @@ TEST(CapiFit, AccessorsRejectBadArguments)
     EXPECT_EQ(ve_fit_status(nullptr, &status), VE_INVALID_HANDLE);
     EXPECT_EQ(ve_fit_estimates(nullptr, values), VE_INVALID_HANDLE);
     EXPECT_EQ(ve_fit_residuals(nullptr, &data, &length), VE_INVALID_HANDLE);
-    EXPECT_EQ(ve_aic(nullptr, VE_IC_TOTAL, values), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_fit_criterion(nullptr, VE_CRITERION_AIC, VE_IC_TOTAL, values), VE_INVALID_HANDLE);
     EXPECT_EQ(ve_fit_param_name(nullptr, 0, &name), VE_INVALID_HANDLE);
     ve_fit_free(nullptr);
 }
@@ -278,12 +289,12 @@ TEST(CapiFit, FailedFitWithoutFinitePointReturnsNaN)
     ASSERT_EQ(ve_fit_status(fit, &status), VE_OK);
     EXPECT_EQ(status, VE_FIT_FAILED);
     double loglik = 0.0;
-    EXPECT_EQ(ve_loglik(fit, &loglik), VE_OK);
+    EXPECT_EQ(ve_fit_loglik(fit, &loglik), VE_OK);
     EXPECT_TRUE(std::isnan(loglik));
     double criterion = 0.0;
-    EXPECT_EQ(ve_aic(fit, VE_IC_PER_OBS, &criterion), VE_OK);
+    EXPECT_EQ(ve_fit_criterion(fit, VE_CRITERION_AIC, VE_IC_PER_OBS, &criterion), VE_OK);
     EXPECT_TRUE(std::isnan(criterion));
-    EXPECT_EQ(ve_sic(fit, VE_IC_TOTAL, &criterion), VE_OK);
+    EXPECT_EQ(ve_fit_criterion(fit, VE_CRITERION_SIC, VE_IC_TOTAL, &criterion), VE_OK);
     EXPECT_TRUE(std::isnan(criterion));
     const std::vector<double> errors = read_array(fit, ve_fit_std_errors, VE_SE_ROBUST);
     EXPECT_TRUE(std::isnan(errors[0]));

@@ -155,11 +155,11 @@ TEST(Dcc, CriterionCountsTheFirstStageAndTheIntercept)
     const auto fit = context.fit_dcc(ve::DccSpec{}, fits, ve::DccOptions{.standard_errors = false}).value();
     const double n = static_cast<double>(fit.nobs().value());
     const double loglik = fit.loglik().value();
-    const auto aic = fit.criterion(ve::DccCriterion::aic, ve::IcScale::total).value();
-    const auto bic = fit.criterion(ve::DccCriterion::bic, ve::IcScale::total).value();
+    const auto aic = fit.criterion(ve::Criterion::aic, ve::IcScale::total).value();
+    const auto bic = fit.criterion(ve::Criterion::bic, ve::IcScale::total).value();
     EXPECT_NEAR(aic, -2.0 * loglik + 2.0 * 17.0, 1e-6 * std::abs(aic));
     EXPECT_NEAR(bic, -2.0 * loglik + 17.0 * std::log(n), 1e-6 * std::abs(bic));
-    EXPECT_NEAR(fit.criterion(ve::DccCriterion::aic).value(), aic / n, 1e-9 * std::abs(aic));
+    EXPECT_NEAR(fit.criterion(ve::Criterion::aic).value(), aic / n, 1e-9 * std::abs(aic));
     EXPECT_EQ(fit.param_count().value(), 2U);
 }
 

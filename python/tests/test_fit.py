@@ -186,7 +186,7 @@ def test_every_criterion_total_is_per_obs_times_nobs(ctx, series, name):
 def test_fit_statistics_are_members(ctx, series):
     f = ctx.fit(ve.Spec(), series[:, 0])
     n, k, ll = f.nobs, len(f.names), f.loglik
-    assert ll == native.read_scalar(ctypes.c_double, native.lib.ve_loglik, f._handle.pointer)
+    assert ll == native.read_scalar(ctypes.c_double, native.lib.ve_fit_loglik, f._handle.pointer)
     penalties = {"aic": 2.0 * k, "bic": k * np.log(n), "hqic": 2.0 * k * np.log(np.log(n))}
     for name, penalty in penalties.items():
         assert getattr(f, name)(per_obs=False) == pytest.approx(-2.0 * ll + penalty, rel=1e-14)

@@ -265,6 +265,6 @@ class DccFit:
         fits = fit_pointers(univariate)
         with create_handle(lib.ve_context_create, lib.ve_context_free) as context:
             return DccFit(create_handle(
-                lib.ve_dcc_fit_standard_errors, lib.ve_dcc_fit_free,
+                lib.ve_dcc_standard_errors, lib.ve_dcc_fit_free,
                 context.pointer, self._handle.pointer, fits, len(univariate),
             ))

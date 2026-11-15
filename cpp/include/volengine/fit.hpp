@@ -35,6 +35,15 @@ enum class IcScale : std::int32_t
     total = VE_IC_TOTAL,
 };
 
+// The information criteria of Fit::criterion and DccFit::criterion.
+enum class Criterion : std::int32_t
+{
+    aic = VE_CRITERION_AIC,
+    bic = VE_CRITERION_BIC,
+    hqic = VE_CRITERION_HQIC,
+    sic = VE_CRITERION_SIC,
+};
+
 // [statistic, p-value] of a residual test; NaN where the statistic is undefined.
 struct Test
 {
@@ -168,7 +177,7 @@ public:
     // NaN, with success, when the fit has no finite point.
     Result<double> loglik() const
     {
-        return detail::scalar([&](double* out) { return ve_loglik(handle_.get(), out); });
+        return detail::scalar([&](double* out) { return ve_fit_loglik(handle_.get(), out); });
     }
 
     // Standard errors, t values and p values of the estimated parameters (NaN for fixed and derived ones). They fail
@@ -188,24 +197,30 @@ public:
         return per_parameter([&](double* out) { return ve_fit_p_values(handle_.get(), as_int(kind), out); });
     }
 
+    Result<double> criterion(Criterion which, IcScale scale = IcScale::per_obs) const
+    {
+        return detail::scalar([&](double* out)
+                              { return ve_fit_criterion(handle_.get(), as_int(which), as_int(scale), out); });
+    }
+
     Result<double> aic(IcScale scale = IcScale::per_obs) const
     {
-        return detail::scalar([&](double* out) { return ve_aic(handle_.get(), as_int(scale), out); });
+        return criterion(Criterion::aic, scale);
     }
 
     Result<double> bic(IcScale scale = IcScale::per_obs) const
     {
-        return detail::scalar([&](double* out) { return ve_bic(handle_.get(), as_int(scale), out); });
+        return criterion(Criterion::bic, scale);
     }
 
     Result<double> hqic(IcScale scale = IcScale::per_obs) const
     {
-        return detail::scalar([&](double* out) { return ve_hqic(handle_.get(), as_int(scale), out); });
+        return criterion(Criterion::hqic, scale);
     }
 
     Result<double> sic(IcScale scale = IcScale::per_obs) const
     {
-        return detail::scalar([&](double* out) { return ve_sic(handle_.get(), as_int(scale), out); });
+        return criterion(Criterion::sic, scale);
     }
 
     // Views of nobs values, valid until the Fit is destroyed; sigma is the conditional standard deviation. A fit

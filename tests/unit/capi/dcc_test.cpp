@@ -434,12 +434,12 @@ TEST(CapiDcc, MatchesCore)
         EXPECT_EQ(nobs, kRows);
         EXPECT_EQ(series, kSeries);
         EXPECT_EQ(read_status(fit), VE_FIT_CONVERGED);
-        EXPECT_EQ(std::bit_cast<std::uint64_t>(read_criterion(fit, VE_DCC_CRITERION_BIC, VE_IC_PER_OBS)),
+        EXPECT_EQ(std::bit_cast<std::uint64_t>(read_criterion(fit, VE_CRITERION_BIC, VE_IC_PER_OBS)),
                   std::bit_cast<std::uint64_t>(ve::dcc::dcc_criterion(expected[i], ve::dcc::Criterion::Bic, true)));
-        EXPECT_EQ(std::bit_cast<std::uint64_t>(read_criterion(fit, VE_DCC_CRITERION_AIC, VE_IC_TOTAL)),
+        EXPECT_EQ(std::bit_cast<std::uint64_t>(read_criterion(fit, VE_CRITERION_AIC, VE_IC_TOTAL)),
                   std::bit_cast<std::uint64_t>(ve::dcc::dcc_criterion(expected[i], ve::dcc::Criterion::Aic, false)));
-        EXPECT_TRUE(std::isfinite(read_criterion(fit, VE_DCC_CRITERION_HQIC, VE_IC_PER_OBS)));
-        EXPECT_TRUE(std::isfinite(read_criterion(fit, VE_DCC_CRITERION_SIC, VE_IC_PER_OBS)));
+        EXPECT_TRUE(std::isfinite(read_criterion(fit, VE_CRITERION_HQIC, VE_IC_PER_OBS)));
+        EXPECT_TRUE(std::isfinite(read_criterion(fit, VE_CRITERION_SIC, VE_IC_PER_OBS)));
     }
 }
 
@@ -555,7 +555,7 @@ TEST(CapiDcc, OutlivesInputs)
     {
         SCOPED_TRACE(i);
         expect_same_report(report_of(fits[i]), report_of_core(expected[i]));
-        EXPECT_TRUE(std::isfinite(read_criterion(fits[i], VE_DCC_CRITERION_BIC, VE_IC_PER_OBS)));
+        EXPECT_TRUE(std::isfinite(read_criterion(fits[i], VE_CRITERION_BIC, VE_IC_PER_OBS)));
     }
 }
 
@@ -579,7 +579,7 @@ TEST(CapiDcc, StandardErrorsLater)
         expect_standard_errors_not_computed(plain[i]);
         EXPECT_TRUE(std::isfinite(read_loglik(plain[i])));
         ve_dcc_fit* later = nullptr;
-        ASSERT_EQ(ve_dcc_fit_standard_errors(context.get(), plain[i], fits.data(), fits.size(), &later), VE_OK)
+        ASSERT_EQ(ve_dcc_standard_errors(context.get(), plain[i], fits.data(), fits.size(), &later), VE_OK)
             << ve_last_error();
         DccFitPtr owner(later);
         ASSERT_NE(later, nullptr);
@@ -609,7 +609,7 @@ TEST(CapiDcc, ANonConvergedSpecKeepsItsOwnStatus)
     EXPECT_TRUE(read_view(fits[1], ve_dcc_fit_covariance, &data).empty());
     EXPECT_EQ(data, nullptr);
     EXPECT_TRUE(std::isnan(read_loglik(fits[1])));
-    EXPECT_TRUE(std::isnan(read_criterion(fits[1], VE_DCC_CRITERION_AIC, VE_IC_PER_OBS)));
+    EXPECT_TRUE(std::isnan(read_criterion(fits[1], VE_CRITERION_AIC, VE_IC_PER_OBS)));
     for (const double value : read_table(fits[1], ve_dcc_fit_std_errors, VE_SE_ROBUST))
     {
         EXPECT_TRUE(std::isnan(value));
@@ -794,7 +794,7 @@ TEST(CapiDcc, StandardErrorsNeedFitsWithoutRegressors)
     EXPECT_EQ(read_status(fits[0]), VE_FIT_CONVERGED);
     const std::vector<const ve_fit*> handles = handles_of(with_regressors);
     ve_dcc_fit* later = reinterpret_cast<ve_dcc_fit*>(&later);
-    EXPECT_EQ(ve_dcc_fit_standard_errors(context.get(), fits[0], handles.data(), handles.size(), &later),
+    EXPECT_EQ(ve_dcc_standard_errors(context.get(), fits[0], handles.data(), handles.size(), &later),
               VE_UNSUPPORTED);
     EXPECT_EQ(later, nullptr);
     EXPECT_TRUE(mentions("regressors"));
@@ -812,20 +812,20 @@ TEST(CapiDcc, StandardErrorsRejectOtherFitsAndBadArguments)
     const std::vector<const ve_fit*> handles = handles_of(univariate);
     ve_dcc_fit* out = reinterpret_cast<ve_dcc_fit*>(&out);
     const std::vector<const ve_fit*> reordered{handles[1], handles[0], handles[2]};
-    EXPECT_EQ(ve_dcc_fit_standard_errors(context.get(), fits[0], reordered.data(), 3, &out), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_standard_errors(context.get(), fits[0], reordered.data(), 3, &out), VE_INVALID_ARGUMENT);
     EXPECT_EQ(out, nullptr);
     EXPECT_TRUE(mentions("estimates differ"));
     out = reinterpret_cast<ve_dcc_fit*>(&out);
-    EXPECT_EQ(ve_dcc_fit_standard_errors(context.get(), fits[0], handles.data(), 2, &out), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_standard_errors(context.get(), fits[0], handles.data(), 2, &out), VE_INVALID_ARGUMENT);
     EXPECT_EQ(out, nullptr);
     EXPECT_TRUE(mentions("3 series"));
-    EXPECT_EQ(ve_dcc_fit_standard_errors(nullptr, fits[0], handles.data(), 3, &out), VE_INVALID_HANDLE);
-    EXPECT_EQ(ve_dcc_fit_standard_errors(context.get(), nullptr, handles.data(), 3, &out), VE_INVALID_HANDLE);
-    EXPECT_EQ(ve_dcc_fit_standard_errors(context.get(), fits[0], nullptr, 3, &out), VE_INVALID_ARGUMENT);
-    EXPECT_EQ(ve_dcc_fit_standard_errors(context.get(), fits[0], handles.data(), 0, &out), VE_INVALID_ARGUMENT);
-    EXPECT_EQ(ve_dcc_fit_standard_errors(context.get(), fits[0], handles.data(), 3, nullptr), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_standard_errors(nullptr, fits[0], handles.data(), 3, &out), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_dcc_standard_errors(context.get(), nullptr, handles.data(), 3, &out), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_dcc_standard_errors(context.get(), fits[0], nullptr, 3, &out), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_standard_errors(context.get(), fits[0], handles.data(), 0, &out), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_standard_errors(context.get(), fits[0], handles.data(), 3, nullptr), VE_INVALID_ARGUMENT);
     const std::vector<const ve_fit*> with_null{handles[0], nullptr, handles[2]};
-    EXPECT_EQ(ve_dcc_fit_standard_errors(context.get(), fits[0], with_null.data(), 3, &out), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_dcc_standard_errors(context.get(), fits[0], with_null.data(), 3, &out), VE_INVALID_HANDLE);
 }
 
 TEST(CapiDcc, AccessorsRejectBadArguments)
@@ -860,9 +860,9 @@ TEST(CapiDcc, AccessorsRejectBadArguments)
     EXPECT_EQ(ve_dcc_fit_loglik(nullptr, &value), VE_INVALID_HANDLE);
     EXPECT_EQ(ve_dcc_fit_loglik(fit, nullptr), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_dcc_fit_criterion(fit, 4, VE_IC_TOTAL, &value), VE_INVALID_ARGUMENT);
-    EXPECT_EQ(ve_dcc_fit_criterion(fit, VE_DCC_CRITERION_AIC, 2, &value), VE_INVALID_ARGUMENT);
-    EXPECT_EQ(ve_dcc_fit_criterion(fit, VE_DCC_CRITERION_AIC, VE_IC_TOTAL, nullptr), VE_INVALID_ARGUMENT);
-    EXPECT_EQ(ve_dcc_fit_criterion(nullptr, VE_DCC_CRITERION_AIC, VE_IC_TOTAL, &value), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_dcc_fit_criterion(fit, VE_CRITERION_AIC, 2, &value), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_fit_criterion(fit, VE_CRITERION_AIC, VE_IC_TOTAL, nullptr), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_fit_criterion(nullptr, VE_CRITERION_AIC, VE_IC_TOTAL, &value), VE_INVALID_HANDLE);
     EXPECT_EQ(ve_dcc_fit_correlation(nullptr, &data, &count), VE_INVALID_HANDLE);
     EXPECT_EQ(ve_dcc_fit_correlation(fit, nullptr, &count), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_dcc_fit_correlation(fit, &data, nullptr), VE_INVALID_ARGUMENT);
@@ -1002,7 +1002,7 @@ TEST(CapiDcc, CopulaMatchesCore)
     {
         SCOPED_TRACE(i);
         expect_same_report(report_of(fits[i]), report_of_core(expected[i]));
-        EXPECT_EQ(std::bit_cast<std::uint64_t>(read_criterion(fits[i], VE_DCC_CRITERION_BIC, VE_IC_TOTAL)),
+        EXPECT_EQ(std::bit_cast<std::uint64_t>(read_criterion(fits[i], VE_CRITERION_BIC, VE_IC_TOTAL)),
                   std::bit_cast<std::uint64_t>(ve::dcc::dcc_criterion(expected[i], ve::dcc::Criterion::Bic, false)));
     }
     std::size_t count = 0;

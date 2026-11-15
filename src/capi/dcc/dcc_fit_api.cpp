@@ -229,7 +229,7 @@ extern "C" ve_status ve_dcc_fit_criterion(const ve_dcc_fit* f, int32_t which, in
             {
                 return status;
             }
-            if (which < VE_DCC_CRITERION_AIC || which > VE_DCC_CRITERION_SIC)
+            if (which < VE_CRITERION_AIC || which > VE_CRITERION_SIC)
             {
                 return set_error(VE_INVALID_ARGUMENT, "unknown criterion");
             }

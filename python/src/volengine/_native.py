@@ -33,7 +33,6 @@ _OUT_I32 = ctypes.POINTER(ctypes.c_int32)
 _OUT_VIEW = ctypes.POINTER(ctypes.POINTER(ctypes.c_double))
 _OUT_TEXT = ctypes.POINTER(ctypes.c_char_p)
 
-_SCALAR_CRITERION = [_HANDLE, _I32, _OUT_DOUBLE]
 _VIEW = [_HANDLE, _OUT_VIEW, _OUT_SIZE]
 _SE_VALUES = [_HANDLE, _I32, _HANDLE]
 
@@ -53,7 +52,7 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_dcc_batch_set_fits": (_STATUS, [_HANDLE, ctypes.POINTER(_HANDLE), _SIZE]),
     "ve_dcc_batch_set_options": (_STATUS, [_HANDLE, _HANDLE]),
     "ve_dcc_fit_batch": (_STATUS, [_HANDLE, _HANDLE, ctypes.POINTER(_HANDLE)]),
-    "ve_dcc_fit_standard_errors": (_STATUS, [_HANDLE, _HANDLE, ctypes.POINTER(_HANDLE), _SIZE, _OUT_HANDLE]),
+    "ve_dcc_standard_errors": (_STATUS, [_HANDLE, _HANDLE, ctypes.POINTER(_HANDLE), _SIZE, _OUT_HANDLE]),
     "ve_dcc_fit_status": (_STATUS, [_HANDLE, _OUT_I32]),
     "ve_dcc_fit_nobs": (_STATUS, [_HANDLE, _OUT_SIZE]),
     "ve_dcc_fit_series": (_STATUS, [_HANDLE, _OUT_SIZE]),
@@ -124,11 +123,8 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_fit_std_errors": (_STATUS, _SE_VALUES),
     "ve_fit_t_values": (_STATUS, _SE_VALUES),
     "ve_fit_p_values": (_STATUS, _SE_VALUES),
-    "ve_loglik": (_STATUS, [_HANDLE, _OUT_DOUBLE]),
-    "ve_aic": (_STATUS, _SCALAR_CRITERION),
-    "ve_bic": (_STATUS, _SCALAR_CRITERION),
-    "ve_hqic": (_STATUS, _SCALAR_CRITERION),
-    "ve_sic": (_STATUS, _SCALAR_CRITERION),
+    "ve_fit_loglik": (_STATUS, [_HANDLE, _OUT_DOUBLE]),
+    "ve_fit_criterion": (_STATUS, [_HANDLE, _I32, _I32, _OUT_DOUBLE]),
     "ve_fit_sigma": (_STATUS, _VIEW),
     "ve_fit_residuals": (_STATUS, _VIEW),
     "ve_fit_std_residuals": (_STATUS, _VIEW),

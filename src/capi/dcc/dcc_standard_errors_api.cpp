@@ -12,7 +12,8 @@ using ve::capi::dcc::check;
 
 #include "dcc/standard_errors.hpp"
 
-extern "C" ve_status ve_dcc_fit_standard_errors(ve_context* ctx, const ve_dcc_fit* f, const ve_fit* const* fits, size_t m, ve_dcc_fit** out)
+extern "C" ve_status ve_dcc_standard_errors(ve_context* ctx, const ve_dcc_fit* f, const ve_fit* const* fits, size_t m,
+                                          ve_dcc_fit** out)
 {
     return guard(
         [&]
