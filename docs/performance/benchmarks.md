@@ -522,6 +522,31 @@ root solve over the quadrature cdf, about 290 µs per call (a final-review measu
 call (`dist::QuantileTable`): 2.7 to 3.5 µs per call, about 3 s for that run (`profile-5c.md`). No profile or optimization was done in this run; the Cholesky factor of R and the O(m^2) products per step
 dominate the plain DCC.
 
+## Plan 6a: the wheel library against the local build
+
+`python/benchmarks/bench_library.py` times one workload on whichever library the installed `volengine` loads: 21
+simulated series (T = 5000, GARCH(1,1) with Student-t(8) innovations, fixed seed), the 12 univariate fits
+sGARCH, gjrGARCH and eGARCH (1,1) with norm, std, ged and sstd innovations, then a DCC(1,1) with mvnorm and one with
+mvt over the sGARCH-std fits. All threads, standard errors off. The first run is a warm-up; the table is the median
+and the standard deviation (population) over 10 timed runs.
+
+A is the wheel built by `python/scripts/build_wheel.sh`, installed in a clean venv with no `VOLENGINE_LIB`, so the
+library is `site-packages/volengine/_lib/libvolengine.dll`. B is the `gcc-bench` build (`build/gcc-bench`) loaded
+through `VOLENGINE_LIB` in the project environment. Both were built from commit `952a594` on the machine of
+[Machine and run](#machine-and-run), and the runs alternate A, B, A, B in one session.
+
+| Run | Library | Median (s) | Std dev (s) |
+| --- | --- | --- | --- |
+| A1 | wheel | 0.514 | 0.015 |
+| B1 | local `gcc-bench` | 0.514 | 0.014 |
+| A2 | wheel | 0.522 | 0.015 |
+| B2 | local `gcc-bench` | 0.522 | 0.018 |
+
+B/A is 1.000 in both pairs, inside one standard deviation. The wheel's library (static runtime, `-DVE_BUILD_TESTS=OFF`,
+no ISA flags) is as fast as the local build. `build_native.py` refuses `-march`, `-mcpu`, `-mavx` and `-mtune` in
+`CFLAGS` and `CXXFLAGS`, so a wheel binary never needs more than the baseline of its compiler; Highway dispatches
+on the CPU at run time.
+
 ## What the benchmarks fit
 
 - The series are simulated by `tests/benchmarks/simulated_panel.hpp` and `tests/unit/simulated_garch.hpp`. They reuse
