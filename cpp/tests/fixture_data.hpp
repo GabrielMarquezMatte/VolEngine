@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <volengine/volengine.hpp>
 
 namespace ve::testing
 {
@@ -38,6 +39,30 @@ inline std::vector<std::vector<double>> read_csv_columns(const std::string& name
         }
     }
     return columns;
+}
+
+// The three univariate sGARCH(1,1) fits of the rmgarch panel dcc3 (tests/reference/data/dcc3.csv, columns A, B, C):
+// each starts at the oracle's estimates and stops there (tol = 1), as in python/tests/oracles/test_dcc_oracles.py.
+inline std::vector<ve::Fit> dcc3_univariate_fits(const ve::Context& context)
+{
+    constexpr double estimates[3][4] = {
+        {-0.008920131111225086, 0.019478881309471997, 0.07282124034137887, 0.9065714955528129},
+        {-0.02778242404762519, 0.061441088509364916, 0.084080533476537, 0.8462651839828331},
+        {-0.009972193379566455, 0.025655072442689313, 0.050370071713741006, 0.9338721906860878},
+    };
+    constexpr const char* names[4] = {"mu", "omega", "alpha1", "beta1"};
+    const auto columns = read_csv_columns("dcc3.csv");
+    std::vector<ve::Fit> fits;
+    for (std::size_t i = 0; i < 3; ++i)
+    {
+        ve::NamedValues start;
+        for (std::size_t k = 0; k < 4; ++k)
+        {
+            start.emplace_back(names[k], estimates[i][k]);
+        }
+        fits.push_back(context.fit(ve::Spec{.start = start}, columns[i], ve::FitOptions{.tol = 1.0}).value());
+    }
+    return fits;
 }
 
 } // namespace ve::testing

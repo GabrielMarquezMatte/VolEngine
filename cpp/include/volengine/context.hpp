@@ -191,6 +191,30 @@ public:
         return DccFit{raw};
     }
 
+    // Paths of a DCC fit. The regressors of the horizon go in `future`, not in the options.
+    Result<DccSimulation> simulate(
+        const DccFit& fit, const SimOptions& options, const DccFuture* future = nullptr) const
+    {
+        auto native = options.make_handle();
+        if (!native)
+        {
+            return detail::failure(native);
+        }
+        const ve_dcc_future* native_future = nullptr;
+        if (future != nullptr)
+        {
+            native_future = future->native();
+        }
+        ve_dcc_sim* raw = nullptr;
+        if (auto simulated = detail::check(
+                ve_simulate_dcc(handle_.get(), fit.native(), native->get(), native_future, &raw));
+            !simulated)
+        {
+            return detail::failure(simulated);
+        }
+        return DccSimulation{raw};
+    }
+
     ve_context* native() const noexcept
     {
         return handle_.get();

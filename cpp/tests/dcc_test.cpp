@@ -11,35 +11,10 @@
 namespace
 {
 
-// The rmgarch panel dcc3 (tests/reference/data/dcc3.csv, columns A, B, C): the univariate sGARCH(1,1) fits start at
-// the oracle's estimates and stop there (tol = 1), as in python/tests/oracles/test_dcc_oracles.py.
-constexpr double kUnivariate[3][4] = {
-    {-0.008920131111225086, 0.019478881309471997, 0.07282124034137887, 0.9065714955528129},
-    {-0.02778242404762519, 0.061441088509364916, 0.084080533476537, 0.8462651839828331},
-    {-0.009972193379566455, 0.025655072442689313, 0.050370071713741006, 0.9338721906860878},
-};
-constexpr const char* kNames[4] = {"mu", "omega", "alpha1", "beta1"};
-
-std::vector<ve::Fit> univariate_fits(const ve::Context& context)
-{
-    const auto columns = ve::testing::read_csv_columns("dcc3.csv");
-    std::vector<ve::Fit> fits;
-    for (std::size_t i = 0; i < 3; ++i)
-    {
-        ve::NamedValues start;
-        for (std::size_t k = 0; k < 4; ++k)
-        {
-            start.emplace_back(kNames[k], kUnivariate[i][k]);
-        }
-        fits.push_back(context.fit(ve::Spec{.start = start}, columns[i], ve::FitOptions{.tol = 1.0}).value());
-    }
-    return fits;
-}
-
 TEST(Dcc, MatchesRmgarch)
 {
     const auto context = ve::Context::create(1).value();
-    const auto fits = univariate_fits(context);
+    const auto fits = ve::testing::dcc3_univariate_fits(context);
     const auto fit = context.fit_dcc(ve::DccSpec{}, fits, ve::DccOptions{.standard_errors = false});
     ASSERT_TRUE(fit.has_value());
     EXPECT_EQ(fit->status(), ve::FitStatus::converged);
@@ -57,7 +32,7 @@ TEST(Dcc, MatchesRmgarch)
 TEST(Dcc, CorrelationIsTimeByMByMRowMajor)
 {
     const auto context = ve::Context::create(1).value();
-    const auto fits = univariate_fits(context);
+    const auto fits = ve::testing::dcc3_univariate_fits(context);
     const auto fit = context.fit_dcc(ve::DccSpec{}, fits, ve::DccOptions{.standard_errors = false}).value();
     const std::size_t nobs = fit.nobs().value();
     EXPECT_EQ(fit.series().value(), 3U);
@@ -77,7 +52,7 @@ TEST(Dcc, CorrelationIsTimeByMByMRowMajor)
 TEST(Dcc, CovarianceDiagonalIsTheUnivariateVariance)
 {
     const auto context = ve::Context::create(1).value();
-    const auto fits = univariate_fits(context);
+    const auto fits = ve::testing::dcc3_univariate_fits(context);
     const auto fit = context.fit_dcc(ve::DccSpec{}, fits, ve::DccOptions{.standard_errors = false}).value();
     const auto covariance = fit.covariance().value();
     const auto sigma = fits[1].sigma().value();
@@ -91,7 +66,7 @@ TEST(Dcc, CovarianceDiagonalIsTheUnivariateVariance)
 TEST(Dcc, GridKeepsSpecOrder)
 {
     const auto context = ve::Context::create(1).value();
-    const auto fits = univariate_fits(context);
+    const auto fits = ve::testing::dcc3_univariate_fits(context);
     const std::vector<ve::DccSpec> grid{
         ve::DccSpec{.model = ve::DccModel::dcc},
         ve::DccSpec{.model = ve::DccModel::adcc},
@@ -109,7 +84,7 @@ TEST(Dcc, GridKeepsSpecOrder)
 TEST(Dcc, StandardErrorsFromFitsMatchTheOption)
 {
     const auto context = ve::Context::create(1).value();
-    const auto fits = univariate_fits(context);
+    const auto fits = ve::testing::dcc3_univariate_fits(context);
     const auto without = context.fit_dcc(ve::DccSpec{}, fits, ve::DccOptions{.standard_errors = false}).value();
     const auto with = context.fit_dcc(ve::DccSpec{}, fits).value();
     const auto computed = context.standard_errors(without, fits).value();
@@ -130,7 +105,7 @@ TEST(Dcc, StandardErrorsFromFitsMatchTheOption)
 TEST(Dcc, SingleSeriesIsRejected)
 {
     const auto context = ve::Context::create(1).value();
-    const auto fits = univariate_fits(context);
+    const auto fits = ve::testing::dcc3_univariate_fits(context);
     const auto fit = context.fit_dcc(ve::DccSpec{}, std::span<const ve::Fit>(fits.data(), 1));
     ASSERT_FALSE(fit.has_value());
     EXPECT_EQ(fit.error().status, ve::Status::invalid_argument);
@@ -140,7 +115,7 @@ TEST(Dcc, SingleSeriesIsRejected)
 TEST(Dcc, StandardErrorsOffGiveNaN)
 {
     const auto context = ve::Context::create(1).value();
-    const auto fits = univariate_fits(context);
+    const auto fits = ve::testing::dcc3_univariate_fits(context);
     const auto fit = context.fit_dcc(ve::DccSpec{}, fits, ve::DccOptions{.standard_errors = false}).value();
     for (const auto kind : {ve::SeKind::hessian, ve::SeKind::robust})
     {
@@ -155,7 +130,7 @@ TEST(Dcc, StandardErrorsOffGiveNaN)
 TEST(Dcc, CopulaAndStaticModelsConverge)
 {
     const auto context = ve::Context::create(1).value();
-    const auto fits = univariate_fits(context);
+    const auto fits = ve::testing::dcc3_univariate_fits(context);
     const auto copula = context.fit_dcc(
         ve::DccSpec{.dist = ve::DccDist::mvt, .copula = ve::Copula::parametric}, fits,
         ve::DccOptions{.standard_errors = false});
@@ -175,7 +150,7 @@ TEST(Dcc, CopulaAndStaticModelsConverge)
 TEST(Dcc, CriterionCountsTheFirstStageAndTheIntercept)
 {
     const auto context = ve::Context::create(1).value();
-    const auto fits = univariate_fits(context);
+    const auto fits = ve::testing::dcc3_univariate_fits(context);
     const auto fit = context.fit_dcc(ve::DccSpec{}, fits, ve::DccOptions{.standard_errors = false}).value();
     const double n = static_cast<double>(fit.nobs().value());
     const double loglik = fit.loglik().value();
