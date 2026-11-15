@@ -263,3 +263,37 @@ integral of the density):
 
 No fit benchmark moved: `BM_FitOne/aparch11_ged` 44.5 -> 44.3 ms, `aparch11_sged` 53.0 -> 55.0 ms (noise),
 `gjrgarch11_sstd` 15.6 -> 15.5 ms.
+
+## Final table of plan 5c-2 (2026-11-15)
+
+`gcc-bench`, one thread, medians of five repetitions, the base (`881e7a7`, `build/base-5c2/`) and the new code run one
+right after the other in the same session.
+
+| Benchmark | Base | 5c-2 | Ratio |
+| --- | ---: | ---: | ---: |
+| `BM_LogBesselK/fixed_order` (5 thousand arguments) | 1.81 ms | 0.402 ms | 0.22 |
+| `BM_LogBesselK/free_order` | 28.9 ms | 2.20 ms | 0.076 |
+| `BM_Loglik/sgarch11_nig/double` | 0.602 ms | 0.242 ms | 0.40 |
+| `BM_Loglik/sgarch11_nig/dual` | 2.27 ms | 0.870 ms | 0.38 |
+| `BM_FitOne/sgarch11_nig` | 79.6 ms | 30.5 ms | 0.38 |
+| `BM_Loglik/sgarch11_ghyp/double` | 0.592 ms | 0.245 ms | 0.41 |
+| `BM_Loglik/sgarch11_ghyp/dual` | 24.1 ms | 2.13 ms | 0.088 |
+| `BM_FitOne/sgarch11_ghyp` | 1785 ms | 141 ms | 0.079 |
+| `BM_Diagnostics/sgarch11_ghyp/gof` | 28.9 ms | 6.49 ms | 0.22 |
+| `BM_DccLoglik/dcc_mvlaplace/double` (m = 21, T = 5000) | 4.08 ms | 3.65 ms | 0.89 |
+| `BM_DccLoglik/dcc_mvlaplace/dual` | 61.4 ms | 61.0 ms | 0.99 |
+| `BM_DistQuantile/nig` (200 quantiles, `quantile`) | 58.2 ms | 21.9 ms | 0.38 |
+| `BM_DistQuantile/ghyp` | 99.2 ms | 29.1 ms | 0.29 |
+| `BM_DistQuantile/nig/table` | | 0.548 ms (2.7 us per call) | 0.009 against the base `quantile` |
+| `BM_DistQuantile/ghyp/table` | | 0.724 ms (3.6 us per call) | 0.007 |
+| table construction, nig / ghyp | | 1.43 / 1.89 ms | |
+| `BM_FitOne/aparch11_ged` | 45.1 ms | 45.6 ms | 1.01 |
+| `BM_FitOne/aparch11_sged` | 54.4 ms | 53.4 ms | 0.98 |
+
+The quick suite (`quick.py compare`, base against new): every ratio between 0.94 and 1.01, none above noise on the wrong
+side. `BM_Loglik/aparch11_ged/dual` reads 1.00 ms on the base and 1.00 to 1.13 ms on the new code between runs of the
+same binary (cv 1%), a bimodality of the machine, not of the change.
+
+What is left of the ghyp: the Dual loglik is 8.7 times its double one (nig: 3.6): 443 ns per call of the trapezoid
+against 80 ns of Boost's value. A SIMD sum over the grid nodes is the next step (`ponytail:` not placed: the fit is
+4.6 times the nig one, under the 5x at which the spec asked for it).

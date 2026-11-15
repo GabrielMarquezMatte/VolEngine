@@ -212,7 +212,8 @@ between two measurements from this run.
 
 - **ghyp:** the gradient costs 38 `double` evaluations. Its Bessel K takes the order lambda as a `Dual`, which the
   other distributions do not need (nig fixes the order at −1). Plan 2c named this case for a Bessel K of our own or an
-  analytic derivative in lambda (plan 5).
+  analytic derivative in lambda (plan 5). Plan 5c-2 did it: the order and argument slopes come from one trapezoid sum,
+  and Boost computes in `double`; `Dual / double` is 8.7 and the fit 141 ms (was 1785, see `profile-5c.md`).
 - **`archm`:** these cases run the joint loop of the variance and the mean, which keeps the steps from being
   vectorised over t. Their `Dual` costs about 5 `double` evaluations, against 2 or 3 for the sequential cases.
 - **ARFIMA:** almost all of the 2.6 ms of a `double` evaluation at T = 5000 is the O(T²) fractional difference in
@@ -517,8 +518,8 @@ thread, but 2.4 times more on 16 threads, where it is bound by memory bandwidth.
 each of the 21 margins at every step (a std quantile through the inverse incomplete beta), about 3 times the plain
 DCC. A Copula-DCC whose margins are nig or ghyp is far slower than the std margins measured here: their quantile is a
 root solve over the quadrature cdf, about 290 µs per call (a final-review measurement, not a benchmark), so 1000 paths x
-60 steps x 21 series takes about 6 minutes on one thread. A monotone table of each margin built once per call would
-remove it (`ponytail:` in `dist::quantile`). No profile or optimization was done in this run; the Cholesky factor of R and the O(m^2) products per step
+60 steps x 21 series took about 6 minutes on one thread. Plan 5c-2 replaced it by a table of each margin built once per
+call (`dist::QuantileTable`): 2.7 to 3.5 µs per call, about 3 s for that run (`profile-5c.md`). No profile or optimization was done in this run; the Cholesky factor of R and the O(m^2) products per step
 dominate the plain DCC.
 
 ## What the benchmarks fit

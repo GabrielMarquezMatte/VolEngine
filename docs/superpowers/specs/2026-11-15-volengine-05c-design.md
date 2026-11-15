@@ -295,3 +295,46 @@ só entra onde dá as derivadas.
 - O quantil fora da tabela (caudas) segue pelo solve, sem extrapolação inventada.
 - O item ged/sged não teve escolha de abordagem: os pontos de divisão nas bordas seguem o padrão dos refinamentos
   existentes.
+
+## 12. 5c-2 feito
+
+Medidas em `docs/performance/profile-5c.md` (cinco repetições, `gcc-bench`, uma thread, base em `881e7a7`).
+
+| Medida | Base | 5c-2 |
+| --- | ---: | ---: |
+| `BM_LogBesselK/free_order` | 28,9 ms | 2,20 ms |
+| `BM_FitOne/sgarch11_ghyp` | 1785 ms | 141 ms |
+| `BM_FitOne/sgarch11_nig` | 79,6 ms | 30,5 ms |
+| `BM_Diagnostics/sgarch11_ghyp/gof` | 28,9 ms | 6,49 ms |
+| quantil nig / ghyp por chamada | 291 / 496 us | 2,7 / 3,6 us (tabela) |
+
+- **A Boost em `double`** foi o maior ganho de tempo (2 a 5x em tudo que chama K), além de ser a correção da
+  bit-identidade. Os três testes de x87 (Bessel, p-valores de cauda, quantil nig/ghyp) falhavam antes. O `std::thread`
+  do plano não reproduz o defeito (a thread herda a palavra de controle do x87): os testes alternam a precisão de 64
+  para 53 bits na mesma thread (`tests/unit/x87_precision.hpp`).
+- **O trapézio** dá ∂x e ∂v do log K numa soma (443 ns por chamada contra 5,2 us do Richardson antes e 1,08 us
+  depois da Boost em `double`). Ele também é mais exato que o Richardson: o erro de ∂v contra a referência em long
+  double passou de 1e-10 para 1e-12.
+- **O quantil** parte da tabela e termina com Newton na própria cdf de quadratura, com as constantes que não dependem
+  de z guardadas (`detail::CdfConstants`): o mesmo aritmético, os mesmos bits. O plano previa o polimento por um
+  segmento curto; a cdf além de |z| = 1 é uma integral de cauda reescalada, não uma soma de segmentos, e o segmento
+  não cairia na raiz do `quantile`. Ganho de 40x, não os 50 a 100x da estimativa (o denominador também caiu: a Boost em
+  `double` levou o `quantile` de 291 para 109 us).
+- **ged/sged em ν grande** tinha três defeitos, não um:
+  - as bordas da densidade (3e-6 em ν = 20, 1,6% em ν = 1000);
+  - a cdf do ged, que tomava `0,5 (|z|/escala)^ν` como 0 quando dá underflow dentro do suporte (P(z < 0) do sged de 0,61
+    em vez de 0,5 de ν = 500 em diante). O oráculo do plano para P(z < 0) estava errado, e a integral numérica
+    concorda com a quadratura;
+  - a derivada em ν dos momentos, NaN de ν ~ 100 em diante (exp(−inf) vezes a inclinação infinita).
+
+  Os três têm teste e estão corrigidos. Os valores do apARCH/fGARCH com ged/sged em ν acima de 6 mudam (para o valor
+  certo).
+
+Ficou para o autor:
+- A soma do trapézio por SIMD (o ghyp está em 4,6x o nig; abaixo do 5x do critério).
+- `solved_quantile` ainda recalcula as constantes da cdf a cada avaliação; passá-las a ele deixaria `quantile` ~3x
+  mais rápido para quem chama uma vez só.
+- A construção da tabela custa 1,4 a 1,9 ms por margem, em série; uma simulação com poucos caminhos e 21 margens paga
+  ~35 ms.
+- Os p-valores `student_two_sided` e `chi_squared_upper` mudam em ulps.
+

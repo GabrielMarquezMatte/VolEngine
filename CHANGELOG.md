@@ -45,6 +45,14 @@ library whose ABI version differs).
 
 ### Fixed
 
+- Results no longer depend on the thread's x87 precision. `log_bessel_k` (nig, ghyp, mvlaplace, GOF, quantiles) and the
+  p-values of the diagnostics computed in long double, which on MinGW differs between a pool thread and the Python main
+  thread; they now compute in `double`, and the values of fits with those distributions move by about an ulp.
+- The moments of the ged and the sged at large shapes. The shifted moment, `abs_moment` of the sged and P(z < 0) lost
+  the edge of the density (1.5% off at shape 1000, 3e-6 at 20) and are now exact to 1e-11, which moves the apARCH and
+  fGARCH persistence of fits with those distributions at shapes above 6. Their derivative in the shape was NaN from
+  shape ~100 and is finite. The cdf of the ged and the sged was that of the centre inside the support at shapes of
+  500 and above (P(z < 0) of 0.61 for 0.5) and is exact.
 - The static Student copula (Kendall and ML) with independent series (the profile maximum on the ceiling of the shape)
   failed with a non-finite log-likelihood. A profiled shape of the static copula is now accepted on the whole interval [4, 50];
   only a fixed shape outside (4, 50) fails its spec. (The DCC and aDCC copulas fix the shape in an inner fit that wants
@@ -70,6 +78,12 @@ library whose ABI version differs).
   bits of the pair count. At m = 21 and T = 5000, one thread: the DCC-t copula goes from 36.4 s to 3.47 s, the aDCC-t
   from 36.6 s to 3.56 s, the DCC-mvnorm copula from 0.945 s to 0.197 s and the static Kendall mvnorm from 3.79 s to
   0.160 s. See [docs/performance/profile-5c.md](docs/performance/profile-5c.md).
+- Distributions (plan 5c-2), one thread: the nig and ghyp fits and everything that calls the Bessel K are 2 to 5 times
+  faster because Boost computes in `double` (no x87 long double); the ghyp gradient in lambda comes from one trapezoid
+  sum for both slopes of log K, so a ghyp fit takes 141 ms instead of 1785 ms (the nig fit 30.5 ms instead of 79.6 ms)
+  and its GOF 6.5 ms instead of 28.9 ms. A Copula-DCC simulation with nig or ghyp margins takes the quantile from a
+  table built once per margin: 2.7 to 3.5 us per call instead of 109 to 143 us. See
+  [docs/performance/profile-5c.md](docs/performance/profile-5c.md).
 - The TCC grid (1080 fits) on the Ryzen 7 5700X: see [docs/performance/benchmarks.md](docs/performance/benchmarks.md)
   and [docs/performance/profile-5a.md](docs/performance/profile-5a.md) for the measurements of each change.
 
