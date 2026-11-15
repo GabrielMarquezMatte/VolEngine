@@ -1,5 +1,7 @@
 #include "fixture_data.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <limits>
@@ -179,6 +181,92 @@ TEST(Panel, StridedPanelEqualsContiguous)
     const auto a = context.fit(specs, contiguous).value();
     const auto b = context.fit(specs, strided).value();
     EXPECT_EQ(a[1].loglik().value(), b[1].loglik().value());
+}
+
+// The remaining oracle numbers of t5000/sgarch11_norm: Hessian and QML robust standard errors (5e-2 relative) and the
+// per-observation criteria (1e-6 absolute), as in python/tests/oracles/test_oracles.py.
+constexpr double kOracleSe[] = {0.008663366651859546, 0.002228460618358319, 0.00810505000455375, 0.010657614107829137};
+constexpr double kOracleRobustSe[] = {
+    0.008677832549151743, 0.0022377402070646816, 0.008353834488907993, 0.010696037257650498};
+constexpr double kOracleAic = 2.02494385043043;
+constexpr double kOracleBic = 2.0301576049835632;
+constexpr double kOracleHqic = 2.02677118938873;
+constexpr double kOracleSic = 2.0249425717941274;
+
+ve::Fit fit_oracle_series(const ve::FitOptions& options)
+{
+    const auto context = make_context();
+    return context.fit(ve::Spec{}, sgarch_columns()[0], options).value();
+}
+
+TEST(FitResults, StdErrorsMatchRugarch)
+{
+    const auto fit = fit_oracle_series(ve::FitOptions{.tol = 1e-7});
+    const auto hessian = fit.std_errors(ve::SeKind::hessian).value();
+    const auto robust = fit.std_errors(ve::SeKind::robust).value();
+    ASSERT_EQ(hessian.size(), 4U);
+    for (std::size_t i = 0; i < 4; ++i)
+    {
+        EXPECT_NEAR(hessian[i] / kOracleSe[i], 1.0, 5e-2) << i;
+        EXPECT_NEAR(robust[i] / kOracleRobustSe[i], 1.0, 5e-2) << i;
+    }
+}
+
+TEST(FitResults, TAndPValuesFollowStdErrors)
+{
+    const auto fit = fit_oracle_series(ve::FitOptions{.tol = 1e-7});
+    const auto estimates = fit.estimates().value();
+    const auto errors = fit.std_errors(ve::SeKind::hessian).value();
+    const auto t = fit.t_values(ve::SeKind::hessian).value();
+    const auto p = fit.p_values(ve::SeKind::hessian).value();
+    for (std::size_t i = 0; i < estimates.size(); ++i)
+    {
+        EXPECT_NEAR(t[i], estimates[i] / errors[i], 1e-9 * std::abs(t[i])) << i;
+        EXPECT_GE(p[i], 0.0);
+        EXPECT_LE(p[i], 1.0);
+    }
+}
+
+TEST(FitResults, CriteriaMatchRugarchAndScale)
+{
+    const auto fit = fit_oracle_series(ve::FitOptions{.tol = 1e-7});
+    EXPECT_NEAR(fit.aic().value(), kOracleAic, 1e-6);
+    EXPECT_NEAR(fit.bic().value(), kOracleBic, 1e-6);
+    EXPECT_NEAR(fit.hqic().value(), kOracleHqic, 1e-6);
+    EXPECT_NEAR(fit.sic().value(), kOracleSic, 1e-6);
+    const double nobs = static_cast<double>(fit.nobs().value());
+    EXPECT_NEAR(fit.aic(ve::IcScale::total).value(), fit.aic(ve::IcScale::per_obs).value() * nobs, 1e-6);
+    EXPECT_GT(fit.bic().value(), fit.aic().value());
+}
+
+TEST(FitResults, SeriesViewsHaveNobsLength)
+{
+    const auto fit = fit_oracle_series(ve::FitOptions{});
+    const auto nobs = fit.nobs().value();
+    const auto sigma = fit.sigma().value();
+    EXPECT_EQ(sigma.size(), nobs);
+    EXPECT_EQ(fit.residuals().value().size(), nobs);
+    EXPECT_EQ(fit.std_residuals().value().size(), nobs);
+    EXPECT_EQ(fit.fitted().value().size(), nobs);
+    EXPECT_GT(*std::min_element(sigma.begin(), sigma.end()), 0.0);
+}
+
+TEST(FitResults, StandardErrorsOffMakesInferenceFailButNotTheEstimates)
+{
+    const auto on = fit_oracle_series(ve::FitOptions{.tol = 1e-7});
+    const auto off = fit_oracle_series(ve::FitOptions{.tol = 1e-7, .standard_errors = false});
+    for (const auto kind : {ve::SeKind::hessian, ve::SeKind::robust})
+    {
+        const auto errors = off.std_errors(kind);
+        ASSERT_FALSE(errors.has_value());
+        EXPECT_EQ(errors.error().status, ve::Status::invalid_argument);
+        EXPECT_FALSE(off.t_values(kind).has_value());
+        EXPECT_FALSE(off.p_values(kind).has_value());
+    }
+    EXPECT_FALSE(off.nyblom().has_value());
+    // The estimates are bit for bit equal; the reported log-likelihood differs at the 13th digit (see the ABI findings).
+    EXPECT_NEAR(off.loglik().value() / on.loglik().value(), 1.0, 1e-11);
+    EXPECT_EQ(off.estimates().value(), on.estimates().value());
 }
 
 } // namespace
