@@ -216,8 +216,9 @@ T log_density(const LogDensity<T>& density, const T& z)
     return normal_log_density_at(density, z * z);
 }
 
-// The partials of term = log f(e / sigma) - log(sigma2) / 2 in e, sigma2, scale and power, for the reverse pass of
-// the likelihood (the partial in log_constant is 1). Where the term has a kink they follow ad::Dual: |e| has slope 0
+// The partials of term = log f(e / sigma) - log(sigma2) / 2 in e, sigma2, scale and power (the partial in
+// log_constant is 1). The likelihood's reverse pass reads them from simd::symmetric_terms_with_partials; this scalar
+// form is the reference the kernel's tests compare it with. Where the term has a kink they follow ad::Dual: |e| has slope 0
 // at e = 0, and so does the ged power there.
 struct TermAdjoint
 {

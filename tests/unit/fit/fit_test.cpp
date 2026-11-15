@@ -100,6 +100,11 @@ TEST(Fit, InsufficientDataDoesNoOptimizerWork)
     EXPECT_EQ(result.work.evaluations, 0);
 }
 
+// The fit with the inference takes its loglik from the Dual pass and the one without from loglik<double>, which reads
+// the density from the vector kernels: they differ by rounding (the grid of model/likelihood_test.cpp agrees at 1e-14
+// relative), while the variance recursions, the same code in both, stay bit for bit.
+constexpr double kDoubleDualTolerance = 1e-14;
+
 TEST(Fit, StandardErrorsOffSkipsInferenceOnly)
 {
     ve::FitConfig off;
@@ -111,7 +116,7 @@ TEST(Fit, StandardErrorsOffSkipsInferenceOnly)
     {
         EXPECT_EQ(bits(without.estimate[i]), bits(with.estimate[i]));
     }
-    EXPECT_EQ(bits(without.loglik), bits(with.loglik));
+    EXPECT_NEAR(without.loglik, with.loglik, kDoubleDualTolerance * std::fabs(with.loglik));
     ASSERT_EQ(without.sigma.size(), with.sigma.size());
     for (std::size_t t = 0; t < with.sigma.size(); ++t)
     {
@@ -139,7 +144,7 @@ TEST(Fit, StandardErrorsOffKeepsForecastState)
         FitResult with = fit_simulated(spec);
         FitResult without = ve::fit_one(simulated(), spec, off);
         ASSERT_EQ(without.status, with.status);
-        EXPECT_EQ(bits(without.loglik), bits(with.loglik));
+        EXPECT_NEAR(without.loglik, with.loglik, kDoubleDualTolerance * std::fabs(with.loglik));
         EXPECT_EQ(without.state.residuals, with.state.residuals);
         EXPECT_EQ(without.state.sigma2, with.state.sigma2);
         EXPECT_EQ(without.state.permanent, with.state.permanent);
@@ -1832,7 +1837,8 @@ TEST(FitGradient, FixedBetaFitConverges)
     ASSERT_EQ(fit.status, FitStatus::Converged);
     const ve::model::Layout layout = ve::model::layout_of(spec);
     EXPECT_EQ(fit.estimate[layout.beta_begin()], 0.85);
-    EXPECT_EQ(fit.loglik, ve::model::loglik<double>(r, fit.estimate, layout, ve::VarInit::Sample, {}));
+    const double at_estimate = ve::model::loglik<double>(r, fit.estimate, layout, ve::VarInit::Sample, {});
+    EXPECT_NEAR(fit.loglik, at_estimate, kDoubleDualTolerance * std::fabs(at_estimate));
 }
 
 }

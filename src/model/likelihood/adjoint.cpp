@@ -87,42 +87,34 @@ double LoglikAdjoint::evaluate(const Data& data, std::span<const double> theta, 
     sigma2_.resize(count);
     residual_adjoint_.resize(count);
     sigma2_adjoint_.resize(count);
-    double value = loglik<double>(data, theta, layout, var_init, {.residuals = residuals_, .sigma2 = sigma2_});
+    simd::SymmetricPartials partials{residual_adjoint_, sigma2_adjoint_};
+    double value = loglik<double>(data, theta, layout, var_init,
+                                  {.residuals = residuals_, .sigma2 = sigma2_, .density_partials = &partials});
     if (!std::isfinite(value))
     {
         return value;
     }
     std::ranges::fill(grad, 0.0);
-    density_backward(theta, layout, grad);
+    density_backward(theta, layout, partials, grad);
     variance_backward(theta, layout, data, var_init, grad);
     mean_backward(data, theta, layout, grad);
     return value;
 }
 
-// Fills the adjoints of e_t and sigma2_t with the partials of the terms, and adds the shape's: the constants that
-// depend on the shape alone (log constant, scale, power) carry their derivative from a Dual<1> of the same function
-// the likelihood calls.
-void LoglikAdjoint::density_backward(std::span<const double> theta, const Layout& layout, std::span<double> grad)
+// The adjoints of e_t and sigma2_t are the partials of the terms, which the likelihood's own vector pass wrote; what
+// is left is the shape's: the constants that depend on the shape alone (log constant, scale, power) carry their
+// derivative from a Dual<1> of the same function the likelihood calls, weighted by the sums of the partials.
+void LoglikAdjoint::density_backward(std::span<const double> theta, const Layout& layout,
+                                     const simd::SymmetricPartials& partials, std::span<double> grad)
 {
-    double shape = shape_parameters_of(theta, layout).shape;
-    dist::LogDensity<double> density = dist::make_log_density(layout.dist, shape);
-    double scale_partial = 0.0;
-    double power_partial = 0.0;
-    for (std::size_t t = 0; t < residuals_.size(); ++t)
-    {
-        dist::TermAdjoint term = dist::term_adjoint(density, residuals_[t], sigma2_[t]);
-        residual_adjoint_[t] = term.e;
-        sigma2_adjoint_[t] = term.sigma2;
-        scale_partial += term.scale;
-        power_partial += term.power;
-    }
     if (!layout.has_shape())
     {
         return;
     }
+    double shape = shape_parameters_of(theta, layout).shape;
     dist::LogDensity<ad::Dual<1>> slopes = dist::make_log_density(layout.dist, ad::variable<1>(shape, 0));
     grad[layout.shape()] += static_cast<double>(residuals_.size()) * slopes.log_constant.grad[0] +
-                            scale_partial * slopes.scale.grad[0] + power_partial * slopes.power.grad[0];
+                            partials.d_scale * slopes.scale.grad[0] + partials.d_power * slopes.power.grad[0];
 }
 
 // The variance recursion, then its presample: under VarInit::Sample the presample is the mean square of e, which

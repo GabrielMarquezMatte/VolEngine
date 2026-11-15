@@ -109,3 +109,51 @@ Ruling: the files are `src/dcc/likelihood/gradient.{hpp,cpp}` and `tests/unit/dc
 The value of `ObjectiveGradient::evaluate` is bit-identical to `objective<double>` (asserted by `DccGradient.MatchesDual`
 on 4 panels x 2 conventions x 9 specs x 2 persistences x 2 shapes) and the gradient matches the `Dual` one to 1e-9 of
 its largest component, as the plan asked.
+
+## Task 5: one vector loop for the symmetric densities (2026-11-15)
+
+`gcc-bench`, same session, `base` = the build of the commit of Task 3 (the univariate code is the one of the commit
+before it), `python tests/benchmarks/quick.py compare` (medians of three repetitions; time in ns for `BM_Loglik`, in
+seconds for the fits), T = 5000.
+
+| Benchmark | base | new | new / base |
+|-----------|------|-----|-----------|
+| `BM_Loglik/s11_norm/double` | 50.4 us | 32.9 us | 0.65 |
+| `BM_Loglik/s21_std/double` | 100.3 us | 40.5 us | 0.40 |
+| `BM_Loglik/arma11_s11_ged/double` | 169 us | 72.0 us | 0.43 |
+| `BM_Loglik/arma22_s33_std/double` | 153 us | 91.7 us | 0.60 |
+| `BM_Loglik/*/dual` | 154 to 627 us | the same | 1.0 (the `Dual` path is unchanged) |
+| `BM_Loglik/s11_norm/adjoint` | 91.5 us | 61.9 us | 0.68 |
+| `BM_Loglik/s21_std/adjoint` | 190 us | 75.0 us | 0.39 |
+| `BM_Loglik/arma11_s11_ged/adjoint` | 366 us | 124 us | 0.34 |
+| `BM_Loglik/arma22_s33_std/adjoint` | 283 us | 168 us | 0.59 |
+| `BM_Loglik/egarch11_std/adjoint` | 317 us | 200 us | 0.63 |
+| `BM_Loglik/gjrgarch11_norm/adjoint` | 109 us | 82.6 us | 0.76 |
+| `BM_Loglik/igarch11_norm/adjoint` | 90.8 us | 62.0 us | 0.68 |
+| `BM_FitOne/s11_norm` | 3.11 s | 2.31 s | 0.74 |
+| `BM_FitOne/s21_std` | 8.27 s | 3.79 s | 0.46 |
+| `BM_FitOne/arma11_s11_ged` | 14.2 s | 5.49 s | 0.39 |
+| `BM_FitOne/arma22_s33_std` | 35.9 s | 21.7 s | 0.61 |
+| `BM_FitOne/egarch11_std` | 14.7 s | 9.42 s | 0.64 |
+| `BM_TccGridSample/threads:1` (18 fits) | 394 s | 198 s | 0.50 |
+
+(The `BM_FitOne` and `BM_TccGridSample` values are the units of `quick.py`: the ratio is what is comparable.)
+
+What changed: `loglik<double>` of the norm, std and ged reads the terms from `simd::symmetric_terms` in every model, with
+or without the adjoint; when the adjoint asks, the same pass also writes the partials of each term in e_t and sigma2_t
+and the sums in the scale and the power (`simd::symmetric_terms_with_partials`), so `density_backward` only adds the
+shape's share and the reverse sweep no longer computes `log1p` or `pow` again.
+
+Ruling: the tolerances of the kernels, measured on this machine on every target it runs (AVX2, SSE4, SSSE3, SSE2) over
+T in {1, 3, 7, 600, 5001}, the norm, the std (nu 2.5, 8, 30) and the ged (nu 0.8, 1.5, 3):
+- a term is within 8 ulps of the largest magnitude that goes into it (the constant, the density part, the log of the
+  variance), times 1 + power |log y| for the ged (the ulps of exp(power log y)), not the plan's 4 ulps: the vector
+  `Log` and `Log1p` are within 4 ulps each and a term adds two of them;
+- the partials are within 1e-13 relative, except the variance partial (against its 1/sigma2 scale: it cancels near
+  the zero of the term) and the ged power partial (a small floor in ulps of y^power: its log is taken near y = 1);
+- `symmetric_terms` and `symmetric_terms_with_partials` return the same terms and sum to the bit.
+
+The `double` loglik and the `Dual` one now differ by rounding in the density: `DoubleAndDualAgreeOnValue` (1012
+grid cases) and the three fit tests that compared a `Dual` loglik with `loglik<double>` bit for bit use a relative
+tolerance of 1e-14, which every case meets (some do not at 1e-15). The variance (sigma2) and the residuals are the same
+code in both and stay bit for bit. All oracles (rugarch, rmgarch, arch) pass at their tolerances.

@@ -13,12 +13,14 @@
 #include "model/likelihood/terms.hpp"
 #include "model/likelihood/parameters.hpp"
 #include "model/parameter_map.hpp"
+#include "simd/density_kernels.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <type_traits>
 #include <variant>
 #include <vector>
 
@@ -320,13 +322,23 @@ dist::ShapeParameters<double> value_of(const dist::ShapeParameters<T>& parameter
     return {ad::value_of(parameters.skew), ad::value_of(parameters.shape), ad::value_of(parameters.ghlambda)};
 }
 
-// norm and std read z^2 = e^2 / sigma2, which needs neither sqrt nor a second division.
+// In double the norm, std and ged go through the vector kernels (with the partials of the reverse sweep when asked);
+// ad::Dual keeps the scalar terms. norm and std read z^2 = e^2 / sigma2, which needs neither sqrt nor a second
+// division.
 template <class T>
 T sum_of_alternative(std::span<const T> residuals, std::span<const T> sigma2, const dist::LogDensity<T>& density,
-                     std::span<T> terms)
+                     std::span<T> terms, simd::SymmetricPartials* partials)
 {
     using std::abs;
     using std::sqrt;
+    if constexpr (std::is_same_v<T, double>)
+    {
+        if (partials != nullptr)
+        {
+            return simd::symmetric_terms_with_partials(density, {residuals, sigma2, terms}, *partials);
+        }
+        return simd::symmetric_terms(density, residuals, sigma2, terms);
+    }
     switch (density.dist)
     {
         case Dist::Norm:
@@ -357,7 +369,7 @@ T sum_of_alternative(std::span<const T> residuals, std::span<const T> sigma2, co
 // The skewed, hyperbolic and Johnson densities read z = e / sqrt(sigma2).
 template <class T, class Alternative>
 T sum_of_alternative(std::span<const T> residuals, std::span<const T> sigma2, const Alternative& density,
-                     std::span<T> terms)
+                     std::span<T> terms, simd::SymmetricPartials*)
 {
     using std::sqrt;
     return sum_of_terms<T>(residuals, sigma2,
@@ -368,10 +380,10 @@ T sum_of_alternative(std::span<const T> residuals, std::span<const T> sigma2, co
 
 template <class T>
 T sum_of_density_terms(std::span<const T> residuals, std::span<const T> sigma2,
-                       const dist::Density<T>& density, std::span<T> terms)
+                       const dist::Density<T>& density, std::span<T> terms, simd::SymmetricPartials* partials)
 {
     return std::visit([&](const auto& alternative)
-                      { return sum_of_alternative<T>(residuals, sigma2, alternative, terms); }, density);
+                      { return sum_of_alternative<T>(residuals, sigma2, alternative, terms, partials); }, density);
 }
 
 // r_t - mu - sum_k delta_k x_t,k.
@@ -627,6 +639,7 @@ struct Evaluation
     std::span<const T> intercept_shift;
     std::span<T> deviations;
     std::span<T> permanent;
+    simd::SymmetricPartials* partials;
 };
 
 // c_t = sum_k zeta_k v_t,k, or an empty span without vxreg.
@@ -712,7 +725,8 @@ T evaluate(const Evaluation<T>& e, std::span<const T> theta, const Layout& layou
     {
         return T{kInvalidLoglik};
     }
-    return sum_of_density_terms<T>(e.residuals, e.sigma2, dist::make_density(layout.dist, e.shape), e.terms);
+    return sum_of_density_terms<T>(e.residuals, e.sigma2, dist::make_density(layout.dist, e.shape), e.terms,
+                                   e.partials);
 }
 
 }
@@ -797,7 +811,8 @@ T loglik(const Data& data, std::span<const T> theta, const Layout& layout, VarIn
                              shape,
                              variance_shift<T>(data, theta, layout, shift_storage),
                              out.deviations,
-                             out.permanent};
+                             out.permanent,
+                             out.density_partials};
     if (!layout.variance_targeting)
     {
         return evaluate<T>(evaluation, theta, layout);

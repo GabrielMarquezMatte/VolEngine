@@ -5,6 +5,7 @@
 #include "garch/presample.hpp"
 #include "model/data.hpp"
 #include "model/layout.hpp"
+#include "simd/density_kernels.hpp"
 
 #include <span>
 
@@ -13,7 +14,9 @@ namespace ve::model
 
 // Each span is either empty (not computed) or has the size of the series. deviations: d_t, the series the ARMA
 // acts on (r_t - mu - sum_k delta_k x_t,k, less the ARCH-in-mean term); permanent: the csGARCH trend q_t, left
-// untouched by the other models.
+// untouched by the other models. density_partials (T = double with the norm, std or ged only, else ignored): when set,
+// the partials of the terms in e_t and sigma2_t, and the sums of those in the scale and power of the density, come out
+// of the same vector pass as the terms, with the value of loglik<double> bit for bit.
 template <class T>
 struct LoglikOutputs
 {
@@ -22,6 +25,7 @@ struct LoglikOutputs
     std::span<T> sigma2{};
     std::span<T> deviations{};
     std::span<T> permanent{};
+    simd::SymmetricPartials* density_partials = nullptr;
 };
 
 // theta is in natural space, in Layout order; data.mean has layout.mxreg columns and data.variance layout.vxreg.

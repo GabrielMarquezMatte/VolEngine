@@ -1403,6 +1403,12 @@ TEST_P(LikelihoodGrid, Dual12AgreesWithDual32)
     }
 }
 
+// loglik<double> reads the density terms from the vector kernels (the vector log, log1p and exp, within a few ulps, and
+// a sum by lanes) and the Dual from the scalar terms and a sequential sum: the two values differ by rounding, never
+// in the variance, which both compute with the same code. Measured over the 1012 grid cases: all agree at 1e-14
+// relative, some do not at 1e-15.
+constexpr double kDoubleDualTolerance = 1e-14;
+
 TEST_P(LikelihoodGrid, DoubleAndDualAgreeOnValue)
 {
     std::vector<Dual<16>> seeds = seeded<16>(theta);
@@ -1410,7 +1416,7 @@ TEST_P(LikelihoodGrid, DoubleAndDualAgreeOnValue)
     std::vector<Dual<16>> dual_sigma2(r.size());
     double plain = loglik<double>(r, theta, layout, var_init, {.sigma2 = sigma2});
     Dual<16> dual = loglik<Dual<16>>(r, seeds, layout, var_init, {.sigma2 = dual_sigma2});
-    EXPECT_EQ(ve::ad::value_of(dual), plain);
+    EXPECT_NEAR(ve::ad::value_of(dual), plain, kDoubleDualTolerance * std::fabs(plain));
     for (std::size_t t = 0; t < r.size(); ++t)
     {
         ASSERT_EQ(dual_sigma2[t].value, sigma2[t]) << "t = " << t;
@@ -1569,7 +1575,7 @@ TEST_P(MeanRegressorGrid, DoubleAndDualAgreeOnValue)
     std::vector<Dual<16>> dual_sigma2(r.size());
     double plain = loglik<double>(data, theta, layout, var_init, {.sigma2 = sigma2});
     Dual<16> dual = loglik<Dual<16>>(data, seeds, layout, var_init, {.sigma2 = dual_sigma2});
-    EXPECT_EQ(ve::ad::value_of(dual), plain);
+    EXPECT_NEAR(ve::ad::value_of(dual), plain, kDoubleDualTolerance * std::fabs(plain));
     for (std::size_t t = 0; t < r.size(); ++t)
     {
         ASSERT_EQ(dual_sigma2[t].value, sigma2[t]) << "t = " << t;

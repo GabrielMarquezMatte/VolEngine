@@ -4,6 +4,7 @@
 #include "garch/presample.hpp"
 #include "model/data.hpp"
 #include "model/layout.hpp"
+#include "simd/density_kernels.hpp"
 
 #include <span>
 #include <vector>
@@ -29,7 +30,8 @@ public:
                     std::span<double> grad);
 
 private:
-    void density_backward(std::span<const double> theta, const Layout& layout, std::span<double> grad);
+    void density_backward(std::span<const double> theta, const Layout& layout,
+                          const simd::SymmetricPartials& partials, std::span<double> grad);
     void variance_backward(std::span<const double> theta, const Layout& layout, const Data& data,
                            VarInit var_init, std::span<double> grad);
     double sgarch_backward(std::span<const double> theta, const Layout& layout,
