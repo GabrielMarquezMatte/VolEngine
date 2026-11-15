@@ -79,3 +79,26 @@ cmake --build --preset msvc-profile --target volengine_grid_profile
 
 The report is `report.csv` in the session directory; without `--bin-path` and `--symbol-path` the functions show
 as bare addresses.
+
+## SIMD targets
+
+The kernels in `src/simd/` use Google Highway 1.2.0 with run-time dispatch in a generic x86-64 build (no
+`-march=native`). Checked on 2026-11-14 on the development machine (AMD, AVX2, no AVX-512):
+
+| Build | Targets compiled and runnable here | Compiled but not runnable here |
+|-------|------------------------------------|--------------------------------|
+| `gcc-release` / `gcc-bench` (MinGW-GCC 16.2.0) | AVX2, SSE4, SSSE3, SSE2 | AVX3, AVX3_ZEN4, AVX3_SPR (this CPU lacks AVX-512; untestable here) |
+| `msvc-release` (MSVC, VS 2026) | AVX2, SSE2 | the AVX-512 targets |
+
+- **GCC bug 54412 (MinGW stack realignment for 32-byte spills) does not bite.** `SimdSum.SurvivesAMillionCallsOnEveryStackAlignment`
+  forces each runnable target and calls the kernel 10⁶ times from frames that shift the stack pointer by 8 bytes
+  (five depths). AVX2 runs without a crash and within 4 ulps of the scalar sum, so the official `gcc-bench` number
+  can come from the AVX2 target.
+- **Every kernel test runs on every runnable target.** `tests/unit/simd/targets.hpp` lists them
+  (`hwy::SupportedAndGeneratedTargets()`) and `ForcedTarget` restricts the dispatch to one
+  (`hwy::SetSupportedTargetsForTest`); each target's name is printed as `[ target ] NAME`. A new kernel's test copies
+  `tests/unit/simd/reduce_test.cpp`.
+- **Highway headers appear only in `src/simd/` and in `tests/unit/simd/targets.hpp`,** which needs the dispatch
+  controls.
+- **MSVC needs `/wd4701`:** Boost.Math's `bessel_ik` raises C4701 in the code-generation pass, where `/external`
+  does not reach, and `/WX` turned it into an error that kept `volengine_tests` from linking.

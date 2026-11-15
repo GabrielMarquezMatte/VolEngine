@@ -23,7 +23,8 @@ option(VE_BUILD_TESTS "Build the VolEngine tests" ${VE_IS_TOP_LEVEL})
 option(VE_BUILD_BENCHMARKS "Build the VolEngine benchmarks" OFF)
 
 if(MSVC)
-    set(VE_WARNING_FLAGS /W4 /WX)
+    # C4701 comes from Boost.Math's bessel_ik in the code-generation pass, which /external does not reach.
+    set(VE_WARNING_FLAGS /W4 /WX /wd4701)
 else()
     set(VE_WARNING_FLAGS -Wall -Wextra -Wpedantic -Werror)
 endif()
@@ -53,6 +54,19 @@ FetchContent_Declare(boost_math
     GIT_SHALLOW TRUE
     SOURCE_SUBDIR do-not-build)
 FetchContent_MakeAvailable(boost_math)
+
+# Highway: runtime-dispatched SIMD, used only inside src/simd. Static, with no tests, examples or contrib.
+set(HWY_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+set(HWY_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(HWY_ENABLE_CONTRIB OFF CACHE BOOL "" FORCE)
+set(HWY_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+set(HWY_WARNINGS_ARE_ERRORS OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(highway
+    GIT_REPOSITORY https://github.com/google/highway
+    GIT_TAG 1.2.0
+    GIT_SHALLOW TRUE
+    SYSTEM)
+FetchContent_MakeAvailable(highway)
 
 add_library(ve_boost_math INTERFACE)
 target_include_directories(ve_boost_math SYSTEM INTERFACE ${boost_math_SOURCE_DIR}/include)
@@ -99,10 +113,12 @@ add_library(volengine_core STATIC
     src/sim/path.cpp
     src/sim/samplers.cpp
     src/sim/simulate.cpp
-    src/sim/start.cpp)
+    src/sim/start.cpp
+    src/simd/reduce.cpp)
 set_target_properties(volengine_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(volengine_core PUBLIC src include)
 target_link_libraries(volengine_core PRIVATE ve_boost_math)
+target_link_libraries(volengine_core PUBLIC hwy)
 target_include_directories(volengine_core SYSTEM PUBLIC ${bs_thread_pool_SOURCE_DIR}/include)
 target_compile_options(volengine_core PRIVATE ${VE_WARNING_FLAGS} ${VE_FLOAT_FLAGS})
 
@@ -210,7 +226,8 @@ if(VE_BUILD_TESTS)
         tests/unit/sim/philox_test.cpp
         tests/unit/sim/samplers_test.cpp
         tests/unit/sim/simulate_test.cpp
-        tests/unit/sim/start_test.cpp)
+        tests/unit/sim/start_test.cpp
+        tests/unit/simd/reduce_test.cpp)
     target_include_directories(volengine_tests PRIVATE tests/unit)
     target_compile_definitions(volengine_tests PRIVATE VE_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/reference/data")
     target_link_libraries(volengine_tests PRIVATE volengine_core volengine GTest::gtest_main ve_boost_math)
