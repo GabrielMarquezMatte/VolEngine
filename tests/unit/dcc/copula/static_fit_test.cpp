@@ -188,6 +188,89 @@ TEST(CopulaStatic, KendallFormula)
     }
 }
 
+// The pair-count tau-b the library used before Knight's algorithm, the reference of the bit-for-bit guard below.
+double pair_count_tau_b(const std::vector<double>& u, std::size_t t, std::size_t m, std::size_t a, std::size_t b)
+{
+    double score = 0.0;
+    double ties_a = 0.0;
+    double ties_b = 0.0;
+    for (std::size_t s = 0; s < t; ++s)
+    {
+        for (std::size_t r = s + 1; r < t; ++r)
+        {
+            const double da = u[s * m + a] - u[r * m + a];
+            const double db = u[s * m + b] - u[r * m + b];
+            score += static_cast<double>((da * db > 0.0) - (da * db < 0.0));
+            ties_a += da == 0.0 ? 1.0 : 0.0;
+            ties_b += db == 0.0 ? 1.0 : 0.0;
+        }
+    }
+    const double pairs = 0.5 * static_cast<double>(t) * static_cast<double>(t - 1);
+    return score / std::sqrt((pairs - ties_a) * (pairs - ties_b));
+}
+
+// kendall_correlation of u equals the sin(pi tau_b / 2) of the pair count to the bit, or both are not positive
+// definite.
+void expect_kendall_matches_pair_count(const std::vector<double>& u, std::size_t t, std::size_t m)
+{
+    std::vector<double> expected(m * m, 1.0);
+    for (std::size_t i = 0; i < m; ++i)
+    {
+        for (std::size_t j = 0; j < i; ++j)
+        {
+            expected[i * m + j] = std::sin(0.5 * std::numbers::pi * pair_count_tau_b(u, t, m, i, j));
+            expected[j * m + i] = expected[i * m + j];
+        }
+    }
+    std::vector<double> factor = expected;
+    const bool positive_definite = ve::linalg::cholesky_factor(std::span<double>(factor), m);
+    const std::optional<std::vector<double>> actual = ve::dcc::copula::kendall_correlation(u, t, m);
+    ASSERT_EQ(actual.has_value(), positive_definite);
+    if (positive_definite)
+    {
+        EXPECT_EQ(*actual, expected);
+    }
+}
+
+TEST(CopulaStatic, KendallMatchesPairCount)
+{
+    std::mt19937_64 engine(11);
+    std::uniform_real_distribution<double> uniform(0.0, 1.0);
+    auto panel = [&](std::size_t t, std::size_t m, double grid_on_columns)
+    {
+        std::vector<double> u(t * m);
+        for (std::size_t row = 0; row < t; ++row)
+        {
+            for (std::size_t column = 0; column < m; ++column)
+            {
+                double value = uniform(engine);
+                // Columns below grid_on_columns are rounded to 1/16, so they tie.
+                if (static_cast<double>(column) < grid_on_columns)
+                {
+                    value = std::round(value * 16.0) / 16.0;
+                }
+                u[row * m + column] = value;
+            }
+        }
+        return u;
+    };
+    SCOPED_TRACE("random");
+    expect_kendall_matches_pair_count(panel(257, 4, 0.0), 257, 4);
+    SCOPED_TRACE("ties in one column");
+    expect_kendall_matches_pair_count(panel(257, 4, 1.0), 257, 4);
+    SCOPED_TRACE("ties in both columns of a pair");
+    expect_kendall_matches_pair_count(panel(257, 4, 4.0), 257, 4);
+    SCOPED_TRACE("two rows: every tau is +-1, so R is singular");
+    expect_kendall_matches_pair_count(panel(2, 3, 0.0), 2, 3);
+    SCOPED_TRACE("equal columns: tau 1, so R is singular");
+    std::vector<double> equal = panel(100, 3, 0.0);
+    for (std::size_t row = 0; row < 100; ++row)
+    {
+        equal[row * 3 + 1] = equal[row * 3];
+    }
+    expect_kendall_matches_pair_count(equal, 100, 3);
+}
+
 // rmgarch's static cases on copula3 (plan 4b notes, section 7).
 struct Oracle
 {

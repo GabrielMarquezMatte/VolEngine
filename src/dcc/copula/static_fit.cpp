@@ -9,6 +9,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <numbers>
 #include <optional>
@@ -25,25 +26,73 @@ namespace
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 constexpr double kInfinity = std::numeric_limits<double>::infinity();
 
+// The pairs inside the runs of equal neighbours of a sequence of count elements; same(i) says element i equals
+// element i - 1.
+template <class Same>
+std::int64_t tied_pairs(std::size_t count, Same same)
+{
+    std::int64_t ties = 0;
+    std::int64_t run = 1;
+    for (std::size_t i = 1; i < count; ++i)
+    {
+        run = same(i) ? run + 1 : 1;
+        ties += run - 1;
+    }
+    return ties;
+}
+
+// Sorts values ascending and returns the pairs i < j with values[i] > values[j], by merge sort; scratch is as long as
+// values.
+std::int64_t sort_counting_inversions(std::span<double> values, std::span<double> scratch)
+{
+    const std::size_t count = values.size();
+    if (count < 2)
+    {
+        return 0;
+    }
+    const std::size_t half = count / 2;
+    std::int64_t inversions = sort_counting_inversions(values.first(half), scratch.first(half)) +
+                              sort_counting_inversions(values.subspan(half), scratch.subspan(half));
+    std::size_t left = 0;
+    std::size_t right = half;
+    std::size_t out = 0;
+    while (left < half && right < count)
+    {
+        const bool from_right = values[right] < values[left];
+        inversions += from_right ? static_cast<std::int64_t>(half - left) : 0;
+        scratch[out++] = from_right ? values[right++] : values[left++];
+    }
+    while (left < half)
+    {
+        scratch[out++] = values[left++];
+    }
+    std::copy(scratch.begin(), scratch.begin() + static_cast<std::ptrdiff_t>(out), values.begin());
+    return inversions;
+}
+
 // Kendall's tau-b of columns a and b: (C - D) / sqrt((n0 - n1)(n0 - n2)), ties in either column counting neither.
+// Knight's algorithm (1966): with the rows sorted by (x, y) the tied-x pairs add no inversion of y, so D is the
+// inversions of y and C - D = n0 - n1 - n2 + n3 - 2 D, n3 the pairs tied in both. The counts are integers, so tau-b
+// has the bits of the pair-count loop.
 double tau_b(std::span<const double> u, std::size_t t, std::size_t m, std::size_t a, std::size_t b)
 {
-    double score = 0.0;
-    double ties_a = 0.0;
-    double ties_b = 0.0;
+    std::vector<std::pair<double, double>> rows(t);
     for (std::size_t s = 0; s < t; ++s)
     {
-        for (std::size_t r = s + 1; r < t; ++r)
-        {
-            const double da = u[s * m + a] - u[r * m + a];
-            const double db = u[s * m + b] - u[r * m + b];
-            score += static_cast<double>((da * db > 0.0) - (da * db < 0.0));
-            ties_a += da == 0.0 ? 1.0 : 0.0;
-            ties_b += db == 0.0 ? 1.0 : 0.0;
-        }
+        rows[s] = {u[s * m + a], u[s * m + b]};
     }
-    const double pairs = 0.5 * static_cast<double>(t) * static_cast<double>(t - 1);
-    return score / std::sqrt((pairs - ties_a) * (pairs - ties_b));
+    std::sort(rows.begin(), rows.end());
+    const std::int64_t ties_a = tied_pairs(t, [&](std::size_t i) { return rows[i].first == rows[i - 1].first; });
+    const std::int64_t ties_both = tied_pairs(t, [&](std::size_t i) { return rows[i] == rows[i - 1]; });
+    std::vector<double> y(t);
+    std::ranges::transform(rows, y.begin(), [](const auto& row) { return row.second; });
+    std::vector<double> scratch(t);
+    const std::int64_t discordant = sort_counting_inversions(y, scratch);
+    const std::int64_t ties_b = tied_pairs(t, [&](std::size_t i) { return y[i] == y[i - 1]; });
+    const auto count = static_cast<std::int64_t>(t);
+    const std::int64_t pairs = count * (count - 1) / 2;
+    const std::int64_t score = pairs - ties_a - ties_b + ties_both - 2 * discordant;
+    return static_cast<double>(score) / std::sqrt(static_cast<double>(pairs - ties_a) * static_cast<double>(pairs - ties_b));
 }
 
 bool positive_definite(std::span<const double> r, std::size_t m)

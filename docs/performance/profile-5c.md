@@ -65,3 +65,18 @@ Profile points (`fit_dcc` calls) of one fit, counted by a temporary print: 38 on
 re-fit of the winner), 37 now. A fit is about 0.96 s on the base and 0.098 s now, so the 37 points still dominate
 `dcc_mvt_param`: the next step is Newton on the profile through the envelope theorem (the `ponytail:` in
 `profile_shape`). `DccFitResult` carries no iteration count, so the mean inner iterations are not recorded.
+
+## Task 4: Kendall's tau-b by Knight's algorithm
+
+O(T log T) per pair of columns (sort by (x, y), merge sort on y counting inversions, ties by runs), with the integer
+counts of the old loop: `CopulaStatic.KendallMatchesPairCount` compares the matrix to the pair-count loop to the bit
+on panels with and without ties. Medians of three repetitions, `gcc-bench`.
+
+| Benchmark | Base | Task 3 | Task 4 |
+| --- | ---: | ---: | ---: |
+| `BM_CopulaFit/static_mvnorm_kendall_param` | 3.79 s | 3.92 s | 0.165 s |
+| `BM_CopulaFit/static_mvt_kendall_param` | error | 4.57 s | 0.886 s |
+
+The 0.165 s left of `static_mvnorm_kendall_param` is the rest of the fit (the 105 thousand normal quantiles, the
+Cholesky of R and the likelihood), not the 210 Kendall entries. The Student version adds about 0.7 s for its 37
+profile points, each of which recomputes the 105 thousand Student quantiles (about 20 ms) and the static likelihood.

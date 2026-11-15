@@ -15,7 +15,7 @@ namespace ve::dcc::copula
 {
 
 // sin(pi tau_b / 2) of each pair of columns of u (T x m), m x m with a unit diagonal; nullopt unless positive
-// definite. ponytail: O(T^2) pairs per entry; Knight's O(T log T) algorithm if large panels need it.
+// definite. Knight's O(T log T) algorithm per entry, with the integer counts of the pair loop (the same bits).
 std::optional<std::vector<double>> kendall_correlation(std::span<const double> u, std::size_t t, std::size_t m);
 
 // R = cov2cor(A A'), A unit lower-triangular with x in column-major lower-triangle order (A21, A31, .., Am1, A32,
