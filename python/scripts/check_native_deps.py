@@ -12,6 +12,8 @@ WINDOWS_FORBIDDEN = ("libstdc++", "libgcc", "libwinpthread")
 LINUX_FORBIDDEN = ("libstdc++", "libgcc_s")
 MACOS_ALLOWED = ("/usr/lib/", "/System/")
 # Symbols the toolchain adds to the dynamic table of a shared library (musl, aarch64): not ours.
+# ELF symbol types that name no function or object (aarch64 lists a section symbol such as .data as GLOBAL).
+NAMELESS_TYPES = {"SECTION", "FILE"}
 TOOLCHAIN_SYMBOLS = {"_init", "_fini", ".init", ".fini", "__bss_start", "_edata", "_end"}
 
 
@@ -30,7 +32,7 @@ def foreign_exports(system: str, lines: list[str]) -> list[str]:
         fields = line.split()
         if system == "Linux":
             # Num: Value Size Type Bind Vis Ndx Name; a symbol with Ndx UND is an import.
-            if len(fields) < 8 or not fields[0].endswith(":") or fields[6] in ("UND", "Ndx"):
+            if len(fields) < 8 or not fields[0].endswith(":") or fields[6] in ("UND", "Ndx") or fields[3] in NAMELESS_TYPES:
                 continue
             names.append(fields[7].split("@")[0])
         elif len(fields) == 3:
@@ -72,7 +74,7 @@ def main() -> int:
         return 1
     foreign = exports(system, sys.argv[1])
     if foreign:
-        print(f"error: {sys.argv[1]} exports {len(foreign)} symbols that are not ve_*, such as {foreign[0]}", file=sys.stderr)
+        print(f"error: {sys.argv[1]} exports {len(foreign)} symbols that are not ve_*: {', '.join(foreign[:10])}", file=sys.stderr)
         return 1
     print(f"ok: {', '.join(dependencies)}")
     return 0

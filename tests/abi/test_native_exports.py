@@ -39,6 +39,11 @@ class ForeignExports(unittest.TestCase):
         ]
         self.assertEqual(check_native_deps.foreign_exports("Linux", readelf), [])
 
+    def test_section_symbols_are_not_exports(self) -> None:
+        # aarch64 lists a section symbol such as .data as GLOBAL; it names no function or object.
+        readelf = READELF[:3] + ["    11: 0000000000004000     0 SECTION GLOBAL DEFAULT   22 .data"]
+        self.assertEqual(check_native_deps.foreign_exports("Linux", readelf), [])
+
     def test_only_the_interface_passes(self) -> None:
         only_interface = [line for line in READELF if "ve_fit_status" in line or "memcpy" in line or "Num:" in line]
         self.assertEqual(check_native_deps.foreign_exports("Linux", only_interface), [])
