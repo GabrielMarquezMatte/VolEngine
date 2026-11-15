@@ -5,6 +5,7 @@
 #include "fit/optimizer.hpp"
 #include "fit/standard_errors.hpp"
 #include "model/likelihood.hpp"
+#include "model/likelihood/adjoint.hpp"
 #include "model/parameter_map.hpp"
 #include "model/start_values.hpp"
 #include "optim/lbfgs.hpp"
@@ -57,7 +58,9 @@ bool all_finite(std::span<const double> values)
 // The mean negative log-likelihood of the standardized series r / scale, -loglik / n - log(scale), over the
 // unconstrained parameters: tolerances depend neither on the sample size nor on the units of r. Validity is
 // judged by the log-likelihood alone, which is not finite outside its domain: model::is_valid can reject
-// points that model::to_natural produces at extreme u.
+// points that model::to_natural produces at extreme u. The gradient over theta comes from the adjoint where
+// model::has_adjoint covers the spec, and is chained to u through the Jacobian that the forward Dual of to_natural
+// carries; elsewhere the whole likelihood runs on the Dual.
 template <std::size_t N>
 class NegativeMeanLoglik
 {
@@ -65,37 +68,76 @@ public:
     using Number = ad::Dual<N>;
 
     NegativeMeanLoglik(const fit::LikelihoodProblem& problem, const model::Standardization& standardization)
-        : problem_(problem), standardization_(standardization), u_(problem.layout.count()), theta_(u_.size()),
-          residuals_(problem.data.r.size()), sigma2_(problem.data.r.size())
+        : problem_(problem), standardization_(standardization),
+          use_adjoint_(model::has_adjoint(problem.layout, problem.var_init)), u_(problem.layout.count()),
+          theta_(u_.size()), values_(u_.size()), natural_grad_(u_.size())
     {
+        if (!use_adjoint_)
+        {
+            residuals_.resize(problem.data.r.size());
+            sigma2_.resize(problem.data.r.size());
+        }
     }
 
     double operator()(std::span<const double> u, std::span<double> grad)
     {
         seed<N>(u, u_);
         model::to_natural<Number>(u_, theta_, problem_.layout, standardization_);
-        Number loglik = model::loglik<Number>(problem_.data, theta_, problem_.layout, problem_.var_init,
-                                              {.residuals = residuals_, .sigma2 = sigma2_});
-        if (!std::isfinite(loglik.value))
+        double loglik = use_adjoint_ ? loglik_by_adjoint(grad) : loglik_by_dual(grad);
+        if (!std::isfinite(loglik))
         {
             std::ranges::fill(grad, 0.0);
             return kInfinity;
         }
         double count = static_cast<double>(problem_.data.r.size());
-        for (std::size_t i = 0; i < grad.size(); ++i)
+        for (double& partial : grad)
         {
-            grad[i] = -loglik.grad[i] / count;
+            partial = -partial / count;
         }
-        return -loglik.value / count - std::log(standardization_.scale);
+        return -loglik / count - std::log(standardization_.scale);
     }
 
 private:
+    // loglik, with its gradient over u in grad.
+    double loglik_by_dual(std::span<double> grad)
+    {
+        Number loglik = model::loglik<Number>(problem_.data, theta_, problem_.layout, problem_.var_init,
+                                              {.residuals = residuals_, .sigma2 = sigma2_});
+        std::copy_n(loglik.grad.begin(), grad.size(), grad.begin());
+        return loglik.value;
+    }
+
+    // loglik, with grad_i = sum_j d loglik / d theta_j * d theta_j / d u_i.
+    double loglik_by_adjoint(std::span<double> grad)
+    {
+        std::ranges::transform(theta_, values_.begin(), [](const Number& x) { return x.value; });
+        double loglik = adjoint_.evaluate(problem_.data, values_, problem_.layout, problem_.var_init, natural_grad_);
+        if (!std::isfinite(loglik))
+        {
+            return loglik;
+        }
+        for (std::size_t i = 0; i < grad.size(); ++i)
+        {
+            double sum = 0.0;
+            for (std::size_t j = 0; j < theta_.size(); ++j)
+            {
+                sum += natural_grad_[j] * theta_[j].grad[i];
+            }
+            grad[i] = sum;
+        }
+        return loglik;
+    }
+
     const fit::LikelihoodProblem& problem_;
     model::Standardization standardization_;
+    bool use_adjoint_;
+    model::LoglikAdjoint adjoint_;
     std::vector<Number> u_;
     std::vector<Number> theta_;
     std::vector<Number> residuals_;
     std::vector<Number> sigma2_;
+    std::vector<double> values_;
+    std::vector<double> natural_grad_;
 };
 
 template <std::size_t N>
@@ -110,9 +152,9 @@ optim::LbfgsResult minimize(const fit::LikelihoodProblem& problem,
     return optim::lbfgs_minimize(objective, u, options);
 }
 
-// The gradient of loglik over the natural parameters. The buffers live as long as the object: the standard errors
-// call it 2k times, and allocating them on every call made each call cost clearly more than an optimizer
-// evaluation.
+// The gradient of loglik over the natural parameters, by the adjoint where model::has_adjoint covers the spec and by
+// the forward Dual elsewhere. The buffers live as long as the object: the standard errors call it 2k times, and
+// allocating them on every call made each call cost clearly more than an optimizer evaluation.
 template <std::size_t N>
 class LoglikGradient
 {
@@ -120,9 +162,14 @@ public:
     using Number = ad::Dual<N>;
 
     explicit LoglikGradient(const fit::LikelihoodProblem& problem)
-        : problem_(problem), seeds_(problem.layout.count()), residuals_(problem.data.r.size()),
-          sigma2_(problem.data.r.size())
+        : problem_(problem), use_adjoint_(model::has_adjoint(problem.layout, problem.var_init)),
+          seeds_(problem.layout.count())
     {
+        if (!use_adjoint_)
+        {
+            residuals_.resize(problem.data.r.size());
+            sigma2_.resize(problem.data.r.size());
+        }
     }
 
     bool operator()(std::span<const double> theta, std::span<double> grad)
@@ -130,6 +177,11 @@ public:
         if (!model::is_valid(theta, problem_.layout))
         {
             return false;
+        }
+        if (use_adjoint_)
+        {
+            double loglik = adjoint_.evaluate(problem_.data, theta, problem_.layout, problem_.var_init, grad);
+            return std::isfinite(loglik) && all_finite(grad);
         }
         seed<N>(theta, seeds_);
         Number loglik = model::loglik<Number>(problem_.data, seeds_, problem_.layout, problem_.var_init,
@@ -140,6 +192,8 @@ public:
 
 private:
     const fit::LikelihoodProblem& problem_;
+    bool use_adjoint_;
+    model::LoglikAdjoint adjoint_;
     std::vector<Number> seeds_;
     std::vector<Number> residuals_;
     std::vector<Number> sigma2_;

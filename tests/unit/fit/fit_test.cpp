@@ -1,4 +1,5 @@
 #include "fit/criteria.hpp"
+#include "ad/dual.hpp"
 #include "fit/fit.hpp"
 #include "model/layout.hpp"
 #include "model/likelihood.hpp"
@@ -1786,6 +1787,52 @@ TEST(FitArfima, StartOutsideDomainFails)
             EXPECT_TRUE(std::isnan(result.loglik)) << d << " fixed " << fixed;
         }
     }
+}
+
+// The optimizer and the numerical Hessian take the adjoint where model::has_adjoint says so: the gradient that
+// fit::loglik_gradient returns is the forward Dual's.
+TEST(FitGradient, AdjointPathMatchesDual)
+{
+    using DualMax = ve::ad::Dual<ve::kMaxParameterCount>;
+    const std::vector<double> r = ve::testing::simulate_garch_series(5, 800);
+    std::vector<Spec> specs{{.ar = 1, .ma = 1, .dist = ve::Dist::Std},
+                            {.model = ve::Model::EGarch, .dist = ve::Dist::Ged},
+                            {.model = ve::Model::GjrGarch, .p = 2, .q = 1, .dist = ve::Dist::Norm}};
+    for (const Spec& spec : specs)
+    {
+        SCOPED_TRACE(::testing::Message() << "model " << static_cast<int>(spec.model));
+        FitResult fit = ve::fit_one(r, spec, {});
+        ASSERT_EQ(fit.status, FitStatus::Converged);
+        ve::fit::LikelihoodProblem problem{ve::model::Data{r}, ve::model::layout_of(spec), ve::VarInit::Sample};
+        std::vector<double> grad(fit.estimate.size());
+        ASSERT_TRUE(ve::fit::loglik_gradient(problem, fit.estimate, grad));
+        std::vector<DualMax> seeds(fit.estimate.size());
+        for (std::size_t i = 0; i < seeds.size(); ++i)
+        {
+            seeds[i] = ve::ad::variable<ve::kMaxParameterCount>(fit.estimate[i], i);
+        }
+        DualMax dual = ve::model::loglik<DualMax>(r, seeds, problem.layout, problem.var_init, {});
+        double scale = 1.0;
+        for (std::size_t i = 0; i < grad.size(); ++i)
+        {
+            scale = std::max(scale, std::abs(dual.grad[i]));
+        }
+        for (std::size_t i = 0; i < grad.size(); ++i)
+        {
+            EXPECT_NEAR(grad[i], dual.grad[i], 1e-10 * scale) << "parameter " << i;
+        }
+    }
+}
+
+TEST(FitGradient, FixedBetaFitConverges)
+{
+    const std::vector<double> r = ve::testing::simulate_garch_series(5, 800);
+    const Spec spec{.dist = ve::Dist::Std, .fixed = {{"beta1", 0.85}}};
+    FitResult fit = ve::fit_one(r, spec, {});
+    ASSERT_EQ(fit.status, FitStatus::Converged);
+    const ve::model::Layout layout = ve::model::layout_of(spec);
+    EXPECT_EQ(fit.estimate[layout.beta_begin()], 0.85);
+    EXPECT_EQ(fit.loglik, ve::model::loglik<double>(r, fit.estimate, layout, ve::VarInit::Sample, {}));
 }
 
 }
