@@ -113,8 +113,8 @@ its largest component, as the plan asked.
 ## Task 5: one vector loop for the symmetric densities (2026-11-15)
 
 `gcc-bench`, same session, `base` = the build of the commit of Task 3 (the univariate code is the one of the commit
-before it), `python tests/benchmarks/quick.py compare` (medians of three repetitions; time in ns for `BM_Loglik`, in
-seconds for the fits), T = 5000.
+before it), `python tests/benchmarks/quick.py compare` (medians of three repetitions; time in microseconds for `BM_Loglik`, in
+milliseconds for the fits), T = 5000.
 
 | Benchmark | base | new | new / base |
 |-----------|------|-----|-----------|
@@ -130,14 +130,13 @@ seconds for the fits), T = 5000.
 | `BM_Loglik/egarch11_std/adjoint` | 317 us | 200 us | 0.63 |
 | `BM_Loglik/gjrgarch11_norm/adjoint` | 109 us | 82.6 us | 0.76 |
 | `BM_Loglik/igarch11_norm/adjoint` | 90.8 us | 62.0 us | 0.68 |
-| `BM_FitOne/s11_norm` | 3.11 s | 2.31 s | 0.74 |
-| `BM_FitOne/s21_std` | 8.27 s | 3.79 s | 0.46 |
-| `BM_FitOne/arma11_s11_ged` | 14.2 s | 5.49 s | 0.39 |
-| `BM_FitOne/arma22_s33_std` | 35.9 s | 21.7 s | 0.61 |
-| `BM_FitOne/egarch11_std` | 14.7 s | 9.42 s | 0.64 |
-| `BM_TccGridSample/threads:1` (18 fits) | 394 s | 198 s | 0.50 |
+| `BM_FitOne/s11_norm` | 3.11 ms | 2.31 ms | 0.74 |
+| `BM_FitOne/s21_std` | 8.27 ms | 3.79 ms | 0.46 |
+| `BM_FitOne/arma11_s11_ged` | 14.2 ms | 5.49 ms | 0.39 |
+| `BM_FitOne/arma22_s33_std` | 35.9 ms | 21.7 ms | 0.61 |
+| `BM_FitOne/egarch11_std` | 14.7 ms | 9.42 ms | 0.64 |
+| `BM_TccGridSample/threads:1` (18 fits) | 394 ms | 198 ms | 0.50 |
 
-(The `BM_FitOne` and `BM_TccGridSample` values are the units of `quick.py`: the ratio is what is comparable.)
 
 What changed: `loglik<double>` of the norm, std and ged reads the terms from `simd::symmetric_terms` in every model, with
 or without the adjoint; when the adjoint asks, the same pass also writes the partials of each term in e_t and sigma2_t
