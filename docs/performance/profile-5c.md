@@ -49,3 +49,19 @@ repetitions, `gcc-bench`, the base measured earlier in the same session (the bas
 
 `BM_DccFit/dcc_mvt` moved from 0.141 s to 0.205 s although plain DCC specs take the same path as before; the final
 table of Task 5 repeats the plain `BM_DccFit` rows five times on both sides.
+
+## Task 3: the shape profile with a warm start
+
+Each profile point starts from the estimate of the evaluated point with the nearest shape, and the maximum is the
+point Brent evaluated (no final re-fit). Medians of three repetitions, `gcc-bench`.
+
+| Benchmark | Base | Task 2 | Task 3 |
+| --- | ---: | ---: | ---: |
+| `BM_CopulaFit/static_mvt_ml_param` | error | 2.19 s | 1.73 s |
+| `BM_CopulaFit/dcc_mvt_param` | 36.4 s | 8.27 s | 3.62 s |
+| `BM_CopulaFit/adcc_mvt_param` | 36.6 s | 9.30 s | 3.59 s |
+
+Profile points (`fit_dcc` calls) of one fit, counted by a temporary print: 38 on the base (37 Brent points and the
+re-fit of the winner), 37 now. A fit is about 0.96 s on the base and 0.098 s now, so the 37 points still dominate
+`dcc_mvt_param`: the next step is Newton on the profile through the envelope theorem (the `ponytail:` in
+`profile_shape`). `DccFitResult` carries no iteration count, so the mean inner iterations are not recorded.

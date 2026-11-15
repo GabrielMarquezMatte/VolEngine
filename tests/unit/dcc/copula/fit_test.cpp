@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <limits>
 #include <span>
 #include <string>
 #include <vector>
@@ -193,6 +194,95 @@ TEST(CopulaFit, ProfileFindsTheShape)
     EXPECT_NEAR(nu, 5.8841836499319067, 0.05 * 5.88);
     EXPECT_LE(fixed_shape_loglik(inputs, spec, nu - 1e-2), fit.loglik + 1e-8);
     EXPECT_LE(fixed_shape_loglik(inputs, spec, nu + 1e-2), fit.loglik + 1e-8);
+}
+
+// The shape profile of the DCC-t and aDCC-t copulas on copula3, measured before the warm start (loglik, then the
+// estimate in layout order: a, b, [g,] shape).
+struct ProfileReference
+{
+    DccModel model;
+    double loglik;
+    std::vector<double> estimate;
+};
+
+const std::vector<ProfileReference>& profile_references()
+{
+    static const std::vector<ProfileReference> cases{
+        {DccModel::Dcc, -7916.6267765580669, {0.044475584294526874, 0.91936525175816863, 5.8843475981704323}},
+        {DccModel::ADcc,
+         -7915.7287620493053,
+         {0.037936612097738437, 0.92108314055201523, 0.015250468412991281, 5.8314117473674534}},
+    };
+    return cases;
+}
+
+TEST(CopulaFit, ProfileWarmStartKeepsTheMaximum)
+{
+    // The loglik is what counts: the profile is flat near its maximum, so nu moves by the bracketing precision.
+    const std::vector<FitResult> fits = ve::testing::copula3_fits();
+    for (const ProfileReference& reference : profile_references())
+    {
+        const DccSpec spec = copula_spec(reference.model, DccDist::MvT, DccCopula::Parametric);
+        const DccFitResult fit = ve::dcc::copula::fit_copula(inputs_of(fits, {spec}), spec, FitConfig{});
+        SCOPED_TRACE(static_cast<int>(reference.model));
+        EXPECT_EQ(fit.status, FitStatus::Converged);
+        EXPECT_GE(fit.loglik, reference.loglik - 1e-8 * std::abs(reference.loglik));
+        const double nu = fit.estimate.back();
+        EXPECT_NEAR(nu, reference.estimate.back(), 1e-4 * reference.estimate.back());
+        if (reference.model == DccModel::ADcc)
+        {
+            EXPECT_GE(fit.estimate[2], 0.0);
+        }
+    }
+}
+
+TEST(CopulaFit, ProfileIsDeterministic)
+{
+    const std::vector<FitResult> fits = ve::testing::copula3_fits();
+    const DccSpec spec = copula_spec(DccModel::ADcc, DccDist::MvT, DccCopula::Parametric);
+    const CopulaInputs inputs = inputs_of(fits, {spec});
+    const DccFitResult first = ve::dcc::copula::fit_copula(inputs, spec, FitConfig{});
+    const DccFitResult second = ve::dcc::copula::fit_copula(inputs, spec, FitConfig{});
+    EXPECT_EQ(first.estimate, second.estimate);
+    EXPECT_EQ(first.loglik, second.loglik);
+}
+
+TEST(CopulaFit, ProfileFirstPointHonoursUserStart)
+{
+    // Review Focus 3: the user's start belongs to the first profile point; the later ones start from a neighbour.
+    const std::vector<FitResult> fits = ve::testing::copula3_fits();
+    DccSpec plain = copula_spec(DccModel::Dcc, DccDist::MvT, DccCopula::Parametric);
+    DccSpec started = plain;
+    started.start = {{"dcca1", 0.03}, {"dccb1", 0.95}};
+    const DccFitResult expected = ve::dcc::copula::fit_copula(inputs_of(fits, {plain}), plain, FitConfig{});
+    const DccFitResult fit = ve::dcc::copula::fit_copula(inputs_of(fits, {started}), started, FitConfig{});
+    ASSERT_EQ(fit.status, FitStatus::Converged);
+    EXPECT_NEAR(fit.estimate.back(), expected.estimate.back(), 1e-4 * expected.estimate.back());
+}
+
+TEST(CopulaFit, ProfileSkipsFailedNeighbours)
+{
+    // Review Focus 1: a point whose loglik is not finite never starts another fit.
+    using ve::dcc::copula::detail::nearest_finite;
+    using ve::dcc::copula::detail::ProfilePoint;
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    auto point = [](double nu, double loglik)
+    {
+        ProfilePoint made;
+        made.nu = nu;
+        made.loglik = loglik;
+        return made;
+    };
+    const std::vector<ProfilePoint> none;
+    EXPECT_EQ(nearest_finite(none, 10.0), nullptr);
+    const std::vector<ProfilePoint> failed{point(5.0, nan), point(9.0, nan)};
+    EXPECT_EQ(nearest_finite(failed, 7.0), nullptr);
+    const std::vector<ProfilePoint> points{point(5.0, -1.0), point(9.0, -2.0), point(8.0, nan), point(20.0, -3.0)};
+    EXPECT_EQ(nearest_finite(points, 8.1), &points[1]);
+    EXPECT_EQ(nearest_finite(points, 40.0), &points[3]);
+    // A tie in |dnu| goes to the smaller nu, whatever the order of evaluation.
+    const std::vector<ProfilePoint> tie{point(9.0, -2.0), point(5.0, -1.0)};
+    EXPECT_EQ(nearest_finite(tie, 7.0), &tie[1]);
 }
 
 TEST(CopulaFit, ShapeAtTheCeiling)

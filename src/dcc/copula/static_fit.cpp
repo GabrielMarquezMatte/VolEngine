@@ -311,15 +311,16 @@ std::vector<double> static_observations(const StandardizedPanel& scores, std::sp
 }
 
 StaticCorrelation static_ml(const StandardizedPanel& scores, const DccLayout& layout, double shape,
-                            const FitConfig& config)
+                            const FitConfig& config, std::span<const double> start)
 {
+    assert(start.empty() || start.size() == layout.c_count);
     const DccDist dist = layout.has_shape ? DccDist::MvT : DccDist::MvNorm;
     std::vector<double> x(layout.c_count);
     std::vector<std::size_t> free;
     for (std::size_t k = 0; k < layout.c_count; ++k)
     {
         const std::size_t index = layout.c_begin() + k;
-        x[k] = layout.given[index];
+        x[k] = start.empty() ? layout.given[index] : start[k];
         if (layout.is_estimated(index))
         {
             free.push_back(k);

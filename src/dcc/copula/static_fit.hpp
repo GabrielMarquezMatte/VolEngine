@@ -35,8 +35,9 @@ double static_terms(const StandardizedPanel& scores, std::span<const double> r, 
 std::vector<double> static_observations(const StandardizedPanel& scores, std::span<const double> r, DccDist dist,
                                         double shape);
 
-// The ML R of the scores: L-BFGS over the free x of the layout's C block (fixed ones kept), from the user's start or
-// 0, minimising -static_terms / T. x holds every C entry.
+// The ML R of the scores: L-BFGS over the free x of the layout's C block (fixed ones kept), from start (the C block,
+// one entry per x) or, when start is empty, from the user's start or 0, minimising -static_terms / T. x holds every C
+// entry.
 struct StaticCorrelation
 {
     FitStatus status = FitStatus::Failed;
@@ -45,6 +46,6 @@ struct StaticCorrelation
 };
 
 StaticCorrelation static_ml(const StandardizedPanel& scores, const DccLayout& layout, double shape,
-                            const FitConfig& config);
+                            const FitConfig& config, std::span<const double> start = {});
 
 }

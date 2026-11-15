@@ -9,6 +9,7 @@
 #include "fit/fit_result.hpp"
 
 #include <array>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -59,10 +60,31 @@ std::vector<double> copula_terms(const CopulaInputs& inputs, const DccSpec& spec
 CopulaInputs inputs_at(std::shared_ptr<const StandardizedPanel> univariate, std::span<const Margin> margins,
                        const DccSpec& spec, const CopulaInputs& base, double shape);
 
+namespace detail
+{
+
+// One point of the shape profile (or the only point when the shape is fixed or absent): the estimate of the other
+// parameters at the shape nu (theta is complete, in the layout order), its status and loglik.
+struct ProfilePoint
+{
+    FitStatus status = FitStatus::Failed;
+    std::vector<double> theta;
+    double loglik = std::numeric_limits<double>::quiet_NaN();
+    double nu = std::numeric_limits<double>::quiet_NaN();
+};
+
+// The point of finite loglik whose nu is nearest to nu, the smaller nu on a tie of |dnu| (whatever the order of
+// evaluation); nullptr when no point has a finite loglik.
+const ProfilePoint* nearest_finite(std::span<const ProfilePoint> points, double nu);
+
+}
+
 // A DccFitResult like fit_dcc's: names, estimate and status of spec, loglik = copula_loglik at the estimate, r,
 // and the univariate panel (H_t from its sigma). A free mvt shape is the Brent maximum of the profile over
-// [4, 50] (30 bits, 100 iterations; MaxIter when they run out), each profile point a fit_dcc with the shape fixed
-// from the default start. The caller checked spec_problem(spec, m); spec.copula is not None.
+// [4, 50] (30 bits, 100 iterations; MaxIter when they run out). Each profile point is a fit_dcc (or static_ml) with
+// the shape fixed, started from the point of finite loglik with the nearest shape already evaluated (the first
+// point from the spec's start, or the default one); the maximum is the point Brent evaluated, not a new fit. The
+// caller checked spec_problem(spec, m); spec.copula is not None.
 DccFitResult fit_copula(const CopulaInputs& inputs, const DccSpec& spec, const FitConfig& config);
 
 }

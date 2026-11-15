@@ -20,12 +20,15 @@
 #include <numeric>
 #include <optional>
 #include <span>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
 
 namespace ve::dcc::copula
 {
+
+using detail::ProfilePoint;
 
 namespace
 {
@@ -114,16 +117,22 @@ std::vector<double> static_dependence(const CopulaInputs& inputs, const DccSpec&
                                shape_of(spec, theta, layout_of(spec, scores.panel->m)));
 }
 
-// One point of the shape profile (or the only point when the shape is fixed or absent): the estimate of the other
-// parameters at the shape nu, its status and loglik.
-struct ProfilePoint
+// The estimated parameters of layout at theta, as a start list.
+std::vector<ParameterValue> start_at(const DccLayout& layout, std::span<const double> theta)
 {
-    FitStatus status = FitStatus::Failed;
-    std::vector<double> theta;
-    double loglik = kNaN;
-};
+    const std::vector<std::string> names = parameter_names(layout);
+    std::vector<ParameterValue> start;
+    for (const std::size_t index : estimated_positions(layout))
+    {
+        start.push_back({names[index], theta[index]});
+    }
+    return start;
+}
 
-ProfilePoint dynamic_point(const CopulaInputs& inputs, const DccSpec& spec, double nu, const FitConfig& config)
+// The point at nu; warm, when not null, is the neighbour whose estimate starts the inner fit (else the spec's start
+// does).
+ProfilePoint dynamic_point(const CopulaInputs& inputs, const DccSpec& spec, double nu, const FitConfig& config,
+                           const ProfilePoint* warm)
 {
     const DccLayout layout = layout_of(spec, inputs.univariate->m);
     DccSpec inner_spec = spec;
@@ -131,17 +140,23 @@ ProfilePoint dynamic_point(const CopulaInputs& inputs, const DccSpec& spec, doub
     {
         inner_spec.fixed.push_back({"mshape", nu});
     }
+    const DccLayout inner_layout = layout_of(inner_spec, inputs.univariate->m);
+    if (warm != nullptr)
+    {
+        inner_spec.start = start_at(inner_layout, warm->theta);
+    }
     const CopulaPanel scores = copula_panel(inputs.uniforms_of(spec), *inputs.univariate, spec.dist, nu);
     const DccFitResult inner = fit_dcc(scores.panel, inner_spec, config);
-    ProfilePoint point{inner.status, full_parameters(layout_of(inner_spec, scores.panel->m), inner.estimate), kNaN};
+    ProfilePoint point{inner.status, full_parameters(inner_layout, inner.estimate), kNaN, nu};
     point.loglik = copula_loglik(inputs, spec, point.theta);
     return point;
 }
 
-ProfilePoint static_point(const CopulaInputs& inputs, const DccSpec& spec, double nu, const FitConfig& config)
+ProfilePoint static_point(const CopulaInputs& inputs, const DccSpec& spec, double nu, const FitConfig& config,
+                          const ProfilePoint* warm)
 {
     const DccLayout layout = layout_of(spec, inputs.univariate->m);
-    ProfilePoint point{FitStatus::Converged, layout.given, kNaN};
+    ProfilePoint point{FitStatus::Converged, layout.given, kNaN, nu};
     if (layout.has_shape)
     {
         point.theta[layout.shape()] = nu;
@@ -149,7 +164,10 @@ ProfilePoint static_point(const CopulaInputs& inputs, const DccSpec& spec, doubl
     if (layout.c_count > 0)
     {
         const CopulaPanel scores = copula_panel(inputs.uniforms_of(spec), *inputs.univariate, spec.dist, nu);
-        const StaticCorrelation correlation = static_ml(*scores.panel, layout, nu, config);
+        const std::span<const double> start =
+            warm == nullptr ? std::span<const double>{}
+                            : std::span<const double>(warm->theta).subspan(layout.c_begin(), layout.c_count);
+        const StaticCorrelation correlation = static_ml(*scores.panel, layout, nu, config, start);
         std::ranges::copy(correlation.x, point.theta.begin() + static_cast<std::ptrdiff_t>(layout.c_begin()));
         point.status = correlation.status;
     }
@@ -157,26 +175,40 @@ ProfilePoint static_point(const CopulaInputs& inputs, const DccSpec& spec, doubl
     return point;
 }
 
-ProfilePoint point_at(const CopulaInputs& inputs, const DccSpec& spec, double nu, const FitConfig& config)
+ProfilePoint point_at(const CopulaInputs& inputs, const DccSpec& spec, double nu, const FitConfig& config,
+                      const ProfilePoint* warm)
 {
     if (spec.model == DccModel::Static)
     {
-        return static_point(inputs, spec, nu, config);
+        return static_point(inputs, spec, nu, config, warm);
     }
-    return dynamic_point(inputs, spec, nu, config);
+    return dynamic_point(inputs, spec, nu, config, warm);
 }
 
-// The shape of the profile maximum (minimising -loglik, +max where a point fails) and whether Brent ran out.
-std::pair<double, bool> profile_shape(const CopulaInputs& inputs, const DccSpec& spec, const FitConfig& config)
+// The profile maximum (minimising -loglik, +max where a point fails) and whether Brent ran out. The points are
+// kept in the order of evaluation, so every fit after the first starts from its nearest neighbour; the maximum is
+// the point Brent evaluated.
+// ponytail: Brent re-fits every point; Newton on the profile through the envelope theorem if the Student copula is
+// still far above the plain DCC-t.
+std::pair<ProfilePoint, bool> profile_shape(const CopulaInputs& inputs, const DccSpec& spec, const FitConfig& config)
 {
+    std::vector<ProfilePoint> points;
     auto negative = [&](double nu)
     {
-        const double loglik = point_at(inputs, spec, nu, config).loglik;
+        points.push_back(point_at(inputs, spec, nu, config, detail::nearest_finite(points, nu)));
+        const double loglik = points.back().loglik;
         return std::isfinite(loglik) ? -loglik : std::numeric_limits<double>::max();
     };
     std::uintmax_t iterations = kShapeIterations;
     const auto best = boost::math::tools::brent_find_minima(negative, kShapeFloor, kShapeCeiling, kShapeBits, iterations);
-    return {best.first, iterations >= kShapeIterations};
+    const auto at_best = [&](const ProfilePoint& point)
+    {
+        return std::bit_cast<std::uint64_t>(point.nu) == std::bit_cast<std::uint64_t>(best.first);
+    };
+    const auto found = std::ranges::find_if(points, at_best);
+    ProfilePoint maximum =
+        found != points.end() ? std::move(*found) : point_at(inputs, spec, best.first, config, nullptr);
+    return {std::move(maximum), iterations >= kShapeIterations};
 }
 
 DccFitResult result_of(const CopulaInputs& inputs, const DccSpec& spec, const DccLayout& layout,
@@ -308,24 +340,47 @@ CopulaInputs inputs_at(std::shared_ptr<const StandardizedPanel> univariate, std:
     return inputs;
 }
 
+namespace detail
+{
+
+const ProfilePoint* nearest_finite(std::span<const ProfilePoint> points, double nu)
+{
+    const ProfilePoint* nearest = nullptr;
+    for (const ProfilePoint& point : points)
+    {
+        if (!std::isfinite(point.loglik))
+        {
+            continue;
+        }
+        const double gap = std::abs(point.nu - nu);
+        if (nearest == nullptr || gap < std::abs(nearest->nu - nu) ||
+            (gap == std::abs(nearest->nu - nu) && point.nu < nearest->nu))
+        {
+            nearest = &point;
+        }
+    }
+    return nearest;
+}
+
+}
+
 DccFitResult fit_copula(const CopulaInputs& inputs, const DccSpec& spec, const FitConfig& config)
 {
     assert(spec.copula != DccCopula::None && !spec_problem(spec, inputs.univariate->m));
     const DccLayout layout = layout_of(spec, inputs.univariate->m);
-    double nu = layout.has_shape ? layout.given[layout.shape()] : 0.0;
-    bool ran_out = false;
-    const bool profiled = layout.has_shape && layout.is_estimated(layout.shape());
-    if (profiled)
-    {
-        std::tie(nu, ran_out) = profile_shape(inputs, spec, config);
-    }
-    // A fixed shape outside (4, 50) fails the spec, as on the plain DCC, for the static copula too. A profiled shape
-    // is inside [4, 50] by construction, and sits on an end when the loglik is monotone there (independent series
-    // put it at the ceiling).
+    const double nu = layout.has_shape ? layout.given[layout.shape()] : 0.0;
     ProfilePoint point;
-    if (!layout.has_shape || profiled || (nu > kShapeFloor && nu < kShapeCeiling))
+    bool ran_out = false;
+    if (layout.has_shape && layout.is_estimated(layout.shape()))
     {
-        point = point_at(inputs, spec, nu, config);
+        // A profiled shape is inside [4, 50] by construction, and sits on an end when the loglik is monotone there
+        // (independent series put it at the ceiling).
+        std::tie(point, ran_out) = profile_shape(inputs, spec, config);
+    }
+    // A fixed shape outside (4, 50) fails the spec, as on the plain DCC, for the static copula too.
+    else if (!layout.has_shape || (nu > kShapeFloor && nu < kShapeCeiling))
+    {
+        point = point_at(inputs, spec, nu, config, nullptr);
     }
     DccFitResult result = result_of(inputs, spec, layout, point);
     if (ran_out && result.status == FitStatus::Converged)
