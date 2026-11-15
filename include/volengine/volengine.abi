@@ -1,4 +1,4 @@
-define VE_ABI_VERSION 0
+define VE_ABI_VERSION 1
 function int32_t ve_abi_version(void)
 typedef int32_t ve_status
 define VE_OK 0

@@ -31,7 +31,7 @@ FetchContent:
 include(FetchContent)
 FetchContent_Declare(volengine
     GIT_REPOSITORY https://github.com/GabrielMarquezMatte/VolEngine
-    GIT_TAG v0.9.0
+    GIT_TAG v1.0.0
     SOURCE_SUBDIR cpp)
 FetchContent_MakeAvailable(volengine)
 
@@ -44,7 +44,7 @@ volengine_copy_native_library(app)   # needed on Windows: the DLL must sit next 
 `find_package` never touches the network):
 
 ```cmake
-find_package(volengine 0.9 REQUIRED)
+find_package(volengine 1.0 REQUIRED)
 target_link_libraries(app PRIVATE volengine::volengine)
 volengine_copy_native_library(app)
 ```

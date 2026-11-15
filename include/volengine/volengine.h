@@ -19,7 +19,7 @@ extern "C"
 {
 #endif
 
-#define VE_ABI_VERSION 0
+#define VE_ABI_VERSION 1
 
 /* Every function returns a ve_status, except ve_abi_version, ve_last_error and the *_free functions (which accept
    NULL and cannot fail). Every output array is caller-owned and sized by a count the interface gives: the

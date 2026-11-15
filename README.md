@@ -7,7 +7,7 @@ not depend on the thread count. Univariate default conventions follow R's `rugar
 
 ## Status
 
-Version 0.9.0 (pre-release). Supported models, each with orders 1 to 6: sGARCH, eGARCH, gjrGARCH, apARCH, iGARCH,
+Version 1.0. The C ABI is stable: a release only adds to it, and `VE_ABI_VERSION` follows the major version. Supported models, each with orders 1 to 6: sGARCH, eGARCH, gjrGARCH, apARCH, iGARCH,
 csGARCH and fGARCH with its eight submodels (garch, tgarch, avgarch, ngarch, nagarch, aparch, gjrgarch, allgarch).
 Every model takes an ARMA(m,n) conditional mean (orders 0 to 6, with or without a constant) and normal (`norm`),
 Student-t (`std`) or GED (`ged`) innovations, or the skewed ones: skewed Student-t (`sstd`), skewed GED (`sged`),
@@ -17,7 +17,7 @@ standard errors and the usual information criteria. Any estimated parameter can 
 (`mxreg`, `vxreg`), ARCH-in-mean (`archm`) and an ARFIMA mean (`arfima`), as in `rugarch`, forecasts from a fit,
 simulated paths and the diagnostics reported by `rugarch`'s `show()`. More features come in
 later releases.
-Until 1.0 the C ABI may change between releases. See [CHANGELOG.md](CHANGELOG.md).
+See [CHANGELOG.md](CHANGELOG.md).
 
 DCC and asymmetric DCC (aDCC) support orders 1 to 6; flexible DCC (FDCC) uses order (1,1) and user-defined
 groups. All three support `mvnorm`, `mvt` and `mvlaplace`, fixed parameters, start values and optional two-stage
@@ -40,7 +40,26 @@ Python 3.11 or newer. The wheel carries the native library and needs no compiler
 On another platform pip reports that no distribution matches; there is no source distribution. The native
 libraries alone are attached to each [GitHub Release](https://github.com/GabrielMarquezMatte/VolEngine/releases).
 
-The C++23 header-only wrapper in [cpp/](cpp/README.md) is used through `FetchContent` or `find_package`.
+From C++23, the header-only wrapper in [cpp/](cpp/README.md) is used through `FetchContent` or `find_package`:
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(volengine GIT_REPOSITORY https://github.com/GabrielMarquezMatte/VolEngine
+                     GIT_TAG v1.0.0 SOURCE_SUBDIR cpp)
+FetchContent_MakeAvailable(volengine)
+target_link_libraries(app PRIVATE volengine::volengine)
+volengine_copy_native_library(app)
+```
+
+```cpp
+#include <volengine/volengine.hpp>
+
+auto context = ve::Context::create().value();
+auto fit = context.fit(ve::Spec{.model = ve::Model::gjrgarch, .dist = ve::Dist::student}, returns);
+if (fit && fit->status() == ve::FitStatus::converged) { auto forecast = fit->forecast(10).value(); }
+```
+
+Guides: [Python](docs/guide/python.md), [C++](docs/guide/cpp.md), [conventions and validation](docs/guide/validation.md).
 
 ## Python example
 
@@ -57,6 +76,7 @@ print(fit.status)                 # "converged"
 print(fit.coef("robust"))         # CoefTable: names, estimate, std_error, t_value, p_value
 print(fit.loglik, fit.aic())
 print(fit.sigma[:5])              # conditional standard deviation, a read-only view
+print(fit.forecast(5).sigma)      # sigma for the next 5 steps
 ```
 
 A DCC grid uses one selected univariate fit per series. Here the 21 columns share T = 5000 observations:

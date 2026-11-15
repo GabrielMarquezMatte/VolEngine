@@ -13,7 +13,7 @@ from typing import Any, cast
 import numpy as np
 from numpy.typing import NDArray
 
-VE_ABI_VERSION = 0
+VE_ABI_VERSION = 1
 VE_INTERNAL_ERROR = 5
 INT32_MIN = -(2**31)
 INT32_MAX = 2**31 - 1

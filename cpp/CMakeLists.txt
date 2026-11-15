@@ -73,7 +73,7 @@ if(VOLENGINE_INSTALL)
         INSTALL_DESTINATION "${_config_dir}"
         PATH_VARS VOLENGINE_INSTALLED_NATIVE_DIR VOLENGINE_INSTALLED_IMPLIB_DIR VOLENGINE_INSTALLED_INCLUDE_DIR)
 
-    # VOLENGINE_VERSION is a release tag ("v0.9.0"); the version file takes digits and dots only.
+    # VOLENGINE_VERSION is a release tag ("v1.0.0"); the version file takes digits and dots only.
     string(REGEX REPLACE "^v" "" _package_version "${VOLENGINE_VERSION}")
     if(NOT _package_version MATCHES "^[0-9]+(\\.[0-9]+)*$")
         set(_package_version "0.0.0")

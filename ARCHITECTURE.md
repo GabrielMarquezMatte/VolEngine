@@ -157,7 +157,9 @@ Each rule answers a concrete break that happened in the author's earlier librari
 Also: every fallible function returns `ve_status` and puts the message in `ve_last_error()`; no exception crosses
 the boundary (`std::bad_alloc` becomes `VE_OUT_OF_MEMORY`, anything else `VE_INTERNAL_ERROR`); sizes use
 `int32_t`, `size_t` and `double`. Semantic versioning, with `VE_ABI_VERSION` in the header and `ve_abi_version()`
-at run time; the contract freezes at 1.0 and 0.x releases may break it.
+at run time. The contract froze at 1.0: from then on a release only adds to it, and `VE_ABI_VERSION` is the semver
+major. `include/volengine/volengine.abi` lists every declaration, CI fails when it differs from the header or loses a
+line of the last release's, and abidiff compares the binary against the dump the release attached.
 
 ## Anatomy of a `ve_fit_batch`
 

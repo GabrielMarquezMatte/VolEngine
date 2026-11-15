@@ -103,7 +103,7 @@ endfunction()
 function(volengine_released_library lib_out implib_out)
     if(NOT VOLENGINE_VERSION)
         message(FATAL_ERROR
-            "VOLENGINE_VERSION is empty: this checkout is not on a release tag. Pass -DVOLENGINE_VERSION=v0.9.0 to "
+            "VOLENGINE_VERSION is empty: this checkout is not on a release tag. Pass -DVOLENGINE_VERSION=v1.0.0 to "
             "download that release, or set the environment variable VOLENGINE_NATIVE_LIB to a local build.")
     endif()
     volengine_host_platform(_os _arch)
