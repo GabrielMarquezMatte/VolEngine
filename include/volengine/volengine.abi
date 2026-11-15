@@ -1,0 +1,206 @@
+define VE_ABI_VERSION 0
+function int32_t ve_abi_version(void)
+typedef int32_t ve_status
+define VE_OK 0
+define VE_INVALID_ARGUMENT 1
+define VE_INVALID_HANDLE 2
+define VE_UNSUPPORTED 3
+define VE_OUT_OF_MEMORY 4
+define VE_INTERNAL_ERROR 5
+typedef struct ve_context ve_context
+function const char* ve_last_error(void)
+define VE_MAX_THREADS 1024
+function ve_status ve_context_create(ve_context**)
+function ve_status ve_context_set_threads(ve_context*, int32_t)
+function ve_status ve_context_threads(const ve_context*, int32_t*)
+function void ve_context_free(ve_context*)
+define VE_MODEL_SGARCH 0
+define VE_MODEL_EGARCH 1
+define VE_MODEL_GJRGARCH 2
+define VE_MODEL_APARCH 3
+define VE_MODEL_IGARCH 4
+define VE_MODEL_CSGARCH 5
+define VE_MODEL_FGARCH_GARCH 6
+define VE_MODEL_FGARCH_TGARCH 7
+define VE_MODEL_FGARCH_AVGARCH 8
+define VE_MODEL_FGARCH_NGARCH 9
+define VE_MODEL_FGARCH_NAGARCH 10
+define VE_MODEL_FGARCH_APARCH 11
+define VE_MODEL_FGARCH_GJRGARCH 12
+define VE_MODEL_FGARCH_ALLGARCH 13
+define VE_DIST_NORM 0
+define VE_DIST_STD 1
+define VE_DIST_GED 2
+define VE_DIST_SSTD 3
+define VE_DIST_SGED 4
+define VE_DIST_NIG 5
+define VE_DIST_GHYP 6
+define VE_DIST_JSU 7
+define VE_MAX_ORDER 6
+define VE_MAX_REGRESSORS 8
+define VE_VARINIT_SAMPLE 0
+define VE_VARINIT_BACKCAST 1
+typedef struct ve_spec ve_spec
+typedef struct ve_fit_options ve_fit_options
+typedef struct ve_panel ve_panel
+function ve_status ve_spec_create(int32_t, ve_spec**)
+function ve_status ve_spec_set_order(ve_spec*, int32_t, int32_t)
+function ve_status ve_spec_set_arma(ve_spec*, int32_t, int32_t)
+function ve_status ve_spec_set_dist(ve_spec*, int32_t)
+function ve_status ve_spec_set_include_mean(ve_spec*, int32_t)
+function ve_status ve_spec_set_mxreg(ve_spec*, int32_t)
+function ve_status ve_spec_set_vxreg(ve_spec*, int32_t)
+function ve_status ve_spec_set_archm(ve_spec*, int32_t)
+function ve_status ve_spec_set_arfima(ve_spec*, int32_t)
+function ve_status ve_spec_set_fixed(ve_spec*, const char*, double)
+function ve_status ve_spec_set_start(ve_spec*, const char*, double)
+function ve_status ve_spec_set_variance_targeting(ve_spec*, int32_t)
+function ve_status ve_spec_validate(const ve_spec*)
+function void ve_spec_free(ve_spec*)
+function ve_status ve_fit_options_create(ve_fit_options**)
+function ve_status ve_fit_options_set_max_iter(ve_fit_options*, int32_t)
+function ve_status ve_fit_options_set_tolerance(ve_fit_options*, double)
+function ve_status ve_fit_options_set_var_init(ve_fit_options*, int32_t)
+function ve_status ve_fit_options_set_standard_errors(ve_fit_options*, int32_t)
+function void ve_fit_options_free(ve_fit_options*)
+function ve_status ve_panel_create(const double*, size_t, size_t, ve_panel**)
+function ve_status ve_panel_set_strides(ve_panel*, ptrdiff_t, ptrdiff_t)
+function ve_status ve_panel_set_ranges(ve_panel*, const size_t*, const size_t*)
+function void ve_panel_free(ve_panel*)
+define VE_FIT_CONVERGED 0
+define VE_FIT_MAX_ITER 1
+define VE_FIT_FAILED 2
+define VE_FIT_INSUFFICIENT_DATA 3
+define VE_SE_HESSIAN 0
+define VE_SE_ROBUST 1
+define VE_IC_PER_OBS 0
+define VE_IC_TOTAL 1
+typedef struct ve_batch ve_batch
+typedef struct ve_fit ve_fit
+function ve_status ve_batch_create(ve_batch**)
+function ve_status ve_batch_set_specs(ve_batch*, const ve_spec* const*, size_t)
+function ve_status ve_batch_set_panel(ve_batch*, const ve_panel*)
+function ve_status ve_batch_set_jobs(ve_batch*, const size_t*, const size_t*, size_t)
+function ve_status ve_batch_set_options(ve_batch*, const ve_fit_options*)
+function ve_status ve_batch_set_regressors(ve_batch*, const ve_panel* const*, const ve_panel* const*, size_t)
+function ve_status ve_batch_job_count(const ve_batch*, size_t*)
+function void ve_batch_free(ve_batch*)
+function ve_status ve_fit_batch(ve_context*, const ve_batch*, ve_fit**)
+function ve_status ve_fit_status(const ve_fit*, int32_t*)
+function ve_status ve_fit_nobs(const ve_fit*, size_t*)
+function ve_status ve_fit_param_count(const ve_fit*, size_t*)
+function ve_status ve_fit_param_name(const ve_fit*, size_t, const char**)
+function ve_status ve_fit_estimates(const ve_fit*, double*)
+function ve_status ve_fit_std_errors(const ve_fit*, int32_t, double*)
+function ve_status ve_fit_t_values(const ve_fit*, int32_t, double*)
+function ve_status ve_fit_p_values(const ve_fit*, int32_t, double*)
+function ve_status ve_fit_loglik(const ve_fit*, double*)
+define VE_CRITERION_AIC 0
+define VE_CRITERION_BIC 1
+define VE_CRITERION_HQIC 2
+define VE_CRITERION_SIC 3
+function ve_status ve_fit_criterion(const ve_fit*, int32_t, int32_t, double*)
+function ve_status ve_fit_sigma(const ve_fit*, const double**, size_t*)
+function ve_status ve_fit_residuals(const ve_fit*, const double**, size_t*)
+function ve_status ve_fit_std_residuals(const ve_fit*, const double**, size_t*)
+function ve_status ve_fit_fitted(const ve_fit*, const double**, size_t*)
+function ve_status ve_fit_ljung_box(const ve_fit*, int32_t, size_t, size_t, double*)
+function ve_status ve_fit_arch_lm(const ve_fit*, size_t, size_t, double*)
+function ve_status ve_fit_nyblom(const ve_fit*, double*, double*, int32_t*)
+function ve_status ve_nyblom_critical(size_t, double*)
+function ve_status ve_fit_sign_bias(const ve_fit*, double*)
+function ve_status ve_fit_gof(const ve_fit*, size_t, double*)
+function void ve_fit_free(ve_fit*)
+typedef struct ve_forecast ve_forecast
+function ve_status ve_forecast_create(const ve_fit*, size_t, const ve_panel*, const ve_panel*, ve_forecast**)
+function ve_status ve_forecast_horizon(const ve_forecast*, size_t*)
+function ve_status ve_forecast_sigma(const ve_forecast*, const double**, size_t*)
+function ve_status ve_forecast_mean(const ve_forecast*, const double**, size_t*)
+function void ve_forecast_free(ve_forecast*)
+typedef struct ve_sim_options ve_sim_options
+typedef struct ve_sim ve_sim
+function ve_status ve_sim_options_create(size_t, size_t, uint64_t, ve_sim_options**)
+function ve_status ve_sim_options_set_regressors(ve_sim_options*, const ve_panel*, const ve_panel*)
+function void ve_sim_options_free(ve_sim_options*)
+function ve_status ve_simulate_fit(ve_context*, const ve_fit*, const ve_sim_options*, ve_sim**)
+function ve_status ve_simulate_spec(ve_context*, const ve_spec*, const ve_sim_options*, ve_sim**)
+function ve_status ve_sim_paths(const ve_sim*, size_t*)
+function ve_status ve_sim_horizon(const ve_sim*, size_t*)
+function ve_status ve_sim_returns(const ve_sim*, const double**, size_t*)
+function ve_status ve_sim_sigma(const ve_sim*, const double**, size_t*)
+function void ve_sim_free(ve_sim*)
+typedef struct ve_dcc_spec ve_dcc_spec
+typedef struct ve_dcc_options ve_dcc_options
+typedef struct ve_dcc_batch ve_dcc_batch
+typedef struct ve_dcc_fit ve_dcc_fit
+define VE_DCC_MODEL_DCC 0
+define VE_DCC_MODEL_ADCC 1
+define VE_DCC_MODEL_FDCC 2
+define VE_DCC_MODEL_STATIC 3
+define VE_DCC_DIST_MVNORM 0
+define VE_DCC_DIST_MVT 1
+define VE_DCC_DIST_MVLAPLACE 2
+function ve_status ve_dcc_spec_create(int32_t, ve_dcc_spec**)
+function ve_status ve_dcc_spec_set_order(ve_dcc_spec*, int32_t, int32_t)
+function ve_status ve_dcc_spec_set_dist(ve_dcc_spec*, int32_t)
+function ve_status ve_dcc_spec_set_groups(ve_dcc_spec*, const int32_t*, size_t)
+function ve_status ve_dcc_spec_set_fixed(ve_dcc_spec*, const char*, double)
+function ve_status ve_dcc_spec_set_start(ve_dcc_spec*, const char*, double)
+function void ve_dcc_spec_free(ve_dcc_spec*)
+define VE_DCC_COPULA_NONE 0
+define VE_DCC_COPULA_PARAMETRIC 1
+define VE_DCC_COPULA_EMPIRICAL 2
+define VE_DCC_STATIC_DEFAULT 0
+define VE_DCC_STATIC_KENDALL 1
+define VE_DCC_STATIC_ML 2
+function ve_status ve_dcc_spec_set_copula(ve_dcc_spec*, int32_t)
+function ve_status ve_dcc_spec_set_static_method(ve_dcc_spec*, int32_t)
+function ve_status ve_dcc_options_create(ve_dcc_options**)
+function ve_status ve_dcc_options_set_standard_errors(ve_dcc_options*, int32_t)
+function void ve_dcc_options_free(ve_dcc_options*)
+function ve_status ve_dcc_batch_create(ve_dcc_batch**)
+function ve_status ve_dcc_batch_set_specs(ve_dcc_batch*, const ve_dcc_spec* const*, size_t)
+function ve_status ve_dcc_batch_set_fits(ve_dcc_batch*, const ve_fit* const*, size_t)
+function ve_status ve_dcc_batch_set_options(ve_dcc_batch*, const ve_dcc_options*)
+function ve_status ve_dcc_batch_spec_count(const ve_dcc_batch*, size_t*)
+function void ve_dcc_batch_free(ve_dcc_batch*)
+function ve_status ve_dcc_fit_batch(ve_context*, const ve_dcc_batch*, ve_dcc_fit**)
+function ve_status ve_dcc_fit_status(const ve_dcc_fit*, int32_t*)
+function ve_status ve_dcc_fit_nobs(const ve_dcc_fit*, size_t*)
+function ve_status ve_dcc_fit_series(const ve_dcc_fit*, size_t*)
+function ve_status ve_dcc_fit_param_count(const ve_dcc_fit*, size_t*)
+function ve_status ve_dcc_fit_param_name(const ve_dcc_fit*, size_t, const char**)
+function ve_status ve_dcc_fit_estimates(const ve_dcc_fit*, double*)
+function ve_status ve_dcc_fit_std_errors(const ve_dcc_fit*, int32_t, double*)
+function ve_status ve_dcc_fit_t_values(const ve_dcc_fit*, int32_t, double*)
+function ve_status ve_dcc_fit_p_values(const ve_dcc_fit*, int32_t, double*)
+function ve_status ve_dcc_fit_loglik(const ve_dcc_fit*, double*)
+function ve_status ve_dcc_fit_criterion(const ve_dcc_fit*, int32_t, int32_t, double*)
+function ve_status ve_dcc_fit_correlation(const ve_dcc_fit*, const double**, size_t*)
+function ve_status ve_dcc_fit_covariance(const ve_dcc_fit*, const double**, size_t*)
+function ve_status ve_dcc_standard_errors(ve_context*, const ve_dcc_fit*, const ve_fit* const*, size_t, ve_dcc_fit**)
+function void ve_dcc_fit_free(ve_dcc_fit*)
+typedef struct ve_dcc_future ve_dcc_future
+typedef struct ve_dcc_forecast ve_dcc_forecast
+typedef struct ve_dcc_sim ve_dcc_sim
+function ve_status ve_dcc_future_create(size_t, size_t, ve_dcc_future**)
+function ve_status ve_dcc_future_set(ve_dcc_future*, size_t, const ve_panel*, const ve_panel*)
+function void ve_dcc_future_free(ve_dcc_future*)
+function ve_status ve_dcc_forecast_create(const ve_dcc_fit*, size_t, const ve_dcc_future*, ve_dcc_forecast**)
+function ve_status ve_dcc_forecast_horizon(const ve_dcc_forecast*, size_t*)
+function ve_status ve_dcc_forecast_series(const ve_dcc_forecast*, size_t*)
+function ve_status ve_dcc_forecast_correlation(const ve_dcc_forecast*, const double**, size_t*)
+function ve_status ve_dcc_forecast_covariance(const ve_dcc_forecast*, const double**, size_t*)
+function ve_status ve_dcc_forecast_sigma(const ve_dcc_forecast*, const double**, size_t*)
+function ve_status ve_dcc_forecast_mean(const ve_dcc_forecast*, const double**, size_t*)
+function void ve_dcc_forecast_free(ve_dcc_forecast*)
+function ve_status ve_sim_options_set_correlations(ve_sim_options*, int32_t)
+function ve_status ve_simulate_dcc(ve_context*, const ve_dcc_fit*, const ve_sim_options*, const ve_dcc_future*, ve_dcc_sim**)
+function ve_status ve_dcc_sim_paths(const ve_dcc_sim*, size_t*)
+function ve_status ve_dcc_sim_horizon(const ve_dcc_sim*, size_t*)
+function ve_status ve_dcc_sim_series(const ve_dcc_sim*, size_t*)
+function ve_status ve_dcc_sim_returns(const ve_dcc_sim*, const double**, size_t*)
+function ve_status ve_dcc_sim_sigma(const ve_dcc_sim*, const double**, size_t*)
+function ve_status ve_dcc_sim_correlation(const ve_dcc_sim*, const double**, size_t*)
+function ve_status ve_dcc_sim_covariance(const ve_dcc_sim*, const double**, size_t*)
+function void ve_dcc_sim_free(ve_dcc_sim*)

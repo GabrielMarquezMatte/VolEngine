@@ -96,6 +96,19 @@ after regenerating.
   clang-tidy -p build/gcc-release src/fit/fit.cpp
   ```
 
+## The ABI contract
+
+`include/volengine/volengine.abi` has one line per declaration of `volengine.h` (defines, typedefs, functions without
+parameter names). It is generated: after changing the header, run
+
+```
+python scripts/abi_contract.py write
+```
+
+The `abi_contract` ctest and CI fail when the two differ, so a change to the interface always shows in the diff.
+From the first stable release on, CI also fails when a line of the last release's contract is gone or changed: the
+contract only grows. The Windows export list is made from the same file (`scripts/abi_contract.py def`).
+
 ## Documentation
 
 Repository documents are in English. Measurements and justifications go in `docs/`, never in code comments

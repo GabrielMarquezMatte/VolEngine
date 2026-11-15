@@ -251,6 +251,12 @@ if(VE_BUILD_TESTS)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_test(NAME style
         COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/tests/style/check_style.py ${CMAKE_SOURCE_DIR})
+
+    # include/volengine/volengine.abi is the contract of volengine.h; a change to the header is a change to the file.
+    add_test(NAME abi_contract
+        COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/scripts/abi_contract.py check)
+    add_test(NAME abi_contract_unit
+        COMMAND Python3::Interpreter -m unittest discover -s ${CMAKE_SOURCE_DIR}/tests/abi)
 endif()
 
 if(VE_BUILD_BENCHMARKS)
