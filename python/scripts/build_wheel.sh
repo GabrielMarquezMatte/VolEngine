@@ -35,10 +35,9 @@ for candidate in "$lib_dir"/libvolengine.so "$lib_dir"/libvolengine.dylib "$lib_
 done
 py python/scripts/check_native_deps.py "$library"
 if [ "$ASSET" = win-x64 ]; then
-    # The .def feeds the .lib the release job builds for MSVC users; an empty one would ship a .lib with no exports.
-    exports=$(grep -c '^ *ve_' "$lib_dir/volengine.def")
-    echo "volengine.def lists $exports exports"
-    [ "$exports" -gt 100 ]
+    # What the linker exports is what the ABI contract lists, no more and no less (an empty .def would ship a .lib
+    # with no exports).
+    py scripts/abi_contract.py exports "$lib_dir/volengine.def"
 fi
 
 uv build --wheel python --out-dir dist
@@ -60,6 +59,8 @@ mkdir out
 cp "$library" "out/volengine-native-${ASSET}.${library##*.}"
 if [ "$ASSET" = win-x64 ]; then
     cp "$lib_dir/libvolengine.dll.a" "out/volengine-native-${ASSET}.dll.a"
-    cp "$lib_dir/volengine.def" "out/volengine-native-${ASSET}.def"
+    # The export list of the MSVC import library comes from the contract; both import libraries name the DLL
+    # libvolengine.dll.
+    py scripts/abi_contract.py def --library libvolengine.dll "out/volengine-native-${ASSET}.def"
 fi
 ls -l dist out

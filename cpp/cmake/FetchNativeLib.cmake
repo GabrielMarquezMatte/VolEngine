@@ -98,8 +98,8 @@ function(volengine_local_library lib_out implib_out)
 endfunction()
 
 # Downloads the library of the host platform to a file named as the loader asks for (the SONAME or install_name of the
-# build). On Windows the name is the one the import library records: the release .lib was made with
-# /name:volengine-native-win-x64.dll, and the MinGW .dll.a records libvolengine.dll.
+# build). On Windows that is libvolengine.dll, the name the release .lib (made with /name:libvolengine.dll) and the
+# MinGW .dll.a both record.
 function(volengine_released_library lib_out implib_out)
     if(NOT VOLENGINE_VERSION)
         message(FATAL_ERROR
@@ -113,7 +113,7 @@ function(volengine_released_library lib_out implib_out)
     file(MAKE_DIRECTORY "${_cache}")
     string(REGEX REPLACE "\.[a-z]+$" "" _stem "${_asset}")
     if(WIN32 AND MSVC)
-        set(_lib "${_cache}/${_asset}")
+        set(_lib "${_cache}/libvolengine.dll")
         volengine_download("${_base}/${_stem}.lib" "${_cache}/${_stem}.lib")
         set(${implib_out} "${_cache}/${_stem}.lib" PARENT_SCOPE)
     elseif(WIN32)
