@@ -560,6 +560,29 @@ GCC 14 compiled the core, so the `manylinux_2_34` fallback was not needed, and t
 glibc wheels are tagged `manylinux_2_25`, not `2_28`: the newest `GLIBC_2.N` symbol the library imports is 2.25
 (the static libstdc++ reads `getentropy`), and `build_wheel.sh` accepts a floor at or below the image's.
 
+## Plan 6b: the C++ wrapper against direct C calls
+
+`cpp/benchmarks/wrapper_overhead.cpp` runs the same work through the wrapper and through the C API, building the specs,
+the panel, the batch and the options in every iteration on both sides, so the difference is what the wrapper adds. Every
+iteration also checks that both sides report the same sum of log-likelihoods (to the bit); a mismatch skips the
+benchmark with an error. Build with `-DVOLENGINE_BUILD_BENCHMARKS=ON` in `cpp/`, with `VOLENGINE_NATIVE_LIB` pointing at
+the library.
+
+- `BM_Fit*`: one sGARCH(1,1) with normal innovations on one simulated series, T = 3000, standard errors on.
+- `BM_Batch*`: the 12 specs sGARCH, gjrGARCH and eGARCH (1,1) with norm, std, ged and sstd innovations, over 21 simulated
+  series, T = 5000, all threads, standard errors off.
+
+Machine and compiler as in [Machine and run](#machine-and-run) (g++ 16.2.0, Release, `-O3`), commit `c315838`, library
+`libvolengine.dll` from the same commit. `--benchmark_repetitions=10 --benchmark_enable_random_interleaving=true`; the
+table is the median over the 10 repetitions and the standard deviation.
+
+| Benchmark | Direct C (ms) | Wrapper (ms) |
+| --- | --- | --- |
+| one fit | 1.29 (sd 0.053) | 1.32 (sd 0.187) |
+| batch of 12 specs x 21 series | 284 (sd 7.0) | 281 (sd 6.9) |
+
+The wrapper is inside one standard deviation of the C calls in both cases: its cost is noise next to the fit.
+
 ## What the benchmarks fit
 
 - The series are simulated by `tests/benchmarks/simulated_panel.hpp` and `tests/unit/simulated_garch.hpp`. They reuse

@@ -95,3 +95,8 @@ if(VOLENGINE_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+option(VOLENGINE_BUILD_BENCHMARKS "Build the cost of the wrapper against direct C calls" OFF)
+if(VOLENGINE_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
+endif()
