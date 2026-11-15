@@ -30,3 +30,22 @@ and that point is the best one, so `profile_shape` returns exactly 50. `fit_copu
 (the check for a fixed shape outside (4, 50)) on the profiled shape too, rejected it and returned the default
 (failed, non-finite) point.
 Fix: the open-interval check applies only to a fixed shape; a profiled shape lies in [4, 50] by construction.
+
+## Task 2: copulas on the tangent gradient
+
+`has_fast_gradient` accepts any `copula`; the inner fit of the copula takes the 5b tangent gradient. Medians of three
+repetitions, `gcc-bench`, the base measured earlier in the same session (the base run is in the table above).
+
+| Benchmark | Base | Tangent gradient |
+| --- | ---: | ---: |
+| `BM_CopulaFit/static_mvt_kendall_param` | error | 4.60 s |
+| `BM_CopulaFit/static_mvt_ml_param` | error | 2.19 s |
+| `BM_CopulaFit/dcc_mvnorm_param` | 0.945 s | 0.208 s |
+| `BM_CopulaFit/dcc_mvt_param` | 36.4 s | 8.27 s |
+| `BM_CopulaFit/adcc_mvnorm_param` | 1.05 s | 0.238 s |
+| `BM_CopulaFit/adcc_mvt_param` | 36.6 s | 9.30 s |
+| `BM_CopulaFit/static_mvnorm_kendall_param` (unchanged) | 3.79 s | 3.82 s |
+| `BM_DccGrid/m:21/T:5000/threads:1` (unchanged) | 2.14 s | 2.24 s |
+
+`BM_DccFit/dcc_mvt` moved from 0.141 s to 0.205 s although plain DCC specs take the same path as before; the final
+table of Task 5 repeats the plain `BM_DccFit` rows five times on both sides.

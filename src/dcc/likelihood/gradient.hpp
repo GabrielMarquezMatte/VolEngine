@@ -12,7 +12,8 @@ namespace ve::dcc
 {
 
 // True for the specs ObjectiveGradient computes: DCC, aDCC and FDCC with the mvnorm, mvt and mvlaplace, listed
-// explicitly; anything else keeps the Dual objective.
+// explicitly; anything else keeps the Dual objective. The copula flag does not matter: the score panel of a copula is
+// an ordinary DCC panel, and its fit is the DCC objective on it.
 bool has_fast_gradient(const DccSpec& spec);
 
 // The objective of dcc::objective<double> and its gradient over the natural parameters theta, without ad::Dual.

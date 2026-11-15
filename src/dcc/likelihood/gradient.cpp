@@ -376,7 +376,7 @@ bool has_fast_gradient(const DccSpec& spec)
 {
     const bool model = spec.model == DccModel::Dcc || spec.model == DccModel::ADcc || spec.model == DccModel::FDcc;
     const bool dist = spec.dist == DccDist::MvNorm || spec.dist == DccDist::MvT || spec.dist == DccDist::MvLaplace;
-    return model && dist && spec.copula == DccCopula::None;
+    return model && dist;
 }
 
 double ObjectiveGradient::evaluate(const StandardizedPanel& panel, const DccSpec& spec, std::span<const double> theta,
