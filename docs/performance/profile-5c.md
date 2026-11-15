@@ -80,3 +80,59 @@ on panels with and without ties. Medians of three repetitions, `gcc-bench`.
 The 0.165 s left of `static_mvnorm_kendall_param` is the rest of the fit (the 105 thousand normal quantiles, the
 Cholesky of R and the likelihood), not the 210 Kendall entries. The Student version adds about 0.7 s for its 37
 profile points, each of which recomputes the 105 thousand Student quantiles (about 20 ms) and the static likelihood.
+
+## Final table (2026-11-15)
+
+`gcc-bench`, one thread unless the name says otherwise, m = 21, T = 5000. New code at `HEAD` of plan 5c-1: five
+repetitions, medians. Base (`6f7053d`): the three-repetition medians measured earlier in the same session for
+`BM_CopulaFit` and `BM_CopulaStandardErrors`; five repetitions for the secondary rows below. The base run of
+`BM_CopulaGrid` ends with "the DCC fit has no finite point" (its static Student specs), so it has no time.
+
+| Benchmark | Base | New | New / base |
+| --- | ---: | ---: | ---: |
+| `BM_CopulaFit/static_mvnorm_kendall_param` | 3.79 s | 0.160 s | 0.04 |
+| `BM_CopulaFit/static_mvt_kendall_param` | error | 0.894 s | |
+| `BM_CopulaFit/static_mvt_ml_param` | error | 1.74 s | |
+| `BM_CopulaFit/dcc_mvnorm_param` | 0.945 s | 0.197 s | 0.21 |
+| `BM_CopulaFit/dcc_mvt_param` | 36.4 s | 3.47 s | 0.10 |
+| `BM_CopulaFit/adcc_mvnorm_param` | 1.05 s | 0.218 s | 0.21 |
+| `BM_CopulaFit/adcc_mvt_param` | 36.6 s | 3.56 s | 0.10 |
+| `BM_CopulaGrid/threads:1` | error | 19.8 s | |
+| `BM_CopulaGrid/threads:hw` | error | 4.53 s | |
+| `BM_CopulaStandardErrors/dcc_mvnorm_param` | 4.44 s | 4.36 s | 0.98 |
+
+Secondary rows, five repetitions on both sides, no change above the noise:
+
+| Benchmark | Base | New |
+| --- | ---: | ---: |
+| `BM_DccFit/dcc_mvnorm` | 0.138 s | 0.135 s |
+| `BM_DccFit/dcc_mvt` | 0.139 s | 0.144 s |
+| `BM_DccFit/adcc_mvt` | 0.224 s | 0.228 s |
+| `BM_DccFit/fdcc_mvnorm` | 0.343 s | 0.338 s |
+| `BM_DccGrid/m:21/T:5000/threads:1` | 2.13 s | 2.09 s |
+| `BM_DccStandardErrors/dcc_mvnorm` | 1.37 s | 1.37 s |
+
+The quick set (`quick.py run` and `compare`, base against new) shows every row within the noise. The one flagged
+value, `BM_Loglik/arma22_s33_std/dual` (1.59), is in code this plan does not touch; five repetitions of it alone give
+666 and 683 us on the new build against 671 and 682 us on the base.
+
+## Where the rest of the time goes (measured, not optimised)
+
+Two cases stay above one second. Temporary timers (removed) around the stages, one run each, `gcc-bench`:
+
+`static_mvt_ml_param`, 1.74 s, 19 profile points:
+
+| Stage | Time | Calls |
+| --- | ---: | ---: |
+| the Student score panel (`copula_panel`: 105 thousand Student quantiles) | 0.657 s | 19 |
+| `static_ml` (L-BFGS on the 210 free entries) | 0.295 s | 19 |
+| `copula_loglik` of the point (builds the panel again, then the static likelihood) | 0.757 s | 20 |
+
+About 80% is quantiles, and each point computes them twice: once for the fit and once more inside `copula_loglik`,
+because `copula_terms` rebuilds the panel unless `inputs.scores` holds one at that shape. Candidate for the author:
+hand the panel of the point to its loglik.
+
+`BM_CopulaStandardErrors`, 4.7 s (this run, with the timers): `inputs_at` takes 3.25 s in 106 calls (31 ms each: it
+recomputes the uniforms of the 21 margins at the perturbed point and the normal scores), the terms of the copula
+1.10 s in 325 calls (3.4 ms each). Candidate for the author: the uniforms and scores change only for the series
+whose parameter moved, so a perturbation could recompute one column.

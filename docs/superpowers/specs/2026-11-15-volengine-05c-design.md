@@ -128,3 +128,38 @@ ajuste interno lento, não no número de pontos.
 - A cópula estática (`DccModel::Static`) fica fora do gradiente por tangentes: ela não tem recursão. O ML estático
   só é medido (§4, item 5).
 - O design de 5c-2 e 5c-3 é escrito depois do 5c-1, com os números em mãos.
+
+## 10. 5c-1 feito
+
+Medidas em `docs/performance/profile-5c.md` (cinco repetições, `gcc-bench`, uma thread, m = 21, T = 5000; base em
+`6f7053d`).
+
+| `BM_CopulaFit` | Base | 5c-1 |
+| --- | ---: | ---: |
+| `static_mvnorm_kendall_param` | 3,79 s | 0,160 s |
+| `static_mvt_kendall_param` | erro | 0,894 s |
+| `static_mvt_ml_param` | erro | 1,74 s |
+| `dcc_mvnorm_param` | 0,945 s | 0,197 s |
+| `dcc_mvt_param` | 36,4 s | 3,47 s |
+| `adcc_mvt_param` | 36,6 s | 3,56 s |
+
+O `BM_CopulaGrid` (14 specs) dá 19,8 s com uma thread e 4,53 s com todas; na base ele aborta no mesmo erro das
+estáticas t. `BM_CopulaStandardErrors` fica em 4,4 s (sem mudança). `BM_DccFit`, `BM_DccGrid` e o conjunto rápido ficam
+iguais dentro do ruído.
+
+- **Causa da falha estática:** com séries independentes, o perfil de ν cresce até o teto e o Brent avalia ν = 50 exato,
+  que é o melhor ponto. `fit_copula` aplicava a verificação de ν fixo fora de (4, 50) também ao ν do perfil, rejeitava
+  o 50 e devolvia o ponto padrão (ℓ não finito). Agora a verificação vale só para ν fixo; o ν do perfil fica em [4, 50].
+- **A estimativa mudou de lugar (decisão registrada):** o ν e os parâmetros das cópulas t se movem dentro da precisão do
+  Brent (ν a 1e-4 relativo, ℓ a 1e-8 relativo do valor anterior); os oráculos `rmgarch` seguem verdes nas mesmas
+  tolerâncias.
+- **O custo restante da cópula t** é o perfil de 37 pontos (~0,1 s cada) e os quantis t (105 mil por ponto). O Newton no
+  perfil pelo teorema do envelope (§5) é o próximo passo; o `ponytail:` do `profile_shape` aponta para ele.
+
+Ficou para o autor (medido, não otimizado):
+- `static_mvt_ml_param` calcula os quantis t duas vezes por ponto (no painel do ajuste e de novo no `copula_loglik`);
+  passar o painel do ponto ao seu ℓ tira ~0,7 s dos 1,74 s.
+- Os erros-padrão da cópula gastam 3,25 s dos 4,7 s em `inputs_at` (106 pontos perturbados). Só uma série muda por
+  perturbação, e o painel de uniformes e de scores poderia recalcular só essa coluna.
+- `DccFitResult` não guarda o número de iterações do ajuste; sem ele, as iterações médias do ajuste interno antes e
+  depois da partida a quente não foram registradas (só os pontos do perfil: 38 → 37, e ~0,96 s → ~0,098 s por ponto).

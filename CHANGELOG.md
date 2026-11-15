@@ -38,6 +38,16 @@ library whose ABI version differs).
   between the pool's threads). Values move by about an ulp.
 - Batches run one fit per task, the specs with the most parameters first: the batch no longer ends on a block of
   costly fits.
+- Copula fits with a free Student shape: each point of the shape profile starts from the estimate of the nearest
+  point already evaluated, and the maximum is the point Brent evaluated (no final re-fit). The shape and the other
+  parameters move within the bracketing precision (shape to 1e-4 relative, log-likelihood to 1e-8 relative); the
+  `rmgarch` comparisons hold at their tolerances.
+
+### Fixed
+
+- The static Student copula (Kendall and ML) with independent series (the profile maximum on the ceiling of the shape)
+  failed with a non-finite log-likelihood. A profiled shape is now accepted on the whole interval [4, 50]; only a fixed
+  shape outside (4, 50) fails its spec.
 
 ### Performance
 
@@ -54,6 +64,11 @@ library whose ABI version differs).
   instead of forward-mode AD, in the optimizer and in the Hessian of the standard errors: the TCC grid takes 0.71 of
   its time with one thread (31.3 s to 22.0 s; 4.24 s to 2.72 s with all threads). Estimates move only in the last
   digits; other specs are unchanged.
+- Copulas (plan 5c-1): the DCC, aDCC and FDCC copula fits take the tangent gradient of plan 5b, the Student shape
+  profile warm-starts from the nearest evaluated point, and Kendall's tau-b is Knight's O(T log T) algorithm with the
+  bits of the pair count. At m = 21 and T = 5000, one thread: the DCC-t copula goes from 36.4 s to 3.47 s, the aDCC-t
+  from 36.6 s to 3.56 s, the DCC-mvnorm copula from 0.945 s to 0.197 s and the static Kendall mvnorm from 3.79 s to
+  0.160 s. See [docs/performance/profile-5c.md](docs/performance/profile-5c.md).
 - The TCC grid (1080 fits) on the Ryzen 7 5700X: see [docs/performance/benchmarks.md](docs/performance/benchmarks.md)
   and [docs/performance/profile-5a.md](docs/performance/profile-5a.md) for the measurements of each change.
 

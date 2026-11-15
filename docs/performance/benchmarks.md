@@ -159,7 +159,7 @@ benchmark. What each step gained is in [Plan 5b profile](profile-5b.md).
 The other `BM_DccFit` rows and the `BM_FitOne` and `BM_Loglik` rows are in [Plan 5b profile](profile-5b.md). Every
 fit of the TCC grid and of the DCC grid ends `CONVERGED` on both sides; the log-likelihoods of the grid agree (see
 the profile for the 17 fits that move by more than 1e-9 relative). Two cases of `BM_CopulaFit`
-(`static_mvt_{kendall,ml}_param`) report "the DCC fit has no finite point" on both sides: they predate plan 5b.
+(`static_mvt_{kendall,ml}_param`) reported "the DCC fit has no finite point" on both sides until plan 5c-1 fixed them (see the copula section below).
 
 ## Adjoint gradient
 
@@ -444,9 +444,10 @@ No DCC profile, assembly review or before/after optimization comparison was perf
 
 ## Copula-DCC workload (plan 4b)
 
-**Pending:** the five-repetition run was deferred. The numbers below are one repetition of the individual fits
-(2026-11-13, same machine and toolchain, source `c5cb446` plus the plan 4b benchmark additions); the grid and the
-standard-error case have not been measured yet. Reproduce and fill in:
+Measured on 2026-11-15, same machine and toolchain, plan 5c-1 (source after the commit "perf: Kendall's tau-b by
+Knight's algorithm"). Five repetitions, medians; every fit converged. The base is the code at `6f7053d`, the plan 4b
+code with the plan 5 changes to the plain DCC. The steps in between and the base of the secondary benchmarks are in
+[Plan 5c-1 profile](profile-5c.md).
 
 ```
 cmake --preset gcc-bench
@@ -459,21 +460,26 @@ timed loops). `BM_CopulaFit` fits each of the seven forms with parametric margin
 fits the 14 specs (the seven forms, parametric and empirical) with 1 thread and all; `BM_CopulaStandardErrors`
 computes the two-stage tables of a DCC-mvnorm copula after fitting it outside the timed loop.
 
-| Individual fit (`BM_CopulaFit`, one thread, one repetition) | Time (s) |
-| --- | ---: |
-| `static_mvnorm_kendall_param` | 4.42 |
-| `static_mvt_kendall_param` | 5.27 |
-| `static_mvt_ml_param` | 2.11 |
-| `dcc_mvnorm_param` | 0.947 |
-| `dcc_mvt_param` | 36.6 |
-| `adcc_mvnorm_param` | 0.956 |
-| `adcc_mvt_param` | 38.8 |
+| Individual fit (`BM_CopulaFit`, one thread) | Base (s) | Plan 5c-1 (s) |
+| --- | ---: | ---: |
+| `static_mvnorm_kendall_param` | 3.79 | 0.160 |
+| `static_mvt_kendall_param` | error (no finite point) | 0.894 |
+| `static_mvt_ml_param` | error (no finite point) | 1.74 |
+| `dcc_mvnorm_param` | 0.945 | 0.197 |
+| `dcc_mvt_param` | 36.4 | 3.47 |
+| `adcc_mvnorm_param` | 1.05 | 0.218 |
+| `adcc_mvt_param` | 36.6 | 3.56 |
 
-Every fit converged. Two costs stand out, both deliberate simplifications marked `ponytail:` in the code:
-- a free copula mvt shape is a Brent search over the profile likelihood, about 35 DCC fits of ~1 s each, so a
-  DCC-t copula costs ~37 s against 1.0 s for the plain DCC-t of plan 4a; a gradient in nu would remove it;
-- the static Kendall matrix uses the O(T^2) pair count per entry (210 entries here, ~4 s); Knight's O(T log T)
-  algorithm would remove it.
+| Grid and standard errors | Base | Plan 5c-1 |
+| --- | ---: | ---: |
+| `BM_CopulaGrid/threads:1` | error (static Student specs) | 19.8 s |
+| `BM_CopulaGrid/threads:hw` | error (static Student specs) | 4.53 s |
+| `BM_CopulaStandardErrors/dcc_mvnorm_param` | 4.44 s | 4.36 s |
+
+The static Student copula used to fail at m = 21 with independent series (the profile maximum sits on the ceiling of
+the shape and the fit rejected it); that is fixed. What is left above one second is the quantiles of the Student
+copula (`static_mvt_ml_param`, `dcc_mvt_param`, `adcc_mvt_param`: 37 profile points each) and the perturbed points of
+the standard errors; see the end of [Plan 5c-1 profile](profile-5c.md).
 
 ## DCC forecast and simulation (plan 4c)
 
