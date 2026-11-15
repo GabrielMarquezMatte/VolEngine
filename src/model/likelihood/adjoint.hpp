@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/var_init.hpp"
+#include "garch/presample.hpp"
 #include "model/data.hpp"
 #include "model/layout.hpp"
 
@@ -11,8 +12,8 @@ namespace ve::model
 {
 
 // True for the models, densities and means whose log-likelihood gradient the adjoint computes, listed explicitly so
-// that a new combination falls back to the forward Dual: sGARCH and iGARCH; norm, std and ged; ARMA with or without
-// a mean; either VarInit; no regressors, ARCH-in-mean, ARFIMA or variance targeting.
+// that a new combination falls back to the forward Dual: sGARCH, iGARCH and gjrGARCH; norm, std and ged; ARMA with
+// or without a mean; either VarInit; no regressors, ARCH-in-mean, ARFIMA or variance targeting.
 bool has_adjoint(const Layout& layout, VarInit var_init);
 
 // The log-likelihood and its gradient over the natural-space theta by reverse mode: loglik<double> runs forward and
@@ -31,6 +32,10 @@ private:
     void density_backward(std::span<const double> theta, const Layout& layout, std::span<double> grad);
     void variance_backward(std::span<const double> theta, const Layout& layout, const Data& data,
                            VarInit var_init, std::span<double> grad);
+    double sgarch_backward(std::span<const double> theta, const Layout& layout,
+                           const garch::Presample<double>& presample, std::span<double> grad);
+    double gjrgarch_backward(std::span<const double> theta, const Layout& layout,
+                             const garch::Presample<double>& presample, std::span<double> grad);
     void mean_backward(const Data& data, std::span<const double> theta, const Layout& layout,
                        std::span<double> grad);
 

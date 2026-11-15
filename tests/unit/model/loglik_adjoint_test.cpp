@@ -171,7 +171,7 @@ TEST_P(LoglikAdjointGrid, MatchesDual)
 }
 
 INSTANTIATE_TEST_SUITE_P(PhaseOne, LoglikAdjointGrid,
-                         ::testing::Combine(::testing::Values(Model::SGarch, Model::IGarch),
+                         ::testing::Combine(::testing::Values(Model::SGarch, Model::IGarch, Model::GjrGarch),
                                             ::testing::Values(Orders{1, 1}, Orders{2, 1}, Orders{1, 2},
                                                               Orders{3, 3}),
                                             ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1},
@@ -249,7 +249,7 @@ bool covered(const ve::Spec& spec, VarInit var_init = VarInit::Sample)
 
 TEST(LoglikAdjoint, CoversPhaseOneOnly)
 {
-    for (Model model : {Model::SGarch, Model::IGarch})
+    for (Model model : {Model::SGarch, Model::IGarch, Model::GjrGarch})
     {
         for (Dist dist : {Dist::Norm, Dist::Std, Dist::Ged})
         {
@@ -257,7 +257,7 @@ TEST(LoglikAdjoint, CoversPhaseOneOnly)
             EXPECT_TRUE(covered({.model = model, .dist = dist, .include_mean = false}, VarInit::Backcast));
         }
     }
-    for (Model model : {Model::ApArch, Model::CsGarch, Model::FGarchAllGarch, Model::GjrGarch, Model::EGarch})
+    for (Model model : {Model::ApArch, Model::CsGarch, Model::FGarchAllGarch, Model::EGarch})
     {
         EXPECT_FALSE(covered({.model = model})) << static_cast<int>(model);
     }

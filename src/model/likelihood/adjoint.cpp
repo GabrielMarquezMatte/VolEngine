@@ -2,6 +2,7 @@
 
 #include "ad/dual.hpp"
 #include "dist/symmetric.hpp"
+#include "garch/gjrgarch.hpp"
 #include "garch/sgarch.hpp"
 #include "mean/arma.hpp"
 #include "model/likelihood.hpp"
@@ -19,9 +20,14 @@ namespace ve::model
 namespace
 {
 
-bool is_covered_model(Model model)
+bool is_sgarch_family(Model model)
 {
     return model == Model::SGarch || model == Model::IGarch;
+}
+
+bool is_covered_model(Model model)
+{
+    return is_sgarch_family(model) || model == Model::GjrGarch;
 }
 
 bool is_covered_dist(Dist dist)
@@ -107,6 +113,29 @@ void LoglikAdjoint::variance_backward(std::span<const double> theta, const Layou
                                       VarInit var_init, std::span<double> grad)
 {
     garch::Presample<double> presample = presample_at(data, residuals_, theta, layout, var_init);
+    double presample_adjoint = 0.0;
+    if (layout.model == Model::GjrGarch)
+    {
+        presample_adjoint = gjrgarch_backward(theta, layout, presample, grad);
+    }
+    if (is_sgarch_family(layout.model))
+    {
+        presample_adjoint = sgarch_backward(theta, layout, presample, grad);
+    }
+    if (var_init == VarInit::Sample)
+    {
+        double slope = 2.0 * presample_adjoint / static_cast<double>(residuals_.size());
+        for (std::size_t t = 0; t < residuals_.size(); ++t)
+        {
+            residual_adjoint_[t] += slope * residuals_[t];
+        }
+    }
+}
+
+// sGARCH, and iGARCH through its beta_q; returns the presample's adjoint.
+double LoglikAdjoint::sgarch_backward(std::span<const double> theta, const Layout& layout,
+                                      const garch::Presample<double>& presample, std::span<double> grad)
+{
     garch::SGarchParameters<double> p = sgarch_parameters(theta, layout);
     std::array<double, kMaxOrder> beta_storage{};
     if (layout.model == Model::IGarch)
@@ -122,14 +151,24 @@ void LoglikAdjoint::variance_backward(std::span<const double> theta, const Layou
     {
         chain_igarch_beta(alpha, beta);
     }
-    if (var_init == VarInit::Sample)
-    {
-        double slope = 2.0 * adjoint.presample / static_cast<double>(residuals_.size());
-        for (std::size_t t = 0; t < residuals_.size(); ++t)
-        {
-            residual_adjoint_[t] += slope * residuals_[t];
-        }
-    }
+    return adjoint.presample;
+}
+
+// Returns the presample's adjoint.
+double LoglikAdjoint::gjrgarch_backward(std::span<const double> theta, const Layout& layout,
+                                        const garch::Presample<double>& presample, std::span<double> grad)
+{
+    garch::GjrGarchParameters<double> p = gjrgarch_parameters(theta, layout);
+    garch::GjrGarchAdjoint adjoint{residual_adjoint_,
+                                   sigma2_adjoint_,
+                                   0.0,
+                                   grad.subspan(layout.alpha_begin(), p.alpha.size()),
+                                   grad.subspan(layout.beta_begin(), p.beta.size()),
+                                   grad.subspan(layout.gamma_begin(), p.gamma.size()),
+                                   0.0};
+    garch::gjrgarch_variance_backward(residuals_, p, presample, sigma2_, adjoint);
+    grad[layout.omega()] += adjoint.omega;
+    return adjoint.presample;
 }
 
 void LoglikAdjoint::mean_backward(const Data& data, std::span<const double> theta, const Layout& layout,
