@@ -97,7 +97,6 @@ jobs:
     name: PyPI
     needs: publish-github
     runs-on: ubuntu-latest
-    environment: pypi
     permissions:
       id-token: write
     steps:
