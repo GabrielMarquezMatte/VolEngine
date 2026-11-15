@@ -43,12 +43,7 @@ fi
 
 uv build --wheel python --out-dir dist
 wheel=$(ls dist/*.whl)
-case "$wheel" in
-    *"-py3-none-${EXPECTED_TAG}.whl") ;;
-    *) echo "error: $wheel is not tagged $EXPECTED_TAG: the bundled library needs a newer system than the tag claims" >&2
-       exit 1 ;;
-esac
-py python/scripts/check_wheel_tag.py dist
+py python/scripts/check_wheel_tag.py dist "$EXPECTED_TAG"
 if [ "$(uname)" = Linux ]; then
     uvx auditwheel show "$wheel"
 fi

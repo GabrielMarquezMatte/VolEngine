@@ -21,6 +21,7 @@ def load(path: Path) -> ModuleType:
 deps = load(PYTHON_DIR / "scripts" / "check_native_deps.py")
 build = load(PYTHON_DIR / "scripts" / "build_native.py")
 hook = load(PYTHON_DIR / "hatch_build.py")
+wheel_tag = load(PYTHON_DIR / "scripts" / "check_wheel_tag.py")
 
 
 def test_windows_mingw_runtime_is_forbidden():
@@ -70,3 +71,22 @@ def test_glibc_floor_defaults_to_2_17():
 
 def test_macos_floor_reads_lc_build_version():
     assert hook.macos_floor(mach_o_with_minos(11, 0)) == "11_0"
+
+
+def test_tag_equal_to_expected_is_allowed():
+    assert wheel_tag.tag_allowed("win_amd64", "win_amd64")
+    assert wheel_tag.tag_allowed("macosx_11_0_arm64", "macosx_11_0_arm64")
+
+
+def test_glibc_floor_below_expected_is_allowed():
+    assert wheel_tag.tag_allowed("manylinux_2_25_x86_64", "manylinux_2_28_x86_64")
+
+
+def test_glibc_floor_above_expected_is_refused():
+    assert not wheel_tag.tag_allowed("manylinux_2_34_x86_64", "manylinux_2_28_x86_64")
+
+
+def test_other_architecture_or_platform_is_refused():
+    assert not wheel_tag.tag_allowed("manylinux_2_17_aarch64", "manylinux_2_28_x86_64")
+    assert not wheel_tag.tag_allowed("macosx_14_0_arm64", "macosx_11_0_arm64")
+    assert not wheel_tag.tag_allowed("musllinux_1_2_x86_64", "manylinux_2_28_x86_64")
