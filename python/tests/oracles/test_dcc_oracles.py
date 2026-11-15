@@ -45,7 +45,7 @@ def panel_fits(panel_id):
     fits = [ctx.fit(ve.Spec(start=params), data[:, i], options=ve.FitOptions(tol=1))
             for i, params in enumerate(panel["univariate"])]
     for fit, params in zip(fits, panel["univariate"], strict=True):
-        np.testing.assert_allclose(fit.coef().estimate, list(params.values()), rtol=0, atol=1e-12)
+        np.testing.assert_allclose(fit.estimate, list(params.values()), rtol=0, atol=1e-12)
     return fits
 
 
@@ -135,7 +135,7 @@ def test_dcc_matches_paper_convention(case, oracle_start):
     fits = panel_fits(case["panel"])
     fit = fitted_case(case["id"], oracle_start)
     assert fit.status == "converged"
-    params = dict(zip(fit.names, fit.coef().estimate, strict=True))
+    params = dict(zip(fit.names, fit.estimate, strict=True))
     params.update(case["fixed"] or {})
     z = np.column_stack([univariate.std_residuals for univariate in fits])
     sigma = np.column_stack([univariate.sigma for univariate in fits])
@@ -158,7 +158,7 @@ def estimate_cases():
 @pytest.mark.parametrize("case", estimate_cases())
 def test_dcc_estimates_near_rmgarch(case):
     fit = fitted_case(case["id"])
-    params = dict(zip(fit.names, fit.coef().estimate, strict=True))
+    params = dict(zip(fit.names, fit.estimate, strict=True))
     for name in fit.names:
         if case["model"] == "aDCC" and name.startswith("dccg"):
             assert params[name] >= 0

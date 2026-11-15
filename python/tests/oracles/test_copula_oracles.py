@@ -48,7 +48,7 @@ def univariate_fits():
     fits = [ctx.fit(ve.Spec(dist="std", start=params), data[:, i], options=ve.FitOptions(tol=1))
             for i, params in enumerate(FIXTURE["univariate"])]
     for fit, params in zip(fits, FIXTURE["univariate"], strict=True):
-        np.testing.assert_allclose(fit.coef().estimate, list(params.values()), rtol=0, atol=1e-12)
+        np.testing.assert_allclose(fit.estimate, list(params.values()), rtol=0, atol=1e-12)
     return fits
 
 
@@ -102,7 +102,7 @@ def test_copula_matches_paper_convention(case_id):
     fits = univariate_fits()
     fit = fitted(case_id)
     assert fit.status == "converged"
-    params = dict(zip(fit.names, fit.coef().estimate, strict=True))
+    params = dict(zip(fit.names, fit.estimate, strict=True))
     e = normal_scores(np.column_stack([univariate.std_residuals for univariate in fits]))
     if case_id.startswith("dcc"):
         correlations = dynamic_path(e, params["dcca1"], params["dccb1"])
@@ -133,7 +133,7 @@ def estimate_cases():
 def test_copula_estimates_near_rmgarch(case):
     fit = fitted(case["id"])
     assert fit.status == "converged"
-    params = dict(zip(fit.names, fit.coef().estimate, strict=True))
+    params = dict(zip(fit.names, fit.estimate, strict=True))
     assert set(params) == set(case["params"])
     for name, expected in case["params"].items():
         if abs(expected) < 1e-6:

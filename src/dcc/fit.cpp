@@ -449,6 +449,10 @@ std::vector<DccFitResult> fit_dcc_batch(Context& context, std::span<const FitRes
             run_specs(pool, threads, batch, results);
             add_standard_errors(pool, threads, batch, results);
         });
+    for (DccFitResult& result : results)
+    {
+        result.standard_errors = options.standard_errors;
+    }
     return results;
 }
 

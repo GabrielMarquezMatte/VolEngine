@@ -309,7 +309,7 @@ public:
         return per_parameter([&](double* out) { return ve_dcc_fit_estimates(handle_.get(), out); });
     }
 
-    // The two-stage standard errors; NaN when the fit ran with standard_errors = false.
+    // The two-stage standard errors; an error (invalid_argument) when the fit ran with standard_errors = false.
     Result<std::vector<double>> std_errors(SeKind kind) const
     {
         return per_parameter(

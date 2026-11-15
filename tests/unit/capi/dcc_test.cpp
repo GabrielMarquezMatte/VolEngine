@@ -280,6 +280,22 @@ std::vector<double> read_table(const ve_dcc_fit* fit, Reader reader, int32_t kin
     return values;
 }
 
+// The tables of a fit made with standard errors off are an error, as in the univariate fit.
+void expect_standard_errors_not_computed(const ve_dcc_fit* fit)
+{
+    std::size_t count = 0;
+    ASSERT_EQ(ve_dcc_fit_param_count(fit, &count), VE_OK);
+    std::vector<double> values(count);
+    for (const int32_t kind : {VE_SE_HESSIAN, VE_SE_ROBUST})
+    {
+        for (Reader reader : {ve_dcc_fit_std_errors, ve_dcc_fit_t_values, ve_dcc_fit_p_values})
+        {
+            EXPECT_EQ(reader(fit, kind, values.data()), VE_INVALID_ARGUMENT);
+            EXPECT_NE(std::string(ve_last_error()).find("standard errors were not computed"), std::string::npos);
+        }
+    }
+}
+
 std::vector<double> read_estimates(const ve_dcc_fit* fit)
 {
     std::size_t count = 0;
@@ -339,8 +355,12 @@ Report report_of(const ve_dcc_fit* fit)
     Report report;
     report.status = read_status(fit);
     report.estimate = read_estimates(fit);
-    report.se_hessian = read_table(fit, ve_dcc_fit_std_errors, VE_SE_HESSIAN);
-    report.se_robust = read_table(fit, ve_dcc_fit_std_errors, VE_SE_ROBUST);
+    std::vector<double> probe(report.estimate.size());
+    if (ve_dcc_fit_std_errors(fit, VE_SE_HESSIAN, probe.data()) == VE_OK)
+    {
+        report.se_hessian = read_table(fit, ve_dcc_fit_std_errors, VE_SE_HESSIAN);
+        report.se_robust = read_table(fit, ve_dcc_fit_std_errors, VE_SE_ROBUST);
+    }
     report.loglik = read_loglik(fit);
     report.correlation = read_view(fit, ve_dcc_fit_correlation);
     report.covariance = read_view(fit, ve_dcc_fit_covariance);
@@ -363,8 +383,11 @@ Report report_of_core(const DccFitResult& result)
     Report report;
     report.status = static_cast<int32_t>(result.status);
     report.estimate = result.estimate;
-    report.se_hessian = result.se_hessian;
-    report.se_robust = result.se_robust;
+    if (result.standard_errors)
+    {
+        report.se_hessian = result.se_hessian;
+        report.se_robust = result.se_robust;
+    }
     report.loglik = result.loglik;
     if (result.r != nullptr)
     {
@@ -553,21 +576,8 @@ TEST(CapiDcc, StandardErrorsLater)
     for (std::size_t i = 0; i < plain.size(); ++i)
     {
         SCOPED_TRACE(i);
-        for (const int32_t kind : {VE_SE_HESSIAN, VE_SE_ROBUST})
-        {
-            for (const double value : read_table(plain[i], ve_dcc_fit_std_errors, kind))
-            {
-                EXPECT_TRUE(std::isnan(value));
-            }
-            for (const double value : read_table(plain[i], ve_dcc_fit_t_values, kind))
-            {
-                EXPECT_TRUE(std::isnan(value));
-            }
-            for (const double value : read_table(plain[i], ve_dcc_fit_p_values, kind))
-            {
-                EXPECT_TRUE(std::isnan(value));
-            }
-        }
+        expect_standard_errors_not_computed(plain[i]);
+        EXPECT_TRUE(std::isfinite(read_loglik(plain[i])));
         ve_dcc_fit* later = nullptr;
         ASSERT_EQ(ve_dcc_fit_standard_errors(context.get(), plain[i], fits.data(), fits.size(), &later), VE_OK)
             << ve_last_error();
@@ -575,7 +585,8 @@ TEST(CapiDcc, StandardErrorsLater)
         ASSERT_NE(later, nullptr);
         EXPECT_NE(later, plain[i]);
         expect_same_report(report_of(later), report_of(full[i]));
-        EXPECT_TRUE(std::isnan(read_table(plain[i], ve_dcc_fit_std_errors, VE_SE_ROBUST).front()));
+        EXPECT_TRUE(std::isfinite(read_table(later, ve_dcc_fit_std_errors, VE_SE_ROBUST).front()));
+        EXPECT_EQ(std::bit_cast<std::uint64_t>(read_loglik(plain[i])), std::bit_cast<std::uint64_t>(read_loglik(full[i])));
     }
 }
 

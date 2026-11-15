@@ -46,6 +46,10 @@ ve_status fill_statistic(const ve_dcc_fit* f, int32_t kind, double* out, Statist
             {
                 return set_error(VE_INVALID_ARGUMENT, "unknown standard error kind");
             }
+            if (!f->result.standard_errors)
+            {
+                return ve::capi::no_standard_errors();
+            }
             const auto& errors = kind == VE_SE_HESSIAN ? f->result.se_hessian : f->result.se_robust;
             for (size_t i = 0; i < errors.size(); ++i)
             {

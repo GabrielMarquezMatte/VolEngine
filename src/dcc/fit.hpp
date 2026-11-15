@@ -27,9 +27,12 @@ struct DccFitResult
     DccSpec spec{};
     std::vector<std::string> names;
     std::vector<double> estimate;
-    // NaN until standard errors are computed.
+    // NaN until standard errors are computed, and for a spec that did not converge.
     std::vector<double> se_hessian;
     std::vector<double> se_robust;
+    // Whether the fit was asked for its standard errors: set by the batch from DccOptions::standard_errors, and by
+    // dcc_standard_errors in the C API. Without it the tables are not available (the C API says so).
+    bool standard_errors = false;
     // The reported log-likelihood at the estimate (Stage::Reported of the spec's convention).
     double loglik = std::numeric_limits<double>::quiet_NaN();
     std::size_t nobs = 0;

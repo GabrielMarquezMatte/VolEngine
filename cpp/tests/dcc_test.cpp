@@ -111,8 +111,8 @@ TEST(Dcc, SingleSeriesIsRejected)
     EXPECT_EQ(fit.error().status, ve::Status::invalid_argument);
 }
 
-// Unlike a univariate Fit, a DccFit without standard errors answers with NaN, not with an error.
-TEST(Dcc, StandardErrorsOffGiveNaN)
+// As a univariate Fit, a DccFit without standard errors answers with an error, and the estimates still read.
+TEST(Dcc, StandardErrorsOffAreAnError)
 {
     const auto context = ve::Context::create(1).value();
     const auto fits = ve::testing::dcc3_univariate_fits(context);
@@ -121,10 +121,11 @@ TEST(Dcc, StandardErrorsOffGiveNaN)
     {
         for (const auto& values : {fit.std_errors(kind), fit.t_values(kind), fit.p_values(kind)})
         {
-            ASSERT_TRUE(values.has_value());
-            EXPECT_TRUE(std::all_of(values->begin(), values->end(), [](double v) { return std::isnan(v); }));
+            ASSERT_FALSE(values.has_value());
+            EXPECT_EQ(values.error().status, ve::Status::invalid_argument);
         }
     }
+    EXPECT_TRUE(fit.estimates().has_value());
 }
 
 TEST(Dcc, CopulaAndStaticModelsConverge)

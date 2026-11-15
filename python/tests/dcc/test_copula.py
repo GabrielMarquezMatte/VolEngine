@@ -84,7 +84,8 @@ def test_copula_spec_hash_and_equality():
 def test_copula_standard_errors_later(ctx, univariate):
     spec = ve.DccSpec("dcc", dist="mvt", copula="parametric")
     light = ctx.fit_dcc(spec, univariate, standard_errors=False)
-    assert np.isnan(light.coef().std_error).all()
+    with pytest.raises(ve.VolEngineError, match="standard errors were not computed"):
+        light.coef()
     later = light.standard_errors(univariate)
     eager = ctx.fit_dcc(spec, univariate)
     np.testing.assert_array_equal(later.coef(se="robust").std_error, eager.coef(se="robust").std_error)

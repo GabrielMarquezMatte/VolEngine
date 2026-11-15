@@ -399,7 +399,9 @@ VE_API void ve_dcc_spec_free(ve_dcc_spec* s);
 #define VE_DCC_STATIC_ML 2
 VE_API ve_status ve_dcc_spec_set_copula(ve_dcc_spec* s, int32_t transformation);
 VE_API ve_status ve_dcc_spec_set_static_method(ve_dcc_spec* s, int32_t method);
-/* Standard errors are enabled by default; regressors make them VE_UNSUPPORTED. */
+/* Standard errors are enabled by default; regressors make them VE_UNSUPPORTED. With 0, ve_dcc_fit_std_errors,
+   ve_dcc_fit_t_values and ve_dcc_fit_p_values return VE_INVALID_ARGUMENT, as ve_fit_std_errors does; everything else
+   is computed as before, and ve_dcc_fit_standard_errors gives a fit that has them. */
 VE_API ve_status ve_dcc_options_create(ve_dcc_options** out);
 VE_API ve_status ve_dcc_options_set_standard_errors(ve_dcc_options* o, int32_t on);
 VE_API void ve_dcc_options_free(ve_dcc_options* o);

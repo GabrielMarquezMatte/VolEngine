@@ -94,15 +94,16 @@ def test_dcc_standard_errors_later(ctx, univariate):
     spec = make_spec("dcc", "mvt")
     on = ctx.fit_dcc(spec, univariate)
     off = ctx.fit_dcc(spec, univariate, standard_errors=False)
-    assert np.all(np.isnan(off.coef(se="hessian").std_error))
-    assert np.all(np.isnan(off.coef(se="robust").t_value))
+    for kind in ("hessian", "robust"):
+        with pytest.raises(ve.VolEngineError, match="standard errors were not computed"):
+            off.coef(se=kind)
     later = off.standard_errors(univariate)
     assert later is not off
     for kind in ("hessian", "robust"):
         np.testing.assert_array_equal(later.coef(se=kind).std_error, on.coef(se=kind).std_error)
         np.testing.assert_array_equal(later.coef(se=kind).p_value, on.coef(se=kind).p_value)
     np.testing.assert_array_equal(later.coef().estimate, on.coef().estimate)
-    assert np.all(np.isnan(off.coef().std_error))
+    np.testing.assert_array_equal(off.estimate, on.estimate)
     np.testing.assert_array_equal(later.R, on.R)
 
 

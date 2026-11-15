@@ -216,11 +216,17 @@ class DccFit:
         scale = IC_PER_OBS if per_obs else IC_TOTAL
         return cast(float, read_scalar(ctypes.c_double, lib.ve_dcc_fit_criterion, self._handle.pointer, kind, scale))
 
+    @property
+    def estimate(self) -> NDArray[np.float64]:
+        """The estimates, in `names` order; also on a fit made with standard_errors=False."""
+        return self._values(lib.ve_dcc_fit_estimates)
+
     def coef(self, se: str = "hessian") -> CoefTable:
+        """The coefficient table. A fit made with standard_errors=False raises VolEngineError: call `standard_errors`."""
         kind = code_of(SE_KINDS, "se", se)
         return CoefTable(
             self.names,
-            self._values(lib.ve_dcc_fit_estimates),
+            self.estimate,
             self._values(lib.ve_dcc_fit_std_errors, kind),
             self._values(lib.ve_dcc_fit_t_values, kind),
             self._values(lib.ve_dcc_fit_p_values, kind),
