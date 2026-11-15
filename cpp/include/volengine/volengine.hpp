@@ -7,5 +7,6 @@
 #include <volengine/error.hpp>
 #include <volengine/fit.hpp>
 #include <volengine/input.hpp>
+#include <volengine/simulation.hpp>
 
 #endif

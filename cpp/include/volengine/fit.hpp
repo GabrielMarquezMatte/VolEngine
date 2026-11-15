@@ -70,6 +70,60 @@ inline Result<std::array<double, 3>> nyblom_critical(std::size_t parameters)
     return values;
 }
 
+namespace detail
+{
+
+// A read-only view `(data, length)` of a C handle; the pointer lives as long as the handle.
+template <class Handle>
+Result<std::span<const double>> view(
+    const Handle* handle, ve_status (*function)(const Handle*, const double**, std::size_t*))
+{
+    const double* data = nullptr;
+    std::size_t length = 0;
+    if (auto read = check(function(handle, &data, &length)); !read)
+    {
+        return failure(read);
+    }
+    return std::span<const double>(data, length);
+}
+
+} // namespace detail
+
+// The forecast of a fit h = 1 .. horizon steps after its last observation. It copies what it needs: it stays valid
+// after the Fit is destroyed. The views are valid until the Forecast is destroyed.
+class Forecast
+{
+public:
+    explicit Forecast(ve_forecast* raw) noexcept : handle_(raw)
+    {
+    }
+
+    Result<std::size_t> horizon() const
+    {
+        std::size_t value = 0;
+        if (auto read = detail::check(ve_forecast_horizon(handle_.get(), &value)); !read)
+        {
+            return detail::failure(read);
+        }
+        return value;
+    }
+
+    // The conditional standard deviation, rugarch's sigmaFor.
+    Result<std::span<const double>> sigma() const
+    {
+        return detail::view(handle_.get(), ve_forecast_sigma);
+    }
+
+    // The conditional mean, rugarch's seriesFor.
+    Result<std::span<const double>> mean() const
+    {
+        return detail::view(handle_.get(), ve_forecast_mean);
+    }
+
+private:
+    detail::Owned<ve_forecast, ve_forecast_free> handle_;
+};
+
 // One model fitted on one series. Move-only. The views it returns (names, series) are valid until the Fit is
 // destroyed. Check status() before using the values: a fit that did not converge has the best finite point the
 // optimizer reached, or NaN.
@@ -173,22 +227,22 @@ public:
     // without a finite point has no series: the view is empty.
     Result<std::span<const double>> sigma() const
     {
-        return view(ve_fit_sigma);
+        return detail::view(handle_.get(), ve_fit_sigma);
     }
 
     Result<std::span<const double>> residuals() const
     {
-        return view(ve_fit_residuals);
+        return detail::view(handle_.get(), ve_fit_residuals);
     }
 
     Result<std::span<const double>> std_residuals() const
     {
-        return view(ve_fit_std_residuals);
+        return detail::view(handle_.get(), ve_fit_std_residuals);
     }
 
     Result<std::span<const double>> fitted() const
     {
-        return view(ve_fit_fitted);
+        return detail::view(handle_.get(), ve_fit_fitted);
     }
 
     // Ljung-Box needs 1 <= lag < nobs and lag >= 3 * fitdf - 1 (fitdf is ignored for squared residuals).
@@ -235,6 +289,19 @@ public:
             return detail::failure(read);
         }
         return result;
+    }
+
+    // The regressors of the horizon, panels of exactly `horizon` rows, or null when the spec has none.
+    Result<Forecast> forecast(std::size_t horizon, const Panel* mxreg = nullptr, const Panel* vxreg = nullptr) const
+    {
+        ve_forecast* raw = nullptr;
+        if (auto created = detail::check(ve_forecast_create(
+                handle_.get(), horizon, detail::native_or_null(mxreg), detail::native_or_null(vxreg), &raw));
+            !created)
+        {
+            return detail::failure(created);
+        }
+        return Forecast{raw};
     }
 
     const ve_fit* native() const noexcept
@@ -300,17 +367,6 @@ private:
             return detail::failure(read);
         }
         return Test{values[0], values[1]};
-    }
-
-    Result<std::span<const double>> view(ve_status (*function)(const ve_fit*, const double**, std::size_t*)) const
-    {
-        const double* data = nullptr;
-        std::size_t length = 0;
-        if (auto read = detail::check(function(handle_.get(), &data, &length)); !read)
-        {
-            return detail::failure(read);
-        }
-        return std::span<const double>(data, length);
     }
 
     Handle handle_;

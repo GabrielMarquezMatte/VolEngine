@@ -8,6 +8,7 @@
 #include <volengine/error.hpp>
 #include <volengine/fit.hpp>
 #include <volengine/input.hpp>
+#include <volengine/simulation.hpp>
 
 namespace ve
 {
@@ -117,6 +118,25 @@ public:
         return std::move(fits->front());
     }
 
+    // Paths continuing after the last observation of the fit.
+    Result<Simulation> simulate(const Fit& fit, const SimOptions& options) const
+    {
+        return simulate_with(options, [&](const ve_sim_options* native, ve_sim** out)
+            { return ve_simulate_fit(handle_.get(), fit.native(), native, out); });
+    }
+
+    // Paths of a spec with every parameter fixed, from its unconditional state.
+    Result<Simulation> simulate(const Spec& spec, const SimOptions& options) const
+    {
+        auto native = spec.make_handle();
+        if (!native)
+        {
+            return detail::failure(native);
+        }
+        return simulate_with(options, [&](const ve_sim_options* sim_options, ve_sim** out)
+            { return ve_simulate_spec(handle_.get(), native->get(), sim_options, out); });
+    }
+
     ve_context* native() const noexcept
     {
         return handle_.get();
@@ -124,6 +144,22 @@ public:
 
 private:
     using Handle = detail::Owned<ve_context, ve_context_free>;
+
+    template <class Run>
+    static Result<Simulation> simulate_with(const SimOptions& options, Run run)
+    {
+        auto native = options.make_handle();
+        if (!native)
+        {
+            return detail::failure(native);
+        }
+        ve_sim* raw = nullptr;
+        if (auto simulated = detail::check(run(native->get(), &raw)); !simulated)
+        {
+            return detail::failure(simulated);
+        }
+        return Simulation{raw};
+    }
 
     explicit Context(Handle handle) : handle_(std::move(handle))
     {

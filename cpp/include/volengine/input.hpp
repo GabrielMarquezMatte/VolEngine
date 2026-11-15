@@ -264,6 +264,21 @@ private:
     std::size_t cols_;
 };
 
+namespace detail
+{
+
+// The C API takes a null panel for "no regressors".
+inline const ve_panel* native_or_null(const Panel* panel) noexcept
+{
+    if (panel == nullptr)
+    {
+        return nullptr;
+    }
+    return panel->native();
+}
+
+} // namespace detail
+
 // Specs, one panel and the jobs (which spec on which series) of one ve_fit_batch call. It copies the specs and the
 // options; the panel is borrowed.
 class Batch

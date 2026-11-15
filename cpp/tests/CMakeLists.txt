@@ -15,7 +15,8 @@ endif()
 add_executable(volengine_cpp_tests
     diagnostics_test.cpp
     error_test.cpp
-    fit_test.cpp)
+    fit_test.cpp
+    future_test.cpp)
 target_link_libraries(volengine_cpp_tests PRIVATE volengine::volengine GTest::gtest_main)
 target_compile_options(volengine_cpp_tests PRIVATE ${VOLENGINE_TEST_WARNINGS})
 target_compile_definitions(volengine_cpp_tests PRIVATE
