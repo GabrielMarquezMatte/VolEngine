@@ -53,6 +53,16 @@ VOLENGINE_LIB=$PWD/build/gcc-release/libvolengine.dll uv run --project python --
 
 It needs the `bench` group (`arch`). The result is in [docs/performance/python-vs-arch.md](docs/performance/python-vs-arch.md).
 
+## C++ wrapper tests
+
+The wrapper in `cpp/` is tested against a library you built, not against a release. Build the library (the
+`gcc-release` preset, or `python python/scripts/build_native.py`, which also leaves it in `python/src/volengine/_lib`),
+point `VOLENGINE_NATIVE_LIB` at it and run `cpp/scripts/ci_check.sh`, or the three commands in
+[cpp/README.md](cpp/README.md#building-and-testing). On Windows, build and run from PowerShell with
+`C:/msys64/ucrt64/bin` first in `PATH`: a Git Bash `ld` writes an empty `--output-def`, and Git's `mingw64` `libstdc++`
+crashes the MinGW test executables. MSVC compiles the wrapper over the same MinGW DLL (Developer PowerShell,
+`-G Ninja -DCMAKE_CXX_COMPILER=cl`).
+
 ## Python tests
 
 The Python package is managed with [uv](https://docs.astral.sh/uv/). `uv sync --project python` creates

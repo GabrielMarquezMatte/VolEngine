@@ -9,6 +9,14 @@ library whose ABI version differs).
 
 ## [Unreleased]
 
+### Added
+
+- A header-only C++23 wrapper over the C API in `cpp/` (`#include <volengine/volengine.hpp>`, namespace `ve`): RAII
+  handles, `std::expected` errors and `std::span` views, for fits, diagnostics, forecasts, simulations, DCC and
+  Copula-DCC. A CMake project consumes it through `FetchContent` (`SOURCE_SUBDIR cpp`) or `find_package(volengine)`;
+  the native library comes from the release asset of the tag, or from `VOLENGINE_NATIVE_LIB` for a local build. The
+  wrapper calls every `VE_API` function (checked by `cpp/scripts/check_abi_coverage.py`).
+
 ## [0.9.0] - 2026-11-15
 
 ### Added

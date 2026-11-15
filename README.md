@@ -40,6 +40,8 @@ Python 3.11 or newer. The wheel carries the native library and needs no compiler
 On another platform pip reports that no distribution matches; there is no source distribution. The native
 libraries alone are attached to each [GitHub Release](https://github.com/GabrielMarquezMatte/VolEngine/releases).
 
+The C++23 header-only wrapper in [cpp/](cpp/README.md) is used through `FetchContent` or `find_package`.
+
 ## Python example
 
 ```python
