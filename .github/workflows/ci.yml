@@ -68,7 +68,7 @@ jobs:
         if: runner.os == 'Linux'
         run: g++-15 --version
 
-      # The sources use std::ranges algorithms and std::numbers (no std::expected, mdspan or <format>), which
+      # The sources use std::ranges algorithms, std::numbers and std::expected (no mdspan or <format>), which
       # libc++ ships from Xcode 15 (Apple Clang 15). The runner's Apple Clang is used as shipped, if new enough.
       - name: Check Apple Clang version (macOS)
         if: runner.os == 'macOS'
@@ -124,15 +124,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Ubuntu 24.04's clang 18 reports __cpp_concepts below 202002L, so libstdc++ hides std::expected from it;
+      # clang 19 or newer sees it. LLVM 20 comes from apt.llvm.org.
       - name: Install clang-tidy
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang clang-tidy ninja-build
+          wget -qO llvm.sh https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh 20
+          sudo apt-get install -y clang-tidy-20 ninja-build
 
       - name: Configure
         run: |
-          clang-tidy --version
-          cmake -S . -B build/tidy -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVE_BUILD_TESTS=OFF
+          clang-tidy-20 --version
+          cmake -S . -B build/tidy -G Ninja -DCMAKE_CXX_COMPILER=clang++-20 -DCMAKE_C_COMPILER=clang-20 -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVE_BUILD_TESTS=OFF
 
       - name: Run clang-tidy over src/
-        run: git ls-files 'src/*.cpp' | xargs clang-tidy -p build/tidy
+        run: git ls-files 'src/*.cpp' | xargs clang-tidy-20 -p build/tidy

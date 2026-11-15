@@ -124,10 +124,14 @@ StandardizedPanel standardize(std::span<const FitResult* const> fits)
 namespace
 {
 
-// The entries of row `column` and column `column` of second_moment(x, t, m, centred, divisor) in moment, recomputed.
-void refresh_moment_of_column(std::vector<double>& moment, std::span<const double> x, std::size_t t, std::size_t m,
-                              bool centred, double divisor, std::size_t column)
+// The entries of row `column` and column `column` of second_moment(x, t, m, centred, divisor) in moment, recomputed,
+// with the divisor refresh_moments gives: t - 1 centred, t raw.
+void refresh_moment_of_column(std::vector<double>& moment, std::span<const double> x, std::size_t m, bool centred,
+                              std::size_t column)
 {
+    const std::size_t t = x.size() / m;
+    const auto count = static_cast<double>(t);
+    const double divisor = centred ? count - 1.0 : count;
     const std::vector<double> mean = centred ? column_means(x, t, m) : std::vector<double>(m, 0.0);
     // The rows go outside, as the cache wants them; each entry still adds its terms in the order of the rows (a product is
     // the same in either order).
@@ -158,11 +162,10 @@ void refresh_moments_of_column(StandardizedPanel& panel, std::size_t column)
     const std::size_t m = panel.m;
     std::vector<double> n(t * m);
     std::ranges::transform(panel.z, n.begin(), [](double z) { return z < 0.0 ? z : 0.0; });
-    const auto count = static_cast<double>(t);
-    refresh_moment_of_column(panel.qbar, panel.z, t, m, true, count - 1.0, column);
-    refresh_moment_of_column(panel.qbar_raw, panel.z, t, m, false, count, column);
-    refresh_moment_of_column(panel.nbar, n, t, m, false, count, column);
-    refresh_moment_of_column(panel.nbar_centered, n, t, m, true, count - 1.0, column);
+    refresh_moment_of_column(panel.qbar, panel.z, m, true, column);
+    refresh_moment_of_column(panel.qbar_raw, panel.z, m, false, column);
+    refresh_moment_of_column(panel.nbar, n, m, false, column);
+    refresh_moment_of_column(panel.nbar_centered, n, m, true, column);
     panel.delta = linalg::largest_relative_eigenvalue(panel.qbar, panel.nbar, m);
     panel.delta_centered = linalg::largest_relative_eigenvalue(panel.qbar, panel.nbar_centered, m);
 }

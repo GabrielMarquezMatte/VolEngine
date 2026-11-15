@@ -41,19 +41,26 @@ struct CsGarchStep
     T variance;
 };
 
-// q_t = omega + rho q_{t-1} + phi (e^2_{t-1} - sigma2_{t-1});
-// sigma2_t = q_t + sum_i alpha_i (e^2_{t-i} - q_{t-i}) + sum_j beta_j (sigma2_{t-j} - q_{t-j}),
-// from the squared residuals, sigma2 and permanent (q) before t.
+// The paths the step reads before t: the squared residuals, sigma2 and permanent (q).
 template <class T>
-VE_FORCE_INLINE CsGarchStep<T> csgarch_step(std::span<const T> squared_residuals, const CsGarchParameters<T>& p,
-                                            const Presample<T>& presample, std::span<const T> sigma2,
-                                            std::span<const T> permanent, std::size_t t)
+struct CsGarchHistory
+{
+    std::span<const T> squared_residuals;
+    std::span<const T> sigma2;
+    std::span<const T> permanent;
+};
+
+// q_t = omega + rho q_{t-1} + phi (e^2_{t-1} - sigma2_{t-1});
+// sigma2_t = q_t + sum_i alpha_i (e^2_{t-i} - q_{t-i}) + sum_j beta_j (sigma2_{t-j} - q_{t-j}).
+template <class T>
+VE_FORCE_INLINE CsGarchStep<T> csgarch_step(const CsGarchHistory<T>& h, const CsGarchParameters<T>& p,
+                                            const Presample<T>& presample, std::size_t t)
 {
     std::span<const T> phi(&p.phi, 1);
-    T q = intercept_at<T>(p.omega, p.intercept_shift, t) + p.rho * lagged<T>(permanent, t, 1, presample.value) +
-          lagged_deviations<T>(phi, squared_residuals, sigma2, t);
-    T variance = q + lagged_deviations<T>(p.alpha, squared_residuals, permanent, t) +
-                 lagged_deviations<T>(p.beta, sigma2, permanent, t);
+    T q = intercept_at<T>(p.omega, p.intercept_shift, t) + p.rho * lagged<T>(h.permanent, t, 1, presample.value) +
+          lagged_deviations<T>(phi, h.squared_residuals, h.sigma2, t);
+    T variance = q + lagged_deviations<T>(p.alpha, h.squared_residuals, h.permanent, t) +
+                 lagged_deviations<T>(p.beta, h.sigma2, h.permanent, t);
     return {q, variance};
 }
 
@@ -69,7 +76,7 @@ void csgarch_variance(std::span<const T> squared_residuals, const CsGarchParamet
     std::fill(permanent.begin(), permanent.begin() + static_cast<std::ptrdiff_t>(held), long_run);
     for (std::size_t t = held; t < sigma2.size(); ++t)
     {
-        CsGarchStep<T> step = csgarch_step<T>(squared_residuals, p, presample, sigma2, permanent, t);
+        CsGarchStep<T> step = csgarch_step<T>({squared_residuals, sigma2, permanent}, p, presample, t);
         permanent[t] = step.permanent;
         sigma2[t] = step.variance;
     }

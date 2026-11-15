@@ -19,26 +19,14 @@ namespace HWY_NAMESPACE
 {
 namespace hn = hwy::HWY_NAMESPACE;
 
-// The partial sums of the scale and power, and the lanes of a vector of terms in which something went wrong.
-template <class D>
-struct Accumulators
+// The fused kernel's partials of one vector of terms, in e, sigma2, and (per lane) the scale and power, as a Highway
+// tuple: SVE and RVV vectors are sizeless and cannot be members of a struct.
+enum Partial : std::size_t
 {
-    hn::Vec<D> total;
-    hn::Vec<D> scale;
-    hn::Vec<D> power;
-    hn::Mask<D> valid;
-};
-
-// What one vector of residuals and variances gives: the term, and for the fused kernel the partials in e and sigma2
-// and the (per lane) partials in the scale and power.
-template <class D>
-struct Lanes
-{
-    hn::Vec<D> term;
-    hn::Vec<D> d_e;
-    hn::Vec<D> d_sigma2;
-    hn::Vec<D> d_scale;
-    hn::Vec<D> d_power;
+    kDe,
+    kDSigma2,
+    kDScale,
+    kDPower,
 };
 
 struct Constants
@@ -49,24 +37,24 @@ struct Constants
 };
 
 // norm: x = e^2 / sigma2.
-template <Dist kDist, bool kPartials, class D>
-HWY_INLINE Lanes<D> NormalLanes(D d, const Constants& c, hn::Vec<D> e, hn::Vec<D> sigma2, hn::Vec<D> log_sigma2)
+template <bool kPartials, class D>
+HWY_INLINE hn::Vec<D> NormalTerm(D d, const Constants& c, hn::Vec<D> e, hn::Vec<D> sigma2, hn::Vec4<D>& partials)
 {
     const auto half = hn::Set(d, 0.5);
     const auto x = hn::Div(hn::Mul(e, e), sigma2);
     const auto density = hn::Sub(hn::Set(d, c.log_constant), hn::Mul(half, x));
-    Lanes<D> lanes{hn::Sub(density, hn::Mul(half, log_sigma2)), hn::Zero(d), hn::Zero(d), hn::Zero(d), hn::Zero(d)};
     if (kPartials)
     {
-        lanes.d_e = hn::Neg(hn::Div(e, sigma2));
-        lanes.d_sigma2 = hn::Div(hn::Mul(half, hn::Sub(x, hn::Set(d, 1.0))), sigma2);
+        const auto d_e = hn::Neg(hn::Div(e, sigma2));
+        const auto d_sigma2 = hn::Div(hn::Mul(half, hn::Sub(x, hn::Set(d, 1.0))), sigma2);
+        partials = hn::Create4(d, d_e, d_sigma2, hn::Zero(d), hn::Zero(d));
     }
-    return lanes;
+    return hn::Sub(density, hn::Mul(half, hn::Log(d, sigma2)));
 }
 
 // std: u = e^2 / (sigma2 scale), w = power / (1 + u).
 template <bool kPartials, class D>
-HWY_INLINE Lanes<D> StudentLanes(D d, const Constants& c, hn::Vec<D> e, hn::Vec<D> sigma2, hn::Vec<D> log_sigma2)
+HWY_INLINE hn::Vec<D> StudentTerm(D d, const Constants& c, hn::Vec<D> e, hn::Vec<D> sigma2, hn::Vec4<D>& partials)
 {
     const auto one = hn::Set(d, 1.0);
     const auto half = hn::Set(d, 0.5);
@@ -75,25 +63,23 @@ HWY_INLINE Lanes<D> StudentLanes(D d, const Constants& c, hn::Vec<D> e, hn::Vec<
     // The vector log1p is not defined at +infinity (an overflowed e^2): log1p(inf) = inf, and a NaN stays a NaN.
     const auto log1p_u = hn::IfThenElse(hn::Lt(u, hn::Inf(d)), hn::Log1p(d, u), u);
     const auto density = hn::Sub(hn::Set(d, c.log_constant), hn::Mul(power, log1p_u));
-    Lanes<D> lanes{hn::Sub(density, hn::Mul(half, log_sigma2)), hn::Zero(d), hn::Zero(d), hn::Zero(d), hn::Zero(d)};
     if (kPartials)
     {
         const auto inverse_variance = hn::Div(one, sigma2);
         const auto inverse_scale = hn::Div(one, hn::Set(d, c.scale));
         const auto w = hn::Div(power, hn::Add(one, u));
         const auto w_u = hn::Mul(w, u);
-        lanes.d_e = hn::Mul(hn::Mul(hn::Mul(hn::Mul(hn::Set(d, -2.0), w), e), inverse_variance), inverse_scale);
-        lanes.d_sigma2 = hn::Mul(hn::Sub(w_u, half), inverse_variance);
-        lanes.d_scale = hn::Mul(w_u, inverse_scale);
-        lanes.d_power = hn::Neg(log1p_u);
+        const auto d_e = hn::Mul(hn::Mul(hn::Mul(hn::Mul(hn::Set(d, -2.0), w), e), inverse_variance), inverse_scale);
+        const auto d_sigma2 = hn::Mul(hn::Sub(w_u, half), inverse_variance);
+        partials = hn::Create4(d, d_e, d_sigma2, hn::Mul(w_u, inverse_scale), hn::Neg(log1p_u));
     }
-    return lanes;
+    return hn::Sub(density, hn::Mul(half, hn::Log(d, sigma2)));
 }
 
 // ged: y = |e| / (sigma lambda), v = y^power = exp(power log y), slope = power v / y. A lane with y = 0 has v = 0 and
 // no partial but the one of the variance.
 template <bool kPartials, class D>
-HWY_INLINE Lanes<D> GedLanes(D d, const Constants& c, hn::Vec<D> e, hn::Vec<D> sigma2, hn::Vec<D> log_sigma2)
+HWY_INLINE hn::Vec<D> GedTerm(D d, const Constants& c, hn::Vec<D> e, hn::Vec<D> sigma2, hn::Vec4<D>& partials)
 {
     const auto zero = hn::Zero(d);
     const auto one = hn::Set(d, 1.0);
@@ -110,7 +96,6 @@ HWY_INLINE Lanes<D> GedLanes(D d, const Constants& c, hn::Vec<D> e, hn::Vec<D> s
     const auto exp_v = hn::IfThenElse(hn::Gt(exponent, hn::Set(d, 709.78)), hn::Inf(d), hn::Exp(d, exponent));
     const auto v = hn::IfThenElse(positive, exp_v, y);
     const auto density = hn::Sub(hn::Set(d, c.log_constant), hn::Mul(half, v));
-    Lanes<D> lanes{hn::Sub(density, hn::Mul(half, log_sigma2)), zero, zero, zero, zero};
     if (kPartials)
     {
         const auto inverse_variance = hn::Div(one, sigma2);
@@ -119,27 +104,27 @@ HWY_INLINE Lanes<D> GedLanes(D d, const Constants& c, hn::Vec<D> e, hn::Vec<D> s
         const auto negative_half = hn::Set(d, -0.5);
         const auto slope = hn::IfThenElse(positive, hn::Mul(power, hn::Div(v, y)), zero);
         const auto sign = hn::CopySign(one, e);
-        lanes.d_e = hn::Mul(hn::Mul(hn::Mul(hn::Mul(negative_half, slope), sign), inverse_sigma), inverse_scale);
+        const auto d_e = hn::Mul(hn::Mul(hn::Mul(hn::Mul(negative_half, slope), sign), inverse_sigma), inverse_scale);
         const auto from_slope = hn::Mul(hn::Mul(hn::Mul(hn::Set(d, 0.25), slope), y), inverse_variance);
-        lanes.d_sigma2 = hn::Add(hn::Mul(negative_half, inverse_variance), from_slope);
-        lanes.d_scale = hn::Mul(hn::Mul(hn::Mul(half, slope), y), inverse_scale);
-        lanes.d_power = hn::Mul(hn::Mul(negative_half, v), log_y);
+        const auto d_sigma2 = hn::Add(hn::Mul(negative_half, inverse_variance), from_slope);
+        const auto d_scale = hn::Mul(hn::Mul(hn::Mul(half, slope), y), inverse_scale);
+        partials = hn::Create4(d, d_e, d_sigma2, d_scale, hn::Mul(hn::Mul(negative_half, v), log_y));
     }
-    return lanes;
+    return hn::Sub(density, hn::Mul(half, hn::Log(d, sigma2)));
 }
 
 template <Dist kDist, bool kPartials, class D>
-HWY_INLINE Lanes<D> LanesOf(D d, const Constants& c, hn::Vec<D> e, hn::Vec<D> sigma2, hn::Vec<D> log_sigma2)
+HWY_INLINE hn::Vec<D> TermOf(D d, const Constants& c, hn::Vec<D> e, hn::Vec<D> sigma2, hn::Vec4<D>& partials)
 {
     if (kDist == Dist::Std)
     {
-        return StudentLanes<kPartials>(d, c, e, sigma2, log_sigma2);
+        return StudentTerm<kPartials>(d, c, e, sigma2, partials);
     }
     if (kDist == Dist::Ged)
     {
-        return GedLanes<kPartials>(d, c, e, sigma2, log_sigma2);
+        return GedTerm<kPartials>(d, c, e, sigma2, partials);
     }
-    return NormalLanes<kDist, kPartials>(d, c, e, sigma2, log_sigma2);
+    return NormalTerm<kPartials>(d, c, e, sigma2, partials);
 }
 
 template <Dist kDist, bool kPartials>
@@ -164,18 +149,19 @@ double Run(const detail::DensityArgs& a)
         const auto sigma2 = full ? hn::LoadU(d, a.sigma2 + i)
                                  : hn::IfThenElse(inside, hn::LoadN(d, a.sigma2 + i, used), one);
         valid = hn::And(valid, hn::And(hn::Gt(sigma2, zero), hn::Lt(sigma2, infinity)));
-        const auto result = LanesOf<kDist, kPartials>(d, constants, e, sigma2, hn::Log(d, sigma2));
-        total = hn::Add(total, hn::IfThenElse(inside, result.term, zero));
+        auto partials = hn::Create4(d, zero, zero, zero, zero);
+        const auto term = TermOf<kDist, kPartials>(d, constants, e, sigma2, partials);
+        total = hn::Add(total, hn::IfThenElse(inside, term, zero));
         if (a.terms != nullptr)
         {
-            hn::StoreN(result.term, d, a.terms + i, used);
+            hn::StoreN(term, d, a.terms + i, used);
         }
         if (kPartials)
         {
-            hn::StoreN(result.d_e, d, a.d_e + i, used);
-            hn::StoreN(result.d_sigma2, d, a.d_sigma2 + i, used);
-            sum_scale = hn::Add(sum_scale, hn::IfThenElse(inside, result.d_scale, zero));
-            sum_power = hn::Add(sum_power, hn::IfThenElse(inside, result.d_power, zero));
+            hn::StoreN(hn::Get4<kDe>(partials), d, a.d_e + i, used);
+            hn::StoreN(hn::Get4<kDSigma2>(partials), d, a.d_sigma2 + i, used);
+            sum_scale = hn::Add(sum_scale, hn::IfThenElse(inside, hn::Get4<kDScale>(partials), zero));
+            sum_power = hn::Add(sum_power, hn::IfThenElse(inside, hn::Get4<kDPower>(partials), zero));
         }
     }
     const double sum = hn::ReduceSum(d, total);

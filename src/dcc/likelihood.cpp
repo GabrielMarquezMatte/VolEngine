@@ -130,11 +130,19 @@ private:
     std::size_t first_ = 0;
 };
 
+template <class T>
+Density<T> density_of(const StandardizedPanel& panel, const DccSpec& spec, const DccParameters<T>& theta)
+{
+    const auto dimension = static_cast<double>(panel.m);
+    return {spec.dist, dimension, theta.shape, density_constant(spec.dist, dimension, theta.shape)};
+}
+
 // True when theta is inside the domain of correlation_path and out has been filled.
 template <class T>
 bool fill_terms(const StandardizedPanel& panel, const DccSpec& spec, const DccParameters<T>& theta, Stage stage,
-                const Density<T>& density, const CorrelationOutput<T>& out)
+                const CorrelationOutput<T>& out)
 {
+    const Density<T> density = density_of(panel, spec, theta);
     const std::size_t m = panel.m;
     Workspace<T> work{std::vector<T>(m * m), std::vector<T>(m)};
     return correlation_path(panel, spec, theta, stage, [&](std::size_t t, std::span<const T> r_t) {
@@ -145,8 +153,9 @@ bool fill_terms(const StandardizedPanel& panel, const DccSpec& spec, const DccPa
 }
 
 bool fill_terms(const StandardizedPanel& panel, const DccSpec& spec, const DccParameters<double>& theta, Stage stage,
-                const Density<double>& density, const CorrelationOutput<double>& out)
+                const CorrelationOutput<double>& out)
 {
+    const Density<double> density = density_of(panel, spec, theta);
     BlockedTerms blocked(panel, density, out);
     return q_path(panel, spec, theta, stage, [&](std::size_t t, std::span<const double> q_t) { blocked.add(t, q_t); });
 }
@@ -157,9 +166,7 @@ template <class T>
 void correlation_terms(const StandardizedPanel& panel, const DccSpec& spec, const DccParameters<T>& theta,
                        Stage stage, const CorrelationOutput<T>& out)
 {
-    const auto dimension = static_cast<double>(panel.m);
-    const Density<T> density{spec.dist, dimension, theta.shape, density_constant(spec.dist, dimension, theta.shape)};
-    if (fill_terms(panel, spec, theta, stage, density, out))
+    if (fill_terms(panel, spec, theta, stage, out))
     {
         return;
     }

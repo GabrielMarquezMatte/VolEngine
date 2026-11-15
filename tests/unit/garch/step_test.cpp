@@ -134,7 +134,7 @@ void expect_csgarch_steps(const Presample<double>& presample)
     std::vector<double> permanent(kLength, long_run);
     for (std::size_t t = presample.held; t < kLength; ++t)
     {
-        auto step = ve::garch::csgarch_step<double>(squared, p, presample, sigma2, permanent, t);
+        auto step = ve::garch::csgarch_step<double>({squared, sigma2, permanent}, p, presample, t);
         permanent[t] = step.permanent;
         sigma2[t] = step.variance;
     }

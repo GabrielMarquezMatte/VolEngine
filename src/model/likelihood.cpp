@@ -561,7 +561,7 @@ bool joint_csgarch(JointMean<T>& mean, const garch::CsGarchParameters<T>& p, con
                                  return presample.value + long_run;
                              }
                              garch::CsGarchStep<T> step =
-                                 garch::csgarch_step<T>(squared_residuals, p, presample, sigma2, permanent, t);
+                                 garch::csgarch_step<T>({squared_residuals, sigma2, permanent}, p, presample, t);
                              permanent[t] = step.permanent;
                              return step.variance;
                          });
