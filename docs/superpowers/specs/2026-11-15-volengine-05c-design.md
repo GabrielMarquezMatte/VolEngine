@@ -131,8 +131,8 @@ ajuste interno lento, não no número de pontos.
 
 ## 10. 5c-1 feito
 
-Medidas em `docs/performance/profile-5c.md` (cinco repetições, `gcc-bench`, uma thread, m = 21, T = 5000; base em
-`6f7053d`).
+Medidas em `docs/performance/profile-5c.md` (5c-1 com cinco repetições, base com três, `gcc-bench`, uma thread,
+m = 21, T = 5000; base em `6f7053d`).
 
 | `BM_CopulaFit` | Base | 5c-1 |
 | --- | ---: | ---: |
@@ -149,7 +149,9 @@ iguais dentro do ruído.
 
 - **Causa da falha estática:** com séries independentes, o perfil de ν cresce até o teto e o Brent avalia ν = 50 exato,
   que é o melhor ponto. `fit_copula` aplicava a verificação de ν fixo fora de (4, 50) também ao ν do perfil, rejeitava
-  o 50 e devolvia o ponto padrão (ℓ não finito). Agora a verificação vale só para ν fixo; o ν do perfil fica em [4, 50].
+  o 50 e devolvia o ponto padrão (ℓ não finito). Agora a verificação vale só para ν fixo, e a cópula estática aceita o ν do perfil em todo o [4, 50]. As cópulas
+  DCC e aDCC fixam ν num `fit_dcc` que o quer dentro de (4, 50): um ponto em 50 exato não tem ℓ finito e o máximo delas
+  fica dentro do intervalo.
 - **A estimativa mudou de lugar (decisão registrada):** o ν e os parâmetros das cópulas t se movem dentro da precisão do
   Brent (ν a 1e-4 relativo, ℓ a 1e-8 relativo do valor anterior); os oráculos `rmgarch` seguem verdes nas mesmas
   tolerâncias.

@@ -445,8 +445,9 @@ No DCC profile, assembly review or before/after optimization comparison was perf
 ## Copula-DCC workload (plan 4b)
 
 Measured on 2026-11-15, same machine and toolchain, plan 5c-1 (source after the commit "perf: Kendall's tau-b by
-Knight's algorithm"). Five repetitions, medians; every fit converged. The base is the code at `6f7053d`, the plan 4b
-code with the plan 5 changes to the plain DCC. The steps in between and the base of the secondary benchmarks are in
+Knight's algorithm"). Plan 5c-1 column: five repetitions, medians; base column: three repetitions of the same
+session (the base `BM_CopulaGrid` ends with an error); every fit converged. The base is the code at `6f7053d`, the
+plan 4b code with the plan 5 changes to the plain DCC. The steps in between and the base of the secondary benchmarks are in
 [Plan 5c-1 profile](profile-5c.md).
 
 ```

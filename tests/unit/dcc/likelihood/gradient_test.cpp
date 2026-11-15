@@ -260,15 +260,30 @@ TEST(DccGradient, OutsideTheDomainTheValueIsInfinity)
     EXPECT_TRUE(found) << "no candidate left the domain";
 }
 
-// The score panel of a copula is an ordinary DCC panel, so the tangent evaluator agrees with the Dual on it.
-TEST(DccGradient, MatchesDualOnCopulaScores)
+// The tangent gradient of spec on panel against the Dual one, and the value to the bit.
+void expect_gradient_matches_dual(const StandardizedPanel& panel, const DccSpec& spec, std::span<const double> theta)
 {
-    const std::vector<ve::FitResult> fits = ve::testing::copula3_fits();
-    std::vector<const ve::FitResult*> pointers;
-    for (const ve::FitResult& fit : fits)
+    const double expected_value = ve::dcc::objective<double>(panel, spec, theta);
+    ASSERT_TRUE(std::isfinite(expected_value));
+    std::vector<double> gradient(theta.size(), -99.0);
+    ve::dcc::ObjectiveGradient evaluator;
+    EXPECT_EQ(evaluator.evaluate(panel, spec, theta, gradient), expected_value);
+    const std::vector<double> expected = dual_gradient(panel, spec, theta);
+    double scale = 1.0;
+    for (const double g : expected)
     {
-        pointers.push_back(&fit);
+        scale = std::max(scale, std::fabs(g));
     }
+    for (std::size_t i = 0; i < theta.size(); ++i)
+    {
+        EXPECT_NEAR(gradient[i], expected[i], kGradientTolerance * scale) << "parameter " << i;
+    }
+}
+
+// The copula specs of the test: parametric and empirical, in both conventions, DCC and aDCC, mvnorm and mvt.
+std::vector<DccSpec> copula_specs()
+{
+    std::vector<DccSpec> specs;
     for (const DccCopula copula : {DccCopula::Parametric, DccCopula::Empirical})
     {
         for (const Convention convention : {Convention::Standard, Convention::Rmgarch})
@@ -279,34 +294,34 @@ TEST(DccGradient, MatchesDualOnCopulaScores)
                 {
                     DccSpec spec = spec_of(model, dist, convention, {});
                     spec.copula = copula;
-                    SCOPED_TRACE("copula " + std::to_string(static_cast<int>(copula)) + ", convention " +
-                                 std::to_string(static_cast<int>(convention)) + ", model " +
-                                 std::to_string(static_cast<int>(model)) + ", dist " +
-                                 std::to_string(static_cast<int>(dist)));
-                    const std::vector<DccSpec> specs{spec};
-                    const ve::dcc::copula::CopulaInputs inputs = ve::dcc::copula::copula_inputs(pointers, specs);
-                    const ve::dcc::copula::CopulaPanel scores =
-                        ve::dcc::copula::copula_panel(inputs.uniforms_of(spec), *inputs.univariate, dist, 6.0);
-                    const StandardizedPanel& panel = *scores.panel;
-                    const std::vector<double> theta = theta_of(spec, 2, 0.93, 6.0);
-                    const double expected_value = ve::dcc::objective<double>(panel, spec, theta);
-                    ASSERT_TRUE(std::isfinite(expected_value));
-                    std::vector<double> gradient(theta.size(), -99.0);
-                    ve::dcc::ObjectiveGradient evaluator;
-                    EXPECT_EQ(evaluator.evaluate(panel, spec, theta, gradient), expected_value);
-                    const std::vector<double> expected = dual_gradient(panel, spec, theta);
-                    double scale = 1.0;
-                    for (const double g : expected)
-                    {
-                        scale = std::max(scale, std::fabs(g));
-                    }
-                    for (std::size_t i = 0; i < theta.size(); ++i)
-                    {
-                        EXPECT_NEAR(gradient[i], expected[i], kGradientTolerance * scale) << "parameter " << i;
-                    }
+                    specs.push_back(spec);
                 }
             }
         }
+    }
+    return specs;
+}
+
+// The score panel of a copula is an ordinary DCC panel, so the tangent evaluator agrees with the Dual on it.
+TEST(DccGradient, MatchesDualOnCopulaScores)
+{
+    const std::vector<ve::FitResult> fits = ve::testing::copula3_fits();
+    std::vector<const ve::FitResult*> pointers;
+    for (const ve::FitResult& fit : fits)
+    {
+        pointers.push_back(&fit);
+    }
+    for (const DccSpec& spec : copula_specs())
+    {
+        SCOPED_TRACE("copula " + std::to_string(static_cast<int>(spec.copula)) + ", convention " +
+                     std::to_string(static_cast<int>(spec.convention)) + ", model " +
+                     std::to_string(static_cast<int>(spec.model)) + ", dist " +
+                     std::to_string(static_cast<int>(spec.dist)));
+        const std::vector<DccSpec> specs{spec};
+        const ve::dcc::copula::CopulaInputs inputs = ve::dcc::copula::copula_inputs(pointers, specs);
+        const ve::dcc::copula::CopulaPanel scores =
+            ve::dcc::copula::copula_panel(inputs.uniforms_of(spec), *inputs.univariate, spec.dist, 6.0);
+        expect_gradient_matches_dual(*scores.panel, spec, theta_of(spec, 2, 0.93, 6.0));
     }
 }
 

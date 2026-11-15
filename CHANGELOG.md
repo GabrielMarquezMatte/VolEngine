@@ -46,8 +46,9 @@ library whose ABI version differs).
 ### Fixed
 
 - The static Student copula (Kendall and ML) with independent series (the profile maximum on the ceiling of the shape)
-  failed with a non-finite log-likelihood. A profiled shape is now accepted on the whole interval [4, 50]; only a fixed
-  shape outside (4, 50) fails its spec.
+  failed with a non-finite log-likelihood. A profiled shape of the static copula is now accepted on the whole interval [4, 50];
+  only a fixed shape outside (4, 50) fails its spec. (The DCC and aDCC copulas fix the shape in an inner fit that wants
+  it inside (4, 50), so their profile maximum stays inside.)
 
 ### Performance
 

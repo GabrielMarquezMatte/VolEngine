@@ -249,7 +249,8 @@ TEST(CopulaFit, ProfileIsDeterministic)
 
 TEST(CopulaFit, ProfileFirstPointHonoursUserStart)
 {
-    // Review Focus 3: the user's start belongs to the first profile point; the later ones start from a neighbour.
+    // The user's start seeds the first profile point only; the later ones start from a neighbour. Both reach the
+    // same maximum.
     const std::vector<FitResult> fits = ve::testing::copula3_fits();
     DccSpec plain = copula_spec(DccModel::Dcc, DccDist::MvT, DccCopula::Parametric);
     DccSpec started = plain;
@@ -260,15 +261,43 @@ TEST(CopulaFit, ProfileFirstPointHonoursUserStart)
     EXPECT_NEAR(fit.estimate.back(), expected.estimate.back(), 1e-4 * expected.estimate.back());
 }
 
+TEST(CopulaFit, InnerFitLeavesAStartOnTheBoundary)
+{
+    // The neighbour of a profile point can sit at g ~ 5e-8 or at a + b near 1: the inner aDCC fit started there
+    // must converge and not stop at its start. The aDCC contains the DCC at g = 0, so its loglik is at least the
+    // DCC's at the same shape. (The default start finds a better local optimum, g = 0.015; a start on the boundary
+    // stays at g = 0.)
+    const std::vector<FitResult> fits = ve::testing::copula3_fits();
+    DccSpec spec = copula_spec(DccModel::ADcc, DccDist::MvT, DccCopula::Parametric);
+    spec.fixed = {{"mshape", 5.88}};
+    DccSpec dcc = copula_spec(DccModel::Dcc, DccDist::MvT, DccCopula::Parametric);
+    dcc.fixed = spec.fixed;
+    const CopulaInputs inputs = inputs_of(fits, {spec, dcc});
+    const double reference = ve::dcc::copula::fit_copula(inputs, dcc, FitConfig{}).loglik;
+    const std::vector<std::vector<ve::ParameterValue>> starts{
+        {{"dcca1", 0.0444}, {"dccb1", 0.9194}, {"dccg1", 4.8e-8}},
+        {{"dcca1", 0.05}, {"dccb1", 0.9499}, {"dccg1", 1e-9}}};
+    for (const std::vector<ve::ParameterValue>& start : starts)
+    {
+        DccSpec started = spec;
+        started.start = start;
+        const DccFitResult fit = ve::dcc::copula::fit_copula(inputs, started, FitConfig{});
+        EXPECT_EQ(fit.status, FitStatus::Converged);
+        ASSERT_TRUE(std::isfinite(fit.loglik));
+        EXPECT_GE(fit.loglik, reference - 1e-6 * std::abs(reference));
+    }
+}
+
 TEST(CopulaFit, ProfileSkipsFailedNeighbours)
 {
-    // Review Focus 1: a point whose loglik is not finite never starts another fit.
+    // A point whose loglik is not finite, or whose fit failed, never starts another fit.
     using ve::dcc::copula::detail::nearest_finite;
     using ve::dcc::copula::detail::ProfilePoint;
     const double nan = std::numeric_limits<double>::quiet_NaN();
     auto point = [](double nu, double loglik)
     {
         ProfilePoint made;
+        made.status = FitStatus::Converged;
         made.nu = nu;
         made.loglik = loglik;
         return made;
@@ -280,6 +309,10 @@ TEST(CopulaFit, ProfileSkipsFailedNeighbours)
     const std::vector<ProfilePoint> points{point(5.0, -1.0), point(9.0, -2.0), point(8.0, nan), point(20.0, -3.0)};
     EXPECT_EQ(nearest_finite(points, 8.1), &points[1]);
     EXPECT_EQ(nearest_finite(points, 40.0), &points[3]);
+    // A failed fit with a finite loglik (a static ML that stopped on a non-finite step) is skipped too.
+    std::vector<ProfilePoint> stopped{point(7.0, -1.0), point(12.0, -2.0)};
+    stopped[0].status = FitStatus::Failed;
+    EXPECT_EQ(nearest_finite(stopped, 7.0), &stopped[1]);
     // A tie in |dnu| goes to the smaller nu, whatever the order of evaluation.
     const std::vector<ProfilePoint> tie{point(9.0, -2.0), point(5.0, -1.0)};
     EXPECT_EQ(nearest_finite(tie, 7.0), &tie[1]);

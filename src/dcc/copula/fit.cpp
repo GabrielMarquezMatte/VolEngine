@@ -164,9 +164,11 @@ ProfilePoint static_point(const CopulaInputs& inputs, const DccSpec& spec, doubl
     if (layout.c_count > 0)
     {
         const CopulaPanel scores = copula_panel(inputs.uniforms_of(spec), *inputs.univariate, spec.dist, nu);
-        const std::span<const double> start =
-            warm == nullptr ? std::span<const double>{}
-                            : std::span<const double>(warm->theta).subspan(layout.c_begin(), layout.c_count);
+        std::span<const double> start;
+        if (warm != nullptr)
+        {
+            start = std::span<const double>(warm->theta).subspan(layout.c_begin(), layout.c_count);
+        }
         const StaticCorrelation correlation = static_ml(*scores.panel, layout, nu, config, start);
         std::ranges::copy(correlation.x, point.theta.begin() + static_cast<std::ptrdiff_t>(layout.c_begin()));
         point.status = correlation.status;
@@ -187,9 +189,9 @@ ProfilePoint point_at(const CopulaInputs& inputs, const DccSpec& spec, double nu
 
 // The profile maximum (minimising -loglik, +max where a point fails) and whether Brent ran out. The points are
 // kept in the order of evaluation, so every fit after the first starts from its nearest neighbour; the maximum is
-// the point Brent evaluated.
-// ponytail: Brent re-fits every point; Newton on the profile through the envelope theorem if the Student copula is
-// still far above the plain DCC-t.
+// the point Brent evaluated (a minimum Boost reports is always an abscissa it called the objective at).
+// ponytail: Brent re-fits every point (37 of them, ~0.1 s each at m = 21: 3.47 s against 0.144 s of the plain DCC-t,
+// docs/performance/profile-5c.md); Newton on the profile through the envelope theorem if that gap matters.
 std::pair<ProfilePoint, bool> profile_shape(const CopulaInputs& inputs, const DccSpec& spec, const FitConfig& config)
 {
     std::vector<ProfilePoint> points;
@@ -206,9 +208,8 @@ std::pair<ProfilePoint, bool> profile_shape(const CopulaInputs& inputs, const Dc
         return std::bit_cast<std::uint64_t>(point.nu) == std::bit_cast<std::uint64_t>(best.first);
     };
     const auto found = std::ranges::find_if(points, at_best);
-    ProfilePoint maximum =
-        found != points.end() ? std::move(*found) : point_at(inputs, spec, best.first, config, nullptr);
-    return {std::move(maximum), iterations >= kShapeIterations};
+    assert(found != points.end());
+    return {std::move(*found), iterations >= kShapeIterations};
 }
 
 DccFitResult result_of(const CopulaInputs& inputs, const DccSpec& spec, const DccLayout& layout,
@@ -348,7 +349,7 @@ const ProfilePoint* nearest_finite(std::span<const ProfilePoint> points, double 
     const ProfilePoint* nearest = nullptr;
     for (const ProfilePoint& point : points)
     {
-        if (!std::isfinite(point.loglik))
+        if (!std::isfinite(point.loglik) || point.status == FitStatus::Failed)
         {
             continue;
         }
@@ -374,8 +375,10 @@ DccFitResult fit_copula(const CopulaInputs& inputs, const DccSpec& spec, const F
     bool ran_out = false;
     if (profiled)
     {
-        // A profiled shape is inside [4, 50] by construction, and sits on an end when the loglik is monotone there
-        // (independent series put it at the ceiling).
+        // A profiled shape is inside [4, 50] and is not checked again: the static copula's maximum sits on the end
+        // when the loglik is monotone there (independent series put it at the ceiling). The dynamic copulas fix the
+        // shape in a fit_dcc that wants it inside (4, 50), so an end point has no finite loglik and their maximum
+        // stays inside.
         std::tie(point, ran_out) = profile_shape(inputs, spec, config);
     }
     // A fixed shape outside (4, 50) fails the spec, as on the plain DCC, for the static copula too.

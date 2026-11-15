@@ -20,8 +20,9 @@ three repetitions.
 | `BM_DccFit/adcc_mvt` | 0.234 s |
 | `BM_DccGrid/m:21/T:5000/threads:1` | 2.14 s |
 
-The base run was stopped before `BM_CopulaGrid` and `BM_CopulaStandardErrors` finished; Task 5 measures those on both
-sides with five repetitions.
+The first base run was stopped before `BM_CopulaGrid` and `BM_CopulaStandardErrors` finished; they were measured in
+a later base run (three repetitions): the grid ends with the static Student error, `BM_CopulaStandardErrors` takes
+4.44 s.
 
 ## The static Student copula failure
 

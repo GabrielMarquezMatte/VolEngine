@@ -35,7 +35,8 @@ std::int64_t tied_pairs(std::size_t count, Same same)
     std::int64_t run = 1;
     for (std::size_t i = 1; i < count; ++i)
     {
-        run = same(i) ? run + 1 : 1;
+        const std::int64_t extended = run + 1;
+        run = same(i) ? extended : 1;
         ties += run - 1;
     }
     return ties;
@@ -58,9 +59,13 @@ std::int64_t sort_counting_inversions(std::span<double> values, std::span<double
     std::size_t out = 0;
     while (left < half && right < count)
     {
-        const bool from_right = values[right] < values[left];
-        inversions += from_right ? static_cast<std::int64_t>(half - left) : 0;
-        scratch[out++] = from_right ? values[right++] : values[left++];
+        if (values[right] < values[left])
+        {
+            inversions += static_cast<std::int64_t>(half - left);
+            scratch[out++] = values[right++];
+            continue;
+        }
+        scratch[out++] = values[left++];
     }
     while (left < half)
     {
@@ -73,7 +78,7 @@ std::int64_t sort_counting_inversions(std::span<double> values, std::span<double
 // Kendall's tau-b of columns a and b: (C - D) / sqrt((n0 - n1)(n0 - n2)), ties in either column counting neither.
 // Knight's algorithm (1966): with the rows sorted by (x, y) the tied-x pairs add no inversion of y, so D is the
 // inversions of y and C - D = n0 - n1 - n2 + n3 - 2 D, n3 the pairs tied in both. The counts are integers, so tau-b
-// has the bits of the pair-count loop.
+// is exactly that of counting every pair.
 double tau_b(std::span<const double> u, std::size_t t, std::size_t m, std::size_t a, std::size_t b)
 {
     std::vector<std::pair<double, double>> rows(t);
@@ -92,7 +97,9 @@ double tau_b(std::span<const double> u, std::size_t t, std::size_t m, std::size_
     const auto count = static_cast<std::int64_t>(t);
     const std::int64_t pairs = count * (count - 1) / 2;
     const std::int64_t score = pairs - ties_a - ties_b + ties_both - 2 * discordant;
-    return static_cast<double>(score) / std::sqrt(static_cast<double>(pairs - ties_a) * static_cast<double>(pairs - ties_b));
+    const auto untied_a = static_cast<double>(pairs - ties_a);
+    const auto untied_b = static_cast<double>(pairs - ties_b);
+    return static_cast<double>(score) / std::sqrt(untied_a * untied_b);
 }
 
 bool positive_definite(std::span<const double> r, std::size_t m)
@@ -369,7 +376,11 @@ StaticCorrelation static_ml(const StandardizedPanel& scores, const DccLayout& la
     for (std::size_t k = 0; k < layout.c_count; ++k)
     {
         const std::size_t index = layout.c_begin() + k;
-        x[k] = start.empty() ? layout.given[index] : start[k];
+        x[k] = layout.given[index];
+        if (!start.empty())
+        {
+            x[k] = start[k];
+        }
         if (layout.is_estimated(index))
         {
             free.push_back(k);

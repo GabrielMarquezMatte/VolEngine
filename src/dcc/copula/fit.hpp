@@ -73,8 +73,8 @@ struct ProfilePoint
     double nu = std::numeric_limits<double>::quiet_NaN();
 };
 
-// The point of finite loglik whose nu is nearest to nu, the smaller nu on a tie of |dnu| (whatever the order of
-// evaluation); nullptr when no point has a finite loglik.
+// The point of finite loglik and status other than Failed whose nu is nearest to nu, the smaller nu on a tie of |dnu|
+// (whatever the order of evaluation); nullptr when no point qualifies.
 const ProfilePoint* nearest_finite(std::span<const ProfilePoint> points, double nu);
 
 }
