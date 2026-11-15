@@ -14,6 +14,9 @@
 #include <cstdint>
 #include <variant>
 #include <cmath>
+#include <cstddef>
+#include <utility>
+#include <vector>
 #include <limits>
 #include <numbers>
 
@@ -124,15 +127,19 @@ double integrate_segment(const detail::DensityIntegrand<double>& integrand, doub
     return sum;
 }
 
-// The integral from 0, for |z| <= 1.
-double central_cdf(const detail::DensityIntegrand<double>& integrand, double z)
+// The integral from 0, for |z| <= 1, with the mass below 0 given.
+double central_cdf(const detail::DensityIntegrand<double>& integrand, double below_zero, double z)
 {
-    double below_zero = detail::below_zero_quadrature(integrand, 1.0);
     if (z < 0.0)
     {
         return below_zero - integrate_segment(integrand, z, 0.0);
     }
     return below_zero + integrate_segment(integrand, 0.0, z);
+}
+
+double central_cdf(const detail::DensityIntegrand<double>& integrand, double z)
+{
+    return central_cdf(integrand, detail::below_zero_quadrature(integrand, 1.0), z);
 }
 
 // Beyond |z| = 1 the tail integral, scaled so that it meets the central integral at +-1: the two quadratures differ
@@ -151,6 +158,28 @@ double quadrature_cdf(const detail::DensityIntegrand<double>& integrand, double 
         return std::clamp(1.0 - scale * detail::tail_integral(integrand, z - 1.0, 1.0, 1.0), 0.0, 1.0);
     }
     return std::clamp(central_cdf(integrand, z), 0.0, 1.0);
+}
+
+detail::CdfConstants cdf_constants(const detail::DensityIntegrand<double>& integrand)
+{
+    double below_zero = detail::below_zero_quadrature(integrand, 1.0);
+    return {below_zero, central_cdf(integrand, below_zero, -1.0) / detail::tail_integral(integrand, 0.0, -1.0, 1.0),
+            (1.0 - central_cdf(integrand, below_zero, 1.0)) / detail::tail_integral(integrand, 0.0, 1.0, 1.0)};
+}
+
+// quadrature_cdf with the constants taken from cdf_constants: the same arithmetic, so the same bits.
+double quadrature_cdf(const detail::DensityIntegrand<double>& integrand, const detail::CdfConstants& constants,
+                      double z)
+{
+    if (z < -1.0)
+    {
+        return std::clamp(constants.lower_scale * detail::tail_integral(integrand, z + 1.0, -1.0, 1.0), 0.0, 1.0);
+    }
+    if (z > 1.0)
+    {
+        return std::clamp(1.0 - constants.upper_scale * detail::tail_integral(integrand, z - 1.0, 1.0, 1.0), 0.0, 1.0);
+    }
+    return std::clamp(central_cdf(integrand, constants.below_zero, z), 0.0, 1.0);
 }
 
 bool needs_quadrature(Dist dist)
@@ -226,8 +255,9 @@ double skewed_quantile(const SkewedLogDensity<double>& density, double u)
 constexpr int kRootIterations = 60;
 constexpr int kBracketDoublings = 60;
 
-// ponytail: ~20 quadrature cdfs per call (~290 us); a monotone table per margin would make a copula simulation with
-// nig or ghyp margins as fast as with std margins.
+// ponytail: ~20 quadrature cdfs per call (~110-140 us); QuantileTable (below) answers in ~3 us for a caller with many
+// probabilities of one distribution, and falls back to this solve beyond its grid. Add a table to a new caller that
+// needs one nig or ghyp quantile at a time only if it shows up in a profile.
 // The root of cdf(z) - u by toms748 on a bracket grown from [-1, 1] (mean 0, variance 1) until the sign changes.
 double solved_quantile(const detail::DensityIntegrand<double>& integrand, double u)
 {
@@ -338,6 +368,139 @@ double quantile(Dist dist, const ShapeParameters<double>& parameters, double u)
         return density.center + density.scale * x;
     }
     return solved_quantile({make_density(dist, parameters)}, u);
+}
+
+namespace
+{
+
+// The grid is z = kTableCore sinh(w), w uniform: fine at the core of the density, coarse in the tails, out to
+// +-kTableReach. At this many nodes the Hermite guess is within ~1e-7 of the root, which one Newton step turns into
+// rounding; a second step confirms it. A probability beyond the grid's cdf takes the root solve.
+constexpr std::size_t kTableNodes = 513;
+constexpr double kTableCore = 0.25;
+constexpr double kTableReach = 40.0;
+constexpr int kPolishSteps = 4;
+constexpr double kPolishTolerance = 1e-7;
+
+struct TableGrid
+{
+    std::vector<double> z;
+    std::vector<double> cdf;
+    std::vector<double> pdf;
+};
+
+bool node_usable(double cdf, double pdf)
+{
+    return std::isfinite(cdf) && cdf > 0.0 && cdf < 1.0 && std::isfinite(pdf) && pdf > 0.0;
+}
+
+// The nodes of the grid whose cdf is strictly increasing outward from the middle one, and in (0, 1).
+TableGrid usable_grid(const detail::DensityIntegrand<double>& integrand, const detail::CdfConstants& constants)
+{
+    const double w_max = std::asinh(kTableReach / kTableCore);
+    TableGrid all;
+    for (std::size_t i = 0; i < kTableNodes; ++i)
+    {
+        double w = -w_max + 2.0 * w_max * static_cast<double>(i) / static_cast<double>(kTableNodes - 1);
+        double z = kTableCore * std::sinh(w);
+        all.z.push_back(z);
+        all.cdf.push_back(quadrature_cdf(integrand, constants, z));
+        all.pdf.push_back(integrand(z));
+    }
+    const std::size_t middle = kTableNodes / 2;
+    std::size_t first = middle;
+    while (first > 0 && node_usable(all.cdf[first - 1], all.pdf[first - 1]) && all.cdf[first - 1] < all.cdf[first])
+    {
+        --first;
+    }
+    std::size_t last = middle;
+    while (last + 1 < kTableNodes && node_usable(all.cdf[last + 1], all.pdf[last + 1]) &&
+           all.cdf[last + 1] > all.cdf[last])
+    {
+        ++last;
+    }
+    const auto begin = static_cast<std::ptrdiff_t>(first);
+    const auto end = static_cast<std::ptrdiff_t>(last + 1);
+    return {{all.z.begin() + begin, all.z.begin() + end},
+            {all.cdf.begin() + begin, all.cdf.begin() + end},
+            {all.pdf.begin() + begin, all.pdf.begin() + end}};
+}
+
+}
+
+QuantileTable::QuantileTable(Dist dist, const ShapeParameters<double>& parameters)
+    : dist_(dist), parameters_(parameters), density_()
+{
+    if (!needs_quadrature(dist) || !in_domain(dist, parameters))
+    {
+        return;
+    }
+    density_ = make_density(dist, parameters);
+    const detail::DensityIntegrand<double> integrand{density_};
+    constants_ = cdf_constants(integrand);
+    TableGrid grid = usable_grid(integrand, constants_);
+    if (grid.z.size() < 2)
+    {
+        return;
+    }
+    z_ = std::move(grid.z);
+    cdf_ = std::move(grid.cdf);
+    pdf_ = std::move(grid.pdf);
+}
+
+// The z in [z_segment, z_(segment + 1)] where the cubic Hermite interpolant of the cdf (values and densities at the
+// nodes) equals u, from the linear interpolation by Newton steps in the unit coordinate s.
+double QuantileTable::hermite_guess(std::size_t segment, double u) const
+{
+    const double z0 = z_[segment];
+    const double width = z_[segment + 1] - z0;
+    const double f0 = cdf_[segment];
+    const double f1 = cdf_[segment + 1];
+    const double slope0 = width * pdf_[segment];
+    const double slope1 = width * pdf_[segment + 1];
+    double s = std::clamp((u - f0) / (f1 - f0), 0.0, 1.0);
+    for (int step = 0; step < 3; ++step)
+    {
+        const double s2 = s * s;
+        const double s3 = s2 * s;
+        const double value = (2.0 * s3 - 3.0 * s2 + 1.0) * f0 + (s3 - 2.0 * s2 + s) * slope0 +
+                             (-2.0 * s3 + 3.0 * s2) * f1 + (s3 - s2) * slope1;
+        const double derivative = (6.0 * s2 - 6.0 * s) * f0 + (3.0 * s2 - 4.0 * s + 1.0) * slope0 +
+                                  (-6.0 * s2 + 6.0 * s) * f1 + (3.0 * s2 - 2.0 * s) * slope1;
+        if (!(derivative > 0.0))
+        {
+            break;
+        }
+        s = std::clamp(s - (value - u) / derivative, 0.0, 1.0);
+    }
+    return z0 + s * width;
+}
+
+double QuantileTable::operator()(double u) const
+{
+    if (z_.empty() || !(u > cdf_.front() && u < cdf_.back()))
+    {
+        return quantile(dist_, parameters_, u);
+    }
+    const auto above = std::ranges::upper_bound(cdf_, u);
+    const auto segment = static_cast<std::size_t>(above - cdf_.begin()) - 1;
+    const detail::DensityIntegrand<double> integrand{density_};
+    double z = hermite_guess(segment, u);
+    for (int step = 0; step < kPolishSteps; ++step)
+    {
+        const double density = integrand(z);
+        const double correction = (quadrature_cdf(integrand, constants_, z) - u) / density;
+        if (!(density > 0.0) || !std::isfinite(correction))
+        {
+            break;
+        }
+        z -= correction;
+        if (std::fabs(correction) <= kPolishTolerance * std::max(1.0, std::fabs(z)))
+        {
+            return z;
+        }
+    }
+    return quantile(dist_, parameters_, u);
 }
 
 }

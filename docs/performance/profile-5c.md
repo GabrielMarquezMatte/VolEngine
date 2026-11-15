@@ -205,3 +205,29 @@ Outside |order| <= 200, x >= 1e-8 the old Richardson stays, marked `ponytail:`.
 
 The ghyp fit is now 4.6 times the nig one (was 22), under the 5x at which the spec asks for a `ponytail:` on SIMD in the
 trapezoid.
+
+## Task 4: nig and ghyp quantiles from a table
+
+`dist::QuantileTable` (`src/dist/cdf.*`) is built once per margin in `dcc/future/simulate.cpp`. It keeps the quadrature
+cdf of the density at 513 nodes z = 0.25 sinh(w), |z| <= 40, takes the first guess from the cubic Hermite interpolant of
+that cdf and finishes with Newton steps on the same quadrature cdf, so its roots are those of `quantile`: the tests
+compare them to `quantile` within 1e-13 relative plus the 1e-15 rounding of the cdf divided by the density (in the
+upper tail, u = 1 - 1e-12 has four digits left and two roots that both satisfy `|cdf(z) - u| <= 1e-13` can be 1e-5
+apart), and require `|cdf(table(u)) - u| <= 1e-13` everywhere.
+
+Ruling on the polish: the plan proposed a short Gauss-Legendre segment from the neighbouring node. The quadrature cdf
+beyond |z| = 1 is a scaled tail integral that is not exactly the sum of segment integrals (the two quadratures differ by
+up to ~1e-8 on a peaked density, see `quadrature_cdf`), so a segment polish would not land on the root of `quantile`.
+The Newton step uses the quadrature cdf itself, with its z-independent parts (the mass below 0 and the two join scales,
+`detail::CdfConstants`) computed once: the same arithmetic, so the same bits, at about a quarter of the cost of a cold
+call (a cold call was 9.5 us, one step with constants is ~2.5 us).
+
+| Benchmark (200 probabilities) | `quantile` | `QuantileTable` | per call |
+| --- | ---: | ---: | ---: |
+| nig | 21.8 ms (109 us per call) | 0.539 ms | 2.7 us (40x) |
+| ghyp | 28.7 ms (143 us per call) | 0.709 ms | 3.5 us (40x) |
+| table construction, nig | | 1.42 ms | |
+| table construction, ghyp | | 1.86 ms | |
+
+The base (Task 1) was 286 and 489 us per call; the part of the gain in the `quantile` column is Task 2. A copula
+simulation of 1000 paths x 60 steps x 21 nig margins goes from ~6 min (base) to ~3 s plus 21 constructions (~30 ms).

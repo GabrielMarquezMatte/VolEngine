@@ -268,6 +268,161 @@ TEST(DistQuantile, SameBitsOnAnyThread)
         EXPECT_EQ(main_thread, other) << static_cast<int>(dist);
     }
 }
+
+// The table of the nig and ghyp quantile (plan 5c-2): same answers as the root solve of `quantile`.
+struct HyperbolicCase
+{
+    Dist dist;
+    ve::dist::ShapeParameters<double> parameters;
+};
+
+const std::array<HyperbolicCase, 5> kHyperbolicCases{{
+    {Dist::Nig, {.skew = -0.4, .shape = 1.5}},
+    {Dist::Nig, {.skew = 0.3, .shape = 1.2}},
+    {Dist::Ghyp, {.skew = 0.3, .shape = 2.0, .ghlambda = -1.5}},
+    {Dist::Ghyp, {.skew = 0.3, .shape = 2.0, .ghlambda = 2.0}},
+    {Dist::Ghyp, {.skew = -0.2, .shape = 0.3, .ghlambda = -1.5}},
+}};
+
+// How far two roots of the cdf can be told apart: 1e-13 relative, plus what a rounding of 1e-15 in the cdf moves the
+// root, which is a lot in the upper tail, where u = 1 - 1e-12 has only four digits left.
+double root_tolerance(const HyperbolicCase& sample, double z)
+{
+    const ve::dist::Density<double> density = ve::dist::make_density(sample.dist, sample.parameters);
+    const double pdf = std::exp(ve::dist::log_density(density, z));
+    return 1e-13 * std::max(1.0, std::fabs(z)) + 1e-15 / pdf;
+}
+
+std::vector<double> table_probabilities()
+{
+    std::vector<double> probabilities(kProbabilities.begin(), kProbabilities.end());
+    for (int i = 0; i <= 2000; ++i)
+    {
+        probabilities.push_back(1e-4 + (1.0 - 2e-4) * i / 2000.0);
+    }
+    return probabilities;
+}
+
+TEST(QuantileTable, MatchesSolvedQuantile)
+{
+    for (const HyperbolicCase& sample : kHyperbolicCases)
+    {
+        const ve::dist::QuantileTable table(sample.dist, sample.parameters);
+        for (double u : table_probabilities())
+        {
+            const double expected = ve::dist::quantile(sample.dist, sample.parameters, u);
+            const double actual = table(u);
+            EXPECT_NEAR(actual, expected, root_tolerance(sample, expected))
+                << static_cast<int>(sample.dist) << " shape " << sample.parameters.shape << " u " << u;
+            EXPECT_NEAR(ve::dist::cdf(sample.dist, sample.parameters, actual), u, 1e-13)
+                << static_cast<int>(sample.dist) << " shape " << sample.parameters.shape << " u " << u;
+        }
+    }
+}
+
+TEST(QuantileTable, OtherDistributionsDelegate)
+{
+    for (const CdfCase& sample : quantile_cases())
+    {
+        if (sample.dist == Dist::Nig || sample.dist == Dist::Ghyp)
+        {
+            continue;
+        }
+        const ve::dist::QuantileTable table(sample.dist, sample.parameters);
+        for (double u : kProbabilities)
+        {
+            EXPECT_EQ(table(u), ve::dist::quantile(sample.dist, sample.parameters, u))
+                << static_cast<int>(sample.dist) << " u " << u;
+        }
+    }
+}
+
+TEST(QuantileTable, EdgesLikeQuantile)
+{
+    constexpr double kNan = std::numeric_limits<double>::quiet_NaN();
+    const std::vector<double> edges{0.0, 1.0, kNan, -0.1, 1.1, 1e-12, 1.0 - 1e-12, 1e-300};
+    for (const HyperbolicCase& sample : kHyperbolicCases)
+    {
+        const ve::dist::QuantileTable table(sample.dist, sample.parameters);
+        for (double u : edges)
+        {
+            const double expected = ve::dist::quantile(sample.dist, sample.parameters, u);
+            const double actual = table(u);
+            if (std::isnan(expected))
+            {
+                EXPECT_TRUE(std::isnan(actual)) << static_cast<int>(sample.dist) << " u " << u;
+                continue;
+            }
+            if (std::isinf(expected))
+            {
+                EXPECT_EQ(actual, expected) << static_cast<int>(sample.dist) << " u " << u;
+                continue;
+            }
+            EXPECT_NEAR(actual, expected, root_tolerance(sample, expected))
+                << static_cast<int>(sample.dist) << " u " << u;
+        }
+    }
+    // Outside the domain the table answers as quantile does: NaN.
+    const ve::dist::QuantileTable invalid(Dist::Nig, {.skew = 1.5, .shape = 1.2});
+    EXPECT_TRUE(std::isnan(invalid(0.3)));
+    EXPECT_TRUE(std::isnan(invalid(0.0)));
+}
+
+// A u that is exactly a node of the table, however the table places them: the cdf of the quantile of a quantile.
+TEST(QuantileTable, AtItsOwnNodes)
+{
+    for (const HyperbolicCase& sample : kHyperbolicCases)
+    {
+        const ve::dist::QuantileTable table(sample.dist, sample.parameters);
+        for (double z : {-5.0, -1.0, -0.3, 0.0, 0.25, 1.0, 3.0})
+        {
+            const double u = ve::dist::cdf(sample.dist, sample.parameters, z);
+            const double expected = ve::dist::quantile(sample.dist, sample.parameters, u);
+            EXPECT_NEAR(table(u), expected, root_tolerance(sample, expected))
+                << static_cast<int>(sample.dist) << " z " << z;
+        }
+    }
+}
+
+TEST(QuantileTable, Monotone)
+{
+    for (const HyperbolicCase& sample : kHyperbolicCases)
+    {
+        const ve::dist::QuantileTable table(sample.dist, sample.parameters);
+        double previous = -std::numeric_limits<double>::infinity();
+        for (int i = 1; i <= 2000; ++i)
+        {
+            const double u = static_cast<double>(i) / 2001.0;
+            const double z = table(u);
+            EXPECT_GT(z, previous) << static_cast<int>(sample.dist) << " u " << u;
+            previous = z;
+        }
+    }
+}
+
+TEST(QuantileTable, SameBitsOnAnyThread)
+{
+    for (const HyperbolicCase& sample : kHyperbolicCases)
+    {
+        const std::vector<double> probabilities = table_probabilities();
+        std::vector<double> built_here;
+        std::vector<double> built_there;
+        const ve::dist::QuantileTable table(sample.dist, sample.parameters);
+        for (double u : probabilities)
+        {
+            built_here.push_back(table(u));
+        }
+        std::thread worker([&] {
+            const ve::dist::QuantileTable other(sample.dist, sample.parameters);
+            for (double u : probabilities)
+            {
+                built_there.push_back(other(u));
+            }
+        });
+        worker.join();
+        EXPECT_EQ(built_here, built_there) << static_cast<int>(sample.dist);
+    }
+}
 }
 
 #if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))

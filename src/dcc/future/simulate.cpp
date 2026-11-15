@@ -30,8 +30,7 @@ constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 // fit, or of the standardized residuals of the sample (sorted) for the empirical margins.
 struct Margin
 {
-    Dist dist = Dist::Norm;
-    dist::ShapeParameters<double> parameters{};
+    dist::QuantileTable table{Dist::Norm, {}};
     std::vector<double> sorted{};
 };
 
@@ -39,7 +38,7 @@ double margin_quantile(const Margin& margin, double u)
 {
     if (margin.sorted.empty())
     {
-        return dist::quantile(margin.dist, margin.parameters, u);
+        return margin.table(u);
     }
     const auto count = static_cast<double>(margin.sorted.size());
     const double rank = std::min(std::ceil(u * (count + 1.0)), count);
@@ -63,8 +62,7 @@ Margin margin_of(const DccFitResult& fit, std::size_t series)
     Margin margin;
     if (fit.spec.copula == DccCopula::Parametric)
     {
-        margin.dist = layout.dist;
-        margin.parameters = model::shape_parameters_of<double>(end.estimate, layout);
+        margin.table = dist::QuantileTable(layout.dist, model::shape_parameters_of<double>(end.estimate, layout));
         return margin;
     }
     margin.sorted.resize(fit.panel->t);

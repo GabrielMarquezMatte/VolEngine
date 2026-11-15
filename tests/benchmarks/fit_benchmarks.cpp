@@ -907,6 +907,41 @@ void run_dist_quantile(benchmark::State& state, ve::Dist dist, ve::dist::ShapePa
         static_cast<double>(kProbabilities * state.iterations()), benchmark::Counter::kIsRate);
 }
 
+// The same probabilities through a QuantileTable built outside the timed loop (its construction is measured apart).
+void run_quantile_table(benchmark::State& state, ve::Dist dist, ve::dist::ShapeParameters<double> parameters)
+{
+    constexpr int kProbabilities = 200;
+    const ve::dist::QuantileTable table(dist, parameters);
+    const auto evaluate = [&] {
+        double sum = 0.0;
+        for (int i = 0; i < kProbabilities; ++i)
+        {
+            sum += table(0.001 + 0.998 * (i + 0.5) / kProbabilities);
+        }
+        return sum;
+    };
+    if (!std::isfinite(evaluate()))
+    {
+        state.SkipWithError("the quantile is not finite");
+        return;
+    }
+    for (auto _ : state)
+    {
+        benchmark::DoNotOptimize(evaluate());
+    }
+    state.counters["calls_per_s"] = benchmark::Counter(
+        static_cast<double>(kProbabilities * state.iterations()), benchmark::Counter::kIsRate);
+}
+
+void run_quantile_table_build(benchmark::State& state, ve::Dist dist, ve::dist::ShapeParameters<double> parameters)
+{
+    for (auto _ : state)
+    {
+        const ve::dist::QuantileTable table(dist, parameters);
+        benchmark::DoNotOptimize(table(0.5));
+    }
+}
+
 int hardware_threads()
 {
     return static_cast<int>(std::max(1U, std::thread::hardware_concurrency()));
@@ -1597,6 +1632,14 @@ void register_all()
     benchmark::RegisterBenchmark("BM_DistQuantile/nig", run_dist_quantile, ve::Dist::Nig,
                                  ve::dist::ShapeParameters<double>{.skew = -0.4, .shape = 1.5});
     benchmark::RegisterBenchmark("BM_DistQuantile/ghyp", run_dist_quantile, ve::Dist::Ghyp,
+                                 ve::dist::ShapeParameters<double>{.skew = 0.3, .shape = 2.0, .ghlambda = -1.5});
+    benchmark::RegisterBenchmark("BM_DistQuantile/nig/table", run_quantile_table, ve::Dist::Nig,
+                                 ve::dist::ShapeParameters<double>{.skew = -0.4, .shape = 1.5});
+    benchmark::RegisterBenchmark("BM_DistQuantile/ghyp/table", run_quantile_table, ve::Dist::Ghyp,
+                                 ve::dist::ShapeParameters<double>{.skew = 0.3, .shape = 2.0, .ghlambda = -1.5});
+    benchmark::RegisterBenchmark("BM_DistQuantile/nig/table_build", run_quantile_table_build, ve::Dist::Nig,
+                                 ve::dist::ShapeParameters<double>{.skew = -0.4, .shape = 1.5});
+    benchmark::RegisterBenchmark("BM_DistQuantile/ghyp/table_build", run_quantile_table_build, ve::Dist::Ghyp,
                                  ve::dist::ShapeParameters<double>{.skew = 0.3, .shape = 2.0, .ghlambda = -1.5});
 }
 
