@@ -216,4 +216,71 @@ T log_density(const LogDensity<T>& density, const T& z)
     return normal_log_density_at(density, z * z);
 }
 
+// The partials of term = log f(e / sigma) - log(sigma2) / 2 in e, sigma2, scale and power, for the reverse pass of
+// the likelihood (the partial in log_constant is 1). Where the term has a kink they follow ad::Dual: |e| has slope 0
+// at e = 0, and so does the ged power there.
+struct TermAdjoint
+{
+    double e;
+    double sigma2;
+    double scale;
+    double power;
+};
+
+namespace detail
+{
+
+// x = e^2 / sigma2: d/de = -e / sigma2, d/dsigma2 = (x - 1) / (2 sigma2).
+inline TermAdjoint normal_term_adjoint(double e, double sigma2)
+{
+    double x = e * e / sigma2;
+    return {-e / sigma2, 0.5 * (x - 1.0) / sigma2, 0.0, 0.0};
+}
+
+// u = e^2 / (sigma2 s), w = p / (1 + u): d/de = -2 w e / (sigma2 s), d/dsigma2 = (w u - 1/2) / sigma2,
+// d/ds = w u / s, d/dp = -log1p(u).
+inline TermAdjoint student_term_adjoint(const LogDensity<double>& density, double e, double sigma2)
+{
+    double u = e * e / sigma2 / density.scale;
+    double w = density.power / (1.0 + u);
+    return {-2.0 * w * e / (sigma2 * density.scale), (w * u - 0.5) / sigma2, w * u / density.scale,
+            -std::log1p(u)};
+}
+
+// y = |e| / (sigma lambda), v = y^p, slope = dv/dy: d/de = -slope sign(e) / (2 sigma lambda),
+// d/dsigma2 = (slope y / 4 - 1/2) / sigma2, d/dlambda = slope y / (2 lambda), d/dp = -v log(y) / 2.
+inline TermAdjoint ged_term_adjoint(const LogDensity<double>& density, double e, double sigma2)
+{
+    double sigma = std::sqrt(sigma2);
+    double y = std::fabs(e) / sigma / density.scale;
+    TermAdjoint adjoint{0.0, -0.5 / sigma2, 0.0, 0.0};
+    if (y == 0.0)
+    {
+        return adjoint;
+    }
+    double v = std::pow(y, density.power);
+    double slope = ad::detail::pow_slope(y, density.power, v);
+    double sign = (e > 0.0) - (e < 0.0);
+    adjoint.e = -0.5 * slope * sign / (sigma * density.scale);
+    adjoint.sigma2 += 0.25 * slope * y / sigma2;
+    adjoint.scale = 0.5 * slope * y / density.scale;
+    adjoint.power = -0.5 * v * std::log(y);
+    return adjoint;
+}
+
+}
+
+inline TermAdjoint term_adjoint(const LogDensity<double>& density, double e, double sigma2)
+{
+    if (density.dist == Dist::Std)
+    {
+        return detail::student_term_adjoint(density, e, sigma2);
+    }
+    if (density.dist == Dist::Ged)
+    {
+        return detail::ged_term_adjoint(density, e, sigma2);
+    }
+    return detail::normal_term_adjoint(e, sigma2);
+}
+
 }

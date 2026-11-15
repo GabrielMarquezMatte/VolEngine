@@ -11,6 +11,7 @@
 #include <limits>
 #include <numbers>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -306,6 +307,84 @@ TEST(SkewedDensities, FarTailsStayFinite)
     }
     EXPECT_NEAR(ve::dist::log_density(nig, 0.0), normal_at_zero, 1e-2);
     EXPECT_NEAR(ve::dist::log_density(ghyp, 0.0), normal_at_zero, 1e-2);
+}
+
+using Dual4 = ve::ad::Dual<4>;
+
+// The term of the likelihood, log f(e / sigma) - log(sigma2) / 2, as model::loglik computes it: z^2 = e e / sigma2
+// for norm and std, |e| / sqrt(sigma2) for ged. Lanes: e, sigma2, scale, power.
+Dual4 dual_term(const ve::dist::LogDensity<double>& plain, double e, double sigma2)
+{
+    using ve::ad::variable;
+    ve::dist::LogDensity<Dual4> density{plain.dist, ve::ad::constant<4>(plain.log_constant),
+                                        variable<4>(plain.scale, 2), variable<4>(plain.power, 3)};
+    Dual4 de = variable<4>(e, 0);
+    Dual4 ds = variable<4>(sigma2, 1);
+    Dual4 log_density = ve::dist::normal_log_density_at(density, de * de / ds);
+    if (plain.dist == Dist::Std)
+    {
+        log_density = ve::dist::student_log_density_at(density, de * de / ds);
+    }
+    if (plain.dist == Dist::Ged)
+    {
+        log_density = ve::dist::ged_log_density_at(density, abs(de) / sqrt(ds));
+    }
+    return log_density - 0.5 * log(ds);
+}
+
+void expect_adjoint_matches(const ve::dist::LogDensity<double>& density, double e, double sigma2)
+{
+    SCOPED_TRACE(::testing::Message() << "dist " << static_cast<int>(density.dist) << " power " << density.power
+                                      << " e " << e << " sigma2 " << sigma2);
+    Dual4 expected = dual_term(density, e, sigma2);
+    ve::dist::TermAdjoint adjoint = ve::dist::term_adjoint(density, e, sigma2);
+    std::array<double, 4> actual{adjoint.e, adjoint.sigma2, adjoint.scale, adjoint.power};
+    if (density.dist == Dist::Norm)
+    {
+        expected.grad[2] = 0.0;
+        expected.grad[3] = 0.0;
+    }
+    for (std::size_t i = 0; i < actual.size(); ++i)
+    {
+        ASSERT_EQ(std::isfinite(actual[i]), std::isfinite(expected.grad[i])) << "partial " << i;
+        if (std::isfinite(actual[i]))
+        {
+            EXPECT_NEAR(actual[i], expected.grad[i], 1e-12 * std::max(1.0, std::abs(expected.grad[i])))
+                << "partial " << i;
+        }
+    }
+}
+
+TEST(DensityTerm, AdjointMatchesDual)
+{
+    std::vector<ve::dist::LogDensity<double>> densities{ve::dist::make_log_density(Dist::Norm, 0.0)};
+    for (double nu : {2.5, 8.0, 30.0})
+    {
+        densities.push_back(ve::dist::make_log_density(Dist::Std, nu));
+    }
+    for (double nu : {0.8, 1.5, 3.0})
+    {
+        densities.push_back(ve::dist::make_log_density(Dist::Ged, nu));
+    }
+    for (const ve::dist::LogDensity<double>& density : densities)
+    {
+        for (double e : {-1.3, 0.2, 2.7})
+        {
+            for (double sigma2 : {0.4, 1.7})
+            {
+                expect_adjoint_matches(density, e, sigma2);
+            }
+        }
+    }
+}
+
+// At e = 0 the ged term has the kink of |e|: the partials follow the Dual's conventions (sign 0, pow_slope).
+TEST(DensityTerm, AdjointAtZeroResidualFollowsDual)
+{
+    for (double nu : {0.8, 1.5})
+    {
+        expect_adjoint_matches(ve::dist::make_log_density(Dist::Ged, nu), 0.0, 1.1);
+    }
 }
 
 }
