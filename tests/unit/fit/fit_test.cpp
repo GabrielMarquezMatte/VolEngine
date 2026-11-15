@@ -100,11 +100,6 @@ TEST(Fit, InsufficientDataDoesNoOptimizerWork)
     EXPECT_EQ(result.work.evaluations, 0);
 }
 
-// The fit with the inference takes its loglik from the Dual pass and the one without from loglik<double>, which reads
-// the density from the vector kernels: they differ by rounding (the grid of model/likelihood_test.cpp agrees at 1e-14
-// relative), while the variance recursions, the same code in both, stay bit for bit.
-constexpr double kDoubleDualTolerance = 1e-14;
-
 TEST(Fit, StandardErrorsOffSkipsInferenceOnly)
 {
     ve::FitConfig off;
@@ -116,7 +111,7 @@ TEST(Fit, StandardErrorsOffSkipsInferenceOnly)
     {
         EXPECT_EQ(bits(without.estimate[i]), bits(with.estimate[i]));
     }
-    EXPECT_NEAR(without.loglik, with.loglik, kDoubleDualTolerance * std::fabs(with.loglik));
+    EXPECT_EQ(bits(without.loglik), bits(with.loglik));
     ASSERT_EQ(without.sigma.size(), with.sigma.size());
     for (std::size_t t = 0; t < with.sigma.size(); ++t)
     {
@@ -129,8 +124,8 @@ TEST(Fit, StandardErrorsOffSkipsInferenceOnly)
               with.work.seconds - with.work.optimizer_seconds);
 }
 
-// The forecast state at the estimate comes from the double pass when the inference is off: the csGARCH permanent
-// component and the ARFIMA deviations must be the bits of the Dual pass.
+// The forecast state at the estimate is the same with the inference on or off: the csGARCH permanent component and
+// the ARFIMA deviations are bit for bit.
 TEST(Fit, StandardErrorsOffKeepsForecastState)
 {
     Spec csgarch;
@@ -144,12 +139,41 @@ TEST(Fit, StandardErrorsOffKeepsForecastState)
         FitResult with = fit_simulated(spec);
         FitResult without = ve::fit_one(simulated(), spec, off);
         ASSERT_EQ(without.status, with.status);
-        EXPECT_NEAR(without.loglik, with.loglik, kDoubleDualTolerance * std::fabs(with.loglik));
+        EXPECT_EQ(bits(without.loglik), bits(with.loglik));
         EXPECT_EQ(without.state.residuals, with.state.residuals);
         EXPECT_EQ(without.state.sigma2, with.state.sigma2);
         EXPECT_EQ(without.state.permanent, with.state.permanent);
         EXPECT_EQ(without.state.deviations, with.state.deviations);
         EXPECT_FALSE(with.state.permanent.empty() && with.state.deviations.empty());
+    }
+}
+
+// The log-likelihood and the series at the estimate come from the same pass whatever the inference option says:
+// the Dual pass and the double pass read the density through different code and differ by rounding.
+TEST(Fit, StandardErrorsOptionDoesNotChangeTheNumbers)
+{
+    using ve::Dist;
+    using ve::Model;
+    ve::FitConfig off;
+    off.standard_errors = false;
+    const std::vector<Spec> specs{
+        {.model = Model::SGarch, .dist = Dist::Norm}, {.model = Model::EGarch, .dist = Dist::Std},
+        {.model = Model::CsGarch, .dist = Dist::Ged}, {.model = Model::ApArch, .dist = Dist::Sstd},
+        {.model = Model::SGarch, .dist = Dist::Ghyp}};
+    for (const Spec& spec : specs)
+    {
+        FitResult with = fit_simulated(spec);
+        FitResult without = ve::fit_one(simulated(), spec, off);
+        const std::string label = "model " + std::to_string(static_cast<int>(spec.model)) + " dist " +
+                                  std::to_string(static_cast<int>(spec.dist));
+        ASSERT_EQ(without.status, with.status) << label;
+        EXPECT_EQ(bits(without.loglik), bits(with.loglik)) << label;
+        ASSERT_EQ(without.sigma.size(), with.sigma.size()) << label;
+        for (std::size_t t = 0; t < with.sigma.size(); ++t)
+        {
+            ASSERT_EQ(bits(without.sigma[t]), bits(with.sigma[t])) << label << " sigma t = " << t;
+            ASSERT_EQ(bits(without.residuals[t]), bits(with.residuals[t])) << label << " residual t = " << t;
+        }
     }
 }
 
@@ -1838,7 +1862,7 @@ TEST(FitGradient, FixedBetaFitConverges)
     const ve::model::Layout layout = ve::model::layout_of(spec);
     EXPECT_EQ(fit.estimate[layout.beta_begin()], 0.85);
     const double at_estimate = ve::model::loglik<double>(r, fit.estimate, layout, ve::VarInit::Sample, {});
-    EXPECT_NEAR(fit.loglik, at_estimate, kDoubleDualTolerance * std::fabs(at_estimate));
+    EXPECT_EQ(bits(fit.loglik), bits(at_estimate));
 }
 
 }

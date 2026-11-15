@@ -323,21 +323,40 @@ void fill_inference(FitResult& result, const fit::LikelihoodProblem& problem,
     result.nyblom = nyblom_at_estimate(scores, problem.layout);
 }
 
-// The log-likelihood, series and forecast state at the estimate, and the inference when the config asks for it.
+// The scores of the log-likelihood at the estimate, T x k. The Dual pass that makes them also evaluates the series,
+// which differ from those of the double pass by rounding, so it writes them to scratch space.
+std::vector<double> scores_at_estimate(const fit::LikelihoodProblem& problem, std::span<const double> estimate)
+{
+    std::size_t count = problem.data.r.size();
+    std::vector<double> scores(count * estimate.size());
+    std::vector<double> residuals(count);
+    std::vector<double> sigma2(count);
+    std::vector<double> deviations(count);
+    std::vector<double> permanent(problem.layout.model == Model::CsGarch ? count : 0);
+    fit::loglik_with_scores(problem, estimate, {residuals, sigma2, scores, deviations, permanent});
+    return scores;
+}
+
+// The log-likelihood, series and forecast state at the estimate, from the double pass whether or not the config asks
+// for the inference, which adds the scores.
 bool fill_at_estimate(FitResult& result, const fit::LikelihoodProblem& problem,
                       const model::Standardization& standardization)
 {
     std::span<const double> r = problem.data.r;
     std::vector<double> residuals(r.size());
     std::vector<double> sigma2(r.size());
-    std::vector<double> scores(result.config.standard_errors ? r.size() * result.estimate.size() : 0);
     std::vector<double> deviations(r.size());
     std::vector<double> permanent(problem.layout.model == Model::CsGarch ? r.size() : 0);
-    fit::LoglikSeries series{residuals, sigma2, scores, deviations, permanent};
+    fit::LoglikSeries series{residuals, sigma2, {}, deviations, permanent};
     double loglik = fit::loglik_with_scores(problem, result.estimate, series);
     if (!std::isfinite(loglik))
     {
         return false;
+    }
+    std::vector<double> scores;
+    if (result.config.standard_errors)
+    {
+        scores = scores_at_estimate(problem, result.estimate);
     }
     result.loglik = loglik;
     result.state = final_state(problem.layout, series);
