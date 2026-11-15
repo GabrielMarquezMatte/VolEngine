@@ -37,6 +37,18 @@ bool is_covered_dist(Dist dist)
     return dist == Dist::Norm || dist == Dist::Std || dist == Dist::Ged;
 }
 
+// Exhaustive with no default: a new VarInit is a -Wswitch error here until the adjoint's presample handles it.
+bool is_covered_init(VarInit var_init)
+{
+    switch (var_init)
+    {
+        case VarInit::Sample:
+        case VarInit::Backcast:
+            return true;
+    }
+    return false;
+}
+
 // iGARCH reads beta_q = 1 - sum alpha - sum_{j<q} beta_j: the partial of that beta_q moves to the alphas and the
 // earlier betas with a minus sign, and the stored beta_q, never read, has none.
 void chain_igarch_beta(std::span<double> alpha, std::span<double> beta)
@@ -55,8 +67,12 @@ void chain_igarch_beta(std::span<double> alpha, std::span<double> beta)
 
 }
 
-bool has_adjoint(const Layout& layout, VarInit /*var_init*/)
+bool has_adjoint(const Layout& layout, VarInit var_init)
 {
+    if (!is_covered_init(var_init))
+    {
+        return false;
+    }
     bool plain_mean = layout.mxreg == 0 && !layout.has_archm() && !layout.has_arfima();
     return is_covered_model(layout.model) && is_covered_dist(layout.dist) && plain_mean && layout.vxreg == 0 &&
            !layout.variance_targeting;

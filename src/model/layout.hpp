@@ -22,6 +22,8 @@ enum class ParameterKind
     Weight
 };
 
+// A new field that changes the likelihood must also be considered in model::has_adjoint
+// (model/likelihood/adjoint.cpp), which otherwise takes a covered model with it as covered.
 struct Layout
 {
     Model model = Model::SGarch;
