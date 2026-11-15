@@ -1,0 +1,116 @@
+name: Release
+
+# A v* tag publishes the wheels to PyPI and the native libraries to a GitHub Release; a tag with a '-' (v1.0.0-rc.1)
+# is a prerelease. A manual run is a dry run unless dry_run is turned off: it builds and tests everything and skips
+# the two steps that publish.
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build everything but publish nothing'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  wheels:
+    name: Wheels
+    uses: ./.github/workflows/wheels.yml
+    with:
+      # A manual run builds the version in the repository: the ref is a branch there, not a tag.
+      version: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+
+  # The Windows DLL is built by MinGW; MSVC users link against a .lib made from its export list.
+  windows-lib:
+    name: Windows import library
+    needs: wheels
+    runs-on: windows-latest
+    steps:
+      - name: Download the Windows library
+        uses: actions/download-artifact@v4
+        with:
+          name: native-win-x64
+
+      - name: Set up the MSVC tools
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build the import library
+        shell: cmd
+        run: lib /def:volengine-native-win-x64.def /name:volengine-native-win-x64.dll /machine:x64 /out:volengine-native-win-x64.lib
+
+      - name: Upload the import library
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-win-x64-lib
+          path: volengine-native-win-x64.lib
+          if-no-files-found: error
+
+  publish-github:
+    name: GitHub Release
+    needs: [ wheels, windows-lib ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the native libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: assets
+          merge-multiple: true
+
+      # The .def only feeds the .lib; it is not a release asset.
+      - name: Drop the export list
+        run: |
+          rm assets/*.def
+          ls -l assets
+
+      - name: Generate the SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: assets
+          format: spdx-json
+          output-file: volengine.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Publish the GitHub Release
+        if: github.event_name == 'push' || !inputs.dry_run
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
+          files: |
+            assets/*.dll
+            assets/*.dll.a
+            assets/*.lib
+            assets/*.so
+            assets/*.dylib
+            volengine.spdx.json
+
+  publish-pypi:
+    name: PyPI
+    needs: publish-github
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download the wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          path: dist
+          merge-multiple: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Publish to PyPI
+        if: github.event_name == 'push' || !inputs.dry_run
+        run: uv publish --trusted-publishing always dist/*
