@@ -135,9 +135,15 @@ TEST(Bessel, SmoothAroundFiveHalves)
 }
 
 // log K_|order|(x) in long double, the reference of the slope tests; Boost's K is even in the order.
+// The references below are Richardson differences in long double (64 bits of mantissa on x86 GCC). Where long double is
+// double (MSVC, Apple Silicon) their rounding, eps |log K| / 1e-4, is as large as the tolerances, so the tests skip.
+constexpr bool kHasExtendedPrecision = std::numeric_limits<long double>::digits > std::numeric_limits<double>::digits;
+
+using IgnoreOverflow = boost::math::policies::policy<boost::math::policies::overflow_error<boost::math::policies::ignore_error>>;
+
 long double reference_log_k(long double order, long double x)
 {
-    return std::log(boost::math::cyl_bessel_k(std::fabs(order), x));
+    return std::log(boost::math::cyl_bessel_k(std::fabs(order), x, IgnoreOverflow()));
 }
 
 // Richardson on central differences of the long double reference, accurate to O(step^4).
@@ -167,6 +173,10 @@ void expect_near_reference(double actual, long double reference, double toleranc
 // nor smooth in v (see SmoothAroundFiveHalves) and so is no reference.
 TEST(Bessel, SlopesMatchLongDoubleReference)
 {
+    if (!kHasExtendedPrecision)
+    {
+        GTEST_SKIP() << "long double is double here: the reference is not more precise than the slopes";
+    }
     for (double order : {-3.3, -1.5, -0.5, 0.0, 0.1, 0.4999, 0.5, 1.0, 2.4, 3.7, 10.0, 50.0, 200.0})
     {
         for (double x : {0.01, 0.1, 1.0, 1.78, 10.0, 31.6, 300.0, 699.0})
@@ -184,6 +194,10 @@ TEST(Bessel, SlopesMatchLongDoubleReference)
 
 TEST(Bessel, OrderSlopeAtSmallArgument)
 {
+    if (!kHasExtendedPrecision)
+    {
+        GTEST_SKIP() << "long double is double here: the reference is not more precise than the slopes";
+    }
     for (double x : {1e-8, 1e-6, 1e-4})
     {
         ve::dist::detail::LogBesselSlopes slopes = ve::dist::detail::log_bessel_k_slopes(0.1, x);
@@ -220,6 +234,37 @@ TEST(Bessel, SlopesAtLargeArgumentMatchScaledDifferences)
             EXPECT_NEAR(scaled.grad[0], d_order, 1e-7 * std::max(1.0, std::fabs(d_order))) << order << ", " << x;
             EXPECT_NEAR(scaled.grad[1], d_x, 1e-7 * std::max(1.0, std::fabs(d_x))) << order << ", " << x;
         }
+    }
+}
+
+// The trapezoid grid has a step of 0.4 (x^2 + v^2)^(-1/4): below the resolution of exp at x ~ 1e25, where the sum
+// stopped never ended. Past the domain of the trapezoid the slopes come from differences of the scaled log K.
+TEST(Bessel, SlopesAtHugeArgumentTerminate)
+{
+    for (double order : {0.0, 0.7, 40.0})
+    {
+        for (double x : {1e6, 1e8, 1e25, 1e30, 1e150, 1e300})
+        {
+            const ve::dist::detail::LogBesselSlopes slopes = ve::dist::detail::log_bessel_k_slopes(order, x);
+            // K_v(x) ~ sqrt(pi / 2x) e^-x: d log K / dx = -1 - 1/(2x) + O(v^2/x^2), d/dv ~ v / x.
+            EXPECT_NEAR(slopes.x, -1.0, 1e-5) << order << ", " << x;
+            EXPECT_NEAR(slopes.order, 0.0, 1e-3) << order << ", " << x;
+            auto scaled = ve::dist::log_bessel_k_scaled(ve::ad::variable<2>(order, 0), ve::ad::variable<2>(x, 1));
+            EXPECT_TRUE(std::isfinite(scaled.grad[0]) && std::isfinite(scaled.grad[1])) << order << ", " << x;
+            EXPECT_NEAR(scaled.grad[1], 0.0, 1e-5) << order << ", " << x;
+        }
+    }
+}
+
+// Outside the trapezoid's domain the scaled overload takes its x slope from the ratio of the scaled logs, which has
+// not the rounding of x that the unscaled K carries at a large x.
+TEST(Bessel, ScaledSlopeOutsideTheTrapezoidDomain)
+{
+    const double order = 300.0;
+    for (double x : {900.0, 5000.0, 1e5})
+    {
+        auto scaled = ve::dist::log_bessel_k_scaled(ve::ad::variable<2>(order, 0), ve::ad::variable<2>(x, 1));
+        EXPECT_NEAR(scaled.grad[1], ve::dist::detail::log_bessel_k_scaled_slope(order, x), 1e-14) << x;
     }
 }
 

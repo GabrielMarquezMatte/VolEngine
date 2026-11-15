@@ -45,15 +45,16 @@ double order_slope(F f, double order, double x)
     return (4.0 * fine - coarse) / 3.0;
 }
 
-
 struct LogBesselSlopes
 {
     double order;
     double x;
 };
 
-// d log K_order(x) / d order and / d x (the unscaled K: the slope in x of log(e^x K) is this + 1).
-LogBesselSlopes log_bessel_k_slopes(double order, double x);
+// d log K_order(x) / d order and / d x, or, with scaled, of log(e^x K): the same slope in the order and the one in x
+// plus 1. From a trapezoid sum inside the domain it was validated in (|order| <= 200, 1e-8 <= x <= 1e6) and from
+// differences and the ratio of the logs outside it.
+LogBesselSlopes log_bessel_k_slopes(double order, double x, bool scaled = false);
 
 }
 
@@ -88,8 +89,8 @@ T log_bessel_k_scaled(const T& order, const T& x)
 {
     double nu = ad::value_of(order);
     double xv = ad::value_of(x);
-    detail::LogBesselSlopes slopes = detail::log_bessel_k_slopes(nu, xv);
-    return ad::chain(order, x, log_bessel_k_scaled(nu, xv), slopes.order, slopes.x + 1.0);
+    detail::LogBesselSlopes slopes = detail::log_bessel_k_slopes(nu, xv, true);
+    return ad::chain(order, x, log_bessel_k_scaled(nu, xv), slopes.order, slopes.x);
 }
 
 }

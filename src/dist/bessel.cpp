@@ -118,6 +118,10 @@ double log_k_avoiding_five_halves_shortcut(double order, double x)
 // lower tail needs more than ~2e3 nodes at an order of 0.1, and past kSlopeMaxOrder it was not tested.
 constexpr double kSlopeMaxOrder = 200.0;
 constexpr double kSlopeMinX = 1e-8;
+// The step 0.4 (x^2 + v^2)^(-1/4) falls below the resolution of exp at x ~ 1e25 and the sum would not end; the order
+// slope (~ v / x) is also lost in rounding long before. 1e6 is where the tests stop.
+constexpr double kSlopeMaxX = 1e6;
+constexpr int kSlopeMaxNodes = 100000;
 constexpr double kSlopeCutoff = 40.0;
 constexpr double kSlopeMaxStep = 0.2;
 constexpr double kSlopeStepOverSigma = 0.4;
@@ -145,7 +149,7 @@ void add_trapezoid_side(const TrapezoidGrid& grid, double direction, TrapezoidSu
     double ratio = std::exp(direction * grid.step);
     double up = std::exp(grid.peak);
     double down = 1.0 / up;
-    for (int k = 1;; ++k)
+    for (int k = 1; k <= kSlopeMaxNodes; ++k)
     {
         up *= ratio;
         down /= ratio;
@@ -210,19 +214,25 @@ double log_bessel_k_scaled(double order, double x)
 namespace detail
 {
 
-LogBesselSlopes log_bessel_k_slopes(double order, double x)
+LogBesselSlopes log_bessel_k_slopes(double order, double x, bool scaled)
 {
     constexpr double kNan = std::numeric_limits<double>::quiet_NaN();
     if (std::isnan(order) || !(x > 0.0) || !std::isfinite(x))
     {
         return {kNan, kNan};
     }
-    if (std::fabs(order) <= kSlopeMaxOrder && x >= kSlopeMinX)
+    if (std::fabs(order) <= kSlopeMaxOrder && x >= kSlopeMinX && x <= kSlopeMaxX)
     {
-        return trapezoid_slopes(order, x);
+        LogBesselSlopes slopes = trapezoid_slopes(order, x);
+        return {slopes.order, slopes.x + (scaled ? 1.0 : 0.0)};
     }
-    // ponytail: beyond the validated domain, Richardson on log K and the ratio K_(v-1) / K_v: ~1e-10 on the slope in
-    // the order and exact in x; widen the trapezoid's domain if a model ever lives there.
+    // ponytail: outside the validated domain, Richardson on log K (~1e-10 on the slope in the order) and the ratio
+    // K_(v-1) / K_v, both of the scaled log where asked: widen the trapezoid's domain if a model ever lives there.
+    if (scaled)
+    {
+        double d_order = order_slope([](double v, double y) { return log_bessel_k_scaled(v, y); }, order, x);
+        return {d_order, log_bessel_k_scaled_slope(order, x)};
+    }
     double d_order = order_slope([](double v, double y) { return log_bessel_k(v, y); }, order, x);
     return {d_order, log_bessel_k_slope(order, x)};
 }

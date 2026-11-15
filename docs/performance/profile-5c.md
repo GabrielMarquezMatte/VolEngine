@@ -186,7 +186,7 @@ before the change.
 | `BM_DistQuantile/nig` (200 quantiles) | 57.1 ms | 21.7 ms (108 us per call) |
 | `BM_DistQuantile/ghyp` (200 quantiles) | 97.8 ms | 28.9 ms (144 us per call) |
 
-The long double evaluation was the cost, not only the bit-identity: every function that calls K is 2.3x to 5x faster.
+The long double evaluation was the cost, not only the bit-identity: the functions dominated by K (the nig and ghyp loglik, fits and GOF, `BM_LogBesselK`, the quantiles) are 2.3x to 5x faster; the mvlaplace DCC, where K is a small part, gains 11% on the `double` path.
 
 ## Task 3: slopes of K by the trapezoid rule
 
@@ -260,6 +260,11 @@ integral of the density):
   z ~ 3e3, where 0.5 (|z| / scale)^nu overflows and exp(-inf) times the infinite slope is NaN. `density_at` returns an
   exact 0 where the log density is -inf. It was also wrong at nu = 50 (a gradient of 0.045 in the skew against
   -0.0002), from the same missing edges.
+
+`kEdgeShapeFrom` is 6 because the values below it stay those of before (bit for bit, so the oracles at small shapes do
+not move): the old quadrature errs against the closed form by 3.2e-13 at nu = 4, 1.9e-12 at 5 and 2e-11 at 6, so the
+moment steps by up to 2e-11 relative at nu = 6, harmless for an optimizer. Lowering it to 4 would move the bits for
+nu in (4, 6) by ~1e-12.
 
 No fit benchmark moved: `BM_FitOne/aparch11_ged` 44.5 -> 44.3 ms, `aparch11_sged` 53.0 -> 55.0 ms (noise),
 `gjrgarch11_sstd` 15.6 -> 15.5 ms.
