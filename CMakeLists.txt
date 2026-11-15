@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
-project(VolEngine VERSION 0.1.0 LANGUAGES C CXX)
+set(VE_VERSION 0.9.0 CACHE STRING "VolEngine version (x.y.z)")
+project(VolEngine VERSION ${VE_VERSION} LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -151,7 +152,11 @@ target_link_libraries(volengine PRIVATE volengine_core)
 if(MINGW)
     target_link_options(volengine PRIVATE
         -static-libgcc -static-libstdc++
-        -Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive,-Bdynamic)
+        -Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive,-Bdynamic
+        -Wl,--output-def,${CMAKE_CURRENT_BINARY_DIR}/volengine.def)
+elseif(NOT WIN32 AND NOT APPLE)
+    # libstdc++.so.6 and libgcc_s.so.1 are not on every distribution (musl, minimal images).
+    target_link_options(volengine PRIVATE -static-libstdc++ -static-libgcc)
 endif()
 
 if(VE_BUILD_TESTS)
