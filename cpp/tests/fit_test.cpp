@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <limits>
+#include <string>
 #include <vector>
 #include <volengine/volengine.hpp>
 
@@ -54,6 +55,14 @@ TEST(Spec, ValidateRejectsOrderZero)
 TEST(Spec, ValidateAcceptsDefaults)
 {
     EXPECT_TRUE(ve::Spec{}.validate().has_value());
+}
+
+TEST(Spec, EwmaHasOrderOneOne)
+{
+    EXPECT_TRUE(ve::Spec{.model = ve::Model::ewma}.validate().has_value());
+    const auto result = ve::Spec{.model = ve::Model::ewma, .p = 2}.validate();
+    ASSERT_FALSE(result.has_value());
+    EXPECT_NE(result.error().message.find("order (1, 1)"), std::string::npos);
 }
 
 TEST(Fit, SingleSeriesMatchesRugarch)

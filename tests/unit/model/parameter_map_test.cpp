@@ -1724,3 +1724,107 @@ TEST(ParameterMap, ArfimaBoundary)
 }
 
 }
+
+namespace
+{
+
+// regressor_interior_theta with the EWMA weights: omega = 0, alpha1 = 1 - lambda, lambda.
+std::vector<double> ewma_theta(const Layout& layout, double lambda)
+{
+    std::vector<double> theta = regressor_interior_theta(layout);
+    theta[layout.omega()] = 0.0;
+    theta[layout.alpha_begin()] = 1.0 - lambda;
+    theta[layout.beta_begin()] = lambda;
+    if (layout.has_shape())
+    {
+        theta[layout.shape()] = 6.0;
+    }
+    return theta;
+}
+
+TEST(ParameterMap, EwmaWritesDerivedOmegaAndAlpha)
+{
+    Layout layout = ve::model::layout_of({.model = Model::Ewma, .dist = Dist::Std});
+    for (const std::vector<double>& theta : budget_draws(layout))
+    {
+        EXPECT_EQ(theta[layout.omega()], 0.0);
+        EXPECT_EQ(theta[layout.alpha_begin()], 1.0 - theta[layout.beta_begin()]);
+        EXPECT_GT(theta[layout.beta_begin()], 0.0);
+        EXPECT_LT(theta[layout.beta_begin()], 1.0);
+        EXPECT_TRUE(is_valid(theta, layout));
+    }
+    std::vector<double> u{0.0, 0.0, 0.0, 2.0, 1.0};
+    std::vector<double> theta(u.size());
+    to_natural<double>(u, theta, layout, Standardization{});
+    EXPECT_NEAR(theta[layout.beta_begin()], 1.0 / (1.0 + std::exp(-2.0)), 1e-15);
+}
+
+TEST(ParameterMap, EwmaRoundTrip)
+{
+    const Standardization standardization = regressor_standardization(1.0, 1.0);
+    for (int archm : {0, 1})
+    {
+        for (int mxreg : {0, 2})
+        {
+            for (int vxreg : {0, 1})
+            {
+                Layout layout = ve::model::layout_of(
+                    {.model = Model::Ewma, .dist = Dist::Std, .mxreg = mxreg, .vxreg = vxreg, .archm = archm});
+                for (double lambda : {0.5, 0.94, 0.999})
+                {
+                    SCOPED_TRACE(name_of(layout) + ", lambda " + std::to_string(lambda));
+                    std::vector<double> theta = ewma_theta(layout, lambda);
+                    std::vector<double> u(theta.size());
+                    std::vector<double> back(theta.size());
+                    ASSERT_TRUE(is_valid(theta, layout));
+                    to_unconstrained(theta, u, layout, standardization);
+                    EXPECT_EQ(u[layout.omega()], 0.0);
+                    EXPECT_EQ(u[layout.alpha_begin()], 0.0);
+                    to_natural<double>(u, back, layout, standardization);
+                    for (std::size_t i = 0; i < theta.size(); ++i)
+                    {
+                        EXPECT_NEAR(back[i], theta[i], 1e-12 * std::max(1.0, std::abs(theta[i]))) << "parameter " << i;
+                    }
+                    expect_terms_round_trip(theta, layout);
+                }
+            }
+        }
+    }
+}
+
+TEST(ParameterMap, EwmaFixedLambdaKeepsItsValue)
+{
+    Layout layout = fixed_layout({.model = Model::Ewma}, {{"lambda", 0.94}});
+    for (const std::vector<double>& theta : budget_draws(layout))
+    {
+        EXPECT_EQ(theta[layout.beta_begin()], 0.94);
+        EXPECT_EQ(theta[layout.alpha_begin()], 1.0 - 0.94);
+        EXPECT_EQ(theta[layout.omega()], 0.0);
+    }
+}
+
+TEST(ParameterMap, EwmaDomain)
+{
+    // (mu, omega, alpha1, lambda): only lambda is read; the derived entries may hold anything.
+    Layout layout = ve::model::layout_of({.model = Model::Ewma});
+    EXPECT_TRUE(is_valid(std::vector<double>{0.0, 0.0, 0.06, 0.94}, layout));
+    EXPECT_TRUE(is_valid(std::vector<double>{0.0, 5.0, 123.0, 0.94}, layout));
+    EXPECT_TRUE(is_valid(std::vector<double>{0.0, 0.0, 0.0, 1.0}, layout));
+    EXPECT_FALSE(is_valid(std::vector<double>{0.0, 0.0, -0.1, 1.1}, layout));
+    EXPECT_FALSE(is_valid(std::vector<double>{0.0, 0.0, 1.1, -0.1}, layout));
+}
+
+TEST(ParameterMap, EwmaLambdaBoundaries)
+{
+    Layout layout = ve::model::layout_of({.model = Model::Ewma, .include_mean = false});
+    // (omega, alpha1, lambda): the derived alpha1 always; lambda next to 0 or 1.
+    EXPECT_EQ(boundary_of(layout, std::vector<double>{0.0, 0.06, 0.94}), Indices{1});
+    EXPECT_EQ(boundary_of(layout, std::vector<double>{0.0, 1.0 - 1e-9, 1e-9}), (Indices{1, 2}));
+    EXPECT_EQ(boundary_of(layout, std::vector<double>{0.0, 1e-9, 1.0 - 1e-9}), (Indices{1, 2}));
+    // iGARCH (omega, alpha1, beta1): an estimated alpha1 next to 1 leaves the derived beta1 next to 0.
+    Layout igarch = ve::model::layout_of({.model = Model::IGarch, .include_mean = false});
+    EXPECT_EQ(boundary_of(igarch, std::vector<double>{0.01, 1.0 - 1e-9, 1e-9}), (Indices{1, 2}));
+    EXPECT_EQ(boundary_of(igarch, std::vector<double>{0.01, 0.1, 0.9}), Indices{2});
+}
+
+}

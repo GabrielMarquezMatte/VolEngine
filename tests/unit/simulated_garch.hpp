@@ -48,6 +48,25 @@ inline std::vector<double> simulate_garch_series(std::uint64_t seed, std::size_t
     return r;
 }
 
+// EWMA-norm with mu = 0.05, lambda = 0.94, sigma2 starting at 1: sigma2_t = lambda sigma2_{t-1} + (1 - lambda)
+// e_{t-1}^2, the same series on every platform.
+inline std::vector<double> simulate_ewma_series(std::uint64_t seed, std::size_t count)
+{
+    std::mt19937_64 engine(seed);
+    const PortableNormal shock;
+    const double mu = 0.05;
+    const double lambda = 0.94;
+    double sigma2 = 1.0;
+    std::vector<double> r(count);
+    for (double& value : r)
+    {
+        const double residual = std::sqrt(sigma2) * shock(engine);
+        value = mu + residual;
+        sigma2 = lambda * sigma2 + (1.0 - lambda) * residual * residual;
+    }
+    return r;
+}
+
 // ARMA(m, n)-sGARCH(p, q) with standardized (mean 0, variance 1) innovations. Lags before the first
 // observation take the unconditional value: zero for the mean terms, omega / (1 - persistence) for the
 // variance terms.

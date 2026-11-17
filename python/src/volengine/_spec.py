@@ -8,7 +8,7 @@ from typing import NoReturn
 
 from ._native import Handle, check, create_handle, int32, lib
 
-MODELS = {"sgarch": 0, "egarch": 1, "gjrgarch": 2, "aparch": 3, "igarch": 4, "csgarch": 5}
+MODELS = {"sgarch": 0, "egarch": 1, "gjrgarch": 2, "aparch": 3, "igarch": 4, "csgarch": 5, "ewma": 14}
 SUBMODELS = {
     "garch": 6,
     "tgarch": 7,
@@ -64,11 +64,16 @@ class Spec:
     round). `arma` is the ARMA(m, n) order of the conditional mean. Orders are limited to 1..6 for
     `p` and `q` and 0..6 for `arma` (VE_MAX_ORDER).
 
-    `model` is one of "sgarch", "egarch", "gjrgarch", "aparch", "igarch", "csgarch" and "fgarch".
+    `model` is one of "sgarch", "egarch", "gjrgarch", "aparch", "igarch", "csgarch", "fgarch" and "ewma".
     "fgarch" requires `submodel`, one of "garch", "tgarch", "avgarch", "ngarch", "nagarch", "aparch",
     "gjrgarch" and "allgarch"; every other model rejects it. The iGARCH `beta_q` is derived
     (1 - sum of alphas - the other betas), not estimated: it has a name and a value, its standard error
     is NaN and the criteria count the estimated parameters only.
+
+    "ewma" is RiskMetrics' EWMA, sigma2_t = lambda * sigma2_(t-1) + (1 - lambda) * e_(t-1)**2: the iGARCH(1, 1)
+    with omega = 0. Its variance parameters are "omega" and "alpha1", both derived (0 and 1 - lambda), and
+    "lambda" in [0, 1], estimated unless fixed: `Spec("ewma", fixed={"lambda": 0.94})` is RiskMetrics. Only
+    p = q = 1; variance targeting is rejected, and so is simulating from the spec (no unconditional variance).
 
     `dist` is one of "norm", "std", "ged", "sstd", "sged", "nig", "ghyp" and "jsu", all standardized to
     zero mean and unit variance. Distribution parameters come last in the fit names, in the order `skew`,
@@ -124,8 +129,9 @@ class Spec:
     the start of the series, at a cost of O(T**2); y_t replaces e_t everywhere after.
 
     Rejected with VolEngineError (the message names the problem): a name the spec does not have
-    (`fixed={"shpe": 5.0}`, or "shape" under dist "norm"), fixing the iGARCH `beta_q` or `omega` under
-    variance targeting (both derived), variance targeting with "igarch" or "csgarch", and a csgarch
+    (`fixed={"shpe": 5.0}`, or "shape" under dist "norm"), fixing the iGARCH `beta_q`, the EWMA `omega` or
+    `alpha1`, or `omega` under variance targeting (all derived), variance targeting with "igarch", "csgarch" or
+    "ewma", an "ewma" order other than (1, 1), and a csgarch
     with `eta21` fixed and a free `beta` (fixing it together with every `beta` is accepted).
     """
 

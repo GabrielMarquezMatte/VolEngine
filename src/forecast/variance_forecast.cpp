@@ -70,7 +70,8 @@ double quadratic_shock(const Inputs& in, std::span<const double> forecast, std::
     return weight * (e * e);
 }
 
-// sGARCH, iGARCH and gjrGARCH: sigma2_h = omega_h + sum_i shock_i + sum_j beta_j sigma2_{h-j}.
+// sGARCH, iGARCH, EWMA and gjrGARCH: sigma2_h = omega_h + sum_i shock_i + sum_j beta_j sigma2_{h-j}. EWMA reads the
+// omega (0) and alpha1 (1 - lambda) that model::to_natural writes into every estimate.
 std::vector<double> quadratic_variance(const Inputs& in)
 {
     double pi = in.moments.below_zero;
@@ -237,6 +238,7 @@ std::vector<double> variance_forecast(const Inputs& in)
     {
         case Model::SGarch:
         case Model::IGarch:
+        case Model::Ewma:
         case Model::GjrGarch:
             return quadratic_variance(in);
         case Model::CsGarch:

@@ -14,7 +14,7 @@ from typing import Any, Literal
 import arch
 import numpy as np
 from arch import arch_model
-from arch.univariate import SkewStudent
+from arch.univariate import ConstantMean, EWMAVariance, GeneralizedError, Normal, SkewStudent, StudentsT
 from numpy.typing import NDArray
 
 REFERENCE = Path(__file__).resolve().parent
@@ -43,8 +43,10 @@ REGRESSOR = re.compile(r"^x(\d+)$")
 SHAPES = {"nu": "shape", "eta": "shape", "lambda": "skew"}
 # The EGARCH term in |z| is arch's alpha and rugarch's gamma, the term in z the other way round.
 EGARCH_NAMES = {"alpha": "gamma", "gamma": "alpha"}
-# rugarch's parameter order: VolEngine's.
-ORDER = ("mu", "mxreg", "omega", "alpha", "beta", "gamma", "skew", "shape")
+# rugarch's parameter order: VolEngine's, whose EWMA lambda stands where beta1 does.
+ORDER = ("mu", "mxreg", "omega", "alpha", "beta", "lambda", "gamma", "skew", "shape")
+# arch's EWMAVariance names its smoothing parameter "lam".
+EWMA_DISTRIBUTIONS = {"norm": Normal, "std": StudentsT, "ged": GeneralizedError}
 SQRT_TWO_OVER_PI = math.sqrt(2.0 / math.pi)
 SYMMETRIC_DISTS = ("norm", "std", "ged")
 
@@ -62,6 +64,8 @@ def load_columns(paths: tuple[Path, ...]) -> dict[str, NDArray[np.float64]]:
 
 
 def volengine_name(model: str, name: str) -> str:
+    if model == "ewma" and name == "lam":
+        return "lambda"
     if name in SHAPES:
         return SHAPES[name]
     if name == "Const":
@@ -134,6 +138,8 @@ def convert_skew(params: dict[str, Any], std_errors: tuple[dict[str, Any], ...])
 
 
 def persistence(model: str, params: dict[str, Any], pi: float) -> float:
+    if model == "ewma":
+        return 1.0
     beta = sum(block(params, "beta"))
     if model == "egarch":
         return beta
@@ -151,7 +157,9 @@ def interior_weights(model: str, params: dict[str, Any], pi: float) -> list[floa
 
 
 def check_supported(case: dict[str, Any]) -> None:
-    if case["arma"] != [0, 0] or not case["include_mean"] or case["model"] not in VOLATILITIES:
+    if case["model"] == "ewma" and (set(case.get("fixed", {})) - {"lambda"} or case["dist"] not in EWMA_DISTRIBUTIONS):
+        raise ValueError(f"case {case['id']}: the arch EWMA oracle fixes lambda only, with symmetric shocks")
+    if case["arma"] != [0, 0] or not case["include_mean"] or case["model"] not in (*VOLATILITIES, "ewma"):
         raise ValueError(f"case {case['id']}: the arch oracle covers s, gjr and eGARCH with a constant mean")
     if "vxreg" in case or "archm" in case:
         raise ValueError(f"case {case['id']}: arch has no variance regressors and no ARCH-in-mean")
@@ -173,13 +181,43 @@ def distribution_interior(params: dict[str, Any]) -> bool:
 
 
 def check_interior(case: dict[str, Any], params: dict[str, Any], pi: float) -> None:
+    if case["model"] == "ewma":
+        if "lambda" not in case.get("fixed", {}) and not 1e-4 < params["lambda"] < 0.999:
+            raise RuntimeError(f"arch estimate on case {case['id']} is on the boundary: {params}")
+        return
     weights = interior_weights(case["model"], params, pi)
     interior = min(weights) > 1e-4 and persistence(case["model"], params, pi) < 0.999
     if not interior or not distribution_interior(params):
         raise RuntimeError(f"arch estimate on case {case['id']} is on the boundary: {params}")
 
 
+def ewma_model(case: dict[str, Any], values: NDArray[np.float64]) -> Any:
+    """arch's EWMA (lam estimated unless the case fixes lambda) with a constant mean."""
+    lam = case.get("fixed", {}).get("lambda")
+    distribution = EWMA_DISTRIBUTIONS[case["dist"]]()
+    return ConstantMean(values, volatility=EWMAVariance(lam), distribution=distribution, rescale=False)
+
+
+def with_ewma_derived(case: dict[str, Any], values: dict[str, float | None], derived: tuple[float | None, ...]
+                      ) -> dict[str, float | None]:
+    """VolEngine's EWMA names: the derived omega and alpha1 and, when the case fixes it, lambda."""
+    named = dict(values)
+    named["omega"], named["alpha1"], named["lambda"] = derived[0], derived[1], named.get("lambda", derived[2])
+    return {name: named[name] for name in sorted(named, key=order_key)}
+
+
+def ewma_names(case: dict[str, Any], tables: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
+    """The estimates and the two standard error tables with omega = 0 and alpha1 = 1 - lambda (computed as VolEngine
+    does), no standard error for either; a fixed lambda has none either."""
+    params, *errors = tables
+    lam = case.get("fixed", {}).get("lambda", params.get("lambda"))
+    named = [with_ewma_derived(case, params, (0.0, 1.0 - lam, lam))]
+    return (*named, *(with_ewma_derived(case, table, (None, None, None)) for table in errors))
+
+
 def case_model(case: dict[str, Any], columns: dict[str, NDArray[np.float64]]) -> Any:
+    if case["model"] == "ewma":
+        return ewma_model(case, columns[case["series"]])
     dist = DISTRIBUTIONS[case["dist"]]
     vol, asymmetry = VOLATILITIES[case["model"]]
     o = asymmetry * case["p"]
@@ -229,7 +267,7 @@ def fix_case(case: dict[str, Any], columns: dict[str, NDArray[np.float64]]) -> d
 
 def fit_case(case: dict[str, Any], columns: dict[str, NDArray[np.float64]]) -> dict[str, Any]:
     check_supported(case)
-    if case.get("fixed"):
+    if case.get("fixed") and case["model"] != "ewma":
         return fix_case(case, columns)
     classic = fit(case, columns, "classic")
     robust = fit(case, columns, "robust")
@@ -245,6 +283,8 @@ def fit_case(case: dict[str, Any], columns: dict[str, NDArray[np.float64]]) -> d
         se["omega"] = robust_se["omega"] = None
     if case["dist"] == "sstd":
         convert_skew(params, (se, robust_se))
+    if case["model"] == "ewma":
+        params, se, robust_se = ewma_names(case, (params, se, robust_se))
     pi = below_zero(case["dist"], classic.params)
     check_interior(case, params, pi)
     return {

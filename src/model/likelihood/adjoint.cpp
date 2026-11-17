@@ -24,7 +24,7 @@ namespace
 
 bool is_sgarch_family(Model model)
 {
-    return model == Model::SGarch || model == Model::IGarch;
+    return model == Model::SGarch || model == Model::IGarch || model == Model::Ewma;
 }
 
 bool is_covered_model(Model model)
@@ -63,6 +63,14 @@ void chain_igarch_beta(std::span<double> alpha, std::span<double> beta)
         partial -= last;
     }
     beta.back() = 0.0;
+}
+
+// EWMA reads alpha1 = 1 - lambda: the partial of alpha1 moves to lambda with a minus sign, and the stored alpha1 and
+// omega (0), never read, have none.
+void chain_ewma_alpha(std::span<double> alpha, std::span<double> beta)
+{
+    beta[0] -= alpha[0];
+    alpha[0] = 0.0;
 }
 
 }
@@ -146,24 +154,33 @@ void LoglikAdjoint::variance_backward(std::span<const double> theta, const Layou
     }
 }
 
-// sGARCH, and iGARCH through its beta_q; returns the presample's adjoint.
+// sGARCH, iGARCH through its beta_q and EWMA through its alpha1; returns the presample's adjoint.
 double LoglikAdjoint::sgarch_backward(std::span<const double> theta, const Layout& layout,
                                       const garch::Presample<double>& presample, std::span<double> grad)
 {
     garch::SGarchParameters<double> p = sgarch_parameters(theta, layout);
     std::array<double, kMaxOrder> beta_storage{};
+    std::array<double, 1> alpha_storage{};
     if (layout.model == Model::IGarch)
     {
         p.beta = igarch_beta(p, beta_storage);
+    }
+    if (layout.model == Model::Ewma)
+    {
+        p = ewma_parameters(theta, layout, alpha_storage);
     }
     std::span<double> alpha = grad.subspan(layout.alpha_begin(), p.alpha.size());
     std::span<double> beta = grad.subspan(layout.beta_begin(), p.beta.size());
     garch::SGarchAdjoint adjoint{residual_adjoint_, sigma2_adjoint_, 0.0, alpha, beta, 0.0};
     garch::sgarch_variance_backward(residuals_, p, presample, sigma2_, adjoint);
-    grad[layout.omega()] += adjoint.omega;
+    grad[layout.omega()] += layout.model == Model::Ewma ? 0.0 : adjoint.omega;
     if (layout.model == Model::IGarch)
     {
         chain_igarch_beta(alpha, beta);
+    }
+    if (layout.model == Model::Ewma)
+    {
+        chain_ewma_alpha(alpha, beta);
     }
     return adjoint.presample;
 }

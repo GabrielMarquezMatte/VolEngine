@@ -30,6 +30,7 @@ enum class Model : std::int32_t
     fgarch_aparch = VE_MODEL_FGARCH_APARCH,
     fgarch_gjrgarch = VE_MODEL_FGARCH_GJRGARCH,
     fgarch_allgarch = VE_MODEL_FGARCH_ALLGARCH,
+    ewma = VE_MODEL_EWMA,
 };
 
 enum class Dist : std::int32_t

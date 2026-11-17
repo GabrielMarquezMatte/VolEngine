@@ -305,6 +305,32 @@ TEST(Likelihood, IGarchIgnoresStoredLastBeta)
     EXPECT_EQ(ll.grad[igarch.derived()], 0.0);
 }
 
+// EWMA is sGARCH(1,1) with omega = 0 and alpha1 = 1 - lambda; it reads neither stored entry.
+TEST(Likelihood, EwmaIsSGarchWithZeroOmega)
+{
+    Layout ewma{.model = Model::Ewma, .include_mean = true, .ar = 0, .ma = 0, .arch = 1, .garch = 1,
+                .dist = Dist::Std};
+    Layout sgarch = ewma;
+    sgarch.model = Model::SGarch;
+    std::vector<double> r = ve::testing::simulate_garch_series(5, 500);
+    for (VarInit var_init : {VarInit::Sample, VarInit::Backcast})
+    {
+        std::vector<double> ewma_theta{0.05, 5.0, 0.123, 0.94, 7.0};
+        std::vector<double> sgarch_theta{0.05, 0.0, 1.0 - 0.94, 0.94, 7.0};
+        std::vector<double> ewma_sigma2(r.size());
+        std::vector<double> sgarch_sigma2(r.size());
+        double ewma_ll = loglik<double>(r, ewma_theta, ewma, var_init, {.sigma2 = ewma_sigma2});
+        double sgarch_ll = loglik<double>(r, sgarch_theta, sgarch, var_init, {.sigma2 = sgarch_sigma2});
+        EXPECT_EQ(ewma_ll, sgarch_ll);
+        EXPECT_EQ(ewma_sigma2, sgarch_sigma2);
+        std::vector<Dual<8>> seeds = seeded<8>(ewma_theta);
+        Dual<8> ll = loglik<Dual<8>>(r, seeds, ewma, var_init, {});
+        EXPECT_EQ(ll.grad[ewma.omega()], 0.0);
+        EXPECT_EQ(ll.grad[ewma.alpha_begin()], 0.0);
+        EXPECT_NE(ll.grad[ewma.beta_begin()], 0.0);
+    }
+}
+
 // At sd 0.07 the outlier is z ~ 1e4, so gamma |z| pushes log sigma2 past the largest finite exp.
 TEST(Likelihood, EGarchOutlierGivesNonFinite)
 {

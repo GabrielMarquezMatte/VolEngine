@@ -105,10 +105,13 @@ def case_spec(case: dict[str, Any]) -> ve.Spec:
 
 
 def not_estimated(case: dict[str, Any]) -> set[str]:
-    """The fixed parameters and the derived ones: the iGARCH beta_q and omega under variance targeting."""
+    """The fixed parameters and the derived ones: the iGARCH beta_q, the EWMA omega and alpha1, and omega under
+    variance targeting."""
     names = set(case.get("fixed", {}))
     if case["model"] == "igarch":
         names.add(f"beta{case['q']}")
+    if case["model"] == "ewma":
+        names |= {"omega", "alpha1"}
     if case.get("variance_targeting", False):
         names.add("omega")
     return names
@@ -254,6 +257,8 @@ def interior_weights(case: dict[str, Any], params: dict[str, float], persistence
     """The non-negative entries that sum to the persistence P, by position; a power-family weight is
     alpha kappa = P - beta. In gjrGARCH with gamma_i fixed and alpha_i estimated they are alpha_i - max(0, -gamma_i)
     and max(0, -gamma_i) + pi gamma_i."""
+    if case["model"] == "ewma":
+        return named(params, "lambda")
     alpha, beta, gamma = named(params, "alpha"), named(params, "beta"), named(params, "gamma")
     assert (len(alpha), len(beta)) == (case["p"], case["q"])
     if case["model"] == "egarch":
@@ -289,11 +294,13 @@ def test_fixture_estimates_are_interior(oracle, case):
     params, persistence = result["params"], result["persistence"]
     weights = interior_weights(case, params, persistence)
     assert all(value > 1e-4 for name, value in weights.items() if name not in not_estimated(case))
-    if case["model"] not in ("igarch", "aparch", "fgarch"):
+    if case["model"] not in ("igarch", "ewma", "aparch", "fgarch"):
         # rugarch integrates P(z < 0) for the gjrGARCH gamma numerically.
         assert sum(weights.values()) == pytest.approx(persistence, abs=1e-9)
-    if case["model"] != "igarch":
+    if case["model"] not in ("igarch", "ewma"):
         assert persistence < 0.999
+    if case["model"] == "ewma":
+        assert all(value < 0.999 for name, value in weights.items() if name not in not_estimated(case))
     if case["model"] in ("aparch", "fgarch"):
         asymmetry = named(params, "eta1") | named(params, "gamma")
         assert all(abs(value) < 0.999 for name, value in asymmetry.items() if name not in not_estimated(case))

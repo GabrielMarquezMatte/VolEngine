@@ -109,5 +109,8 @@
   {"id": "arfima_sgarch11_norm/arfima_csgarch11_norm", "series": "arfima_sgarch11_norm", "model": "csgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "arfima": true, "oracles": ["rugarch"]},
   {"id": "arfima1_gjrgarch11_std/arfima11_gjrgarch11_std", "series": "arfima1_gjrgarch11_std", "model": "gjrgarch", "p": 1, "q": 1, "arma": [1, 1], "include_mean": true, "dist": "std", "arfima": true, "oracles": ["rugarch"]},
   {"id": "arfima_sgarch11_norm/arfima_sgarch11_mx_norm", "series": "arfima_sgarch11_norm", "model": "sgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "arfima": true, "mxreg": ["x1"], "oracles": ["rugarch"]},
-  {"id": "arfima_sgarch11_norm/arfima_sgarch11_norm_vt", "series": "arfima_sgarch11_norm", "model": "sgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "arfima": true, "variance_targeting": true, "oracles": ["rugarch"]}
+  {"id": "arfima_sgarch11_norm/arfima_sgarch11_norm_vt", "series": "arfima_sgarch11_norm", "model": "sgarch", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "arfima": true, "variance_targeting": true, "oracles": ["rugarch"]},
+  {"id": "igarch11_norm/ewma_norm", "series": "igarch11_norm", "model": "ewma", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "oracles": ["arch"]},
+  {"id": "egarch11_std/ewma_std", "series": "egarch11_std", "model": "ewma", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "std", "oracles": ["arch"]},
+  {"id": "igarch11_norm/ewma_norm_riskmetrics", "series": "igarch11_norm", "model": "ewma", "p": 1, "q": 1, "arma": [0, 0], "include_mean": true, "dist": "norm", "fixed": {"lambda": 0.94}, "oracles": ["arch"]}
 ]

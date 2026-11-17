@@ -85,7 +85,7 @@ TEST(CapiSpec, UnknownModelIsInvalid)
 
 TEST(CapiSpec, AllModels)
 {
-    for (int32_t model = 0; model <= VE_MODEL_FGARCH_ALLGARCH; ++model)
+    for (int32_t model = 0; model <= VE_MODEL_EWMA; ++model)
     {
         ve_spec* spec = nullptr;
         ASSERT_EQ(ve_spec_create(model, &spec), VE_OK) << "model " << model;
@@ -93,13 +93,26 @@ TEST(CapiSpec, AllModels)
         EXPECT_EQ(static_cast<int32_t>(spec->spec.model), model);
         ve_spec_free(spec);
     }
-    for (const int32_t model : {VE_MODEL_FGARCH_ALLGARCH + 1, -1})
+    for (const int32_t model : {VE_MODEL_EWMA + 1, -1})
     {
         ve_spec* spec = reinterpret_cast<ve_spec*>(0x1);
         EXPECT_EQ(ve_spec_create(model, &spec), VE_INVALID_ARGUMENT);
         EXPECT_EQ(spec, nullptr);
         EXPECT_TRUE(error_mentions("model"));
     }
+}
+
+TEST(CapiSpec, EwmaHasOrderOneOne)
+{
+    ve_spec* spec = nullptr;
+    ASSERT_EQ(ve_spec_create(VE_MODEL_EWMA, &spec), VE_OK);
+    EXPECT_EQ(ve_spec_validate(spec), VE_OK);
+    EXPECT_EQ(ve_spec_set_fixed(spec, "lambda", 0.94), VE_OK);
+    EXPECT_EQ(ve_spec_validate(spec), VE_OK);
+    EXPECT_EQ(ve_spec_set_order(spec, 2, 1), VE_OK);
+    EXPECT_EQ(ve_spec_validate(spec), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(error_mentions("order (1, 1)"));
+    ve_spec_free(spec);
 }
 
 TEST(CapiSpec, CreateNullOutIsInvalid)

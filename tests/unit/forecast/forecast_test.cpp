@@ -239,6 +239,24 @@ TEST(Forecast, LongHorizonReachesUnconditional)
     }
 }
 
+// EWMA: sigma2 stays at its first step, lambda sigma2_n + (1 - lambda) e_n^2, on every horizon.
+TEST(Forecast, EwmaIsFlat)
+{
+    ve::Spec spec{.model = Model::Ewma};
+    ve::model::Layout layout = ve::model::layout_of(spec);
+    std::vector<double> theta(layout.count());
+    theta[layout.mu()] = 0.05;
+    theta[layout.omega()] = 0.0;
+    theta[layout.alpha_begin()] = 1.0 - 0.94;
+    theta[layout.beta_begin()] = 0.94;
+    Forecast forecast = ve::forecast::forecast(at_point(spec, theta, {{0.4}, {1.3}, {}, {0.4}}), 50);
+    double first = (1.0 - 0.94) * 0.16 + 0.94 * 1.3;
+    for (double sigma : forecast.sigma)
+    {
+        ASSERT_NEAR(sigma * sigma, first, 1e-14);
+    }
+}
+
 TEST(Forecast, IGarchGrowsByOmega)
 {
     const std::size_t horizon = 10000;

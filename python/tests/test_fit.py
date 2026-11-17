@@ -512,6 +512,61 @@ def test_unknown_submodel_raises():
         ve.Spec(model="fgarch", submodel="cgarch")
 
 
+def simulate_ewma(seed, lam=0.94):
+    shocks = np.random.default_rng(seed).standard_normal(4000)
+    returns = np.empty(4000)
+    variance = 1.0
+    for t, shock in enumerate(shocks):
+        residual = math.sqrt(variance) * shock
+        returns[t] = 0.05 + residual
+        variance = lam * variance + (1.0 - lam) * residual * residual
+    return returns[1000:]
+
+
+def test_ewma_estimates_lambda(ctx):
+    fit = ctx.fit(ve.Spec("ewma"), simulate_ewma(2))
+    assert fit.status == "converged"
+    assert fit.names == ("mu", "omega", "alpha1", "lambda")
+    coef = dict(zip(fit.names, fit.coef().estimate, strict=True))
+    std_error = dict(zip(fit.names, fit.coef().std_error, strict=True))
+    assert coef["lambda"] == pytest.approx(0.94, abs=0.015)
+    assert coef["omega"] == 0.0
+    assert coef["alpha1"] == 1.0 - coef["lambda"]
+    assert math.isnan(std_error["omega"]) and math.isnan(std_error["alpha1"])
+    assert math.isfinite(std_error["lambda"]) and math.isfinite(std_error["mu"])
+    assert set(fit.nyblom().individual) == {"mu", "lambda"}
+    sigma = fit.forecast(10).sigma
+    assert np.all(sigma == sigma[0])
+    sims = ctx.simulate(fit, horizon=5, paths=10, seed=3)
+    assert sims.returns.shape == (10, 5) and np.isfinite(sims.returns).all()
+
+
+def test_ewma_riskmetrics_keeps_lambda(ctx):
+    fit = ctx.fit(ve.Spec("ewma", fixed={"lambda": 0.94}), simulate_ewma(4))
+    coef = dict(zip(fit.names, fit.coef().estimate, strict=True))
+    assert coef["lambda"] == 0.94
+    assert math.isnan(dict(zip(fit.names, fit.coef().std_error, strict=True))["lambda"])
+
+
+@pytest.mark.parametrize(
+    ("keywords", "message"),
+    [
+        ({"p": 2}, r"order \(1, 1\)"),
+        ({"fixed": {"alpha1": 0.06}}, "alpha1 is derived"),
+        ({"fixed": {"omega": 0.0}}, "omega is derived"),
+        ({"variance_targeting": True}, "variance targeting"),
+    ],
+)
+def test_ewma_rejects(keywords, message):
+    with pytest.raises(ve.VolEngineError, match=message):
+        ve.Spec("ewma", **keywords)
+
+
+def test_ewma_spec_cannot_simulate(ctx):
+    with pytest.raises(ve.VolEngineError, match="EWMA"):
+        ctx.simulate(ve.Spec("ewma", fixed={"mu": 0.0, "lambda": 0.94}), horizon=5, paths=10, seed=1)
+
+
 def test_igarch_derived_beta_has_nan_se(ctx):
     fit = ctx.fit(ve.Spec("igarch"), simulate_igarch(1))
     std_error = dict(zip(fit.names, fit.coef().std_error, strict=True))

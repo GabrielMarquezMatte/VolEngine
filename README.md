@@ -8,7 +8,8 @@ not depend on the thread count. Univariate default conventions follow R's `rugar
 ## Status
 
 Version 1.0. The C ABI is stable: a release only adds to it, and `VE_ABI_VERSION` follows the major version. Supported models, each with orders 1 to 6: sGARCH, eGARCH, gjrGARCH, apARCH, iGARCH,
-csGARCH and fGARCH with its eight submodels (garch, tgarch, avgarch, ngarch, nagarch, aparch, gjrgarch, allgarch).
+csGARCH and fGARCH with its eight submodels (garch, tgarch, avgarch, ngarch, nagarch, aparch, gjrgarch, allgarch); and
+EWMA (RiskMetrics), order (1, 1).
 Every model takes an ARMA(m,n) conditional mean (orders 0 to 6, with or without a constant) and normal (`norm`),
 Student-t (`std`) or GED (`ged`) innovations, or the skewed ones: skewed Student-t (`sstd`), skewed GED (`sged`),
 normal inverse Gaussian (`nig`), generalized hyperbolic (`ghyp`) and Johnson SU (`jsu`), with Hessian and robust
@@ -168,14 +169,23 @@ print(ctx.fit(warm, returns).status)   # starts from these estimates; the start 
 print(ctx.fit(ve.Spec(variance_targeting=True), returns).coef("robust"))   # omega is derived
 ```
 
+EWMA is the iGARCH(1,1) with omega = 0, sigma2_t = lambda sigma2_{t-1} + (1 - lambda) e_{t-1}^2. Its `omega` (0) and
+`alpha1` (1 - lambda) are derived; `lambda` is estimated unless fixed:
+
+```python
+print(ctx.fit(ve.Spec("ewma"), returns).coef())                            # mu, omega, alpha1, lambda
+riskmetrics = ctx.fit(ve.Spec("ewma", fixed={"lambda": 0.94}), returns)    # RiskMetrics' daily lambda
+print(riskmetrics.forecast(10).sigma)                                       # flat: every step is the first
+```
+
 The criteria count only the estimated parameters. Variance targeting computes `omega` inside the likelihood from the
 residuals of the current mean over the whole sample, with m2 = mean(e^2) and P the persistence: `m2 (1 - P)` for
 sGARCH and gjrGARCH, `log(m2) (1 - sum(beta))` for eGARCH, `mean(|e|^delta) (1 - P)` for apARCH and fGARCH. P is
 `sum(alpha) + sum(beta)` for sGARCH; for gjrGARCH it includes `pi sum(gamma)`, with `pi = P(z < 0)`; for apARCH and
 fGARCH it is `sum(alpha kappa) + sum(beta)`. A start value never unfixes a parameter: a name in both `fixed` and `start`
-stays fixed. These specs are rejected (`VE_INVALID_ARGUMENT`, `VolEngineError` in Python): variance targeting in iGARCH or csGARCH,
-fixing the iGARCH `beta_q` or `omega` under variance targeting (both derived), and a csGARCH with `eta21` fixed and
-some `beta` free. The conventions checked against `rugarch` and `arch` are in
+stays fixed. These specs are rejected (`VE_INVALID_ARGUMENT`, `VolEngineError` in Python): variance targeting in iGARCH, csGARCH
+or EWMA, fixing the iGARCH `beta_q`, the EWMA `omega` or `alpha1`, or `omega` under variance targeting (all derived),
+an EWMA order other than (1, 1), and a csGARCH with `eta21` fixed and some `beta` free. The conventions checked against `rugarch` and `arch` are in
 [docs/guide/validation.md](docs/guide/validation.md).
 
 Regressors are counted in the spec and passed to `fit`; ARCH-in-mean adds the conditional standard deviation

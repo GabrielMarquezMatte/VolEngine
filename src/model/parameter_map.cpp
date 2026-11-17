@@ -264,9 +264,14 @@ void gjr_weights_to_natural(std::span<T> theta, const Layout& layout)
 }
 
 // Whether the weights share a budget below the ceiling of the plain map: some weight is fixed, or the csGARCH
-// rho that caps them is.
+// rho that caps them is. EWMA always takes the budget map, whose free position (lambda) is not the first of the
+// block.
 bool weights_need_budget(const Layout& layout)
 {
+    if (layout.model == Model::Ewma)
+    {
+        return true;
+    }
     WeightBlock block = weight_block(layout);
     for (std::size_t index = block.begin; index < block.begin + block.count; ++index)
     {
@@ -279,8 +284,8 @@ bool weights_need_budget(const Layout& layout)
 }
 
 // The free terms, in the order of the free positions: logistic(v) budget softmax(w, 0), with v the u of the first
-// free position and w those of the others; iGARCH: budget softmax(w, 0) over the free positions and the derived
-// beta_q, with w all the free u.
+// free position and w those of the others; iGARCH and EWMA: budget softmax(w, 0) over the free positions and the
+// derived weight, with w all the free u (EWMA: lambda = logistic(u) budget).
 template <class T>
 WeightArray<T> shared_terms(std::span<const T> u, const FreePositions& free, const T& budget, const Layout& layout)
 {
@@ -296,7 +301,7 @@ WeightArray<T> shared_terms(std::span<const T> u, const FreePositions& free, con
         gathered[m] = u[free.index[m]];
     }
     std::span<const T> draws = std::span<const T>(gathered).first(free.count);
-    if (layout.model == Model::IGarch)
+    if (layout.has_derived())
     {
         scaled_softmax<T>(draws, budget, std::span<T>(terms).first(free.count + 1));
         return terms;
@@ -319,7 +324,7 @@ void budget_weights_to_natural(std::span<const T> u, std::span<T> theta, const L
     {
         theta[free.index[m]] = natural_at<T>(theta, layout, free.index[m], terms[m], below);
     }
-    if (layout.model == Model::IGarch)
+    if (layout.has_derived())
     {
         write_derived_weight<T>(theta, layout);
     }
@@ -419,7 +424,7 @@ void budget_weights_to_unconstrained(std::span<const double> theta, std::span<do
     }
     std::span<const double> terms = std::span<const double>(gathered).first(free.count);
     double shared = sum_of(terms);
-    if (layout.model == Model::IGarch)
+    if (layout.has_derived())
     {
         for (std::size_t m = 0; m < free.count; ++m)
         {
@@ -508,17 +513,18 @@ bool shock_parameters_valid(std::span<const double> theta, const Layout& layout)
 bool weights_valid(std::span<const double> theta, const Layout& layout)
 {
     WeightArray<double> natural = terms_of<double>(theta, layout);
-    std::span<const double> weights = std::span<const double>(natural).first(weight_block(layout).count);
-    if (layout.model == Model::IGarch)
+    // The derived weight (iGARCH beta_q, EWMA alpha1) is 1 - the others, never read: only the others are checked.
+    if (layout.has_derived())
     {
-        weights = weights.first(weights.size() - 1);
+        natural[layout.derived() - weight_block(layout).begin] = 0.0;
     }
+    std::span<const double> weights = std::span<const double>(natural).first(weight_block(layout).count);
     if (!std::ranges::all_of(weights, [](double value) { return value >= 0.0; }))
     {
         return false;
     }
     double sum = sum_of(weights);
-    if (layout.model == Model::IGarch)
+    if (layout.has_derived())
     {
         return sum <= 1.0;
     }
@@ -627,6 +633,10 @@ void to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout,
     {
         theta[layout.omega()] = omega_to_natural<T>(u, theta, layout, standardization.scale);
     }
+    if (layout.model == Model::Ewma)
+    {
+        theta[layout.omega()] = T{0.0};
+    }
 }
 
 template <class T>
@@ -683,7 +693,10 @@ void to_unconstrained(std::span<const double> theta, std::span<double> u, const 
         u[layout.arfima_index()] = log_ratio(d - kArfimaFloor, kArfimaCeiling - d);
     }
     regressors_to_unconstrained(theta, u, layout, standardization);
-    u[layout.omega()] = omega_to_unconstrained(theta, layout, scale);
+    if (layout.is_estimated(layout.omega()))
+    {
+        u[layout.omega()] = omega_to_unconstrained(theta, layout, scale);
+    }
     copy_egarch_reals<double>(theta, u, layout);
     shock_parameters_to_unconstrained(theta, u, layout);
     weights_to_unconstrained(theta, u, layout);
@@ -730,7 +743,7 @@ void natural_from_terms(const WeightTerms& terms, std::span<double> theta, const
             theta[index] = natural_at<double>(theta, layout, index, terms.terms[j], below);
         }
     }
-    if (layout.model == Model::IGarch)
+    if (layout.has_derived())
     {
         write_derived_weight<double>(theta, layout);
     }
@@ -767,6 +780,12 @@ bool on_boundary(const Layout& layout, std::span<const double> theta, std::size_
 {
     double value = theta[index];
     if (layout.has_derived() && index == layout.derived())
+    {
+        return true;
+    }
+    // A free weight that leaves the derived one next to 0 sits on the edge as well (iGARCH, EWMA).
+    WeightBlock block = weight_block(layout);
+    if (layout.has_derived() && in_block(index, block.begin, block.count) && theta[layout.derived()] < kBoundary)
     {
         return true;
     }

@@ -250,6 +250,15 @@ void igarch_variance(std::span<const T> residuals, std::span<const T> theta, con
 }
 
 template <class T>
+void ewma_variance(std::span<const T> residuals, std::span<const T> theta, const Layout& layout, const Start<T>& start,
+                   std::span<T> sigma2)
+{
+    std::array<T, 1> alpha{};
+    garch::sgarch_variance<T>(residuals, shifted(ewma_parameters(theta, layout, alpha), start), start.presample,
+                              sigma2);
+}
+
+template <class T>
 void csgarch_from_residuals(std::span<const T> residuals, garch::CsGarchParameters<T> p, const Start<T>& start,
                             std::span<T> sigma2)
 {
@@ -290,6 +299,9 @@ bool fill_variance(std::span<const T> residuals, std::span<const T> theta, const
             return true;
         case Model::IGarch:
             igarch_variance<T>(residuals, theta, layout, start, sigma2);
+            return true;
+        case Model::Ewma:
+            ewma_variance<T>(residuals, theta, layout, start, sigma2);
             return true;
         case Model::EGarch:
             garch::egarch_variance<T>(residuals, shifted(egarch_parameters(theta, layout), start), start.presample,
@@ -503,6 +515,14 @@ bool joint_igarch(JointMean<T>& mean, std::span<const T> theta, const Layout& la
 }
 
 template <class T>
+bool joint_ewma(JointMean<T>& mean, std::span<const T> theta, const Layout& layout, const Start<T>& start,
+                std::span<T> sigma2)
+{
+    std::array<T, 1> alpha{};
+    return joint_sgarch<T>(mean, shifted(ewma_parameters(theta, layout, alpha), start), start.presample, sigma2);
+}
+
+template <class T>
 bool joint_gjrgarch(JointMean<T>& mean, const garch::GjrGarchParameters<T>& p,
                     const garch::Presample<T>& presample, std::span<T> sigma2)
 {
@@ -605,6 +625,8 @@ bool joint_series(JointMean<T>& mean, const Layout& layout, const Start<T>& star
             return joint_sgarch<T>(mean, shifted(sgarch_parameters(theta, layout), start), start.presample, sigma2);
         case Model::IGarch:
             return joint_igarch<T>(mean, theta, layout, start, sigma2);
+        case Model::Ewma:
+            return joint_ewma<T>(mean, theta, layout, start, sigma2);
         case Model::EGarch:
             return joint_egarch<T>(mean, shifted(egarch_parameters(theta, layout), start), start.presample, sigma2);
         case Model::GjrGarch:

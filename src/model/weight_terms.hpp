@@ -22,11 +22,11 @@ template <class T>
 using WeightArray = std::array<T, kMaxWeightCount>;
 
 // The weight block seen as terms t_j >= 0, one per position, summing to the persistence P, with a ceiling c:
-//   sGARCH, csGARCH, iGARCH (alpha, beta), eGARCH (beta): the value itself;
+//   sGARCH, csGARCH, iGARCH and EWMA (alpha, beta), eGARCH (beta): the value itself;
 //   apARCH, fGARCH: alpha_i kappa_i, beta_j;
 //   gjrGARCH: (1 - pi) alpha_i, pi (alpha_i + gamma_i) in the alpha and gamma positions, but alpha_i - max(0, -gamma_i),
 //   max(0, -gamma_i) + pi gamma_i when gamma_i is fixed and alpha_i free; pi = P(z < 0).
-// c is 1 in iGARCH, the fixed rho in csGARCH and 1 - 1e-8 otherwise. NaN where pi or kappa is not computable.
+// c is 1 in iGARCH and EWMA, the fixed rho in csGARCH and 1 - 1e-8 otherwise. NaN where pi or kappa is not computable.
 struct WeightTerms
 {
     std::array<double, 3 * kMaxOrder> terms{};
@@ -36,8 +36,8 @@ struct WeightTerms
 
 WeightTerms weight_terms(std::span<const double> theta, const Layout& layout);
 
-// Writes the weight block entries that are not fixed from their terms (the inverse of the table above); the
-// iGARCH derived beta_q is 1 - the other weights.
+// Writes the weight block entries that are not fixed from their terms (the inverse of the table above); the derived
+// weight (iGARCH beta_q, EWMA alpha1) is 1 - the other weights.
 void natural_from_terms(const WeightTerms& terms, std::span<double> theta, const Layout& layout);
 
 struct WeightBlock
@@ -68,7 +68,7 @@ inline WeightBlock weight_block(const Layout& layout)
 
 inline double weight_ceiling(const Layout& layout)
 {
-    if (layout.model == Model::IGarch)
+    if (layout.has_derived())
     {
         return 1.0;
     }
@@ -256,13 +256,19 @@ inline FreePositions free_positions(const Layout& layout)
     return free;
 }
 
+// The derived weight is 1 - the other weights of the block, in block order (iGARCH: sum alpha, then the betas before
+// beta_q).
 template <class T>
 void write_derived_weight(std::span<T> theta, const Layout& layout)
 {
+    WeightBlock block = weight_block(layout);
     T derived{1.0};
-    for (const T& weight : theta.subspan(layout.alpha_begin(), layout.derived() - layout.alpha_begin()))
+    for (std::size_t index = block.begin; index < block.begin + block.count; ++index)
     {
-        derived = derived - weight;
+        if (index != layout.derived())
+        {
+            derived = derived - theta[index];
+        }
     }
     theta[layout.derived()] = derived;
 }

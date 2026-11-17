@@ -1001,6 +1001,46 @@ TEST(FitModels, IGarchDerivedParameter)
     EXPECT_DOUBLE_EQ(ve::bic(result, ve::IcScale::Total), -2.0 * result.loglik + std::log(n) * estimated);
 }
 
+TEST(FitModels, EwmaEstimatesLambda)
+{
+    Spec spec{.model = ve::Model::Ewma};
+    FitResult result = ve::fit_one(ve::testing::simulate_ewma_series(21, kObservations), spec, ve::FitConfig{});
+    ASSERT_EQ(result.status, FitStatus::Converged);
+    EXPECT_EQ(result.names, (std::vector<std::string>{"mu", "omega", "alpha1", "lambda"}));
+    double lambda = estimate_of(result, "lambda");
+    EXPECT_NEAR(lambda, 0.94, 0.01);
+    EXPECT_EQ(estimate_of(result, "omega"), 0.0);
+    EXPECT_EQ(estimate_of(result, "alpha1"), 1.0 - lambda);
+    for (std::size_t i = 0; i < result.estimate.size(); ++i)
+    {
+        bool derived = result.names[i] == "omega" || result.names[i] == "alpha1";
+        EXPECT_EQ(std::isnan(result.se_hessian[i]), derived) << result.names[i];
+        EXPECT_EQ(std::isnan(result.se_robust[i]), derived) << result.names[i];
+    }
+    double n = static_cast<double>(result.nobs);
+    EXPECT_DOUBLE_EQ(ve::bic(result, ve::IcScale::Total), -2.0 * result.loglik + std::log(n) * 2.0);
+}
+
+TEST(FitModels, EwmaFixedLambda)
+{
+    std::vector<double> r = ve::testing::simulate_ewma_series(22, 2000);
+    Spec spec{.model = ve::Model::Ewma};
+    spec.fixed = {{"lambda", 0.94}};
+    FitResult result = ve::fit_one(r, spec, ve::FitConfig{});
+    ASSERT_EQ(result.status, FitStatus::Converged);
+    EXPECT_EQ(estimate_of(result, "lambda"), 0.94);
+    EXPECT_EQ(estimate_of(result, "alpha1"), 1.0 - 0.94);
+    EXPECT_TRUE(std::isnan(result.se_hessian[index_of(result, "lambda")]));
+    EXPECT_FALSE(std::isnan(result.se_hessian[index_of(result, "mu")]));
+    // Nothing left to estimate: the model is evaluated at the fixed point.
+    spec.include_mean = false;
+    FitResult filtered = ve::fit_one(r, spec, ve::FitConfig{});
+    ASSERT_EQ(filtered.status, FitStatus::Converged);
+    EXPECT_EQ(estimate_of(filtered, "omega"), 0.0);
+    EXPECT_EQ(estimate_of(filtered, "alpha1"), 1.0 - 0.94);
+    EXPECT_TRUE(std::isfinite(filtered.loglik));
+}
+
 void expect_ends_finite(const FitResult& result)
 {
     ASSERT_TRUE(result.status == FitStatus::Converged || result.status == FitStatus::MaxIter ||

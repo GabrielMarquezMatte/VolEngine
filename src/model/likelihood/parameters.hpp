@@ -1,7 +1,7 @@
 #pragma once
 
 // The views of a natural-space theta that the likelihood and its adjoint read: the ARMA, sGARCH, gjrGARCH and
-// eGARCH parameters, and the iGARCH beta. Internal to model/.
+// eGARCH parameters, the iGARCH beta and the EWMA parameters. Internal to model/.
 
 #include "dist/moments.hpp"
 #include "garch/egarch.hpp"
@@ -74,6 +74,18 @@ std::span<const T> igarch_beta(const garch::SGarchParameters<T>& p, std::array<T
     }
     storage[p.beta.size() - 1] = last;
     return std::span<const T>(storage).first(p.beta.size());
+}
+
+// The EWMA as sGARCH(1,1): omega = 0 and alpha1 = 1 - lambda, written to storage; the stored omega and alpha1 are
+// never read.
+template <class T>
+garch::SGarchParameters<T> ewma_parameters(std::span<const T> theta, const Layout& layout, std::array<T, 1>& alpha)
+{
+    garch::SGarchParameters<T> p = sgarch_parameters(theta, layout);
+    alpha[0] = T{1.0} - p.beta[0];
+    p.omega = T{0.0};
+    p.alpha = std::span<const T>(alpha);
+    return p;
 }
 
 }

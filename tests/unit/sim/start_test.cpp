@@ -164,6 +164,7 @@ TEST(SimulateSpec, Rejections)
     targeting.fixed = {{"mu", 0.0}, {"alpha1", 0.1}, {"beta1", 0.85}};
     expect_rejected(targeting, "variance targeting");
     expect_rejected(fixed_spec(Model::IGarch, Dist::Norm, {{"mu", 0.0}, {"omega", 0.05}, {"alpha1", 0.1}}), "iGARCH");
+    expect_rejected(fixed_spec(Model::Ewma, Dist::Norm, {{"mu", 0.0}, {"lambda", 0.94}}), "EWMA");
     expect_rejected(fixed_spec(Model::SGarch, Dist::Norm, {{"mu", 0.0}, {"omega", 0.05}, {"alpha1", 0.2}, {"beta1", 0.82}}),
                     "stationary");
     expect_rejected(fixed_spec(Model::SGarch, Dist::Std,

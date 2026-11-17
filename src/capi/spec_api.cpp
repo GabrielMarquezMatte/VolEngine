@@ -38,10 +38,11 @@ static_assert(VE_MODEL_FGARCH_NAGARCH == static_cast<int32_t>(ve::Model::FGarchN
 static_assert(VE_MODEL_FGARCH_APARCH == static_cast<int32_t>(ve::Model::FGarchApArch));
 static_assert(VE_MODEL_FGARCH_GJRGARCH == static_cast<int32_t>(ve::Model::FGarchGjrGarch));
 static_assert(VE_MODEL_FGARCH_ALLGARCH == static_cast<int32_t>(ve::Model::FGarchAllGarch));
+static_assert(VE_MODEL_EWMA == static_cast<int32_t>(ve::Model::Ewma));
 
 ve_status to_model(int32_t value, ve::Model& model)
 {
-    if (value < VE_MODEL_SGARCH || value > VE_MODEL_FGARCH_ALLGARCH)
+    if (value < VE_MODEL_SGARCH || value > VE_MODEL_EWMA)
     {
         return bad_value("model", value);
     }

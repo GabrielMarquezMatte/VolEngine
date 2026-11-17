@@ -29,9 +29,10 @@ std::optional<std::string> refusal(const Spec& spec, const model::Layout& layout
     {
         return "variance targeting needs data: to simulate from a spec, turn it off and fix omega";
     }
-    if (spec.model == Model::IGarch)
+    if (spec.model == Model::IGarch || spec.model == Model::Ewma)
     {
-        return "iGARCH has no unconditional variance to start from: simulate from a fit instead";
+        return std::string(spec.model == Model::Ewma ? "EWMA" : "iGARCH") +
+               " has no unconditional variance to start from: simulate from a fit instead";
     }
     std::vector<std::string> names = model::parameter_names(layout);
     for (std::size_t i = 0; i < layout.count(); ++i)

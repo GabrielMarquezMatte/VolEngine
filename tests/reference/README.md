@@ -56,7 +56,8 @@ them needs neither R nor `arch`. Series names are unique across the data files.
 `model` and `submodel` are the names of VolEngine's Python `Spec` (`"sgarch"`, `"egarch"`, `"gjrgarch"`,
 `"aparch"`, `"igarch"`, `"csgarch"`, `"fgarch"`; for `"fgarch"` a submodel such as `"allgarch"`). The scripts
 translate them: `rugarch`'s `model = "sGARCH"`, `"eGARCH"`, ... and `submodel = "ALLGARCH"`, ...; `arch`'s
-`vol = "GARCH"` (with `o = p` for gjrGARCH) or `"EGARCH"`. `arch` covers sGARCH, gjrGARCH and eGARCH only. `p` is
+`vol = "GARCH"` (with `o = p` for gjrGARCH) or `"EGARCH"`. `arch` covers sGARCH, gjrGARCH, eGARCH and EWMA
+(`ConstantMean` with `EWMAVariance`, `lam=None` estimated or the case's fixed `lambda`) only. `p` is
 the ARCH order (α terms) and `q` the GARCH order (β terms), as in VolEngine's `Spec` and `arch`, and as
 `rugarch`'s `garchOrder = c(p, q)`. The id is `<series>/<model>`. `fixed` maps parameter names (`rugarch`'s, as
 below) to values held during the fit, VolEngine's `Spec(fixed=...)` and `rugarch`'s `fixed.pars`;

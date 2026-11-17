@@ -158,6 +158,8 @@ is compared with. Every case has a mean (`include_mean = true`). The id is `<ser
 | ARFIMA csGARCH(1,1)-norm (known divergence) | `arfima_sgarch11_norm` | yes | no |
 | ARFIMA sGARCH(1,1)-norm, `mxreg` x1; and with variance targeting | `arfima_sgarch11_norm` | yes | no |
 | ARFIMA AR(1) and ARMA(1,1), gjrGARCH(1,1)-std | `arfima1_gjrgarch11_std` | yes | no |
+| EWMA-norm, EWMA-norm with `lambda` fixed at 0.94 | `igarch11_norm` | no | yes |
+| EWMA-std | `egarch11_std` | no | yes |
 
 ARMA is validated against `rugarch` only: `arch` has no MA term, and its AR mean drops the first m
 observations from the likelihood instead of keeping them. Of the variants, `arch` has gjrGARCH (`GARCH` with
@@ -178,6 +180,14 @@ the AR to y, not to y − mₜ (the regressors' mean included), so an AR with re
 validated against `rugarch` only. `arch` has no variance regressors and no ARCH-in-mean.
 
 ARFIMA (plan 2f) is validated against `rugarch` only (`arfima = TRUE` in the mean model): `arch` has no ARFIMA.
+
+EWMA is validated against `arch` only (`rugarch` has none): `ConstantMean(y, volatility=EWMAVariance(lam),
+distribution=...)`, with `lam=None` (estimated, `arch` names it `lam`) or the 0.94 the case fixes. `arch`'s recursion is
+sigma2_0 = b, sigma2_t = lam sigma2_{t-1} + (1 - lam) e_{t-1}^2, which is VolEngine's sGARCH presample rule with
+omega = 0 and alpha1 + beta1 = 1. The fixture writes VolEngine's derived `omega` (0) and `alpha1` (1 - lambda) beside
+`arch`'s estimates, with no standard error. When the EWMA cases were added, the script also recomputed the 22 earlier
+results, whose robust standard errors moved by up to 1e-10 (another NumPy): the committed results were kept and only the
+EWMA cases were added.
 
 ### Case selection
 
@@ -1242,6 +1252,14 @@ the others are VolEngine's optimizer:
 | `gjrgarch11_norm/gjrgarch11_norm` | +1.4e-7 | 6.7e-5 | — | 1.0e-4 | 1.8e-4 | 2.0e-5 | 2.8e-7 |
 | `egarch11_std/gjrgarch11_std` | +7.8e-8 | 6.5e-5 | — | 9.9e-5 | 1.7e-4 | 1.6e-5 | 1.6e-7 |
 | `gjrgarch11_norm/gjrgarch11_ged` | +7.2e-8 | 7.8e-5 | — | 8.0e-5 | 2.0e-4 | 1.8e-5 | 1.4e-7 |
+
+EWMA (`EWMAVariance`; `omega` and `alpha1` derived, `lambda` fixed in the RiskMetrics case):
+
+| Case | ℓ_VE − ℓ_oracle | Max param rel | Small abs | Max SE rel | Max robust SE rel | Max σ rel | Max criteria abs |
+|------|-----------------|---------------|-----------|------------|-------------------|-----------|------------------|
+| `igarch11_norm/ewma_norm` | +2.7e-7 | 2.0e-4 | 0 | 2.1e-6 | 1.7e-4 | 2.1e-5 | 5.3e-7 |
+| `egarch11_std/ewma_std` | +6.1e-11 | 9.3e-7 | 0 | 3.0e-6 | 1.7e-4 | 1.5e-7 | 1.2e-10 |
+| `igarch11_norm/ewma_norm_riskmetrics` | +6.0e-8 | 1.3e-4 | 0 | 1.0e-6 | 1.7e-4 | 4.8e-6 | 1.2e-7 |
 
 Mean regressors (`LS`, constant included; no AR, a series simulated with AR(1)):
 

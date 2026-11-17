@@ -32,7 +32,7 @@ constexpr Block P = Block::PerArch;
 constexpr Block O = Block::One;
 
 // Indexed by Model.
-constexpr std::array<Blocks, 14> kBlocks{{
+constexpr std::array<Blocks, 15> kBlocks{{
     {N, N, N, false, 2.0}, // SGarch
     {P, N, N, false, 2.0}, // EGarch
     {P, N, N, false, 2.0}, // GjrGarch
@@ -47,6 +47,7 @@ constexpr std::array<Blocks, 14> kBlocks{{
     {N, P, N, true, 2.0},  // FGarchApArch
     {N, P, N, false, 2.0}, // FGarchGjrGarch
     {N, P, P, true, 2.0},  // FGarchAllGarch
+    {N, N, N, false, 2.0}, // Ewma
 }};
 
 int block_size(Block block, int arch)
@@ -155,18 +156,32 @@ std::optional<std::string> unknown_name_problem(const Spec& spec, const std::vec
     return std::nullopt;
 }
 
-std::optional<std::string> derived_beta_problem(const Spec& spec, const std::vector<std::string>& names)
+const char* model_name(Model model)
 {
-    if (spec.model != Model::IGarch)
+    return model == Model::Ewma ? "ewma" : "igarch";
+}
+
+// The derived parameters of the model (not those of variance targeting).
+std::optional<std::string> derived_problem(const Spec& spec, const std::vector<std::string>& names)
+{
+    Layout layout = base_layout(spec);
+    for (std::size_t index = 0; index < names.size(); ++index)
+    {
+        if (layout.is_derived(index) && is_fixed_by_name(spec, names[index]))
+        {
+            return names[index] + " is derived in the " + model_name(spec.model) + " model and cannot be fixed";
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> order_problem(const Spec& spec)
+{
+    if (spec.model != Model::Ewma || (spec.p == 1 && spec.q == 1))
     {
         return std::nullopt;
     }
-    const std::string& name = names[base_layout(spec).derived()];
-    if (!is_fixed_by_name(spec, name))
-    {
-        return std::nullopt;
-    }
-    return name + " is derived in the igarch model and cannot be fixed";
+    return "the ewma model has order (1, 1)";
 }
 
 std::optional<std::string> variance_targeting_problem(const Spec& spec)
@@ -175,9 +190,9 @@ std::optional<std::string> variance_targeting_problem(const Spec& spec)
     {
         return std::nullopt;
     }
-    if (spec.model == Model::IGarch)
+    if (spec.model == Model::IGarch || spec.model == Model::Ewma)
     {
-        return "variance targeting is not supported by the igarch model";
+        return std::string("variance targeting is not supported by the ") + model_name(spec.model) + " model";
     }
     if (spec.model == Model::CsGarch)
     {
@@ -311,17 +326,25 @@ std::size_t Layout::count() const
 
 bool Layout::has_derived() const
 {
-    return model == Model::IGarch;
+    return model == Model::IGarch || model == Model::Ewma;
 }
 
 std::size_t Layout::derived() const
 {
+    if (model == Model::Ewma)
+    {
+        return alpha_begin();
+    }
     return beta_begin() + static_cast<std::size_t>(garch) - 1;
 }
 
 std::size_t Layout::estimated_count() const
 {
-    std::size_t derived_count = (has_derived() ? 1 : 0) + (variance_targeting ? 1 : 0);
+    std::size_t derived_count = 0;
+    for (std::size_t index = 0; index < count(); ++index)
+    {
+        derived_count += is_derived(index) ? 1 : 0;
+    }
     return count() - fixed.count() - derived_count;
 }
 
@@ -341,7 +364,7 @@ bool Layout::is_derived(std::size_t index) const
     {
         return true;
     }
-    return variance_targeting && index == omega();
+    return (variance_targeting || model == Model::Ewma) && index == omega();
 }
 
 bool Layout::is_estimated(std::size_t index) const
@@ -358,6 +381,7 @@ bool Layout::is_power_family() const
         case Model::GjrGarch:
         case Model::IGarch:
         case Model::CsGarch:
+        case Model::Ewma:
             return false;
         case Model::ApArch:
         case Model::FGarchGarch:
@@ -483,11 +507,16 @@ std::optional<std::string> spec_problem(const Spec& spec)
     {
         return problem;
     }
+    problem = order_problem(spec);
+    if (problem)
+    {
+        return problem;
+    }
     std::vector<std::string> names = parameter_names(base_layout(spec));
     problem = unknown_name_problem(spec, names);
     if (!problem)
     {
-        problem = derived_beta_problem(spec, names);
+        problem = derived_problem(spec, names);
     }
     if (!problem)
     {
@@ -521,7 +550,11 @@ std::vector<std::string> parameter_names(const Layout& layout)
     append_block(names, "mxreg", layout.mxreg);
     names.emplace_back("omega");
     append_block(names, "alpha", layout.arch);
-    append_block(names, "beta", layout.garch);
+    if (layout.model == Model::Ewma)
+    {
+        names.emplace_back("lambda");
+    }
+    append_block(names, "beta", layout.model == Model::Ewma ? 0 : layout.garch);
     append_block(names, "gamma", layout.gamma);
     append_block(names, "eta1", layout.eta1);
     append_block(names, "eta2", layout.eta2);

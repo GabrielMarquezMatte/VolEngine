@@ -25,7 +25,8 @@ enum class Model : int32_t
     FGarchNaGarch = 10,
     FGarchApArch = 11,
     FGarchGjrGarch = 12,
-    FGarchAllGarch = 13
+    FGarchAllGarch = 13,
+    Ewma = 14
 };
 
 enum class Dist : int32_t

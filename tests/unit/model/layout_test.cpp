@@ -505,4 +505,46 @@ TEST(Layout, PlainSpecUnchanged)
     }
 }
 
+TEST(Layout, EwmaNamesLambdaAndDerivesOmegaAndAlpha)
+{
+    auto spec = role_spec(Model::Ewma, 1, 1, ve::Dist::Std);
+    auto l = ve::model::layout_of(spec);
+    EXPECT_EQ(ve::model::parameter_names(l), (Names{"mu", "omega", "alpha1", "lambda", "shape"}));
+    EXPECT_TRUE(l.has_derived());
+    EXPECT_EQ(l.derived(), l.alpha_begin());
+    EXPECT_TRUE(l.is_derived(l.omega()));
+    EXPECT_TRUE(l.is_derived(l.alpha_begin()));
+    EXPECT_TRUE(l.is_estimated(l.beta_begin()));
+    EXPECT_EQ(l.estimated_count(), 3u);
+    EXPECT_FALSE(l.is_power_family());
+    EXPECT_EQ(l.kind(l.beta_begin()), ParameterKind::Weight);
+
+    spec.fixed = {{"lambda", 0.94}};
+    EXPECT_FALSE(ve::model::spec_problem(spec).has_value());
+    EXPECT_EQ(ve::model::layout_of(spec).estimated_count(), 2u);
+
+    spec.start = {{"omega", 0.1}, {"alpha1", 0.1}};
+    l = ve::model::layout_of(spec);
+    EXPECT_FALSE(l.is_started(l.omega()));
+    EXPECT_FALSE(l.is_started(l.alpha_begin()));
+}
+
+TEST(Layout, EwmaSpecProblems)
+{
+    for (const char* name : {"omega", "alpha1"})
+    {
+        auto fixed = role_spec(Model::Ewma, 1, 1);
+        fixed.fixed = {{name, 0.1}};
+        EXPECT_TRUE(mentions(ve::model::spec_problem(fixed), std::string(name) + " is derived in the ewma model"));
+    }
+    for (auto [p, q] : {std::pair{2, 1}, std::pair{1, 2}})
+    {
+        EXPECT_TRUE(mentions(ve::model::spec_problem(role_spec(Model::Ewma, p, q)), "order (1, 1)"));
+    }
+    auto targeted = role_spec(Model::Ewma, 1, 1);
+    targeted.variance_targeting = true;
+    EXPECT_TRUE(mentions(ve::model::spec_problem(targeted), "variance targeting is not supported by the ewma model"));
+    EXPECT_FALSE(ve::model::spec_problem(role_spec(Model::Ewma, 1, 1)).has_value());
+}
+
 }

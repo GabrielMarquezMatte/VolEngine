@@ -146,7 +146,8 @@ std::string case_name(const ::testing::TestParamInfo<AdjointCase>& info)
     auto [model, orders, arma, dist, var_init, include_mean] = info.param;
     std::string models[] = {"SGarch", "EGarch", "GjrGarch", "ApArch", "IGarch"};
     std::string dists[] = {"Norm", "Std", "Ged"};
-    return models[static_cast<int>(model)] + "P" + std::to_string(orders.arch) + "Q" +
+    std::string name = model == Model::Ewma ? "Ewma" : models[static_cast<int>(model)];
+    return name + "P" + std::to_string(orders.arch) + "Q" +
            std::to_string(orders.garch) + "Arma" + std::to_string(arma.ar) + std::to_string(arma.ma) +
            dists[static_cast<int>(dist)] + (var_init == VarInit::Sample ? "Sample" : "Backcast") +
            (include_mean ? "Mean" : "NoMean");
@@ -175,6 +176,15 @@ INSTANTIATE_TEST_SUITE_P(PhaseOne, LoglikAdjointGrid,
                                                               Model::EGarch),
                                             ::testing::Values(Orders{1, 1}, Orders{2, 1}, Orders{1, 2},
                                                               Orders{3, 3}),
+                                            ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1},
+                                                              ArmaOrders{2, 2}),
+                                            ::testing::Values(Dist::Norm, Dist::Std, Dist::Ged),
+                                            ::testing::Values(VarInit::Sample, VarInit::Backcast),
+                                            ::testing::Bool()),
+                         case_name);
+
+INSTANTIATE_TEST_SUITE_P(Ewma, LoglikAdjointGrid,
+                         ::testing::Combine(::testing::Values(Model::Ewma), ::testing::Values(Orders{1, 1}),
                                             ::testing::Values(ArmaOrders{0, 0}, ArmaOrders{1, 1},
                                                               ArmaOrders{2, 2}),
                                             ::testing::Values(Dist::Norm, Dist::Std, Dist::Ged),
@@ -272,7 +282,7 @@ bool covered(const ve::Spec& spec, VarInit var_init = VarInit::Sample)
 
 TEST(LoglikAdjoint, CoversPhaseOneOnly)
 {
-    for (Model model : {Model::SGarch, Model::IGarch, Model::GjrGarch, Model::EGarch})
+    for (Model model : {Model::SGarch, Model::IGarch, Model::GjrGarch, Model::EGarch, Model::Ewma})
     {
         for (Dist dist : {Dist::Norm, Dist::Std, Dist::Ged})
         {

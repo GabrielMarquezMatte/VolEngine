@@ -17,6 +17,8 @@ namespace
 
 constexpr double kInitialArch = 0.05;
 constexpr double kInitialGarch = 0.90;
+// RiskMetrics' daily lambda, also arch's start.
+constexpr double kInitialLambda = 0.94;
 constexpr double kInitialOmegaShare = 1.0 - (kInitialArch + kInitialGarch);
 constexpr double kInitialStudentShape = 8.0;
 constexpr double kInitialGedShape = 2.0;
@@ -49,6 +51,8 @@ VarianceStart variance_start(Model model)
             return {kInitialOmegaShare, 0.03, 0.04};
         case Model::IGarch:
             return {0.01, 0.1, 0.0};
+        case Model::Ewma:
+            return {0.0, 1.0 - kInitialLambda, 0.0};
         case Model::CsGarch:
             return {0.02, kInitialArch, 0.0};
         case Model::SGarch:
@@ -323,7 +327,7 @@ void set_weights(std::vector<double>& theta, const Layout& layout)
     apply_user_values(theta, layout, Part::Weights);
     raise_default_gjr_alpha(theta, layout);
     rescale_standard_weights(theta, layout);
-    if (layout.model == Model::IGarch)
+    if (layout.has_derived())
     {
         write_derived_weight<double>(theta, layout);
     }
@@ -475,7 +479,8 @@ std::vector<double> start_values(const Data& data, const Layout& layout)
     }
     VarianceStart start = variance_start(layout.model);
     fill_block(theta, layout.alpha_begin(), layout.arch, start.alpha / layout.arch);
-    fill_block(theta, layout.beta_begin(), layout.garch, kInitialGarch / layout.garch);
+    double garch = layout.model == Model::Ewma ? kInitialLambda : kInitialGarch;
+    fill_block(theta, layout.beta_begin(), layout.garch, garch / layout.garch);
     fill_block(theta, layout.gamma_begin(), layout.gamma, start.gamma / layout.arch);
     if (layout.free_power)
     {

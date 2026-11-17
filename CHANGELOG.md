@@ -8,6 +8,23 @@ From 1.0 the C ABI only grows: a signature or an enum value is never changed or 
 semver major (the Python package and the C++ wrapper refuse a library whose ABI version differs). Before 1.0 it could
 break between 0.x releases.
 
+## [Unreleased]
+
+### Added
+
+- EWMA (RiskMetrics): `VE_MODEL_EWMA` (C), `ve::Model::ewma` (C++), `Spec("ewma")` (Python). sigma2_t =
+  lambda sigma2_{t-1} + (1 - lambda) e_{t-1}^2, the iGARCH(1,1) with omega = 0. Parameters `omega` and `alpha1`
+  (derived: 0 and 1 - lambda, NaN standard errors, not counted by the criteria) and `lambda` in [0, 1], estimated by
+  maximum likelihood unless fixed (`fixed={"lambda": 0.94}` is RiskMetrics). Every mean, regressor, distribution,
+  `var_init`, forecast (flat), simulation from a fit, diagnostic and DCC/copula margin of the other models applies.
+  Order (1, 1) only; variance targeting and `ve_simulate_spec` are rejected, as in iGARCH. Validated against `arch`'s
+  `EWMAVariance` (three cases).
+
+### Changed
+
+- A free iGARCH weight whose derived `beta_q` sits within 1e-8 of 0 counts as on the boundary, so its standard error
+  is NaN instead of a Hessian step that leaves the domain (the EWMA `lambda` next to 1 follows the same rule).
+
 ## [1.0.0] - 2026-11-15
 
 The C interface is frozen. The audit of its 133 functions is in `docs/superpowers/notes/2026-11-15-abi-audit-6c.md`.

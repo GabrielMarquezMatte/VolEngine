@@ -57,9 +57,9 @@ VE_API void ve_context_free(ve_context* ctx);
    beta1..betaq, gamma1..gammap, eta11..eta1p, eta21..eta2p, delta or lambda, skew, shape, ghlambda. A
    model only has the blocks listed next to it; mu is absent without a mean and the last three are the
    distribution parameters (see VE_DIST_*).
-   Only the iGARCH beta_q is derived (1 - sum alpha - the other betas): it has a name and a value,
-   it is not estimated, its standard error is NaN, and the information criteria count the estimated
-   parameters only. Each fGARCH submodel is a model value.
+   Derived parameters are the iGARCH beta_q (1 - sum alpha - the other betas) and the EWMA omega (0) and alpha1
+   (1 - lambda): each has a name and a value, is not estimated, has a NaN standard error, and the information
+   criteria count the estimated parameters only. Each fGARCH submodel is a model value.
    ARFIMA (ve_spec_set_arfima) adds arfima after ma, ARCH-in-mean (ve_spec_set_archm) adds archm after ma (a spec
    has one or the other), and the regressors add mxreg1..mxregK after them and vxreg1..vxregJ after the variance
    block (before skew), as in rugarch. */
@@ -77,8 +77,12 @@ VE_API void ve_context_free(ve_context* ctx);
 #define VE_MODEL_FGARCH_APARCH 11 /* eta11..eta1p, lambda free */
 #define VE_MODEL_FGARCH_GJRGARCH 12 /* eta11..eta1p, lambda = 2 fixed */
 #define VE_MODEL_FGARCH_ALLGARCH 13 /* eta11..eta1p, eta21..eta2p, lambda free */
-/* A model value outside VE_MODEL_SGARCH .. VE_MODEL_FGARCH_ALLGARCH makes ve_spec_create return
-   VE_INVALID_ARGUMENT. */
+/* EWMA (RiskMetrics), sigma2_t = lambda sigma2_{t-1} + (1 - lambda) e_{t-1}^2: the iGARCH(1,1) with omega = 0.
+   Its parameters are omega and alpha1, both derived, and lambda in [0, 1] (estimated unless fixed; RiskMetrics
+   fixes it at 0.94), where beta1 stands in the other models. Order (1, 1) only; variance targeting is rejected and
+   so is ve_simulate_spec, as in iGARCH. Since 1.1.0. */
+#define VE_MODEL_EWMA 14
+/* A model value outside VE_MODEL_SGARCH .. VE_MODEL_EWMA makes ve_spec_create return VE_INVALID_ARGUMENT. */
 /* Every distribution is standardized to zero mean and unit variance (as in rugarch and arch). The
    distribution parameters come last in the parameter vector, in the order skew, shape, ghlambda;
    a distribution only has the ones listed next to it. */
@@ -174,8 +178,9 @@ VE_API ve_status ve_spec_set_start(ve_spec* s, const char* name, double value);
 VE_API ve_status ve_spec_set_variance_targeting(ve_spec* s, int32_t on);
 /* VE_OK when the spec can be fitted, else VE_INVALID_ARGUMENT with the reason in ve_last_error().
    Rejected: a fixed or start name the spec does not have (the message gives the name and the names
-   the spec has); fixing the iGARCH beta_q (derived); fixing omega under variance targeting (derived);
-   variance targeting in iGARCH (omega would be 0) or csGARCH (rugarch ignores it silently); a csGARCH
+   the spec has); fixing the iGARCH beta_q, the EWMA omega or alpha1, or omega under variance targeting (all
+   derived); variance targeting in iGARCH or EWMA (omega would be 0) or csGARCH (rugarch ignores it silently); an EWMA
+   order other than (1, 1); a csGARCH
    with eta21 (phi) fixed and some beta free (it needs sum(beta) >= phi, which the weight map cannot
    express; fixing phi together with every beta is accepted). ve_fit_batch applies the same check to every
    spec, before any fit, and prefixes the message with "spec <i>: ". */
@@ -356,7 +361,7 @@ VE_API void ve_sim_options_free(ve_sim_options* o);
    a VE_FIT_FAILED fit that has a finite point simulates from it. */
 VE_API ve_status ve_simulate_fit(ve_context* ctx, const ve_fit* f, const ve_sim_options* o, ve_sim** out);
 /* VE_INVALID_ARGUMENT, with the reason in ve_last_error, for a spec with a free parameter, variance targeting,
-   iGARCH (no unconditional variance), parameters outside their domain, persistence >= 1, or regressors that do not
+   iGARCH or EWMA (no unconditional variance), parameters outside their domain, persistence >= 1, or regressors that do not
    match it. The presample holds the unconditional sigma2 (with the first row of vxreg), the unconditional mean
    and residuals drawn from the paths themselves. */
 VE_API ve_status ve_simulate_spec(ve_context* ctx, const ve_spec* s, const ve_sim_options* o, ve_sim** out);
