@@ -99,3 +99,7 @@ def test_editable_build_needs_no_bundled_library(tmp_path, monkeypatch):
     hook.NativeLibraryBuildHook(str(tmp_path), {}, {}, None, str(tmp_path), "wheel").initialize("editable", build_data)
     assert build_data["force_include"] == {}
     assert build_data["tag"].startswith("py3-none-")
+
+
+def test_macos_floor_keeps_the_minor_version():
+    assert hook.macos_floor(mach_o_with_minos(13, 3)) == "13_3"

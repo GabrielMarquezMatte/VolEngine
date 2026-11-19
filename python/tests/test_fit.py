@@ -787,3 +787,14 @@ def test_standard_errors_off(ctx, series):
     paths_with = ctx.simulate(with_errors, horizon=5, paths=3, seed=1).returns
     paths_without = ctx.simulate(without, horizon=5, paths=3, seed=1).returns
     np.testing.assert_array_equal(paths_without, paths_with)
+
+
+def test_broadcast_data_is_copied_before_the_native_call(ctx, series):
+    broadcast = np.broadcast_to(series[:, :1], series.shape)
+    fits = ctx.fit(ve.Spec(), broadcast)
+    assert len(fits) == series.shape[1]
+
+
+def test_arma_accepts_numpy_integers(ctx, series):
+    spec = ve.Spec(arma=(np.int64(1), np.int64(1)))
+    assert ctx.fit(spec, series[:, 0]).names

@@ -14,11 +14,12 @@ from numpy.typing import ArrayLike, NDArray
 from ._diagnostics import DiagnosticResult, Nyblom, SignBias, critical_values, read_test, size_argument
 from ._forecast import Forecast
 from ._native import (
-    ELEMENT_BYTES,
     Handle,
+    bounded,
     check,
     create_handle,
     lib,
+    native_layout,
     native_view,
     open_panel,
     read_scalar,
@@ -174,9 +175,7 @@ class Fit:
         when k = 1), and must be absent when the spec has none. A fit with no finite point raises VolEngineError.
         See `Forecast` for what `sigma` means in eGARCH, apARCH and fGARCH.
         """
-        horizon = operator.index(horizon)
-        if horizon < 1:
-            raise ValueError(f"horizon must be at least 1, got {horizon}")
+        horizon = bounded(horizon, "horizon", 1)
         with ExitStack() as stack:
             mean = self._future(stack, mxreg, "mxreg", horizon)
             variance = self._future(stack, vxreg, "vxreg", horizon)
@@ -204,6 +203,4 @@ def future_panel(stack: ExitStack, values: ArrayLike | None, name: str, count: i
         array = array[:, None]
     if array.shape != (horizon, count):
         raise ValueError(f"{name} must have shape {(horizon, count)}, got {array.shape}")
-    if any(stride % ELEMENT_BYTES for stride in array.strides):
-        array = np.ascontiguousarray(array)
-    return open_panel(stack, array).pointer
+    return open_panel(stack, native_layout(array)).pointer

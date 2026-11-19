@@ -11,18 +11,19 @@ from typing import TYPE_CHECKING, Any, TypedDict, overload
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ._dcc import DccFit, DccSpec, fit_dcc, open_future
+from ._dcc import DccFit, DccSpec, dcc_standard_errors, fit_dcc, open_future
 from ._diagnostics import DiagnosticResult, Nyblom, SignBias
 from ._fit import CoefTable, Fit, future_panel
 from ._forecast import DccForecast, Forecast
 from ._native import (
-    ELEMENT_BYTES,
     Handle,
     VolEngineError,
+    bounded,
     check,
     create_handle,
     int32,
     lib,
+    native_layout,
     open_panel,
 )
 from ._simulation import DccSimulation, Simulation
@@ -50,7 +51,6 @@ __all__ = [
 ]
 
 Series1D = Sequence[float]
-UINT64_END = 2**64
 
 
 class FitKeywords(TypedDict, total=False):
@@ -144,9 +144,7 @@ def regressor_array(
                              f"got {array.shape}")
     if len(data_shape) == 1:
         array = array[:, None, :]
-    if any(stride % ELEMENT_BYTES for stride in array.strides):
-        array = np.ascontiguousarray(array)
-    return array
+    return native_layout(array)
 
 
 def open_regressors(stack: ExitStack, array: NDArray[np.float64] | None, counts: list[int]) -> NDArray[np.uintp] | None:
@@ -179,14 +177,6 @@ def shaped(fits: list[Fit], shape: tuple[int, ...]) -> NDArray[np.object_]:
     for position, fit in enumerate(fits):
         grid[position] = fit
     return grid.reshape(shape)
-
-
-def bounded(value: int, name: str, low: int) -> int:
-    """value as an integer in [low, 2**64), the range of the size_t and uint64_t of the C API."""
-    value = operator.index(value)
-    if not low <= value < UINT64_END:
-        raise ValueError(f"{name} must be an integer in [{low}, 2**64), got {value}")
-    return value
 
 
 def regressor_counts(source: Fit | Spec) -> tuple[int, int]:
@@ -286,6 +276,10 @@ class Context:
         if isinstance(spec, DccSpec):
             return results[0]
         return results
+
+    def standard_errors(self, fit: DccFit, univariate: Sequence[Fit]) -> DccFit:
+        """`fit` with its standard errors, on this context's threads; `univariate` are the fits it was made from."""
+        return dcc_standard_errors(self._handle, fit, univariate)
 
     @overload
     def simulate(
@@ -394,8 +388,7 @@ class Context:
         ranges: tuple[NDArray[np.uintp], NDArray[np.uintp]] | None,
         regressors: tuple[NDArray[np.float64] | None, NDArray[np.float64] | None],
     ) -> list[Fit]:
-        if any(stride % ELEMENT_BYTES for stride in array.strides):
-            array = np.ascontiguousarray(array)
+        array = native_layout(array)
         series_count = array.shape[1]
         with ExitStack() as stack:
             panel = open_panel(stack, array)

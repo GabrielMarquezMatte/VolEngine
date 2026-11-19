@@ -1,3 +1,4 @@
+import copy
 import os
 from pathlib import Path
 
@@ -45,3 +46,16 @@ def test_abi_mismatch_is_an_import_error_naming_both_versions(monkeypatch):
     monkeypatch.setattr(_native, "VE_ABI_VERSION", library_version + 1)
     with pytest.raises(ImportError, match=f"ABI version {library_version}, this package needs {library_version + 1}"):
         _native.load_library(os.environ, _native.LIBRARY_DIRECTORY)
+
+
+def test_bare_file_name_override_is_resolved_to_an_absolute_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "libvolengine.so").touch()
+    monkeypatch.chdir(tmp_path)
+    assert _native.locate_library("libvolengine.so", tmp_path).is_absolute()
+
+
+def test_handle_without_init_closes_and_refuses_copies() -> None:
+    handle = _native.Handle.__new__(_native.Handle)
+    handle.close()
+    with pytest.raises(TypeError, match="cannot be pickled or copied"):
+        copy.deepcopy(handle)

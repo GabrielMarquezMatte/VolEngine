@@ -86,3 +86,9 @@ def test_forecast_outlives_fit(ctx, series):
     del fit
     gc.collect()
     np.testing.assert_array_equal(forecast.sigma, before)
+
+
+def test_forecast_horizon_beyond_size_t_raises(ctx, series):
+    fit = ctx.fit(ve.Spec(), series[:, 0])
+    with pytest.raises(ValueError, match="horizon"):
+        fit.forecast(2**64 + 3)

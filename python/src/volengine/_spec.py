@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import operator
 from collections.abc import Mapping
 from dataclasses import KW_ONLY, dataclass, field
 from typing import NoReturn
 
-from ._native import Handle, check, create_handle, int32, lib
+from ._native import Handle, check, create_handle, int32, is_integer, lib
 
 MODELS = {"sgarch": 0, "egarch": 1, "gjrgarch": 2, "aparch": 3, "igarch": 4, "csgarch": 5, "ewma": 14}
 SUBMODELS = {
@@ -179,9 +180,9 @@ class Spec:
 
     def arma_orders(self) -> tuple[int, int]:
         arma = self.arma
-        if not isinstance(arma, tuple | list) or len(arma) != 2 or not all(type(i) is int for i in arma):
+        if not isinstance(arma, tuple | list) or len(arma) != 2 or not all(is_integer(i) for i in arma):
             raise ValueError(f"arma must be a pair of integers (m, n), got {arma!r}")
-        return int32(arma[0], "arma m"), int32(arma[1], "arma n")
+        return int32(operator.index(arma[0]), "arma m"), int32(operator.index(arma[1]), "arma n")
 
     def model_code(self) -> int:
         if self.model != "fgarch":

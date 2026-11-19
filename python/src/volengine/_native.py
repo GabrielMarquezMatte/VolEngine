@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import ctypes
+import operator
 import os
 from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from pathlib import Path
 from types import TracebackType
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -182,7 +183,7 @@ def locate_library(override: str | None, directory: Path) -> Path:
         path = Path(override)
         if not path.is_file():
             raise ImportError(f"{LIBRARY_ENV} points to {override}, which is not a file")
-        return path
+        return path.resolve()
     for name in LIBRARY_NAMES:
         if (directory / name).is_file():
             return directory / name
@@ -261,9 +262,13 @@ class Handle:
         return self._pointer
 
     def close(self) -> None:
-        pointer, self._pointer = self._pointer, None
+        pointer = getattr(self, "_pointer", None)
+        self._pointer = None
         if pointer is not None:
             self._free(pointer)
+
+    def __reduce__(self) -> NoReturn:
+        raise TypeError("a native handle cannot be pickled or copied")
 
     def __enter__(self) -> Handle:
         return self
@@ -295,6 +300,27 @@ def read_scalar(ctype: Any, function: Callable[..., int], *args: Any) -> Any:
 
 
 ELEMENT_BYTES = np.dtype(np.float64).itemsize
+UINT64_END = 2**64
+
+
+def bounded(value: int, name: str, low: int) -> int:
+    """value as an integer in [low, 2**64), the range of the size_t and uint64_t of the C API."""
+    value = operator.index(value)
+    if not low <= value < UINT64_END:
+        raise ValueError(f"{name} must be an integer in [{low}, 2**64), got {value}")
+    return value
+
+
+def is_integer(value: object) -> bool:
+    """An int or numpy integer (anything with __index__), but not a bool."""
+    return hasattr(value, "__index__") and not isinstance(value, bool)
+
+
+def native_layout(array: NDArray[np.float64]) -> NDArray[np.float64]:
+    """`array`, or a contiguous copy when a stride is not a multiple of 8 bytes or is 0 (a broadcast view)."""
+    if any(stride % ELEMENT_BYTES or stride == 0 for stride in array.strides):
+        return np.ascontiguousarray(array)
+    return array
 
 
 def open_panel(stack: ExitStack, array: NDArray[np.float64]) -> Handle:

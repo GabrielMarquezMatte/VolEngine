@@ -189,3 +189,14 @@ def test_dcc_spec_is_hashable_and_immutable():
         one.fixed["fdccb1"] = 0.9  # type: ignore[index]
     with pytest.raises(AttributeError):
         one.model = "dcc"  # type: ignore[misc]
+
+
+def test_dcc_standard_errors_on_a_context_and_forecast_horizon_range(ctx, univariate):
+    fit = ctx.fit_dcc(ve.DccSpec("dcc"), univariate, standard_errors=False)
+    assert ctx.standard_errors(fit, univariate).coef(se="robust") is not None
+    with pytest.raises(ValueError, match="horizon"):
+        fit.forecast(2**64 + 3)
+
+
+def test_dcc_order_accepts_numpy_integers():
+    assert ve.DccSpec("dcc", order=(np.int64(1), np.int64(1))).order == (1, 1)

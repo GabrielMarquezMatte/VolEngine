@@ -25,14 +25,14 @@ def glibc_floor(library: bytes) -> str:
 
 
 def macos_floor(library: bytes) -> str:
-    """The minimum macOS a thin 64-bit Mach-O declares in LC_BUILD_VERSION, as `MAJOR_0`."""
+    """The minimum macOS a thin 64-bit Mach-O declares in LC_BUILD_VERSION, as `MAJOR_MINOR`."""
     commands = struct.unpack_from("<I", library, 16)[0]
     offset = 32
     for _ in range(commands):
         command, size = struct.unpack_from("<II", library, offset)
         if command == LC_BUILD_VERSION:
             minos = struct.unpack_from("<I", library, offset + 12)[0]
-            return f"{minos >> 16}_0"
+            return f"{minos >> 16}_{(minos >> 8) & 0xFF}"
         offset += size
     raise ValueError("the native library has no LC_BUILD_VERSION load command")
 

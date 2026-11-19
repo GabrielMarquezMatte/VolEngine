@@ -7,15 +7,30 @@ import operator
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import KW_ONLY, dataclass, field
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from ._fit import IC_PER_OBS, IC_TOTAL, SE_KINDS, CoefTable, Fit, status_name
 from ._forecast import DccForecast
-from ._native import ELEMENT_BYTES, Handle, check, create_handle, int32, lib, native_view, open_panel, read_scalar
+from ._native import (
+    Handle,
+    bounded,
+    check,
+    create_handle,
+    int32,
+    is_integer,
+    lib,
+    native_layout,
+    native_view,
+    open_panel,
+    read_scalar,
+)
 from ._spec import code_of, encoded_name, frozen_values
+
+if TYPE_CHECKING:
+    from .api import Context
 
 MODELS = {"dcc": 0, "adcc": 1, "fdcc": 2, "static": 3}
 COPULAS = {"parametric": 1, "empirical": 2}
@@ -28,7 +43,8 @@ class DccSpec:
     """Second-stage DCC model, using the paper convention.
 
     FDCC needs one group label per series, consecutive from 1, and order (1, 1).
-    Fixed parameters are excluded from coefficient tables and information criteria.
+    Fixed parameters are listed in the coefficient tables with their value and NaN standard errors, t and p
+    values.
 
     copula="parametric" (each fit's cdf) or "empirical" (ranks) makes it a Copula-DCC on
     the normal or Student scores of the margins; model="static" is a constant-correlation
@@ -47,9 +63,9 @@ class DccSpec:
     static_method: str | None = None
 
     def __post_init__(self) -> None:
-        if len(self.order) != 2 or any(type(value) is not int for value in self.order):
+        if len(self.order) != 2 or not all(is_integer(value) for value in self.order):
             raise ValueError("order must be a pair of integers (p, q)")
-        object.__setattr__(self, "order", tuple(self.order))
+        object.__setattr__(self, "order", tuple(operator.index(value) for value in self.order))
         if self.groups is not None:
             object.__setattr__(self, "groups", tuple(self.groups))
         object.__setattr__(self, "fixed", frozen_values(self.fixed))
@@ -82,6 +98,14 @@ class DccSpec:
             method = code_of(STATIC_METHODS, "static_method", self.static_method)
             check(lib.ve_dcc_spec_set_static_method(handle.pointer, method))
         return handle
+
+
+def dcc_standard_errors(context: Handle, fit: DccFit, univariate: Sequence[Fit]) -> DccFit:
+    fits = fit_pointers(univariate)
+    return DccFit(create_handle(
+        lib.ve_dcc_standard_errors, lib.ve_dcc_fit_free,
+        context.pointer, fit._handle.pointer, fits, len(univariate),
+    ))
 
 
 def fit_pointers(fits: Sequence[Fit]) -> Any:
@@ -125,9 +149,7 @@ def future_panel_of(stack: ExitStack, values: ArrayLike | None) -> int | None:
         array = array[:, None]
     if array.ndim != 2:
         raise ValueError(f"the regressors of a series must be 1D or 2D, got {array.ndim} dimensions")
-    if any(stride % ELEMENT_BYTES for stride in array.strides):
-        array = np.ascontiguousarray(array)
-    return open_panel(stack, array).pointer
+    return open_panel(stack, native_layout(array)).pointer
 
 
 def listed(entries: Sequence[ArrayLike | None] | None) -> list[ArrayLike | None] | None:
@@ -251,9 +273,7 @@ class DccFit:
         series, from 1, otherwise). A fit with no finite point raises VolEngineError. The fit keeps what it needs:
         the univariate `Fit` objects can be freed. See `DccForecast` for the rules of R.
         """
-        horizon = operator.index(horizon)
-        if horizon < 1:
-            raise ValueError(f"horizon must be at least 1, got {horizon}")
+        horizon = bounded(horizon, "horizon", 1)
         with ExitStack() as stack:
             future = open_future(stack, horizon, mxreg, vxreg)
             handle = create_handle(
@@ -261,10 +281,9 @@ class DccFit:
             )
         return DccForecast(handle)
 
-    def standard_errors(self, univariate: Sequence[Fit]) -> DccFit:
-        fits = fit_pointers(univariate)
-        with create_handle(lib.ve_context_create, lib.ve_context_free) as context:
-            return DccFit(create_handle(
-                lib.ve_dcc_standard_errors, lib.ve_dcc_fit_free,
-                context.pointer, self._handle.pointer, fits, len(univariate),
-            ))
+    def standard_errors(self, univariate: Sequence[Fit], context: Context | None = None) -> DccFit:
+        """This fit with its standard errors. `context` sets the thread limit; by default it is the hardware's."""
+        if context is not None:
+            return context.standard_errors(self, univariate)
+        with create_handle(lib.ve_context_create, lib.ve_context_free) as default:
+            return dcc_standard_errors(default, self, univariate)
