@@ -48,3 +48,7 @@ dotnet_naming_symbols.private_fields.required_modifiers =
 dotnet_naming_rule.private_fields_underscore_camel_case.symbols = private_fields
 dotnet_naming_rule.private_fields_underscore_camel_case.style = underscore_camel_case
 dotnet_naming_rule.private_fields_underscore_camel_case.severity = warning
+
+# The native declarations keep their C names (ve_fit_sigma), checked against include/volengine/volengine.abi.
+[src/VolEngine/Interop/Native/*.cs]
+dotnet_diagnostic.IDE1006.severity = none

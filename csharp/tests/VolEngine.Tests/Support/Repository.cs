@@ -6,7 +6,9 @@ internal static class Repository
     public static string Root { get; } = FindRoot();
 
     public static string[] ReadContract()
-        => File.ReadAllLines(Path.Combine(Root, "include", "volengine", "volengine.abi"));
+    {
+        return File.ReadAllLines(Path.Combine(Root, "include", "volengine", "volengine.abi"));
+    }
 
     private static string FindRoot()
     {

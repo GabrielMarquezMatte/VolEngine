@@ -30,7 +30,10 @@ internal static class Library
     private static bool Load()
     {
         var path = ResolvePath(Environment.GetEnvironmentVariable(OverrideVariable));
-        NativeLibrary.SetDllImportResolver(typeof(NativeMethods).Assembly, (name, _, _) => Resolve(name, path));
+        if (path is not null)
+        {
+            NativeLibrary.SetDllImportResolver(typeof(NativeMethods).Assembly, (name, _, _) => Resolve(name, path));
+        }
         var abi = NativeMethods.ve_abi_version();
         if (abi != NativeMethods.AbiVersion)
         {
@@ -41,9 +44,9 @@ internal static class Library
         return true;
     }
 
-    private static nint Resolve(string name, string? path)
+    private static nint Resolve(string name, string path)
     {
-        if (path is null || !string.Equals(name, NativeMethods.LibraryName, StringComparison.Ordinal))
+        if (!string.Equals(name, NativeMethods.LibraryName, StringComparison.Ordinal))
         {
             return 0;
         }

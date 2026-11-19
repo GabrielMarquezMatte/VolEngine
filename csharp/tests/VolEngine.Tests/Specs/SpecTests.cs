@@ -87,7 +87,7 @@ public sealed class SpecTests
         var messages = new ConcurrentBag<string>();
         Parallel.For(0, 64, i =>
         {
-            var name = "bad" + i.ToString(CultureInfo.InvariantCulture);
+            var name = "bad" + i.ToString(CultureInfo.InvariantCulture) + "x";
             if (i % 2 == 0)
             {
                 new Spec().Validate();
@@ -99,5 +99,18 @@ public sealed class SpecTests
             messages.Add(error.Message);
         });
         Assert.Equal(32, messages.Count);
+    }
+
+    [Fact]
+    public void Spec_text_shows_fixed_and_start()
+    {
+        var spec = new Spec
+        {
+            Fixed = new Dictionary<string, double>(StringComparer.Ordinal) { ["shape"] = 5, ["mu"] = 0.5 },
+            Start = new Dictionary<string, double>(StringComparer.Ordinal) { ["omega"] = 0.01 },
+        };
+        var text = spec.ToString();
+        Assert.Contains("Fixed = { mu = 0.5, shape = 5 }", text, StringComparison.Ordinal);
+        Assert.Contains("Start = { omega = 0.01 }", text, StringComparison.Ordinal);
     }
 }

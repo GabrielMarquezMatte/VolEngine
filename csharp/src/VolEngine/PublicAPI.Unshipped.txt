@@ -23,6 +23,7 @@ static VolEngine.DiagnosticResult.operator !=(VolEngine.DiagnosticResult? left, 
 static VolEngine.DiagnosticResult.operator ==(VolEngine.DiagnosticResult? left, VolEngine.DiagnosticResult? right) -> bool
 static VolEngine.FitOptions.operator !=(VolEngine.FitOptions? left, VolEngine.FitOptions? right) -> bool
 static VolEngine.FitOptions.operator ==(VolEngine.FitOptions? left, VolEngine.FitOptions? right) -> bool
+static VolEngine.NativeAbi.Version.get -> int
 static VolEngine.Panel.FromColumns(double[,]! data, int[]? starts = null, int[]? lengths = null, double[,,]? mxreg = null, double[,,]? vxreg = null) -> VolEngine.Panel!
 static VolEngine.Panel.FromSeries(System.Collections.Generic.IReadOnlyList<double[]!>! series, System.Collections.Generic.IReadOnlyList<double[,]!>? mxreg = null, System.Collections.Generic.IReadOnlyList<double[,]!>? vxreg = null) -> VolEngine.Panel!
 static VolEngine.SignBiasResult.operator !=(VolEngine.SignBiasResult? left, VolEngine.SignBiasResult? right) -> bool
@@ -151,6 +152,7 @@ VolEngine.Model.FGarchTGarch = 7 -> VolEngine.Model
 VolEngine.Model.GjrGarch = 2 -> VolEngine.Model
 VolEngine.Model.IGarch = 4 -> VolEngine.Model
 VolEngine.Model.SGarch = 0 -> VolEngine.Model
+VolEngine.NativeAbi
 VolEngine.NyblomResult
 VolEngine.NyblomResult.Individual.get -> System.Collections.Generic.IReadOnlyDictionary<string!, double>!
 VolEngine.NyblomResult.IndividualCritical.get -> VolEngine.CriticalValues!

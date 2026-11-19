@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
+using System.Text;
 using VolEngine.Interop;
 
 namespace VolEngine;
@@ -135,6 +137,16 @@ public sealed record Spec
         return hash.ToHashCode();
     }
 
+    private bool PrintMembers(StringBuilder builder)
+    {
+        builder.Append(CultureInfo.InvariantCulture,
+                       $"Model = {Model}, P = {P}, Q = {Q}, Arma = {Arma}, Distribution = {Distribution}, ");
+        builder.Append(CultureInfo.InvariantCulture, $"IncludeMean = {IncludeMean}, Fixed = {Entries(_fixed)}, ");
+        builder.Append(CultureInfo.InvariantCulture, $"Start = {Entries(_start)}, VarianceTargeting = {VarianceTargeting}, ");
+        builder.Append(CultureInfo.InvariantCulture, $"Mxreg = {Mxreg}, Vxreg = {Vxreg}, Archm = {Archm}, Arfima = {Arfima}");
+        return true;
+    }
+
     internal SpecHandle CreateHandle()
     {
         RejectNul(_fixed, nameof(Fixed));
@@ -185,6 +197,14 @@ public sealed record Spec
                 throw new ArgumentException($"parameter name {shown} contains a NUL character", property);
             }
         }
+    }
+
+    // "{ mu = 0.5, shape = 5 }", by name, in the invariant culture.
+    internal static string Entries(IReadOnlyDictionary<string, double> values)
+    {
+        var entries = values.OrderBy(entry => entry.Key, StringComparer.Ordinal)
+            .Select(entry => string.Create(CultureInfo.InvariantCulture, $"{entry.Key} = {entry.Value}"));
+        return values.Count == 0 ? "{ }" : "{ " + string.Join(", ", entries) + " }";
     }
 
     private static ReadOnlyDictionary<string, double> Frozen(IReadOnlyDictionary<string, double> values)

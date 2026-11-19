@@ -169,4 +169,26 @@ public sealed class GridTests
         }
         return matrix;
     }
+
+    [Fact]
+    public void An_empty_regressor_is_passed_as_given()
+    {
+        using var context = new Context();
+        using var fit = context.Fit(new Spec { Mxreg = 1 }, [], mxreg: new double[0, 1]);
+        Assert.Equal(FitStatus.InsufficientData, fit.Status);
+    }
+
+    [Fact]
+    public void Null_series_are_argument_null_errors()
+    {
+        var series = Column("t1500");
+        Assert.Throws<ArgumentNullException>("series", () => Panel.FromSeries([series, null!]));
+        Assert.Throws<ArgumentNullException>("mxreg", () => Panel.FromSeries([series], mxreg: [null!]));
+    }
+
+    [Fact]
+    public void A_panel_without_series_is_an_argument_error()
+    {
+        Assert.Throws<ArgumentException>("data", () => Panel.FromColumns(new double[10, 0]));
+    }
 }

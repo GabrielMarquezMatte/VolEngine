@@ -21,7 +21,7 @@ public sealed class FitGrid : IDisposable
     /// <summary>The fit of one spec on one series.</summary>
     /// <param name="spec">The index of the spec in the list given to the fit.</param>
     /// <param name="series">The index of the series in the panel.</param>
-    /// <returns>The fit; it is disposed with the grid.</returns>
+    /// <returns>The fit, owned by the grid: do not dispose it; dispose the grid, which frees every fit.</returns>
     /// <exception cref="ArgumentOutOfRangeException">An index is outside the grid.</exception>
     public Fit this[int spec, int series]
     {

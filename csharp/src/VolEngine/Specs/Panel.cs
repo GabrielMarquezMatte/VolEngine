@@ -46,13 +46,17 @@ public sealed class Panel
     /// <param name="mxreg">The mean regressors, T x N x k, for the specs with <see cref="Spec.Mxreg"/> = k.</param>
     /// <param name="vxreg">The variance regressors, T x N x k, for the specs with <see cref="Spec.Vxreg"/> = k.</param>
     /// <returns>The panel, sharing the arrays given.</returns>
-    /// <exception cref="ArgumentException">Ranges without one non-negative entry per series, or given alone; a
+    /// <exception cref="ArgumentException">No series (N = 0); ranges without one non-negative entry per series, or given alone; a
     /// regressor whose first two dimensions are not T x N.</exception>
     public static Panel FromColumns(double[,] data, int[]? starts = null, int[]? lengths = null, double[,,]? mxreg = null,
                                     double[,,]? vxreg = null)
     {
         ArgumentNullException.ThrowIfNull(data);
         var series = data.GetLength(1);
+        if (series == 0)
+        {
+            throw new ArgumentException("a panel needs at least one series", nameof(data));
+        }
         if ((starts is null) != (lengths is null))
         {
             throw new ArgumentException("starts and lengths must be given together", nameof(starts));
@@ -69,6 +73,7 @@ public sealed class Panel
     /// <param name="mxreg">The mean regressors of each series, its length x k, the same k for all.</param>
     /// <param name="vxreg">The variance regressors of each series, its length x k, the same k for all.</param>
     /// <returns>The panel; T is the longest series.</returns>
+    /// <exception cref="ArgumentNullException">A series or a regressor entry is null.</exception>
     /// <exception cref="ArgumentException">No series, or regressors of another count, length or width.</exception>
     public static Panel FromSeries(IReadOnlyList<double[]> series, IReadOnlyList<double[,]>? mxreg = null,
                                    IReadOnlyList<double[,]>? vxreg = null)
@@ -77,6 +82,10 @@ public sealed class Panel
         if (series.Count == 0)
         {
             throw new ArgumentException("a panel needs at least one series", nameof(series));
+        }
+        if (series.Any(values => values is null))
+        {
+            throw new ArgumentNullException(nameof(series), "a series is null");
         }
         var rows = series.Max(values => values.Length);
         var data = new double[rows, series.Count];
@@ -132,6 +141,10 @@ public sealed class Panel
         if (values.Count != series.Count)
         {
             throw new ArgumentException($"{name} must have one entry per series ({series.Count})", name);
+        }
+        if (values.Any(value => value is null))
+        {
+            throw new ArgumentNullException(name, $"an entry of {name} is null");
         }
         var width = values[0].GetLength(1);
         var block = new double[rows, series.Count, width];

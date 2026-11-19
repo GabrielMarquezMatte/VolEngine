@@ -7,7 +7,8 @@ namespace VolEngine.Benchmarks;
 // What the C# binding adds over the same native calls written by hand: one univariate fit, and a batch of 12 specs
 // over 21 series. Each iteration builds its specs, panel, batch and options on both sides, and checks that the sum of
 // the log-likelihoods is bit for bit the one of the other side. In process: both sides run in the same process anyway,
-// and BenchmarkDotNet's generated project cannot be located from inside this repository's build tree.
+// and the out-of-process generator scans the repository and fails on build/ (access denied to the pytest loader's
+// folders there).
 [InProcess]
 public class BindingOverhead
 {

@@ -34,6 +34,11 @@ public sealed class Simulation
         {
             throw new ArgumentOutOfRangeException(nameof(options), options, "Horizon and Paths must be at least 1");
         }
+        if ((long)options.Horizon * options.Paths > Array.MaxLength)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options), options,
+                                                  $"Horizon x Paths must be at most {Array.MaxLength} values");
+        }
         Futures.Check(options.Mxreg, nameof(options.Mxreg), mxreg, options.Horizon);
         Futures.Check(options.Vxreg, nameof(options.Vxreg), vxreg, options.Horizon);
         Calls.Check(NativeMethods.ve_sim_options_create((nuint)options.Horizon, (nuint)options.Paths, options.Seed,

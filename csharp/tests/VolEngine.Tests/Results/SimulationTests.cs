@@ -107,4 +107,12 @@ public sealed class SimulationTests
         var simulation = context.Simulate(spec, new SimulationOptions(5, 1, 1) { Mxreg = new double[5, 1] });
         Assert.Equal(5, simulation.Returns[0].Length);
     }
+
+    [Fact]
+    public void Oversized_simulations_are_rejected_before_allocating()
+    {
+        using var context = new Context();
+        using var fit = SeriesFit(context);
+        Assert.Throws<ArgumentOutOfRangeException>(() => context.Simulate(fit, new SimulationOptions(int.MaxValue, 2, 1)));
+    }
 }

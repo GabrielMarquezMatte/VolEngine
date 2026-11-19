@@ -2,8 +2,8 @@ using System.Runtime.InteropServices;
 
 namespace VolEngine.Interop;
 
-// Fixed managed arrays as the native batch reads them: data T x N and regressors T x N x k, all in C order. A null
-// regressor pointer (width 0) means no spec has that kind.
+// Fixed managed arrays as the native batch reads them: data T x N and regressors T x N x k, all in C order. Width 0
+// means no spec has that kind; a null pointer with a width is an empty block (T = 0), which the native panel accepts.
 internal readonly unsafe struct PinnedPanel
 {
     public required double* Data { get; init; }
@@ -124,7 +124,7 @@ internal static unsafe class Batch
     // a spec without one; null when no spec has this kind.
     private static nint[]? JobPanels(List<SafeHandle> owned, in PinnedPanel panel, double* values, int width, IEnumerable<int> counts)
     {
-        if (values is null || width == 0)
+        if (width == 0)
         {
             return null;
         }

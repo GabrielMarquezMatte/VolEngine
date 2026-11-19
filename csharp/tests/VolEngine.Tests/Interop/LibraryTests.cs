@@ -46,4 +46,10 @@ public sealed class LibraryTests
         Assert.False(string.IsNullOrEmpty(path), "the tests run against VOLENGINE_LIB");
         Assert.Equal(Path.GetFullPath(path), Library.ResolvePath(path));
     }
+
+    [Fact]
+    public void Native_abi_is_one()
+    {
+        Assert.Equal(1, NativeAbi.Version);
+    }
 }
