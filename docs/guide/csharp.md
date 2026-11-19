@@ -110,8 +110,8 @@ and step, and `Mxreg`/`Vxreg` take one entry per series (null for a series witho
 
 A `Context` is a native thread pool; `new Context(threads)` sizes it (0 means the hardware concurrency). Results do
 not depend on the thread count, and the same seed gives the same paths for any number of threads. Several threads may
-fit on one context at the same time; the native library promises nothing more for one context, so DCC fits, DCC
-standard errors and DCC simulations on a shared context need the caller's coordination. A result may be read from
+fit on one context at the same time; the native library promises nothing more for one context, so any other call on
+a shared context (simulations of either kind, DCC fits and DCC standard errors) needs the caller's coordination. A result may be read from
 several threads at once.
 
 `Status`, `Nobs`, `Names` and `Loglik` (and `Series` of a `DccFit`) stay readable after `Dispose`; every other member

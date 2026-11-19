@@ -107,6 +107,9 @@ public sealed class DccForecastTests
         }
         using (dcc)
         {
+            var simulation = context.Simulate(dcc, new DccSimulationOptions(5, 2, 1));
+            Assert.All(simulation.Returns.SelectMany(path => path).SelectMany(step => step),
+                       value => Assert.True(double.IsFinite(value)));
             var sigma = dcc.Forecast(5).Sigma;
             Assert.Equal(5, sigma.Length);
             Assert.All(sigma, row => Assert.All(row, value => Assert.True(double.IsFinite(value))));

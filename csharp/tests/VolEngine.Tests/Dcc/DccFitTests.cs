@@ -112,6 +112,26 @@ public sealed class DccFitTests : IDisposable
     }
 
     [Fact]
+    public void Fits_without_a_finite_point_are_rejected()
+    {
+        var series = ReferenceData.Columns("dcc3.csv").Select(column => column[..2]).ToArray();
+        var tiny = series.Select(column => Context.Fit(new Spec(), column)).ToArray();
+        try
+        {
+            Assert.All(tiny, fit => Assert.Equal(FitStatus.InsufficientData, fit.Status));
+            var error = Assert.Throws<VolEngineException>(() => Context.FitDcc(new DccSpec(), tiny));
+            Assert.NotEmpty(error.Message);
+        }
+        finally
+        {
+            foreach (var fit in tiny)
+            {
+                fit.Dispose();
+            }
+        }
+    }
+
+    [Fact]
     public void A_disposed_univariate_fit_is_an_object_disposed_error()
     {
         Fits[1].Dispose();

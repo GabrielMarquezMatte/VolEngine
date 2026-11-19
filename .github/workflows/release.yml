@@ -219,7 +219,8 @@ jobs:
         run: bash csharp/scripts/check_package.sh nuget "$(cat nuget/version.txt)"
 
   # Trusted Publishing: nuget.org trusts this workflow (a policy its owner registers) and NuGet/login trades the OIDC
-  # token for a short-lived API key. NUGET_USER is the nuget.org account, a repository variable.
+  # token for a short-lived API key. NUGET_USER is the nuget.org account, a repository variable. Only a tag publishes: a
+  # nuget.org version is permanent, and a manual run from a branch packs a -dev version.
   publish-nuget:
     name: NuGet
     needs: [ publish-github, nuget-check ]
@@ -235,13 +236,13 @@ jobs:
 
       - name: Log in to nuget.org
         id: login
-        if: github.event_name == 'push' || !inputs.dry_run
+        if: github.ref_type == 'tag' && (github.event_name == 'push' || !inputs.dry_run)
         uses: NuGet/login@v1
         with:
           user: ${{ vars.NUGET_USER }}
 
       - name: Publish to nuget.org
-        if: github.event_name == 'push' || !inputs.dry_run
+        if: github.ref_type == 'tag' && (github.event_name == 'push' || !inputs.dry_run)
         run: >-
           dotnet nuget push nuget/*.nupkg --api-key "${{ steps.login.outputs.NUGET_API_KEY }}"
           --source https://api.nuget.org/v3/index.json --skip-duplicate
