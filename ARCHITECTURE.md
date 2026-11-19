@@ -15,7 +15,9 @@ Laplace likelihoods and optional two-stage standard errors.
 ## Layers
 
 ```
-  Python (python/src/volengine, ctypes + numpy)
+  Python (python/src/volengine, ctypes + numpy)     C# (csharp/src/VolEngine, LibraryImport)
+                 |                                   |
+                 +-----------------------------------+
                  |
         C API  include/volengine/volengine.h        <-- the only stable contract
                  |
@@ -131,6 +133,8 @@ depends on `dcc` and `dcc` on it for that dispatch only: `dist` <- `dcc/copula` 
 | `python/src/volengine/_spec.py`, `_fit.py`, `api.py` | `Spec` and `FitOptions`, `Fit` and the criteria, `Context.fit` |
 | `python/src/volengine/_diagnostics.py` | `DiagnosticResult`, `SignBias`, `Nyblom` and native diagnostic result readers |
 | `python/src/volengine/_dcc.py` | `DccSpec`, immutable `DccFit`, read-only correlation/covariance views and deferred standard errors |
+| `csharp/src/VolEngine/` | The .NET binding: `Interop/Native` holds the hand-written `LibraryImport` declarations (checked against `volengine.abi` by the tests), `Interop` the SafeHandles, loading (`VOLENGINE_LIB`, ABI check) and batch calls; `Specs`, `Results` and `Dcc` the records and immutable results. Packed with `runtimes/<rid>/native/libvolengine.*` |
+| `csharp/tests/` | xUnit tests (contract, oracle parity, coverage of every contract function, the guide's snippets) and the clean consumer `VolEngine.Consumer` that `csharp/scripts/check_package.sh` restores from a package |
 | `tests/unit/{ad,capi,dist,fit,garch,mean,model,optim}` | GoogleTest suites mirroring `src/`; `c_header_check.c` compiles the header as C11 |
 | `tests/style/check_style.py` | Style rules that can be checked without a compiler; runs as the `style` ctest |
 | `python/benchmarks/bench_vs_arch.py` | Timing against `arch` on matched work; writes `docs/performance/python-vs-arch.md` |

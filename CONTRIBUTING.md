@@ -63,6 +63,31 @@ point `VOLENGINE_NATIVE_LIB` at it and run `cpp/scripts/ci_check.sh`, or the thr
 crashes the MinGW test executables. MSVC compiles the wrapper over the same MinGW DLL (Developer PowerShell,
 `-G Ninja -DCMAKE_CXX_COMPILER=cl`).
 
+## C# binding tests
+
+The binding in `csharp/` needs the .NET SDK of `global.json` and is tested against a library you built. From the
+repository root:
+
+```
+VOLENGINE_LIB=$PWD/python/src/volengine/_lib/libvolengine.dll dotnet test --solution csharp/VolEngine.slnx -c Release
+```
+
+The tests compare the declarations with `include/volengine/volengine.abi`, check that every contract function is
+called, compare with the oracle fixtures and run the code of `docs/guide/csharp.md` (keep `GuideSnippetsTests` and the
+guide in step). A new public member fails the build (RS0016) until it is listed in `PublicAPI.Unshipped.txt`.
+
+To check a package as a user gets it, copy the library to a folder as `volengine-native-<rid>.<ext>` and run
+
+```
+dotnet pack csharp/src/VolEngine -c Release -p:Version=1.1.0-local -p:VolEngineNativeAssets=<folder> -p:VolEngineNativeRids=win-x64 -o <packages>
+bash csharp/scripts/check_package.sh <packages> 1.1.0-local
+```
+
+which runs the clean consumer without `VOLENGINE_LIB` and again published with Native AOT (on Windows that needs the
+Visual Studio C++ tools). A release packs all seven libraries; after a release, move `PublicAPI.Unshipped.txt` into
+`PublicAPI.Shipped.txt`, and after 1.1.0 is on nuget.org set `PackageValidationBaselineVersion` to 1.1.0 in
+`VolEngine.csproj` so package validation compares each new package with it.
+
 ## Python tests
 
 The Python package is managed with [uv](https://docs.astral.sh/uv/). `uv sync --project python` creates

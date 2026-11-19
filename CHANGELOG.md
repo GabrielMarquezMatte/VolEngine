@@ -12,6 +12,13 @@ break between 0.x releases.
 
 ### Added
 
+- A .NET binding, the `VolEngine` package on nuget.org (.NET 10): every feature of the C API (univariate fits and
+  grids over a panel, regressors, standard errors, criteria, diagnostics, forecasts, simulation; DCC, aDCC, FDCC and
+  Copula-DCC fits, standard errors, forecasts and simulation) as records, immutable results and exceptions. The
+  package carries the native library for linux-x64, linux-arm64, linux-musl-x64, linux-musl-arm64, osx-arm64,
+  osx-x64 and win-x64, and is trimming and Native AOT compatible. Its public API is stable from this release. Guide:
+  `docs/guide/csharp.md`.
+
 - EWMA (RiskMetrics): `VE_MODEL_EWMA` (C), `ve::Model::ewma` (C++), `Spec("ewma")` (Python). sigma2_t =
   lambda sigma2_{t-1} + (1 - lambda) e_{t-1}^2, the iGARCH(1,1) with omega = 0. Parameters `omega` and `alpha1`
   (derived: 0 and 1 - lambda, NaN standard errors, not counted by the criteria) and `lambda` in [0, 1], estimated by

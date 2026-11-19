@@ -62,7 +62,22 @@ auto fit = context.fit(ve::Spec{.model = ve::Model::gjrgarch, .dist = ve::Dist::
 if (fit && fit->status() == ve::FitStatus::converged) { auto forecast = fit->forecast(10).value(); }
 ```
 
-Guides: [Python](docs/guide/python.md), [C++](docs/guide/cpp.md), [conventions and validation](docs/guide/validation.md).
+From .NET 10, the `VolEngine` package carries the same native libraries:
+
+```
+dotnet add package VolEngine
+```
+
+```csharp
+using VolEngine;
+
+using var context = new Context();
+using var fit = context.Fit(new Spec { Model = Model.GjrGarch, Distribution = Distribution.Std }, returns);
+if (fit.Status == FitStatus.Converged) { var forecast = fit.Forecast(10); }
+```
+
+Guides: [Python](docs/guide/python.md), [C++](docs/guide/cpp.md), [C#](docs/guide/csharp.md),
+[conventions and validation](docs/guide/validation.md).
 
 ## Python example
 

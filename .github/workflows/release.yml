@@ -1,8 +1,8 @@
 name: Release
 
-# A v* tag publishes the wheels to PyPI and the native libraries to a GitHub Release; a tag with a '-' (v1.0.0-rc.1)
-# is a prerelease. A manual run is a dry run unless dry_run is turned off: it builds and tests everything and skips
-# the two steps that publish.
+# A v* tag publishes the wheels to PyPI, the native libraries to a GitHub Release and the .NET package to nuget.org;
+# a tag with a '-' (v1.0.0-rc.1) is a prerelease. A manual run is a dry run unless dry_run is turned off: it builds
+# and tests everything and skips the steps that publish.
 on:
   push:
     tags: [ 'v*' ]
@@ -142,3 +142,106 @@ jobs:
       - name: Publish to PyPI
         if: github.event_name == 'push' || !inputs.dry_run
         run: uv publish --trusted-publishing always dist/*
+
+  # The .NET package: the assembly and the seven native libraries of the wheels job, each as
+  # runtimes/<rid>/native/libvolengine.<ext>. Its version is the tag without the v; a manual run packs the version in
+  # the repository with -dev.
+  nuget:
+    name: NuGet package
+    needs: wheels
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download the native libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: natives
+          merge-multiple: true
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Pack
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          if [ "$GITHUB_REF_TYPE" != tag ]; then
+            version="$(sed -n 's/^set(VE_VERSION \([0-9.]*\) .*/\1/p' CMakeLists.txt)-dev"
+          fi
+          dotnet pack csharp/src/VolEngine -c Release -p:Version="$version" -p:VolEngineNativeAssets="$PWD/natives" -o nuget
+          echo "$version" > nuget/version.txt
+          ls -l nuget
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package
+          path: nuget/
+          if-no-files-found: error
+
+  # The package as a user gets it, on each system: a clean consumer restored from it, run without VOLENGINE_LIB, then
+  # published with Native AOT.
+  nuget-check:
+    name: NuGet package check (${{ matrix.os }})
+    needs: nuget
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-24.04, macos-latest, windows-latest ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download the package
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-package
+          path: nuget
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install the Native AOT prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y clang zlib1g-dev
+
+      - name: Check the package
+        shell: bash
+        run: bash csharp/scripts/check_package.sh nuget "$(cat nuget/version.txt)"
+
+  # Trusted Publishing: nuget.org trusts this workflow (a policy its owner registers) and NuGet/login trades the OIDC
+  # token for a short-lived API key. NUGET_USER is the nuget.org account, a repository variable.
+  publish-nuget:
+    name: NuGet
+    needs: [ publish-github, nuget-check ]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - name: Download the package
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-package
+          path: nuget
+
+      - name: Log in to nuget.org
+        id: login
+        if: github.event_name == 'push' || !inputs.dry_run
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Publish to nuget.org
+        if: github.event_name == 'push' || !inputs.dry_run
+        run: >-
+          dotnet nuget push nuget/*.nupkg --api-key "${{ steps.login.outputs.NUGET_API_KEY }}"
+          --source https://api.nuget.org/v3/index.json --skip-duplicate
