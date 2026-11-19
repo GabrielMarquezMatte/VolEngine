@@ -799,6 +799,24 @@ TEST(CapiBatch, CreateRejectsNullOutAndResetsOut)
     ve_batch_free(nullptr);
 }
 
+TEST(CapiBatch, AbsurdCountsAreInvalidArgumentsNotInternalErrors)
+{
+    ve_batch* batch = nullptr;
+    ASSERT_EQ(ve_batch_create(&batch), VE_OK);
+    BatchPtr owner(batch);
+    SpecPtr spec = ve::testing::make_spec(1);
+    const ve_spec* const specs[] = {spec.get()};
+    const size_t indices[] = {0};
+    const ve_panel* const panels[] = {nullptr};
+    const size_t absurd = size_t{1} << 62;
+    EXPECT_EQ(ve_batch_set_specs(batch, specs, absurd), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(contains(last_error(), "too large")) << last_error();
+    EXPECT_EQ(ve_batch_set_jobs(batch, indices, indices, absurd), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(contains(last_error(), "too large")) << last_error();
+    EXPECT_EQ(ve_batch_set_regressors(batch, panels, nullptr, absurd), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(contains(last_error(), "too large")) << last_error();
+}
+
 namespace
 {
 

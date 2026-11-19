@@ -42,18 +42,24 @@ std::size_t group_of(double probability, std::size_t groups)
     return std::min(static_cast<std::size_t>(index), groups - 1);
 }
 
-double pearson_statistic(std::span<const double> probabilities, std::size_t groups)
+}
+
+double pearson_statistic(std::vector<double>& probabilities, std::size_t groups)
 {
+    if (!std::ranges::all_of(probabilities, [](double probability) { return std::isfinite(probability); }))
+    {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    if (!std::ranges::is_sorted(probabilities))
+    {
+        std::ranges::sort(probabilities);
+    }
     double expected = static_cast<double>(probabilities.size()) / static_cast<double>(groups);
     std::size_t previous = 0;
     std::size_t count = 0;
     double statistic = 0.0;
     for (double probability : probabilities)
     {
-        if (!std::isfinite(probability))
-        {
-            return std::numeric_limits<double>::quiet_NaN();
-        }
         std::size_t group = group_of(probability, groups);
         if (group != previous)
         {
@@ -66,8 +72,6 @@ double pearson_statistic(std::span<const double> probabilities, std::size_t grou
     }
     double difference = static_cast<double>(count) - expected;
     return statistic + difference * difference / expected;
-}
-
 }
 
 TestResult pearson_gof(std::span<const double> z, Dist dist, const dist::ShapeParameters<double>& parameters,

@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <gtest/gtest.h>
+#include <limits>
 #include <memory>
 #include <string>
 #include <thread>
@@ -180,6 +181,26 @@ TEST(CapiForecast, InvalidArguments)
     EXPECT_TRUE(mentions("vxreg")) << ve_last_error();
     EXPECT_EQ(try_create(nullptr, kHorizon, nullptr, nullptr), VE_INVALID_HANDLE);
     EXPECT_EQ(ve_forecast_create(plain.fit(), kHorizon, nullptr, nullptr, nullptr), VE_INVALID_ARGUMENT);
+}
+
+TEST(CapiForecast, AbsurdHorizonIsAnInvalidArgumentNotAnInternalError)
+{
+    OneFit plain(ve::testing::simulate_garch_series(5, kT), 0);
+    EXPECT_EQ(try_create(plain.fit(), std::size_t{1} << 62, nullptr, nullptr), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(mentions("too large")) << ve_last_error();
+}
+
+TEST(CapiForecast, NonFiniteRegressorsAreRejected)
+{
+    OneFit regressed(ve::testing::simulate_garch_series(5, kT), 2);
+    for (const double bad : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity()})
+    {
+        std::vector<double> values(kHorizon * 2, 0.4);
+        values[3] = bad;
+        PanelPtr panel = ve::testing::make_panel(values.data(), kHorizon, 2);
+        EXPECT_EQ(try_create(regressed.fit(), kHorizon, panel.get(), nullptr), VE_INVALID_ARGUMENT);
+        EXPECT_STREQ(ve_last_error(), "mxreg: NaN or infinite value in column 1 at row 1");
+    }
 }
 
 TEST(CapiForecast, FailedWithFinitePointForecasts)

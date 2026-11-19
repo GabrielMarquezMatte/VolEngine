@@ -23,7 +23,10 @@ extern "C"
 
 /* Every function returns a ve_status, except ve_abi_version, ve_last_error and the *_free functions (which accept
    NULL and cannot fail). Every output array is caller-owned and sized by a count the interface gives: the
-   *_param_count, *_spec_count, *_job_count and *_horizon functions. */
+   *_param_count, *_spec_count, *_job_count and *_horizon functions. A NULL output is VE_INVALID_ARGUMENT, except an
+   array whose count is 0, which is never written and may be NULL: the per-parameter arrays of a DCC fit with no
+   parameter (a static copula with the default Kendall correlation and mvnorm, ve_dcc_fit_param_count 0). A
+   count too large to allocate (n_jobs, n_specs, horizon of 2^62) is VE_INVALID_ARGUMENT, as it is for the DCC setters. */
 
 VE_API int32_t ve_abi_version(void);
 
@@ -138,7 +141,7 @@ VE_API ve_status ve_spec_set_vxreg(ve_spec* s, int32_t count);
 VE_API ve_status ve_spec_set_archm(ve_spec* s, int32_t power);
 /* ARFIMA mean (rugarch's arfima = TRUE), 0 or 1 (default 0); other values are VE_INVALID_ARGUMENT and leave the
    spec unchanged. Cannot be combined with ve_spec_set_archm: ve_spec_validate and the batch reject the spec.
-   The parameter arfima is d in the open interval (1e-8, 0.5) (rugarch: [1e-8, 0.5]); see ve_batch_set_regressors
+   The parameter arfima is d in [1e-8, 0.5], as in rugarch; see ve_batch_set_regressors
    for where it enters the mean. */
 VE_API ve_status ve_spec_set_arfima(ve_spec* s, int32_t on);
 /* Parameter roles. Every parameter is estimated, fixed or derived. A fixed parameter (set_fixed) keeps
@@ -327,8 +330,12 @@ VE_API void ve_fit_free(ve_fit* f);
    n.roll = 0, at the estimate of the fit. A fit with every parameter fixed forecasts from a specification.
    mxreg and vxreg: the regressors of the horizon, panels of exactly `horizon` rows x the spec's mxreg / vxreg
    columns, without ranges; NULL when the spec has none. VE_INVALID_ARGUMENT for horizon 0, a fit with no finite
-   point (see ve_fit_status), a missing or extra panel, or one of another shape. A VE_FIT_FAILED fit that has a
-   finite point forecasts from it. The forecast copies what it needs: it stays valid after f is freed. */
+   point (see ve_fit_status), a missing or extra panel, one of another shape, or a NaN or infinite value in a panel (as
+   ve_fit_batch rejects them in the regressors it fits). A VE_FIT_FAILED fit that has a
+   finite point forecasts from it. The forecast copies what it needs: it stays valid after f is freed.
+   The forecast follows rugarch where rugarch is not the mean of the paths: for a gjrGARCH with a skewed distribution
+   (E[1{z < 0} z^2] taken as P(z < 0), exact only for a symmetric one) and for a csGARCH from h = 2 (the last shock
+   is left out of the closed form), so there it differs from the mean of ve_simulate_fit paths. */
 typedef struct ve_forecast ve_forecast;
 VE_API ve_status ve_forecast_create(const ve_fit* f, size_t horizon, const ve_panel* mxreg,
                                     const ve_panel* vxreg, ve_forecast** out);
@@ -354,7 +361,8 @@ typedef struct ve_sim ve_sim;
 VE_API ve_status ve_sim_options_create(size_t horizon, size_t paths, uint64_t seed, ve_sim_options** out);
 /* Copies the regressors of the horizon, the same for every path: panels of exactly `horizon` rows without
    ranges, NULL for none. Their columns are checked against the spec by ve_simulate_*: the spec's mxreg / vxreg
-   count, NULL when it has none. Replaces what an earlier call set. */
+   count, NULL when it has none. A NaN or infinite value is VE_INVALID_ARGUMENT and leaves what an earlier call set.
+   Replaces what an earlier call set. */
 VE_API ve_status ve_sim_options_set_regressors(ve_sim_options* o, const ve_panel* mxreg, const ve_panel* vxreg);
 VE_API void ve_sim_options_free(ve_sim_options* o);
 /* VE_INVALID_ARGUMENT for a fit with no finite point (see ve_fit_status) or regressors that do not match its spec;
@@ -387,6 +395,9 @@ typedef struct ve_dcc_fit ve_dcc_fit;
 #define VE_DCC_MODEL_STATIC 3
 #define VE_DCC_DIST_MVNORM 0
 #define VE_DCC_DIST_MVT 1
+/* The mvlaplace density is singular at z = 0 for m >= 2 series: a date on which every series has a standardized
+   residual of exactly 0 (a common holiday with mu fixed at 0) makes the log-likelihood not finite, and the spec ends
+   VE_FIT_FAILED. A DCC fit has no message for it, so ve_dcc_fit_status is the only sign: drop such dates first. */
 #define VE_DCC_DIST_MVLAPLACE 2
 VE_API ve_status ve_dcc_spec_create(int32_t model, ve_dcc_spec** out);
 /* p is the number of shock terms (dcca1..dccap, and dccg1..dccgp in the aDCC) and q the number of persistence terms
@@ -441,7 +452,8 @@ VE_API ve_status ve_dcc_fit_p_values(const ve_dcc_fit* f, int32_t se_kind, doubl
 VE_API ve_status ve_dcc_fit_loglik(const ve_dcc_fit* f, double* out);
 /* scale is VE_IC_PER_OBS or VE_IC_TOTAL; which is VE_CRITERION_*. The criterion counts the parameters of the two
    stages, as rmgarch does: the parameters the univariate criteria count in each series' fit, the estimated
-   ones among those listed by ve_dcc_fit_param_count, and the m (m - 1) / 2 entries of the correlation intercept Qbar.
+   ones among those listed by ve_dcc_fit_param_count except the C1.. of a static ML copula, and the m (m - 1) / 2
+   entries of the correlation intercept Qbar (in a static ML copula the C1.. are that correlation, so it counts once).
    It is therefore larger than ve_dcc_fit_param_count. */
 VE_API ve_status ve_dcc_fit_criterion(const ve_dcc_fit* f, int32_t which, int32_t scale, double* out);
 /* Zero-copy T x m x m row-major views, valid until f is freed. H is computed once, on first access. */
@@ -463,7 +475,8 @@ VE_API void ve_dcc_fit_free(ve_dcc_fit* f);
    "no finite point"). A VE_FIT_FAILED fit that has a finite point forecasts from it.
    ve_dcc_future holds the regressors of the horizon of each series: series from 0, panels of `horizon` rows without
    ranges, NULL for none. They are checked against each series' spec when used (the error names the series from 1).
-   A NULL ve_dcc_future means no series has regressors. */
+   A NaN or infinite value in a panel is VE_INVALID_ARGUMENT (ve_dcc_future_set). A NULL ve_dcc_future means no series
+   has regressors. */
 typedef struct ve_dcc_future ve_dcc_future;
 typedef struct ve_dcc_forecast ve_dcc_forecast;
 typedef struct ve_dcc_sim ve_dcc_sim;
@@ -486,7 +499,8 @@ VE_API void ve_dcc_forecast_free(ve_dcc_forecast* fc);
    shock of a series is its standardized z (plain DCC), or goes through the copula and the quantile function of the
    series' margin (Copula-DCC); each series steps from its own state and the recursion takes the scores. Path p reads
    only the stream (seed, p). Keep R and H per path in a DCC simulation with correlations on; ve_simulate_fit and
-   ve_simulate_spec refuse options with it on. */
+   ve_simulate_spec refuse options with it on. on is 0 or 1; anything else is VE_INVALID_ARGUMENT and leaves the
+   option unchanged. */
 VE_API ve_status ve_sim_options_set_correlations(ve_sim_options* o, int32_t on);
 /* o's own regressors must be unset (VE_INVALID_ARGUMENT): a DCC takes them per series in x. VE_INVALID_ARGUMENT
    "too large" when paths x horizon x m x 2 doubles, or with correlations paths x horizon x m^2 x 2, exceed what

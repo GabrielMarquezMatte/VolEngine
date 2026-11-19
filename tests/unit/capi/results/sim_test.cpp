@@ -271,6 +271,17 @@ TEST(CapiSim, InvalidArguments)
     EXPECT_EQ(try_fit(context.get(), plain.fit(), options.get()), VE_INVALID_ARGUMENT);
     EXPECT_TRUE(mentions("vxreg")) << ve_last_error();
 
+    std::vector<double> infinite(4 * kHorizon, 0.4);
+    infinite[kHorizon + 1] = std::numeric_limits<double>::infinity();
+    PanelPtr not_finite = ve::testing::make_panel(infinite.data(), kHorizon, 2);
+    EXPECT_EQ(ve_sim_options_set_regressors(options.get(), nullptr, not_finite.get()), VE_INVALID_ARGUMENT);
+    EXPECT_STREQ(ve_last_error(), "vxreg: NaN or infinite value in column 1 at row 5");
+    EXPECT_EQ(ve_sim_options_set_regressors(options.get(), good.get(), nullptr), VE_OK);
+    EXPECT_EQ(ve_sim_options_set_regressors(options.get(), good.get(), not_finite.get()), VE_INVALID_ARGUMENT);
+    ve_sim* kept = nullptr;
+    EXPECT_EQ(ve_simulate_fit(context.get(), regressed.fit(), options.get(), &kept), VE_OK) << ve_last_error();
+    SimPtr owner(kept);
+
     EXPECT_EQ(ve_sim_options_set_regressors(nullptr, nullptr, nullptr), VE_INVALID_HANDLE);
     EXPECT_EQ(try_fit(nullptr, plain.fit(), options.get()), VE_INVALID_HANDLE);
     EXPECT_EQ(try_fit(context.get(), nullptr, options.get()), VE_INVALID_HANDLE);

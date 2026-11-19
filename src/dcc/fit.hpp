@@ -92,7 +92,8 @@ enum class Criterion
 
 // The information criteria of the univariate ones with k = the estimated univariate parameters of all the series +
 // the estimated DCC parameters + m (m - 1) / 2 (Qbar counts, Nbar does not), per observation or, with per_obs
-// false, total. NaN without a finite loglik.
+// false, total. The estimated C1.. of a static ML copula are that m (m - 1) / 2, not added to it. NaN without a finite
+// loglik.
 double dcc_criterion(const DccFitResult& fit, Criterion which, bool per_obs);
 
 // H_t = D_t R_t D_t with D_t = diag(sigma_t) of the panel, T x m x m like r; empty without r. A pure function: the

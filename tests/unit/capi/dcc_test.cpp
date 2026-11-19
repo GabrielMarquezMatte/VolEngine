@@ -670,6 +670,9 @@ TEST(CapiDcc, SpecSettersRejectBadArguments)
     EXPECT_EQ(ve_dcc_spec_set_dist(raw, -1), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_dcc_spec_set_fixed(nullptr, "dcca1", 0.1), VE_INVALID_HANDLE);
     EXPECT_EQ(ve_dcc_spec_set_fixed(raw, nullptr, 0.1), VE_INVALID_ARGUMENT);
+    EXPECT_STREQ(ve_last_error(), "name must not be null");
+    EXPECT_EQ(ve_dcc_spec_set_start(raw, nullptr, 0.1), VE_INVALID_ARGUMENT);
+    EXPECT_STREQ(ve_last_error(), "name must not be null");
     EXPECT_EQ(ve_dcc_spec_set_fixed(raw, "", 0.1), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_dcc_spec_set_fixed(raw, "dcca1", kNaN), VE_INVALID_ARGUMENT);
     EXPECT_EQ(ve_dcc_spec_set_start(raw, "dcca1", std::numeric_limits<double>::infinity()), VE_INVALID_ARGUMENT);
@@ -1045,6 +1048,31 @@ TEST(CapiDcc, CopulaMatchesCore)
     EXPECT_EQ(count, 4U);
 }
 
+TEST(CapiDcc, AFitWithNoParameterTakesNullArrays)
+{
+    FitSet univariate = univariate_fits(false);
+    DccSpecPtr spec = make_copula_spec(VE_DCC_MODEL_STATIC, VE_DCC_DIST_MVNORM, VE_DCC_COPULA_PARAMETRIC,
+                                       VE_DCC_STATIC_DEFAULT);
+    DccOptionsPtr options = make_dcc_options(true);
+    DccBatchPtr batch = build_dcc_batch({{spec.get()}, handles_of(univariate), options.get()});
+    ve::testing::ContextPtr context = ve::testing::make_context(1);
+    DccFits fits(1);
+    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    std::size_t count = 7;
+    ASSERT_EQ(ve_dcc_fit_param_count(fits[0], &count), VE_OK);
+    ASSERT_EQ(count, 0U);
+    EXPECT_EQ(ve_dcc_fit_estimates(fits[0], nullptr), VE_OK) << ve_last_error();
+    for (const int32_t kind : {VE_SE_HESSIAN, VE_SE_ROBUST})
+    {
+        EXPECT_EQ(ve_dcc_fit_std_errors(fits[0], kind, nullptr), VE_OK) << ve_last_error();
+        EXPECT_EQ(ve_dcc_fit_t_values(fits[0], kind, nullptr), VE_OK) << ve_last_error();
+        EXPECT_EQ(ve_dcc_fit_p_values(fits[0], kind, nullptr), VE_OK) << ve_last_error();
+    }
+    EXPECT_EQ(ve_dcc_fit_std_errors(fits[0], 2, nullptr), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_fit_estimates(nullptr, nullptr), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_dcc_fit_loglik(fits[0], nullptr), VE_INVALID_ARGUMENT);
+}
+
 TEST(CapiDcc, CopulaInvalidCombinations)
 {
     // Review Focus 2: the setters check ranges, the batch the combinations, before any fit.
@@ -1201,6 +1229,14 @@ TEST(CapiDcc, ForecastChecksTheFutureRegressors)
     EXPECT_EQ(ve_dcc_future_create(kSeries, 0, &raw), VE_INVALID_ARGUMENT);
 }
 
+TEST(CapiDcc, ForecastRejectsAnAbsurdHorizon)
+{
+    FittedDcc fitted;
+    ve_dcc_forecast* out = nullptr;
+    EXPECT_EQ(ve_dcc_forecast_create(fitted.fits[0], std::size_t{1} << 62, nullptr, &out), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(out, nullptr);
+}
+
 TEST(CapiDcc, ForecastNeedsAFinitePoint)
 {
     FitSet univariate = univariate_fits(false);
@@ -1245,6 +1281,21 @@ TEST(CapiDcc, SimulationMatchesCore)
     EXPECT_TRUE(same_bits(sim_view_of(ve_dcc_sim_sigma, raw), expected.sigma));
     EXPECT_TRUE(same_bits(sim_view_of(ve_dcc_sim_correlation, raw), expected.r));
     EXPECT_TRUE(same_bits(sim_view_of(ve_dcc_sim_covariance, raw), expected.h));
+}
+
+TEST(CapiDcc, SimulationCorrelationsMustBeZeroOrOne)
+{
+    SimOptionsPtr options = make_sim_options(5, 10, 1, true);
+    EXPECT_EQ(ve_sim_options_set_correlations(options.get(), 2), VE_INVALID_ARGUMENT);
+    EXPECT_STREQ(ve_last_error(), "correlations must be 0 or 1");
+    EXPECT_EQ(ve_sim_options_set_correlations(options.get(), -1), VE_INVALID_ARGUMENT);
+    ve::testing::ContextPtr context = ve::testing::make_context(1);
+    FittedDcc fitted;
+    ve_dcc_sim* sim = nullptr;
+    ASSERT_EQ(ve_simulate_dcc(context.get(), fitted.fits[0], options.get(), nullptr, &sim), VE_OK) << ve_last_error();
+    DccSimPtr owner(sim);
+    EXPECT_FALSE(sim_view_of(ve_dcc_sim_correlation, sim).empty());
+    EXPECT_EQ(ve_sim_options_set_correlations(nullptr, 1), VE_INVALID_HANDLE);
 }
 
 TEST(CapiDcc, SimulationRefusesWhatItCannotDo)

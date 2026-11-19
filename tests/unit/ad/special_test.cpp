@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <limits>
 #include <numbers>
 #include <thread>
 #include <vector>
@@ -18,6 +19,15 @@ TEST(Special, DigammaKnownValues)
     EXPECT_NEAR(ve::ad::digamma(0.5), -1.9635100260214235, 1e-13);
     EXPECT_NEAR(ve::ad::digamma(10.0), 2.2517525890667211, 1e-14);
     EXPECT_NEAR(ve::ad::digamma(1e-3), -1000.5755719318103, 1e-9);
+}
+
+TEST(Special, DigammaOfFarNegativeArgumentIsNaNInsteadOfLooping)
+{
+    EXPECT_TRUE(std::isnan(ve::ad::digamma(-std::numeric_limits<double>::infinity())));
+    EXPECT_TRUE(std::isnan(ve::ad::digamma(-1e300)));
+    EXPECT_TRUE(std::isnan(ve::ad::digamma(-0x1p53)));
+    EXPECT_TRUE(std::isnan(ve::ad::log_gamma(ve::ad::variable<1>(-1e300, 0)).grad[0]));
+    EXPECT_NEAR(ve::ad::digamma(-0.5), 0.03648997397857652, 1e-14);
 }
 
 TEST(Special, LogGammaMatchesKnownValues)

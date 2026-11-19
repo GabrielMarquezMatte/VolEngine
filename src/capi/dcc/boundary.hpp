@@ -7,19 +7,35 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace ve::capi::dcc
 {
 
 template <class Handle, class Output>
-ve_status check(const Handle* handle, const Output* out)
+ve_status check(const Handle* handle, const Output* out, std::string_view out_name = "output")
 {
     if (handle == nullptr)
     {
         return set_error(VE_INVALID_HANDLE, "handle must not be null");
     }
     if (out == nullptr)
+    {
+        return set_error(VE_INVALID_ARGUMENT, std::string(out_name) + " must not be null");
+    }
+    return VE_OK;
+}
+
+// check for an output array of `count` elements: a fit with no parameter has none to write, so its NULL is valid.
+template <class Handle, class Output>
+ve_status check_array(const Handle* handle, const Output* out, std::size_t count)
+{
+    if (handle == nullptr)
+    {
+        return set_error(VE_INVALID_HANDLE, "handle must not be null");
+    }
+    if (out == nullptr && count != 0)
     {
         return set_error(VE_INVALID_ARGUMENT, "output must not be null");
     }
@@ -33,6 +49,7 @@ ve_status create(Handle** out)
     {
         return set_error(VE_INVALID_ARGUMENT, "out must not be null");
     }
+    *out = nullptr;
     *out = std::make_unique<Handle>().release();
     return VE_OK;
 }

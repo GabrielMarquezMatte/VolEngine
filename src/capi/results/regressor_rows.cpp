@@ -3,6 +3,10 @@
 #include "capi/error.hpp"
 #include "capi/handles.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <utility>
+
 namespace ve::capi
 {
 
@@ -20,6 +24,19 @@ std::vector<double> copy_rows(const PanelView& view, std::size_t horizon)
         }
     }
     return rows;
+}
+
+ve_status finite_rows(const std::vector<double>& rows, std::size_t columns, const std::string& name)
+{
+    const auto bad = std::ranges::find_if(rows, [](double value) { return !std::isfinite(value); });
+    if (bad == rows.end())
+    {
+        return VE_OK;
+    }
+    const std::size_t position = static_cast<std::size_t>(bad - rows.begin());
+    return set_error(VE_INVALID_ARGUMENT, name + ": NaN or infinite value in column " +
+                                              std::to_string(position % columns) + " at row " +
+                                              std::to_string(position / columns));
 }
 
 ve_status shape_error(const std::string& name, std::size_t horizon, std::size_t columns)
@@ -58,7 +75,13 @@ ve_status future_rows(const ve_panel* panel, int columns, std::size_t horizon, c
     {
         return shape_error(name, horizon, count);
     }
-    rows = copy_rows(view, horizon);
+    std::vector<double> copied = copy_rows(view, horizon);
+    status = finite_rows(copied, count, name);
+    if (status != VE_OK)
+    {
+        return status;
+    }
+    rows = std::move(copied);
     return VE_OK;
 }
 
@@ -75,7 +98,13 @@ ve_status store_rows(const ve_panel* panel, std::size_t horizon, const std::stri
         return set_error(VE_INVALID_ARGUMENT,
                          name + " must be a panel of " + std::to_string(horizon) + " rows without ranges");
     }
-    rows = StoredRows{true, view.n, copy_rows(view, horizon)};
+    StoredRows copied{true, view.n, copy_rows(view, horizon)};
+    const ve_status status = finite_rows(copied.values, view.n, name);
+    if (status != VE_OK)
+    {
+        return status;
+    }
+    rows = std::move(copied);
     return VE_OK;
 }
 

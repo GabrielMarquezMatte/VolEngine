@@ -2,15 +2,16 @@
 
 #include <exception>
 #include <new>
+#include <stdexcept>
 #include <string_view>
 #include <volengine/volengine.h>
 
 namespace ve::capi
 {
 
-ve_status set_error(ve_status status, std::string_view message);
-void clear_error();
-const char* last_error();
+ve_status set_error(ve_status status, std::string_view message) noexcept;
+void clear_error() noexcept;
+const char* last_error() noexcept;
 
 // The error of an accessor of the inference at the estimate (standard errors, t and p values, Nyblom) on a fit made
 // with ve_fit_options_set_standard_errors(o, 0).
@@ -39,6 +40,10 @@ ve_status guard(F&& callable)
     catch (const std::bad_alloc&)
     {
         return set_error(VE_OUT_OF_MEMORY, "out of memory");
+    }
+    catch (const std::length_error&)
+    {
+        return set_error(VE_INVALID_ARGUMENT, "a count or size is too large to allocate");
     }
     catch (const std::exception& error)
     {

@@ -2,6 +2,7 @@
 
 #include <boost/math/special_functions/gamma.hpp>
 #include <cmath>
+#include <limits>
 
 namespace ve::ad
 {
@@ -20,6 +21,10 @@ using LogGammaPolicy = boost::math::policies::policy<
 // The asymptotic series through x^-12 is accurate to ~1e-15 only from x = 10.
 constexpr double kAsymptoticThreshold = 10.0;
 
+// The recurrence in digamma takes one step per unit of -x: past this a negative argument is NaN, as it would not end
+// (from -2^53 on, x + 1 == x).
+constexpr double kMinArgument = -1.0e6;
+
 double digamma_asymptotic(double x)
 {
     double inverse = 1.0 / x;
@@ -33,6 +38,10 @@ double digamma_asymptotic(double x)
 
 double digamma(double x)
 {
+    if (x < kMinArgument)
+    {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
     double shift = 0.0;
     while (x < kAsymptoticThreshold)
     {

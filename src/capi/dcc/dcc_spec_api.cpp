@@ -135,7 +135,7 @@ namespace
 
 ve_status put_parameter(ve_dcc_spec* s, const char* name, double value, bool fixed)
 {
-    const ve_status status = check(s, name);
+    const ve_status status = check(s, name, "name");
     if (status != VE_OK)
     {
         return status;

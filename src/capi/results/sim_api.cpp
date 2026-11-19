@@ -176,7 +176,11 @@ extern "C" ve_status ve_sim_options_set_correlations(ve_sim_options* o, int32_t 
             {
                 return set_error(VE_INVALID_HANDLE, "o must not be null");
             }
-            o->correlations = on != 0;
+            if (on != 0 && on != 1)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "correlations must be 0 or 1");
+            }
+            o->correlations = on == 1;
             return VE_OK;
         });
 }

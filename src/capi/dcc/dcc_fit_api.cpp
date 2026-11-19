@@ -9,6 +9,7 @@
 using ve::capi::guard;
 using ve::capi::set_error;
 using ve::capi::dcc::check;
+using ve::capi::dcc::check_array;
 
 #include <numbers>
 
@@ -32,12 +33,21 @@ double p_value(double estimate, double se)
     return std::erfc(std::fabs(estimate / se) / std::numbers::sqrt2);
 }
 
+std::size_t listed_count(const ve_dcc_fit* f)
+{
+    if (f == nullptr)
+    {
+        return 0;
+    }
+    return f->table.estimate.size();
+}
+
 ve_status fill_statistic(const ve_dcc_fit* f, int32_t kind, double* out, Statistic statistic)
 {
     return guard(
         [&]
         {
-            const ve_status status = check(f, out);
+            const ve_status status = check_array(f, out, listed_count(f));
             if (status != VE_OK)
             {
                 return status;
@@ -194,7 +204,7 @@ extern "C" ve_status ve_dcc_fit_estimates(const ve_dcc_fit* f, double* out)
     return guard(
         [&]
         {
-            const ve_status status = check(f, out);
+            const ve_status status = check_array(f, out, listed_count(f));
             if (status != VE_OK)
             {
                 return status;

@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cmath>
 #include <limits>
 #include <vector>
 
@@ -45,6 +46,12 @@ TEST(Gof, PreservesEmptyLowerAndMiddleGroups)
     const std::array<double, 4> positive{10.0, 10.0, 10.0, 10.0};
     auto upper = ve::diagnostics::pearson_gof(positive, ve::Dist::Norm, {}, 4);
     EXPECT_DOUBLE_EQ(upper.statistic, 12.0);
+}
+
+TEST(Gof, ProbabilitiesOneUlpOutOfOrderAcrossABinEdgeAreSorted)
+{
+    std::vector<double> probabilities{0.1, 0.5, std::nextafter(0.5, 0.0), 0.9};
+    EXPECT_DOUBLE_EQ(ve::diagnostics::pearson_statistic(probabilities, 4), 0.0);
 }
 
 TEST(Gof, NonFiniteStandardizedResidualsBecomeZero)

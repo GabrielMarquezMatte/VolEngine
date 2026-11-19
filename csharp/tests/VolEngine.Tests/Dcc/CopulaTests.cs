@@ -37,6 +37,20 @@ public sealed class CopulaTests : IDisposable
     }
 
     [Fact]
+    public void A_static_copula_with_no_parameter_has_an_empty_table()
+    {
+        var spec = new DccSpec { Model = DccModel.Static, Copula = Copula.Parametric };
+        using var dcc = _univariate.Context.FitDcc(spec, _univariate.Fits);
+        Assert.Empty(dcc.Names);
+        Assert.Empty(dcc.Estimate());
+        var table = dcc.Coef(StandardErrorKind.Robust);
+        Assert.Empty(table.Estimate);
+        Assert.Empty(table.StdError);
+        Assert.Empty(table.TValue);
+        Assert.Empty(table.PValue);
+    }
+
+    [Fact]
     public void A_static_model_needs_a_copula()
     {
         var spec = new DccSpec { Model = DccModel.Static };

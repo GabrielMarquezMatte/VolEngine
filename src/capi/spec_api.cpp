@@ -118,8 +118,9 @@ ve_status check_name_and_value(const char* name, double value)
     return VE_OK;
 }
 
-// Fixing a name removes its start value. A start value never unfixes: on a fixed name it stays in the
-// list and the core ignores it, so the setters give the same fit in either order.
+// Fixing a name removes its start value, after the value is stored: the allocations come first, so a failure leaves the
+// spec unchanged. A start value never unfixes: on a fixed name it stays in the list and the core ignores it, so the
+// setters give the same fit in either order.
 ve_status set_named_value(ve_spec* s, const char* name, double value, bool as_fixed)
 {
     return guard(
@@ -134,11 +135,12 @@ ve_status set_named_value(ve_spec* s, const char* name, double value, bool as_fi
             {
                 return status;
             }
+            const std::string key(name);
+            put_value(as_fixed ? s->spec.fixed : s->spec.start, key, value);
             if (as_fixed)
             {
-                remove_name(s->spec.start, name);
+                remove_name(s->spec.start, key);
             }
-            put_value(as_fixed ? s->spec.fixed : s->spec.start, name, value);
             return VE_OK;
         });
 }
