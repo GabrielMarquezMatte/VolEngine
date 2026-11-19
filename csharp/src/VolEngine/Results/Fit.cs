@@ -39,6 +39,8 @@ public sealed unsafe class Fit : IDisposable
 
     private delegate int ValueReader(FitHandle fit, double* values);
 
+    private delegate int TestReader(double* result);
+
     /// <summary>How the fit ended. A status added by a newer native library is a value outside the named ones.</summary>
     public FitStatus Status { get; }
 
@@ -135,6 +137,84 @@ public sealed unsafe class Fit : IDisposable
         return View(NativeMethods.ve_fit_fitted);
     }
 
+    /// <summary>The weighted Ljung-Box test of the standardized residuals or of their squares.</summary>
+    /// <remarks>
+    /// rugarch's show() uses lags 1, max(2, 3d - 1) and max(5, 5d - 1), with d the ARMA order sum (residuals) or
+    /// p + q (squares). Requires 1 &lt;= lag &lt; nobs and lag &gt;= 3 fitdf - 1; fitdf is ignored for squares.
+    /// </remarks>
+    /// <param name="lag">The number of lags.</param>
+    /// <param name="squared">Test the squared standardized residuals.</param>
+    /// <param name="fitdf">The degrees of freedom the fit used up.</param>
+    /// <returns>The statistic and its p value.</returns>
+    public DiagnosticResult LjungBox(int lag, bool squared = false, int fitdf = 0)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(lag);
+        ArgumentOutOfRangeException.ThrowIfNegative(fitdf);
+        var square = squared ? 1 : 0;
+        return Test(output => NativeMethods.ve_fit_ljung_box(_handle, square, (nuint)lag, (nuint)fitdf, output));
+    }
+
+    /// <summary>The weighted ARCH-LM test.</summary>
+    /// <remarks>rugarch's show() uses fitdf = p + q and lags fitdf + 1, fitdf + 3, fitdf + 5. Requires
+    /// 1 &lt;= fitdf &lt; lag &lt; nobs.</remarks>
+    /// <param name="lag">The number of lags.</param>
+    /// <param name="fitdf">The degrees of freedom the fit used up.</param>
+    /// <returns>The statistic and its p value.</returns>
+    public DiagnosticResult ArchLm(int lag, int fitdf)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(lag);
+        ArgumentOutOfRangeException.ThrowIfNegative(fitdf);
+        return Test(output => NativeMethods.ve_fit_arch_lm(_handle, (nuint)lag, (nuint)fitdf, output));
+    }
+
+    /// <summary>The Engle-Ng sign bias tests with lagged raw residuals, as in rugarch; needs nobs &gt;= 6.</summary>
+    /// <returns>The sign, negative, positive and joint tests.</returns>
+    public SignBiasResult SignBias()
+    {
+        var values = new double[8];
+        fixed (double* output = values)
+        {
+            Calls.Check(NativeMethods.ve_fit_sign_bias(_handle, output));
+        }
+        return new SignBiasResult(new DiagnosticResult(values[0], values[1]), new DiagnosticResult(values[2], values[3]),
+                                  new DiagnosticResult(values[4], values[5]), new DiagnosticResult(values[6], values[7]));
+    }
+
+    /// <summary>The adjusted Pearson goodness of fit test of the distribution.</summary>
+    /// <remarks>rugarch's show() uses 20, 30, 40 and 50 groups. Requires 2 &lt;= groups &lt;= nobs.</remarks>
+    /// <param name="groups">The number of groups.</param>
+    /// <returns>The statistic and its p value.</returns>
+    public DiagnosticResult Gof(int groups = 20)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(groups);
+        return Test(output => NativeMethods.ve_fit_gof(_handle, (nuint)groups, output));
+    }
+
+    /// <summary>The Nyblom (Hansen) parameter stability test, with critical values at 10%, 5% and 1%.</summary>
+    /// <returns>The individual and joint statistics.</returns>
+    /// <exception cref="VolEngineException">The fit was made with <see cref="FitOptions.StandardErrors"/> = false.</exception>
+    public NyblomResult Nyblom()
+    {
+        var statistics = new double[Names.Count];
+        var estimated = new int[Names.Count];
+        double joint;
+        fixed (double* individual = statistics)
+        fixed (int* flags = estimated)
+        {
+            Calls.Check(NativeMethods.ve_fit_nyblom(_handle, individual, &joint, flags));
+        }
+        var values = new Dictionary<string, double>(StringComparer.Ordinal);
+        for (var i = 0; i < Names.Count; i++)
+        {
+            if (estimated[i] == 1)
+            {
+                values.Add(Names[i], statistics[i]);
+            }
+        }
+        var individualCritical = CriticalValuesFor(1) ?? throw new VolEngineException("no critical values for one parameter");
+        return new NyblomResult(values.AsReadOnly(), joint, individualCritical, CriticalValuesFor(values.Count));
+    }
+
     /// <summary>Frees the native result. Calling it again does nothing.</summary>
     public void Dispose()
     {
@@ -146,6 +226,30 @@ public sealed unsafe class Fit : IDisposable
         var scale = perObs ? CriterionScale.PerObs : CriterionScale.Total;
         Calls.Check(NativeMethods.ve_fit_criterion(_handle, (int)which, (int)scale, out var value));
         return value;
+    }
+
+    private static DiagnosticResult Test(TestReader reader)
+    {
+        var values = new double[2];
+        fixed (double* output = values)
+        {
+            Calls.Check(reader(output));
+        }
+        return new DiagnosticResult(values[0], values[1]);
+    }
+
+    private static CriticalValues? CriticalValuesFor(int parameters)
+    {
+        if (parameters < 1 || parameters > 20)
+        {
+            return null;
+        }
+        var values = new double[3];
+        fixed (double* output = values)
+        {
+            Calls.Check(NativeMethods.ve_nyblom_critical((nuint)parameters, output));
+        }
+        return new CriticalValues(values[0], values[1], values[2]);
     }
 
     private double[] Values(ValueReader reader)

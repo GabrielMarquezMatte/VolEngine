@@ -2,18 +2,38 @@
 override VolEngine.CoefTable.Equals(object? obj) -> bool
 override VolEngine.CoefTable.GetHashCode() -> int
 override VolEngine.CoefTable.ToString() -> string!
+override VolEngine.CriticalValues.Equals(object? obj) -> bool
+override VolEngine.CriticalValues.GetHashCode() -> int
+override VolEngine.CriticalValues.ToString() -> string!
+override VolEngine.DiagnosticResult.Equals(object? obj) -> bool
+override VolEngine.DiagnosticResult.GetHashCode() -> int
+override VolEngine.DiagnosticResult.ToString() -> string!
 override VolEngine.FitOptions.Equals(object? obj) -> bool
 override VolEngine.FitOptions.GetHashCode() -> int
 override VolEngine.FitOptions.ToString() -> string!
+override VolEngine.NyblomResult.Equals(object? obj) -> bool
+override VolEngine.NyblomResult.GetHashCode() -> int
+override VolEngine.NyblomResult.ToString() -> string!
+override VolEngine.SignBiasResult.Equals(object? obj) -> bool
+override VolEngine.SignBiasResult.GetHashCode() -> int
+override VolEngine.SignBiasResult.ToString() -> string!
 override VolEngine.Spec.Equals(object? obj) -> bool
 override VolEngine.Spec.GetHashCode() -> int
 override VolEngine.Spec.ToString() -> string!
 static VolEngine.CoefTable.operator !=(VolEngine.CoefTable? left, VolEngine.CoefTable? right) -> bool
 static VolEngine.CoefTable.operator ==(VolEngine.CoefTable? left, VolEngine.CoefTable? right) -> bool
+static VolEngine.CriticalValues.operator !=(VolEngine.CriticalValues? left, VolEngine.CriticalValues? right) -> bool
+static VolEngine.CriticalValues.operator ==(VolEngine.CriticalValues? left, VolEngine.CriticalValues? right) -> bool
+static VolEngine.DiagnosticResult.operator !=(VolEngine.DiagnosticResult? left, VolEngine.DiagnosticResult? right) -> bool
+static VolEngine.DiagnosticResult.operator ==(VolEngine.DiagnosticResult? left, VolEngine.DiagnosticResult? right) -> bool
 static VolEngine.FitOptions.operator !=(VolEngine.FitOptions? left, VolEngine.FitOptions? right) -> bool
 static VolEngine.FitOptions.operator ==(VolEngine.FitOptions? left, VolEngine.FitOptions? right) -> bool
+static VolEngine.NyblomResult.operator !=(VolEngine.NyblomResult? left, VolEngine.NyblomResult? right) -> bool
+static VolEngine.NyblomResult.operator ==(VolEngine.NyblomResult? left, VolEngine.NyblomResult? right) -> bool
 static VolEngine.Panel.FromColumns(double[,]! data, int[]? starts = null, int[]? lengths = null, double[,,]? mxreg = null, double[,,]? vxreg = null) -> VolEngine.Panel!
 static VolEngine.Panel.FromSeries(System.Collections.Generic.IReadOnlyList<double[]!>! series, System.Collections.Generic.IReadOnlyList<double[,]!>? mxreg = null, System.Collections.Generic.IReadOnlyList<double[,]!>? vxreg = null) -> VolEngine.Panel!
+static VolEngine.SignBiasResult.operator !=(VolEngine.SignBiasResult? left, VolEngine.SignBiasResult? right) -> bool
+static VolEngine.SignBiasResult.operator ==(VolEngine.SignBiasResult? left, VolEngine.SignBiasResult? right) -> bool
 static VolEngine.Spec.operator !=(VolEngine.Spec? left, VolEngine.Spec? right) -> bool
 static VolEngine.Spec.operator ==(VolEngine.Spec? left, VolEngine.Spec? right) -> bool
 VolEngine.CoefTable
@@ -41,6 +61,17 @@ VolEngine.Copula
 VolEngine.Copula.Empirical = 2 -> VolEngine.Copula
 VolEngine.Copula.None = 0 -> VolEngine.Copula
 VolEngine.Copula.Parametric = 1 -> VolEngine.Copula
+VolEngine.CriticalValues
+VolEngine.CriticalValues.<Clone>$() -> VolEngine.CriticalValues!
+VolEngine.CriticalValues.CriticalValues(double TenPercent, double FivePercent, double OnePercent) -> void
+VolEngine.CriticalValues.Deconstruct(out double TenPercent, out double FivePercent, out double OnePercent) -> void
+VolEngine.CriticalValues.Equals(VolEngine.CriticalValues? other) -> bool
+VolEngine.CriticalValues.FivePercent.get -> double
+VolEngine.CriticalValues.FivePercent.init -> void
+VolEngine.CriticalValues.OnePercent.get -> double
+VolEngine.CriticalValues.OnePercent.init -> void
+VolEngine.CriticalValues.TenPercent.get -> double
+VolEngine.CriticalValues.TenPercent.init -> void
 VolEngine.DccDistribution
 VolEngine.DccDistribution.MvLaplace = 2 -> VolEngine.DccDistribution
 VolEngine.DccDistribution.MvNorm = 0 -> VolEngine.DccDistribution
@@ -50,6 +81,15 @@ VolEngine.DccModel.Adcc = 1 -> VolEngine.DccModel
 VolEngine.DccModel.Dcc = 0 -> VolEngine.DccModel
 VolEngine.DccModel.Fdcc = 2 -> VolEngine.DccModel
 VolEngine.DccModel.Static = 3 -> VolEngine.DccModel
+VolEngine.DiagnosticResult
+VolEngine.DiagnosticResult.<Clone>$() -> VolEngine.DiagnosticResult!
+VolEngine.DiagnosticResult.Deconstruct(out double Statistic, out double PValue) -> void
+VolEngine.DiagnosticResult.DiagnosticResult(double Statistic, double PValue) -> void
+VolEngine.DiagnosticResult.Equals(VolEngine.DiagnosticResult? other) -> bool
+VolEngine.DiagnosticResult.PValue.get -> double
+VolEngine.DiagnosticResult.PValue.init -> void
+VolEngine.DiagnosticResult.Statistic.get -> double
+VolEngine.DiagnosticResult.Statistic.init -> void
 VolEngine.Distribution
 VolEngine.Distribution.Ged = 2 -> VolEngine.Distribution
 VolEngine.Distribution.Ghyp = 6 -> VolEngine.Distribution
@@ -61,18 +101,23 @@ VolEngine.Distribution.Sstd = 3 -> VolEngine.Distribution
 VolEngine.Distribution.Std = 1 -> VolEngine.Distribution
 VolEngine.Fit
 VolEngine.Fit.Aic(bool perObs = true) -> double
+VolEngine.Fit.ArchLm(int lag, int fitdf) -> VolEngine.DiagnosticResult!
 VolEngine.Fit.Bic(bool perObs = true) -> double
 VolEngine.Fit.Coef(VolEngine.StandardErrorKind kind = VolEngine.StandardErrorKind.Hessian) -> VolEngine.CoefTable!
 VolEngine.Fit.Dispose() -> void
 VolEngine.Fit.Estimate() -> double[]!
 VolEngine.Fit.Fitted() -> double[]!
+VolEngine.Fit.Gof(int groups = 20) -> VolEngine.DiagnosticResult!
 VolEngine.Fit.Hqic(bool perObs = true) -> double
+VolEngine.Fit.LjungBox(int lag, bool squared = false, int fitdf = 0) -> VolEngine.DiagnosticResult!
 VolEngine.Fit.Loglik.get -> double
 VolEngine.Fit.Names.get -> System.Collections.Generic.IReadOnlyList<string!>!
 VolEngine.Fit.Nobs.get -> int
+VolEngine.Fit.Nyblom() -> VolEngine.NyblomResult!
 VolEngine.Fit.Residuals() -> double[]!
 VolEngine.Fit.Sic(bool perObs = true) -> double
 VolEngine.Fit.Sigma() -> double[]!
+VolEngine.Fit.SignBias() -> VolEngine.SignBiasResult!
 VolEngine.Fit.Status.get -> VolEngine.FitStatus
 VolEngine.Fit.StdResiduals() -> double[]!
 VolEngine.FitGrid
@@ -113,9 +158,35 @@ VolEngine.Model.FGarchTGarch = 7 -> VolEngine.Model
 VolEngine.Model.GjrGarch = 2 -> VolEngine.Model
 VolEngine.Model.IGarch = 4 -> VolEngine.Model
 VolEngine.Model.SGarch = 0 -> VolEngine.Model
+VolEngine.NyblomResult
+VolEngine.NyblomResult.<Clone>$() -> VolEngine.NyblomResult!
+VolEngine.NyblomResult.Deconstruct(out System.Collections.Generic.IReadOnlyDictionary<string!, double>! Individual, out double Joint, out VolEngine.CriticalValues! IndividualCritical, out VolEngine.CriticalValues? JointCritical) -> void
+VolEngine.NyblomResult.Equals(VolEngine.NyblomResult? other) -> bool
+VolEngine.NyblomResult.Individual.get -> System.Collections.Generic.IReadOnlyDictionary<string!, double>!
+VolEngine.NyblomResult.Individual.init -> void
+VolEngine.NyblomResult.IndividualCritical.get -> VolEngine.CriticalValues!
+VolEngine.NyblomResult.IndividualCritical.init -> void
+VolEngine.NyblomResult.Joint.get -> double
+VolEngine.NyblomResult.Joint.init -> void
+VolEngine.NyblomResult.JointCritical.get -> VolEngine.CriticalValues?
+VolEngine.NyblomResult.JointCritical.init -> void
+VolEngine.NyblomResult.NyblomResult(System.Collections.Generic.IReadOnlyDictionary<string!, double>! Individual, double Joint, VolEngine.CriticalValues! IndividualCritical, VolEngine.CriticalValues? JointCritical) -> void
 VolEngine.Panel
 VolEngine.Panel.Rows.get -> int
 VolEngine.Panel.SeriesCount.get -> int
+VolEngine.SignBiasResult
+VolEngine.SignBiasResult.<Clone>$() -> VolEngine.SignBiasResult!
+VolEngine.SignBiasResult.Deconstruct(out VolEngine.DiagnosticResult! Sign, out VolEngine.DiagnosticResult! Negative, out VolEngine.DiagnosticResult! Positive, out VolEngine.DiagnosticResult! Joint) -> void
+VolEngine.SignBiasResult.Equals(VolEngine.SignBiasResult? other) -> bool
+VolEngine.SignBiasResult.Joint.get -> VolEngine.DiagnosticResult!
+VolEngine.SignBiasResult.Joint.init -> void
+VolEngine.SignBiasResult.Negative.get -> VolEngine.DiagnosticResult!
+VolEngine.SignBiasResult.Negative.init -> void
+VolEngine.SignBiasResult.Positive.get -> VolEngine.DiagnosticResult!
+VolEngine.SignBiasResult.Positive.init -> void
+VolEngine.SignBiasResult.Sign.get -> VolEngine.DiagnosticResult!
+VolEngine.SignBiasResult.Sign.init -> void
+VolEngine.SignBiasResult.SignBiasResult(VolEngine.DiagnosticResult! Sign, VolEngine.DiagnosticResult! Negative, VolEngine.DiagnosticResult! Positive, VolEngine.DiagnosticResult! Joint) -> void
 VolEngine.Spec
 VolEngine.Spec.<Clone>$() -> VolEngine.Spec!
 VolEngine.Spec.Archm.get -> int
