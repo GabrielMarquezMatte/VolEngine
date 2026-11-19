@@ -6,3 +6,4 @@ __pycache__/
 python/src/volengine/_lib/*
 dist/
 out/
+BenchmarkDotNet.Artifacts/

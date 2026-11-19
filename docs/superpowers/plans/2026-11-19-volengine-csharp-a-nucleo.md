@@ -56,8 +56,9 @@ das 130 funções, AOT, NuGet, guia) é outro plano.
   `python/src/volengine/_lib/libvolengine.dll`.
 - Testes: `$env:VOLENGINE_LIB = "$PWD\python\src\volengine\_lib\libvolengine.dll"; dotnet test --solution csharp/VolEngine.slnx -c Release`
   (no Bash: `VOLENGINE_LIB=$PWD/python/src/volengine/_lib/libvolengine.dll PATH=/c/msys64/ucrt64/bin:$PATH dotnet test --solution csharp/VolEngine.slnx -c Release`).
-- Versões de pacote NuGet de teste/benchmark/analisador: a última estável no momento da Task 1, fixada exatamente em
-  `csharp/Directory.Packages.props` (gestão central). O pacote `VolEngine` não tem dependência de runtime.
+- Pacotes NuGet: cada projeto referencia só o que usa, com a versão no próprio csproj (sem gestão central, pedido do
+  autor); os analisadores de estilo ficam em `csharp/Directory.Build.props` com `PrivateAssets=all`. O pacote
+  `VolEngine` não tem dependência de runtime.
 - Commits em inglês no estilo do repositório (`feat(csharp): ...`), sem `Co-Authored-By`. Push só com o ok do autor.
 
 ## Interface pública (decisões que os testes usam)
