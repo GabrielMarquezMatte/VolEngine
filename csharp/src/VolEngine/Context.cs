@@ -83,6 +83,48 @@ public sealed class Context : IDisposable
         }
     }
 
+    /// <summary>Fits every spec on every series of a panel, in one native batch.</summary>
+    /// <param name="specs">The models; at least one.</param>
+    /// <param name="data">The series, with their ranges and regressors.</param>
+    /// <param name="options">The optimizer settings, shared by every fit; the defaults when null.</param>
+    /// <returns>The grid: <c>grid[i, j]</c> is spec i on series j.</returns>
+    /// <exception cref="ArgumentException">No specs; regressors missing, unexpected, or not T x N x k for a spec with
+    /// a count k > 0 (every such spec must share that k).</exception>
+    /// <exception cref="VolEngineException">A spec is rejected, or a used row has a NaN or infinite value.</exception>
+    public unsafe FitGrid Fit(IReadOnlyList<Spec> specs, Panel data, FitOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(specs);
+        ArgumentNullException.ThrowIfNull(data);
+        if (specs.Count == 0)
+        {
+            throw new ArgumentException("at least one spec is required", nameof(specs));
+        }
+        if (specs.Any(spec => spec is null))
+        {
+            throw new ArgumentNullException(nameof(specs), "a spec is null");
+        }
+        var mxregWidth = RegressorShapes.Width(data.Mxreg, "mxreg", specs.Select(spec => spec.Mxreg), data.Rows, data.SeriesCount);
+        var vxregWidth = RegressorShapes.Width(data.Vxreg, "vxreg", specs.Select(spec => spec.Vxreg), data.Rows, data.SeriesCount);
+        fixed (double* values = data.Data)
+        fixed (double* mean = data.Mxreg)
+        fixed (double* variance = data.Vxreg)
+        {
+            var panel = new PinnedPanel
+            {
+                Data = values,
+                Rows = data.Rows,
+                Series = data.SeriesCount,
+                Starts = data.Starts,
+                Lengths = data.Lengths,
+                Mxreg = mean,
+                MxregWidth = mxregWidth,
+                Vxreg = variance,
+                VxregWidth = vxregWidth,
+            };
+            return new FitGrid(Batch.Run(_handle, specs, options, panel), specs.Count, data.SeriesCount);
+        }
+    }
+
     /// <summary>Frees the thread pool. Calling it again does nothing.</summary>
     public void Dispose()
     {

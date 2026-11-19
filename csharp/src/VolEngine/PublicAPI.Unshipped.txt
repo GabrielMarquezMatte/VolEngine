@@ -12,6 +12,8 @@ static VolEngine.CoefTable.operator !=(VolEngine.CoefTable? left, VolEngine.Coef
 static VolEngine.CoefTable.operator ==(VolEngine.CoefTable? left, VolEngine.CoefTable? right) -> bool
 static VolEngine.FitOptions.operator !=(VolEngine.FitOptions? left, VolEngine.FitOptions? right) -> bool
 static VolEngine.FitOptions.operator ==(VolEngine.FitOptions? left, VolEngine.FitOptions? right) -> bool
+static VolEngine.Panel.FromColumns(double[,]! data, int[]? starts = null, int[]? lengths = null, double[,,]? mxreg = null, double[,,]? vxreg = null) -> VolEngine.Panel!
+static VolEngine.Panel.FromSeries(System.Collections.Generic.IReadOnlyList<double[]!>! series, System.Collections.Generic.IReadOnlyList<double[,]!>? mxreg = null, System.Collections.Generic.IReadOnlyList<double[,]!>? vxreg = null) -> VolEngine.Panel!
 static VolEngine.Spec.operator !=(VolEngine.Spec? left, VolEngine.Spec? right) -> bool
 static VolEngine.Spec.operator ==(VolEngine.Spec? left, VolEngine.Spec? right) -> bool
 VolEngine.CoefTable
@@ -32,6 +34,7 @@ VolEngine.CoefTable.TValue.init -> void
 VolEngine.Context
 VolEngine.Context.Context(int threads = 0) -> void
 VolEngine.Context.Dispose() -> void
+VolEngine.Context.Fit(System.Collections.Generic.IReadOnlyList<VolEngine.Spec!>! specs, VolEngine.Panel! data, VolEngine.FitOptions? options = null) -> VolEngine.FitGrid!
 VolEngine.Context.Fit(VolEngine.Spec! spec, System.ReadOnlySpan<double> series, VolEngine.FitOptions? options = null, double[,]? mxreg = null, double[,]? vxreg = null) -> VolEngine.Fit!
 VolEngine.Context.Threads.get -> int
 VolEngine.Copula
@@ -72,6 +75,11 @@ VolEngine.Fit.Sic(bool perObs = true) -> double
 VolEngine.Fit.Sigma() -> double[]!
 VolEngine.Fit.Status.get -> VolEngine.FitStatus
 VolEngine.Fit.StdResiduals() -> double[]!
+VolEngine.FitGrid
+VolEngine.FitGrid.Dispose() -> void
+VolEngine.FitGrid.SeriesCount.get -> int
+VolEngine.FitGrid.SpecCount.get -> int
+VolEngine.FitGrid.this[int spec, int series].get -> VolEngine.Fit!
 VolEngine.FitOptions
 VolEngine.FitOptions.<Clone>$() -> VolEngine.FitOptions!
 VolEngine.FitOptions.Equals(VolEngine.FitOptions? other) -> bool
@@ -105,6 +113,9 @@ VolEngine.Model.FGarchTGarch = 7 -> VolEngine.Model
 VolEngine.Model.GjrGarch = 2 -> VolEngine.Model
 VolEngine.Model.IGarch = 4 -> VolEngine.Model
 VolEngine.Model.SGarch = 0 -> VolEngine.Model
+VolEngine.Panel
+VolEngine.Panel.Rows.get -> int
+VolEngine.Panel.SeriesCount.get -> int
 VolEngine.Spec
 VolEngine.Spec.<Clone>$() -> VolEngine.Spec!
 VolEngine.Spec.Archm.get -> int
