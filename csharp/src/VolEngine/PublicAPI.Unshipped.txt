@@ -1,4 +1,8 @@
 #nullable enable
+VolEngine.Context
+VolEngine.Context.Context(int threads = 0) -> void
+VolEngine.Context.Dispose() -> void
+VolEngine.Context.Threads.get -> int
 VolEngine.Copula
 VolEngine.Copula.Empirical = 2 -> VolEngine.Copula
 VolEngine.Copula.None = 0 -> VolEngine.Copula
@@ -59,3 +63,9 @@ VolEngine.Status.Unsupported = 3 -> VolEngine.Status
 VolEngine.VarInit
 VolEngine.VarInit.Backcast = 1 -> VolEngine.VarInit
 VolEngine.VarInit.Sample = 0 -> VolEngine.VarInit
+VolEngine.VolEngineException
+VolEngine.VolEngineException.Status.get -> VolEngine.Status
+VolEngine.VolEngineException.VolEngineException() -> void
+VolEngine.VolEngineException.VolEngineException(string! message) -> void
+VolEngine.VolEngineException.VolEngineException(string! message, System.Exception! innerException) -> void
+VolEngine.VolEngineException.VolEngineException(VolEngine.Status status, string! message) -> void
