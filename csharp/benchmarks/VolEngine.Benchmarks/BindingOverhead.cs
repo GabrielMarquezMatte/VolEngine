@@ -4,8 +4,8 @@ using VolEngine.Interop;
 
 namespace VolEngine.Benchmarks;
 
-// What the C# binding adds over the same native calls written by hand: one univariate fit, and a batch of 12 specs
-// over 21 series. Each iteration builds its specs, panel, batch and options on both sides, and checks that the sum of
+// What the C# binding adds over the same native calls written by hand: one univariate fit, a batch of 12 specs over
+// 21 series, and a DCC(1,1) over 3 of those series. Each iteration builds its specs, panel, batch and options on both sides, and checks that the sum of
 // the log-likelihoods is bit for bit the one of the other side. In process: both sides run in the same process anyway,
 // and the out-of-process generator scans the repository and fails on build/ (access denied to the pytest loader's
 // folders there).
@@ -21,6 +21,8 @@ public class BindingOverhead
     private Spec[] _specs = [];
     private double _oneLoglik;
     private double _batchLoglik;
+    private Fit[] _univariate = [];
+    private double _dccLoglik;
 
     [GlobalSetup]
     public void Setup()
@@ -33,11 +35,18 @@ public class BindingOverhead
         _batchLoglik = DirectBatch();
         Require(BindingOne(), _oneLoglik, "one fit");
         Require(BindingBatch(), _batchLoglik, "batch");
+        _univariate = Enumerable.Range(0, 3).Select(UnivariateFit).ToArray();
+        _dccLoglik = DirectDcc();
+        Require(BindingDcc(), _dccLoglik, "dcc");
     }
 
     [GlobalCleanup]
     public void Cleanup()
     {
+        foreach (var fit in _univariate)
+        {
+            fit.Dispose();
+        }
         _context.Dispose();
     }
 
@@ -63,6 +72,57 @@ public class BindingOverhead
     public double BatchDirect()
     {
         return Require(DirectBatch(), _batchLoglik, "batch");
+    }
+
+    [Benchmark]
+    public double FitDcc()
+    {
+        return Require(BindingDcc(), _dccLoglik, "dcc");
+    }
+
+    [Benchmark]
+    public double FitDccDirect()
+    {
+        return Require(DirectDcc(), _dccLoglik, "dcc");
+    }
+
+    private Fit UnivariateFit(int series)
+    {
+        var column = Enumerable.Range(0, _panel.GetLength(0)).Select(t => _panel[t, series]).ToArray();
+        return _context.Fit(new Spec(), column, new FitOptions { StandardErrors = false });
+    }
+
+    private double BindingDcc()
+    {
+        using var dcc = _context.FitDcc(new DccSpec(), _univariate, standardErrors: false);
+        return dcc.Loglik;
+    }
+
+    // The C sequence of a DCC fit without the binding: spec, options, batch over the univariate fits, then the fit.
+    private unsafe double DirectDcc()
+    {
+        Check(NativeMethods.ve_dcc_spec_create((int)DccModel.Dcc, out var spec));
+        Check(NativeMethods.ve_dcc_spec_set_order(spec, 1, 1));
+        Check(NativeMethods.ve_dcc_spec_set_dist(spec, (int)DccDistribution.MvNorm));
+        Check(NativeMethods.ve_dcc_options_create(out var options));
+        Check(NativeMethods.ve_dcc_options_set_standard_errors(options, 0));
+        Check(NativeMethods.ve_dcc_batch_create(out var batch));
+        var specPointer = spec.DangerousGetHandle();
+        var fitPointers = _univariate.Select(fit => fit.Handle.DangerousGetHandle()).ToArray();
+        nint result;
+        fixed (nint* fits = fitPointers)
+        {
+            Check(NativeMethods.ve_dcc_batch_set_specs(batch, &specPointer, 1));
+            Check(NativeMethods.ve_dcc_batch_set_fits(batch, fits, (nuint)fitPointers.Length));
+            Check(NativeMethods.ve_dcc_batch_set_options(batch, options));
+            Check(NativeMethods.ve_dcc_fit_batch(_context.Handle, batch, &result));
+        }
+        using var dcc = new DccFitHandle(result);
+        Check(NativeMethods.ve_dcc_fit_loglik(dcc, out var loglik));
+        batch.Dispose();
+        options.Dispose();
+        spec.Dispose();
+        return loglik;
     }
 
     private double BindingOne()

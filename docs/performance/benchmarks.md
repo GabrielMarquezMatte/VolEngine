@@ -583,7 +583,7 @@ table is the median over the 10 repetitions and the standard deviation.
 
 The wrapper is inside one standard deviation of the C calls in both cases: its cost is noise next to the fit.
 
-## C#-a: the C# binding against direct native calls
+## C#: the C# binding against direct native calls
 
 `csharp/benchmarks/VolEngine.Benchmarks/BindingOverhead.cs` runs the same work through the public C# API and through
 the native declarations called by hand (the sequence a caller without the binding writes), building the specs, the
@@ -595,17 +595,20 @@ same sum of log-likelihoods, to the bit, and throws otherwise.
 - `Batch*`: the 12 specs sGARCH, gjrGARCH and eGARCH (1,1) with norm, std, ged and sstd innovations, over 21 series of
   T = 5000 simulated once by `Context.Simulate` (sGARCH(1,1) norm, mu 0, omega 0.02, alpha1 0.08, beta1 0.9, seed 42),
   all threads, standard errors off. The series differ from the 6b ones, so the two sections' batch times do not compare.
+- `FitDcc*`: a DCC(1,1) mvnorm over the first three of those series, on sGARCH(1,1) norm fits made once in the setup,
+  standard errors off; the direct side builds the DCC spec, options and batch with the native declarations.
 
 AMD Ryzen 7 5700X (8 cores, 16 threads), Windows 10 22H2, .NET 10.0.14 (RyuJIT x86-64-v3), BenchmarkDotNet 0.15.8 with
 the in-process toolchain and its default job, library `libvolengine.dll` built by MinGW (`python/scripts/build_native.py`)
-from commit `ccb2651`.
+from commit `ccb2651` (the DCC row: binding at commit `613be8d`, same library build).
 
 | Benchmark | Direct calls (ms) | Binding (ms) |
 | --- | --- | --- |
 | one fit | 1.763 median, 2.075 mean (sd 0.562) | 1.606 median, 1.661 mean (sd 0.166) |
 | batch of 12 specs x 21 series | 348.5 median, 349.0 mean (sd 6.2) | 345.2 median, 346.1 mean (sd 5.2) |
+| DCC(1,1) over 3 series | 14.67 median, 14.89 mean (sd 0.68) | 14.65 median, 14.87 mean (sd 0.70) |
 
-The binding is inside one standard deviation of the direct calls in both cases: what it adds (records, enums, copies of
+The binding is inside one standard deviation of the direct calls in every case: what it adds (records, enums, copies of
 the results) is noise next to the fit.
 
 ## What the benchmarks fit
