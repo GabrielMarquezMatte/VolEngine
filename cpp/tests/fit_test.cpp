@@ -289,3 +289,18 @@ TEST(FitResults, StandardErrorsOffMakesInferenceFailButNotTheEstimates)
 }
 
 } // namespace
+
+// Empty spans clear the regressors of a batch: the C call takes null arrays with the job count.
+TEST(Batch, EmptyRegressorsClearThem)
+{
+    const auto matrix = sgarch_matrix();
+    const auto panel = ve::Panel::create(matrix, kRows, sgarch_columns().size()).value();
+    const std::vector<ve::Spec> specs{ve::Spec{}};
+    auto batch = ve::Batch::create().value();
+    ASSERT_TRUE(batch.set_specs(specs).has_value());
+    ASSERT_TRUE(batch.set_panel(panel).has_value());
+    const std::vector<std::size_t> spec_index{0, 0};
+    const std::vector<std::size_t> series_index{0, 1};
+    ASSERT_TRUE(batch.set_jobs(spec_index, series_index).has_value());
+    EXPECT_TRUE(batch.set_regressors({}, {}).has_value());
+}

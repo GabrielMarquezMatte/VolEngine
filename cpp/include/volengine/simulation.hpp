@@ -12,7 +12,8 @@ namespace ve
 {
 
 // `horizon` steps of `paths` paths. The same seed, source and library version give the same paths on any machine with
-// the same ISA and for any number of threads; the first k paths of a simulation are those of any longer one.
+// the same ISA and the same SIMD target (chosen at run time) and for any number of
+// threads; the first k paths of a simulation are those of any longer one.
 struct SimOptions
 {
     std::size_t horizon = 1;

@@ -1,8 +1,8 @@
 name: Release
 
 # A v* tag publishes the wheels to PyPI, the native libraries to a GitHub Release and the .NET package to nuget.org;
-# a tag with a '-' (v1.0.0-rc.1) is a prerelease. A manual run is a dry run unless dry_run is turned off: it builds
-# and tests everything and skips the steps that publish.
+# a tag with a '-' (v1.0.0-rc.1) is a prerelease. A manual run is a dry run unless dry_run is turned off, and only a
+# run on a tag publishes: from a branch it builds and tests everything and skips the steps that publish.
 on:
   push:
     tags: [ 'v*' ]
@@ -107,7 +107,7 @@ jobs:
           upload-release-assets: false
 
       - name: Publish the GitHub Release
-        if: github.event_name == 'push' || !inputs.dry_run
+        if: github.ref_type == 'tag' && (github.event_name == 'push' || !inputs.dry_run)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -140,7 +140,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Publish to PyPI
-        if: github.event_name == 'push' || !inputs.dry_run
+        if: github.ref_type == 'tag' && (github.event_name == 'push' || !inputs.dry_run)
         run: uv publish --trusted-publishing always dist/*
 
   # The .NET package: the assembly and the seven native libraries of the wheels job, each as

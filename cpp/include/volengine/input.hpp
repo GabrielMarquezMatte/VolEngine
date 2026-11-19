@@ -347,7 +347,17 @@ public:
         }
         const auto mean = natives(mxreg);
         const auto variance = natives(vxreg);
-        const std::size_t jobs = std::max(mxreg.size(), vxreg.size());
+        std::size_t jobs = std::max(mxreg.size(), vxreg.size());
+        if (jobs == 0)
+        {
+            // Both empty clears the regressors: null arrays with the job count of the batch.
+            const auto count = job_count();
+            if (!count)
+            {
+                return std::unexpected(count.error());
+            }
+            jobs = *count;
+        }
         return detail::check(ve_batch_set_regressors(handle_.get(), data_or_null(mean), data_or_null(variance), jobs));
     }
 

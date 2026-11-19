@@ -10,15 +10,19 @@ set(VOLENGINE_VERSION "" CACHE STRING
 if(NOT VOLENGINE_VERSION)
     find_package(Git QUIET)
     if(Git_FOUND)
-        execute_process(
-            COMMAND ${GIT_EXECUTABLE} describe --tags --exact-match
-            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-            OUTPUT_VARIABLE _git_tag
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET
-            RESULT_VARIABLE _git_tag_result)
-        if(_git_tag_result EQUAL 0)
-            set(VOLENGINE_VERSION "${_git_tag}")
+        # Only the VolEngine repository's own tag counts: in a vendored or fetched copy of cpp/ inside another
+        # repository, git would read the tag of that repository.
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../.git")
+            execute_process(
+                COMMAND ${GIT_EXECUTABLE} describe --tags --exact-match
+                WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                OUTPUT_VARIABLE _git_tag
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET
+                RESULT_VARIABLE _git_tag_result)
+            if(_git_tag_result EQUAL 0)
+                set(VOLENGINE_VERSION "${_git_tag}")
+            endif()
         endif()
     endif()
 endif()
@@ -74,7 +78,9 @@ if(VOLENGINE_INSTALL)
         PATH_VARS VOLENGINE_INSTALLED_NATIVE_DIR VOLENGINE_INSTALLED_IMPLIB_DIR VOLENGINE_INSTALLED_INCLUDE_DIR)
 
     # VOLENGINE_VERSION is a release tag ("v1.0.0"); the version file takes digits and dots only.
+    # A prerelease suffix ("-rc.1") is dropped.
     string(REGEX REPLACE "^v" "" _package_version "${VOLENGINE_VERSION}")
+    string(REGEX REPLACE "-.*$" "" _package_version "${_package_version}")
     if(NOT _package_version MATCHES "^[0-9]+(\\.[0-9]+)*$")
         set(_package_version "0.0.0")
     endif()

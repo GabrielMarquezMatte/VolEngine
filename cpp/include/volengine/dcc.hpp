@@ -107,8 +107,8 @@ private:
 
 struct DccOptions
 {
-    // Two-stage Hessian and robust standard errors. Off, DccFit::std_errors, t_values and p_values are NaN (they do
-    // not fail, unlike a univariate Fit); Context::standard_errors computes them later. Univariate fits with
+    // Two-stage Hessian and robust standard errors. Off, DccFit::std_errors, t_values and p_values fail with
+    // invalid_argument; Context::standard_errors computes them later. Univariate fits with
     // regressors need it off: with it on they are unsupported.
     bool standard_errors = true;
 

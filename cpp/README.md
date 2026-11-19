@@ -2,8 +2,9 @@
 
 A header-only C++23 wrapper over the VolEngine C API (`include/volengine/volengine.h`). Every C handle is a move-only
 RAII type in namespace `ve`, every call that can fail returns `std::expected<T, ve::Error>` with the message of
-`ve_last_error`, and no exception leaves the wrapper. Inputs are `std::span<const double>`; results are zero-copy
-`std::span<const double>` views that are valid while the object that owns them lives.
+`ve_last_error`, and no library error becomes an exception (only `std::bad_alloc` can leave the wrapper). Inputs are
+`std::span<const double>`; results are zero-copy `std::span<const double>` views that are valid while the object that
+owns them lives.
 
 ```cpp
 #include <volengine/volengine.hpp>

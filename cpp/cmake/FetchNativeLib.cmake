@@ -31,11 +31,17 @@ function(volengine_host_platform os_out arch_out)
     elseif(APPLE)
         set(_os "osx")
     else()
-        file(GLOB _musl_loader "/lib/ld-musl-*.so.1")
-        if(_musl_loader)
-            set(_os "linux-musl")
-        else()
+        # The libc of the toolchain, not of the host: glibc defines __GLIBC__ through any standard header.
+        include(CheckCXXSourceCompiles)
+        check_cxx_source_compiles("#include <cstddef>
+#ifndef __GLIBC__
+#error not glibc
+#endif
+int main() { return 0; }" VOLENGINE_TARGET_IS_GLIBC)
+        if(VOLENGINE_TARGET_IS_GLIBC)
             set(_os "linux")
+        else()
+            set(_os "linux-musl")
         endif()
     endif()
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$")
@@ -52,13 +58,16 @@ function(volengine_download url destination)
         return()
     endif()
     message(STATUS "Downloading VolEngine: ${url}")
-    file(DOWNLOAD "${url}" "${destination}" STATUS _status)
+    # To a temporary file, renamed on success: a download that stops halfway never leaves a file to reuse.
+    set(_partial "${destination}.partial")
+    file(DOWNLOAD "${url}" "${_partial}" TLS_VERIFY ON STATUS _status)
     list(GET _status 0 _code)
     if(NOT _code EQUAL 0)
-        file(REMOVE "${destination}")
+        file(REMOVE "${_partial}")
         list(GET _status 1 _message)
         message(FATAL_ERROR "Failed to download ${url}: ${_message}")
     endif()
+    file(RENAME "${_partial}" "${destination}")
 endfunction()
 
 # Makes an MSVC import library from the .def next to the DLL, with the DLL's own name in the import descriptors.

@@ -12,6 +12,7 @@ on:
       - 'src/**'
       - 'CMakeLists.txt'
       - 'python/scripts/build_native.py'
+      - 'tests/reference/**'
       - '.github/workflows/cpp.yml'
   pull_request:
     paths:
@@ -20,6 +21,7 @@ on:
       - 'src/**'
       - 'CMakeLists.txt'
       - 'python/scripts/build_native.py'
+      - 'tests/reference/**'
       - '.github/workflows/cpp.yml'
 
 concurrency:

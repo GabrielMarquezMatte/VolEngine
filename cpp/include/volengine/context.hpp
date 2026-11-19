@@ -62,12 +62,12 @@ public:
             return std::unexpected(jobs.error());
         }
         std::vector<ve_fit*> raw(*jobs, nullptr);
+        std::vector<Fit> fits;
+        fits.reserve(raw.size()); // before the native call: nothing may throw while raw holds handles
         if (auto fitted = detail::check(ve_fit_batch(handle_.get(), batch.native(), raw.data())); !fitted)
         {
             return detail::failure(fitted);
         }
-        std::vector<Fit> fits;
-        fits.reserve(raw.size());
         for (ve_fit* handle : raw)
         {
             fits.emplace_back(handle);
@@ -153,12 +153,12 @@ public:
             return std::unexpected(count.error());
         }
         std::vector<ve_dcc_fit*> raw(*count, nullptr);
+        std::vector<DccFit> fits;
+        fits.reserve(raw.size()); // before the native call: nothing may throw while raw holds handles
         if (auto fitted = detail::check(ve_dcc_fit_batch(handle_.get(), batch->get(), raw.data())); !fitted)
         {
             return detail::failure(fitted);
         }
-        std::vector<DccFit> fits;
-        fits.reserve(raw.size());
         for (ve_dcc_fit* handle : raw)
         {
             fits.emplace_back(handle);
