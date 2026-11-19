@@ -12,7 +12,7 @@ The wrapper links the native library of a release, which CMake downloads for the
 include(FetchContent)
 FetchContent_Declare(volengine
     GIT_REPOSITORY https://github.com/GabrielMarquezMatte/VolEngine
-    GIT_TAG v1.1.0
+    GIT_TAG v1.2.0
     SOURCE_SUBDIR cpp)
 FetchContent_MakeAvailable(volengine)
 
