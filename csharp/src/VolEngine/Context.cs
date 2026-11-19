@@ -83,6 +83,47 @@ public sealed class Context : IDisposable
         }
     }
 
+    /// <summary>Simulates paths that continue after the last observation of a fit.</summary>
+    /// <remarks>
+    /// As rugarch's ugarchsim with startMethod = "sample". The threads of the context share the paths; the same seed,
+    /// source and library version give the same paths for any thread count, and the first k paths (and steps) of a
+    /// simulation are those of any larger one with the same seed. A new library version may change them.
+    /// </remarks>
+    /// <param name="source">The fit; it must have a finite point.</param>
+    /// <param name="options">The horizon, number of paths, seed and horizon regressors.</param>
+    /// <returns>The paths, a copy.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">A horizon or path count below 1.</exception>
+    /// <exception cref="ArgumentException">A regressor is missing, unexpected, or of another shape.</exception>
+    /// <exception cref="VolEngineException">The fit has no finite point, or the sizes do not fit in memory.</exception>
+    public Simulation Simulate(Fit source, SimulationOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        var mxreg = Futures.Count(source.Names, "mxreg");
+        var vxreg = Futures.Count(source.Names, "vxreg");
+        return Simulation.Run(options, mxreg, vxreg,
+            (SimOptionsHandle handle, out SimHandle simulation) =>
+                NativeMethods.ve_simulate_fit(_handle, source.Handle, handle, out simulation));
+    }
+
+    /// <summary>Simulates paths of a spec with every parameter fixed, from its unconditional state.</summary>
+    /// <remarks>As rugarch's ugarchpath, with the same seed rules as <see cref="Simulate(VolEngine.Fit, SimulationOptions)"/>.
+    /// Needs every parameter fixed, no variance targeting, a stationary model, and not iGARCH or EWMA (no
+    /// unconditional variance).</remarks>
+    /// <param name="source">The spec.</param>
+    /// <param name="options">The horizon, number of paths, seed and horizon regressors.</param>
+    /// <returns>The paths, a copy.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">A horizon or path count below 1.</exception>
+    /// <exception cref="ArgumentException">A regressor is missing, unexpected, or of another shape.</exception>
+    /// <exception cref="VolEngineException">The spec cannot be simulated; the message says why.</exception>
+    public Simulation Simulate(Spec source, SimulationOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        using var spec = source.CreateHandle();
+        return Simulation.Run(options, source.Mxreg, source.Vxreg,
+            (SimOptionsHandle handle, out SimHandle simulation) =>
+                NativeMethods.ve_simulate_spec(_handle, spec, handle, out simulation));
+    }
+
     /// <summary>Fits every spec on every series of a panel, in one native batch.</summary>
     /// <param name="specs">The models; at least one.</param>
     /// <param name="data">The series, with their ranges and regressors.</param>

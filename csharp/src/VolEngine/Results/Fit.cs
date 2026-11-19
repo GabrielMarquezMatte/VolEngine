@@ -215,6 +215,34 @@ public sealed unsafe class Fit : IDisposable
         return new NyblomResult(values.AsReadOnly(), joint, individualCritical, CriticalValuesFor(values.Count));
     }
 
+    /// <summary>The forecast of sigma and of the mean for h = 1..horizon after the last observation.</summary>
+    /// <remarks>As rugarch's ugarchforecast with n.roll = 0, at the estimate of the fit; a fit with every parameter
+    /// fixed forecasts from the specification, and a <see cref="FitStatus.Failed"/> fit with a finite point from that
+    /// point. See <see cref="VolEngine.Forecast.Sigma"/> for what sigma means in eGARCH, apARCH and fGARCH.</remarks>
+    /// <param name="horizon">The number of steps, at least 1.</param>
+    /// <param name="mxreg">The mean regressors of the horizon, horizon x k; required exactly when the fit has k &gt; 0.</param>
+    /// <param name="vxreg">The variance regressors of the horizon, horizon x k; required exactly when the fit has k &gt; 0.</param>
+    /// <returns>The forecast, a copy that outlives the fit.</returns>
+    /// <exception cref="ArgumentException">A regressor is missing, unexpected, or of another shape.</exception>
+    /// <exception cref="VolEngineException">The fit has no finite point.</exception>
+    public Forecast Forecast(int horizon, double[,]? mxreg = null, double[,]? vxreg = null)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(horizon, 1);
+        Futures.Check(mxreg, nameof(mxreg), Futures.Count(Names, "mxreg"), horizon);
+        Futures.Check(vxreg, nameof(vxreg), Futures.Count(Names, "vxreg"), horizon);
+        fixed (double* mean = mxreg)
+        fixed (double* variance = vxreg)
+        {
+            using var meanPanel = Futures.Panel(mean, mxreg);
+            using var variancePanel = Futures.Panel(variance, vxreg);
+            Calls.Check(NativeMethods.ve_forecast_create(_handle, (nuint)horizon, meanPanel, variancePanel, out var forecast));
+            using (forecast)
+            {
+                return VolEngine.Forecast.Read(forecast, horizon);
+            }
+        }
+    }
+
     /// <summary>Frees the native result. Calling it again does nothing.</summary>
     public void Dispose()
     {

@@ -11,12 +11,21 @@ override VolEngine.DiagnosticResult.ToString() -> string!
 override VolEngine.FitOptions.Equals(object? obj) -> bool
 override VolEngine.FitOptions.GetHashCode() -> int
 override VolEngine.FitOptions.ToString() -> string!
+override VolEngine.Forecast.Equals(object? obj) -> bool
+override VolEngine.Forecast.GetHashCode() -> int
+override VolEngine.Forecast.ToString() -> string!
 override VolEngine.NyblomResult.Equals(object? obj) -> bool
 override VolEngine.NyblomResult.GetHashCode() -> int
 override VolEngine.NyblomResult.ToString() -> string!
 override VolEngine.SignBiasResult.Equals(object? obj) -> bool
 override VolEngine.SignBiasResult.GetHashCode() -> int
 override VolEngine.SignBiasResult.ToString() -> string!
+override VolEngine.Simulation.Equals(object? obj) -> bool
+override VolEngine.Simulation.GetHashCode() -> int
+override VolEngine.Simulation.ToString() -> string!
+override VolEngine.SimulationOptions.Equals(object? obj) -> bool
+override VolEngine.SimulationOptions.GetHashCode() -> int
+override VolEngine.SimulationOptions.ToString() -> string!
 override VolEngine.Spec.Equals(object? obj) -> bool
 override VolEngine.Spec.GetHashCode() -> int
 override VolEngine.Spec.ToString() -> string!
@@ -28,12 +37,18 @@ static VolEngine.DiagnosticResult.operator !=(VolEngine.DiagnosticResult? left, 
 static VolEngine.DiagnosticResult.operator ==(VolEngine.DiagnosticResult? left, VolEngine.DiagnosticResult? right) -> bool
 static VolEngine.FitOptions.operator !=(VolEngine.FitOptions? left, VolEngine.FitOptions? right) -> bool
 static VolEngine.FitOptions.operator ==(VolEngine.FitOptions? left, VolEngine.FitOptions? right) -> bool
+static VolEngine.Forecast.operator !=(VolEngine.Forecast? left, VolEngine.Forecast? right) -> bool
+static VolEngine.Forecast.operator ==(VolEngine.Forecast? left, VolEngine.Forecast? right) -> bool
 static VolEngine.NyblomResult.operator !=(VolEngine.NyblomResult? left, VolEngine.NyblomResult? right) -> bool
 static VolEngine.NyblomResult.operator ==(VolEngine.NyblomResult? left, VolEngine.NyblomResult? right) -> bool
 static VolEngine.Panel.FromColumns(double[,]! data, int[]? starts = null, int[]? lengths = null, double[,,]? mxreg = null, double[,,]? vxreg = null) -> VolEngine.Panel!
 static VolEngine.Panel.FromSeries(System.Collections.Generic.IReadOnlyList<double[]!>! series, System.Collections.Generic.IReadOnlyList<double[,]!>? mxreg = null, System.Collections.Generic.IReadOnlyList<double[,]!>? vxreg = null) -> VolEngine.Panel!
 static VolEngine.SignBiasResult.operator !=(VolEngine.SignBiasResult? left, VolEngine.SignBiasResult? right) -> bool
 static VolEngine.SignBiasResult.operator ==(VolEngine.SignBiasResult? left, VolEngine.SignBiasResult? right) -> bool
+static VolEngine.Simulation.operator !=(VolEngine.Simulation? left, VolEngine.Simulation? right) -> bool
+static VolEngine.Simulation.operator ==(VolEngine.Simulation? left, VolEngine.Simulation? right) -> bool
+static VolEngine.SimulationOptions.operator !=(VolEngine.SimulationOptions? left, VolEngine.SimulationOptions? right) -> bool
+static VolEngine.SimulationOptions.operator ==(VolEngine.SimulationOptions? left, VolEngine.SimulationOptions? right) -> bool
 static VolEngine.Spec.operator !=(VolEngine.Spec? left, VolEngine.Spec? right) -> bool
 static VolEngine.Spec.operator ==(VolEngine.Spec? left, VolEngine.Spec? right) -> bool
 VolEngine.CoefTable
@@ -56,6 +71,8 @@ VolEngine.Context.Context(int threads = 0) -> void
 VolEngine.Context.Dispose() -> void
 VolEngine.Context.Fit(System.Collections.Generic.IReadOnlyList<VolEngine.Spec!>! specs, VolEngine.Panel! data, VolEngine.FitOptions? options = null) -> VolEngine.FitGrid!
 VolEngine.Context.Fit(VolEngine.Spec! spec, System.ReadOnlySpan<double> series, VolEngine.FitOptions? options = null, double[,]? mxreg = null, double[,]? vxreg = null) -> VolEngine.Fit!
+VolEngine.Context.Simulate(VolEngine.Fit! source, VolEngine.SimulationOptions! options) -> VolEngine.Simulation!
+VolEngine.Context.Simulate(VolEngine.Spec! source, VolEngine.SimulationOptions! options) -> VolEngine.Simulation!
 VolEngine.Context.Threads.get -> int
 VolEngine.Copula
 VolEngine.Copula.Empirical = 2 -> VolEngine.Copula
@@ -107,6 +124,7 @@ VolEngine.Fit.Coef(VolEngine.StandardErrorKind kind = VolEngine.StandardErrorKin
 VolEngine.Fit.Dispose() -> void
 VolEngine.Fit.Estimate() -> double[]!
 VolEngine.Fit.Fitted() -> double[]!
+VolEngine.Fit.Forecast(int horizon, double[,]? mxreg = null, double[,]? vxreg = null) -> VolEngine.Forecast!
 VolEngine.Fit.Gof(int groups = 20) -> VolEngine.DiagnosticResult!
 VolEngine.Fit.Hqic(bool perObs = true) -> double
 VolEngine.Fit.LjungBox(int lag, bool squared = false, int fitdf = 0) -> VolEngine.DiagnosticResult!
@@ -142,6 +160,17 @@ VolEngine.FitStatus.Converged = 0 -> VolEngine.FitStatus
 VolEngine.FitStatus.Failed = 2 -> VolEngine.FitStatus
 VolEngine.FitStatus.InsufficientData = 3 -> VolEngine.FitStatus
 VolEngine.FitStatus.MaxIter = 1 -> VolEngine.FitStatus
+VolEngine.Forecast
+VolEngine.Forecast.<Clone>$() -> VolEngine.Forecast!
+VolEngine.Forecast.Deconstruct(out int Horizon, out double[]! Sigma, out double[]! Mean) -> void
+VolEngine.Forecast.Equals(VolEngine.Forecast? other) -> bool
+VolEngine.Forecast.Forecast(int Horizon, double[]! Sigma, double[]! Mean) -> void
+VolEngine.Forecast.Horizon.get -> int
+VolEngine.Forecast.Horizon.init -> void
+VolEngine.Forecast.Mean.get -> double[]!
+VolEngine.Forecast.Mean.init -> void
+VolEngine.Forecast.Sigma.get -> double[]!
+VolEngine.Forecast.Sigma.init -> void
 VolEngine.Model
 VolEngine.Model.Aparch = 3 -> VolEngine.Model
 VolEngine.Model.CsGarch = 5 -> VolEngine.Model
@@ -187,6 +216,34 @@ VolEngine.SignBiasResult.Positive.init -> void
 VolEngine.SignBiasResult.Sign.get -> VolEngine.DiagnosticResult!
 VolEngine.SignBiasResult.Sign.init -> void
 VolEngine.SignBiasResult.SignBiasResult(VolEngine.DiagnosticResult! Sign, VolEngine.DiagnosticResult! Negative, VolEngine.DiagnosticResult! Positive, VolEngine.DiagnosticResult! Joint) -> void
+VolEngine.Simulation
+VolEngine.Simulation.<Clone>$() -> VolEngine.Simulation!
+VolEngine.Simulation.Deconstruct(out int Paths, out int Horizon, out double[]![]! Returns, out double[]![]! Sigma) -> void
+VolEngine.Simulation.Equals(VolEngine.Simulation? other) -> bool
+VolEngine.Simulation.Horizon.get -> int
+VolEngine.Simulation.Horizon.init -> void
+VolEngine.Simulation.Paths.get -> int
+VolEngine.Simulation.Paths.init -> void
+VolEngine.Simulation.Returns.get -> double[]![]!
+VolEngine.Simulation.Returns.init -> void
+VolEngine.Simulation.Sigma.get -> double[]![]!
+VolEngine.Simulation.Sigma.init -> void
+VolEngine.Simulation.Simulation(int Paths, int Horizon, double[]![]! Returns, double[]![]! Sigma) -> void
+VolEngine.SimulationOptions
+VolEngine.SimulationOptions.<Clone>$() -> VolEngine.SimulationOptions!
+VolEngine.SimulationOptions.Deconstruct(out int Horizon, out int Paths, out ulong Seed) -> void
+VolEngine.SimulationOptions.Equals(VolEngine.SimulationOptions? other) -> bool
+VolEngine.SimulationOptions.Horizon.get -> int
+VolEngine.SimulationOptions.Horizon.init -> void
+VolEngine.SimulationOptions.Mxreg.get -> double[,]?
+VolEngine.SimulationOptions.Mxreg.init -> void
+VolEngine.SimulationOptions.Paths.get -> int
+VolEngine.SimulationOptions.Paths.init -> void
+VolEngine.SimulationOptions.Seed.get -> ulong
+VolEngine.SimulationOptions.Seed.init -> void
+VolEngine.SimulationOptions.SimulationOptions(int Horizon, int Paths, ulong Seed) -> void
+VolEngine.SimulationOptions.Vxreg.get -> double[,]?
+VolEngine.SimulationOptions.Vxreg.init -> void
 VolEngine.Spec
 VolEngine.Spec.<Clone>$() -> VolEngine.Spec!
 VolEngine.Spec.Archm.get -> int
