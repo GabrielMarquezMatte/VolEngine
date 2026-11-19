@@ -49,6 +49,40 @@ public sealed class Context : IDisposable
 
     internal ContextHandle Handle => _handle;
 
+    /// <summary>Fits one spec on one series.</summary>
+    /// <param name="spec">The model.</param>
+    /// <param name="series">The returns, finite; fewer observations than the model needs give an
+    /// <see cref="FitStatus.InsufficientData"/> fit, not an exception.</param>
+    /// <param name="options">The optimizer settings; the defaults of <see cref="FitOptions"/> when null.</param>
+    /// <param name="mxreg">The mean regressors, T x <see cref="Spec.Mxreg"/>; required exactly when the spec has them.</param>
+    /// <param name="vxreg">The variance regressors, T x <see cref="Spec.Vxreg"/>; required exactly when the spec has them.</param>
+    /// <returns>The fit; a fit that does not converge is a status, not an exception.</returns>
+    /// <exception cref="ArgumentException">A regressor is missing, unexpected, or of another shape.</exception>
+    /// <exception cref="VolEngineException">The spec is rejected, or the series has a NaN or infinite value.</exception>
+    public unsafe Fit Fit(Spec spec, ReadOnlySpan<double> series, FitOptions? options = null, double[,]? mxreg = null,
+                          double[,]? vxreg = null)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+        var mxregWidth = RegressorShapes.Width(mxreg, nameof(mxreg), [spec.Mxreg], series.Length);
+        var vxregWidth = RegressorShapes.Width(vxreg, nameof(vxreg), [spec.Vxreg], series.Length);
+        fixed (double* data = series)
+        fixed (double* mean = mxreg)
+        fixed (double* variance = vxreg)
+        {
+            var panel = new PinnedPanel
+            {
+                Data = data,
+                Rows = series.Length,
+                Series = 1,
+                Mxreg = mean,
+                MxregWidth = mxregWidth,
+                Vxreg = variance,
+                VxregWidth = vxregWidth,
+            };
+            return Batch.Run(_handle, [spec], options, panel)[0];
+        }
+    }
+
     /// <summary>Frees the thread pool. Calling it again does nothing.</summary>
     public void Dispose()
     {

@@ -1,17 +1,38 @@
 #nullable enable
+override VolEngine.CoefTable.Equals(object? obj) -> bool
+override VolEngine.CoefTable.GetHashCode() -> int
+override VolEngine.CoefTable.ToString() -> string!
 override VolEngine.FitOptions.Equals(object? obj) -> bool
 override VolEngine.FitOptions.GetHashCode() -> int
 override VolEngine.FitOptions.ToString() -> string!
 override VolEngine.Spec.Equals(object? obj) -> bool
 override VolEngine.Spec.GetHashCode() -> int
 override VolEngine.Spec.ToString() -> string!
+static VolEngine.CoefTable.operator !=(VolEngine.CoefTable? left, VolEngine.CoefTable? right) -> bool
+static VolEngine.CoefTable.operator ==(VolEngine.CoefTable? left, VolEngine.CoefTable? right) -> bool
 static VolEngine.FitOptions.operator !=(VolEngine.FitOptions? left, VolEngine.FitOptions? right) -> bool
 static VolEngine.FitOptions.operator ==(VolEngine.FitOptions? left, VolEngine.FitOptions? right) -> bool
 static VolEngine.Spec.operator !=(VolEngine.Spec? left, VolEngine.Spec? right) -> bool
 static VolEngine.Spec.operator ==(VolEngine.Spec? left, VolEngine.Spec? right) -> bool
+VolEngine.CoefTable
+VolEngine.CoefTable.<Clone>$() -> VolEngine.CoefTable!
+VolEngine.CoefTable.CoefTable(System.Collections.Generic.IReadOnlyList<string!>! Names, double[]! Estimate, double[]! StdError, double[]! TValue, double[]! PValue) -> void
+VolEngine.CoefTable.Deconstruct(out System.Collections.Generic.IReadOnlyList<string!>! Names, out double[]! Estimate, out double[]! StdError, out double[]! TValue, out double[]! PValue) -> void
+VolEngine.CoefTable.Equals(VolEngine.CoefTable? other) -> bool
+VolEngine.CoefTable.Estimate.get -> double[]!
+VolEngine.CoefTable.Estimate.init -> void
+VolEngine.CoefTable.Names.get -> System.Collections.Generic.IReadOnlyList<string!>!
+VolEngine.CoefTable.Names.init -> void
+VolEngine.CoefTable.PValue.get -> double[]!
+VolEngine.CoefTable.PValue.init -> void
+VolEngine.CoefTable.StdError.get -> double[]!
+VolEngine.CoefTable.StdError.init -> void
+VolEngine.CoefTable.TValue.get -> double[]!
+VolEngine.CoefTable.TValue.init -> void
 VolEngine.Context
 VolEngine.Context.Context(int threads = 0) -> void
 VolEngine.Context.Dispose() -> void
+VolEngine.Context.Fit(VolEngine.Spec! spec, System.ReadOnlySpan<double> series, VolEngine.FitOptions? options = null, double[,]? mxreg = null, double[,]? vxreg = null) -> VolEngine.Fit!
 VolEngine.Context.Threads.get -> int
 VolEngine.Copula
 VolEngine.Copula.Empirical = 2 -> VolEngine.Copula
@@ -35,6 +56,22 @@ VolEngine.Distribution.Norm = 0 -> VolEngine.Distribution
 VolEngine.Distribution.Sged = 4 -> VolEngine.Distribution
 VolEngine.Distribution.Sstd = 3 -> VolEngine.Distribution
 VolEngine.Distribution.Std = 1 -> VolEngine.Distribution
+VolEngine.Fit
+VolEngine.Fit.Aic(bool perObs = true) -> double
+VolEngine.Fit.Bic(bool perObs = true) -> double
+VolEngine.Fit.Coef(VolEngine.StandardErrorKind kind = VolEngine.StandardErrorKind.Hessian) -> VolEngine.CoefTable!
+VolEngine.Fit.Dispose() -> void
+VolEngine.Fit.Estimate() -> double[]!
+VolEngine.Fit.Fitted() -> double[]!
+VolEngine.Fit.Hqic(bool perObs = true) -> double
+VolEngine.Fit.Loglik.get -> double
+VolEngine.Fit.Names.get -> System.Collections.Generic.IReadOnlyList<string!>!
+VolEngine.Fit.Nobs.get -> int
+VolEngine.Fit.Residuals() -> double[]!
+VolEngine.Fit.Sic(bool perObs = true) -> double
+VolEngine.Fit.Sigma() -> double[]!
+VolEngine.Fit.Status.get -> VolEngine.FitStatus
+VolEngine.Fit.StdResiduals() -> double[]!
 VolEngine.FitOptions
 VolEngine.FitOptions.<Clone>$() -> VolEngine.FitOptions!
 VolEngine.FitOptions.Equals(VolEngine.FitOptions? other) -> bool

@@ -13,8 +13,9 @@
     <WarningLevel>9999</WarningLevel>
     <!-- As in ExcelReader: CA1062 (nullable annotations already say it), RS0026 (optional parameters on
          overloads are accepted for ergonomics), CA1819 (records of copied arrays are the API), CA1515, MA0048,
-         IDE1006 (the native declarations keep their C names). -->
-    <NoWarn>$(NoWarn);CA1062;RS0026;CA1819;CA1515;MA0048;IDE1006</NoWarn>
+         IDE1006 (the native declarations keep their C names). CA1814: input panels are rectangular double[,] and
+         double[,,] by design, pinned and handed to the native library without a copy. -->
+    <NoWarn>$(NoWarn);CA1062;RS0026;CA1819;CA1515;MA0048;IDE1006;CA1814</NoWarn>
     <NuGetAuditMode>all</NuGetAuditMode>
     <NuGetAuditLevel>high</NuGetAuditLevel>
   </PropertyGroup>
