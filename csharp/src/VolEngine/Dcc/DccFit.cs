@@ -132,6 +132,33 @@ public sealed unsafe class DccFit : IDisposable
         return NativeReads.Matrices(NativeReads.View(_handle, NativeMethods.ve_dcc_fit_covariance), Series);
     }
 
+    /// <summary>R, H, sigma and mean for h = 1..horizon after the last observation, as rmgarch's dccforecast
+    /// (n.roll = 0).</summary>
+    /// <remarks>The fit keeps what it needs: the univariate fits may already be disposed. A
+    /// <see cref="FitStatus.Failed"/> fit with a finite point forecasts from that point. See <see cref="DccForecast"/>
+    /// for the rules of R.</remarks>
+    /// <param name="horizon">The number of steps, at least 1.</param>
+    /// <param name="mxreg">For each series, its mean regressors of the horizon (horizon x k) or null for a series
+    /// without; null when no series has them.</param>
+    /// <param name="vxreg">For each series, its variance regressors of the horizon (horizon x k) or null; null when
+    /// no series has them.</param>
+    /// <returns>The forecast, a copy that outlives the fit.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="horizon"/> is below 1.</exception>
+    /// <exception cref="ArgumentException">A list without one entry per series, or an entry without horizon
+    /// rows.</exception>
+    /// <exception cref="VolEngineException">A series' regressors do not match its spec (the message names the series,
+    /// from 1), or the fit has no finite point.</exception>
+    public DccForecast Forecast(int horizon, IReadOnlyList<double[,]?>? mxreg = null, IReadOnlyList<double[,]?>? vxreg = null)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(horizon, 1);
+        using var future = DccFutures.Create(Series, horizon, mxreg, vxreg);
+        Calls.Check(NativeMethods.ve_dcc_forecast_create(_handle, (nuint)horizon, future, out var forecast));
+        using (forecast)
+        {
+            return DccForecast.Read(forecast);
+        }
+    }
+
     /// <summary>Frees the native result. Calling it again does nothing.</summary>
     public void Dispose()
     {

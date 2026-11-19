@@ -81,6 +81,7 @@ VolEngine.DccFit.Correlation() -> double[]![]![]!
 VolEngine.DccFit.Covariance() -> double[]![]![]!
 VolEngine.DccFit.Dispose() -> void
 VolEngine.DccFit.Estimate() -> double[]!
+VolEngine.DccFit.Forecast(int horizon, System.Collections.Generic.IReadOnlyList<double[,]?>? mxreg = null, System.Collections.Generic.IReadOnlyList<double[,]?>? vxreg = null) -> VolEngine.DccForecast!
 VolEngine.DccFit.Hqic(bool perObs = true) -> double
 VolEngine.DccFit.Loglik.get -> double
 VolEngine.DccFit.Names.get -> System.Collections.Generic.IReadOnlyList<string!>!
@@ -92,6 +93,13 @@ VolEngine.DccFitBatch
 VolEngine.DccFitBatch.Count.get -> int
 VolEngine.DccFitBatch.Dispose() -> void
 VolEngine.DccFitBatch.this[int index].get -> VolEngine.DccFit!
+VolEngine.DccForecast
+VolEngine.DccForecast.Correlation.get -> double[]![]![]!
+VolEngine.DccForecast.Covariance.get -> double[]![]![]!
+VolEngine.DccForecast.Horizon.get -> int
+VolEngine.DccForecast.Mean.get -> double[]![]!
+VolEngine.DccForecast.Series.get -> int
+VolEngine.DccForecast.Sigma.get -> double[]![]!
 VolEngine.DccModel
 VolEngine.DccModel.Adcc = 1 -> VolEngine.DccModel
 VolEngine.DccModel.Dcc = 0 -> VolEngine.DccModel
