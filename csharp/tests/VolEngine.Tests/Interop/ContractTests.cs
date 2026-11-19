@@ -44,4 +44,44 @@ public sealed class ContractTests
         var problems = ContractCheck.DefineProblems(["define VE_NEW_THING 3"]);
         Assert.Contains(problems, problem => problem.Contains("VE_NEW_THING", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void The_real_panel_ranges_declaration_is_accepted()
+    {
+        var line = "function ve_status ve_panel_set_ranges(ve_panel*, const size_t*, const size_t*)";
+        var problems = ContractCheck.FunctionProblems([line], typeof(NativeMethods));
+        Assert.DoesNotContain(problems, problem => problem.StartsWith("ve_panel_set_ranges ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_const_input_declared_as_out_is_reported()
+    {
+        AssertWrong("function ve_status ve_panel_set_ranges(ve_panel*, const size_t*, const size_t*)",
+                    "ve_panel_set_ranges parameter 1");
+    }
+
+    [Fact]
+    public void A_ref_output_is_reported()
+    {
+        AssertWrong("function ve_status ve_context_threads(const ve_context*, int32_t*)", "ve_context_threads parameter 1");
+    }
+
+    [Fact]
+    public void A_handle_array_declared_as_out_is_reported()
+    {
+        AssertWrong("function ve_status ve_batch_set_specs(ve_batch*, const ve_spec* const*, size_t)",
+                    "ve_batch_set_specs parameter 1");
+    }
+
+    [Fact]
+    public void A_string_without_utf8_is_reported()
+    {
+        AssertWrong("function ve_status ve_spec_set_fixed(ve_spec*, const char*, double)", "ve_spec_set_fixed strings");
+    }
+
+    private static void AssertWrong(string line, string expected)
+    {
+        var problems = ContractCheck.FunctionProblems([line], typeof(WrongDeclarations));
+        Assert.Contains(problems, problem => problem.StartsWith(expected, StringComparison.Ordinal));
+    }
 }

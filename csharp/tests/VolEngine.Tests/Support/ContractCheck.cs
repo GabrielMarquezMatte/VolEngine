@@ -45,6 +45,9 @@ internal static partial class ContractCheck
         ("VE_IC_", typeof(CriterionScale)),
     ];
 
+    // The batch fits write one handle per job into a caller array; every other ve_x** is one created handle.
+    private static readonly HashSet<string> HandleArrayOutputs = new(StringComparer.Ordinal) { "ve_fit_batch", "ve_dcc_fit_batch" };
+
     [GeneratedRegex(@"^function (?<ret>.+?) (?<name>ve_\w+)\((?<params>.*)\)$", RegexOptions.None, 1000)]
     private static partial Regex FunctionLine();
 
@@ -70,7 +73,7 @@ internal static partial class ContractCheck
                 problems.Add($"{name} is in the contract but not declared");
                 continue;
             }
-            problems.AddRange(SignatureProblems(method, match, native.Assembly));
+            problems.AddRange(SignatureProblems(method, match));
         }
         problems.AddRange(declared.Keys.Where(name => !seen.Contains(name))
             .Select(name => $"{name} is declared but not in the contract"));
@@ -130,12 +133,11 @@ internal static partial class ContractCheck
         return actual == value ? null : $"{name} = {value} but {type.Name}.{member} = {actual}";
     }
 
-    private static IEnumerable<string> SignatureProblems(MethodInfo method, Match match, Assembly assembly)
+    private static IEnumerable<string> SignatureProblems(MethodInfo method, Match match)
     {
         var name = method.Name;
-        var free = name.EndsWith("_free", StringComparison.Ordinal);
         var returned = match.Groups["ret"].Value;
-        if (!Accepted(returned, true, free, assembly).Contains(method.ReturnType))
+        if (!Accepted(name, returned, true).Contains(method.ReturnType))
         {
             yield return $"{name} returns {method.ReturnType} for C {returned}";
         }
@@ -149,16 +151,25 @@ internal static partial class ContractCheck
         }
         for (var i = 0; i < cTypes.Length; i++)
         {
-            if (!Accepted(cTypes[i], false, free, assembly).Contains(actual[i].ParameterType))
+            var type = actual[i].ParameterType;
+            if (!Accepted(name, cTypes[i], false).Contains(type) || (type.IsByRef && !actual[i].IsOut))
             {
-                yield return $"{name} parameter {i} is {actual[i].ParameterType} for C {cTypes[i]}";
+                yield return $"{name} parameter {i} is {type}{(actual[i].IsOut ? " (out)" : "")} for C {cTypes[i]}";
             }
+        }
+        var marshalling = method.GetCustomAttribute<LibraryImportAttribute>()?.StringMarshalling;
+        if (actual.Any(parameter => parameter.ParameterType == typeof(string)) && marshalling != StringMarshalling.Utf8)
+        {
+            yield return $"{name} strings are marshalled as {marshalling}, not Utf8";
         }
     }
 
-    // The C# types a declaration may use for one C type of the contract.
-    private static Type[] Accepted(string cType, bool isReturn, bool isFree, Assembly assembly)
+    // The C# types a declaration may use for one C type of the contract. A by-reference type is always an output and
+    // must be declared out.
+    private static Type[] Accepted(string function, string cType, bool isReturn)
     {
+        var input = cType.StartsWith("const ", StringComparison.Ordinal);
+        var handleArray = cType.EndsWith("* const*", StringComparison.Ordinal);
         var bare = ConstWord().Replace(cType, "").Replace(" ", "", StringComparison.Ordinal);
         var stars = bare.Count(character => character == '*');
         var baseName = bare.TrimEnd('*');
@@ -172,18 +183,22 @@ internal static partial class ContractCheck
         }
         if (Scalars.TryGetValue(baseName, out var scalar))
         {
-            return Pointers(scalar, stars);
+            return Pointers(scalar, stars, input);
         }
-        var handle = assembly.GetType("VolEngine.Interop." + HandleName(baseName));
+        var handle = typeof(NativeMethods).Assembly.GetType("VolEngine.Interop." + HandleName(baseName));
         if (handle is null)
         {
             return [];
         }
         if (stars == 1)
         {
-            return isFree ? [typeof(nint)] : [handle];
+            return function.EndsWith("_free", StringComparison.Ordinal) ? [typeof(nint)] : [handle];
         }
-        return stars == 2 ? [handle.MakeByRefType(), typeof(nint).MakePointerType()] : [];
+        if (stars != 2)
+        {
+            return [];
+        }
+        return handleArray || HandleArrayOutputs.Contains(function) ? [typeof(nint).MakePointerType()] : [handle.MakeByRefType()];
     }
 
     private static Type[] Characters(int stars, bool isReturn)
@@ -195,7 +210,9 @@ internal static partial class ContractCheck
         return stars == 2 ? [typeof(nint).MakeByRefType(), typeof(byte).MakePointerType().MakeByRefType()] : [];
     }
 
-    private static Type[] Pointers(Type scalar, int stars)
+    // const T* is an input buffer (T* only); T* is an output (out T) or an output buffer (T*); const double** is an out
+    // view.
+    private static Type[] Pointers(Type scalar, int stars, bool input)
     {
         if (stars == 0)
         {
@@ -203,12 +220,14 @@ internal static partial class ContractCheck
         }
         if (stars == 1)
         {
-            return [scalar.MakeByRefType(), scalar.MakePointerType()];
+            return input ? [scalar.MakePointerType()] : [scalar.MakeByRefType(), scalar.MakePointerType()];
         }
         return stars == 2 && scalar == typeof(double) ? [typeof(double).MakePointerType().MakeByRefType()] : [];
     }
 
     private static string HandleName(string cName)
-        => string.Concat(cName["ve_".Length..].Split('_').Select(part => char.ToUpperInvariant(part[0]) + part[1..]))
-           + "Handle";
+    {
+        var parts = cName["ve_".Length..].Split('_').Select(part => char.ToUpperInvariant(part[0]) + part[1..]);
+        return string.Concat(parts) + "Handle";
+    }
 }
