@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/VolEngine.Benchmarks/VolEngine.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/VolEngine/VolEngine.csproj" />
   </Folder>
