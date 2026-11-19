@@ -1,4 +1,14 @@
 #nullable enable
+override VolEngine.FitOptions.Equals(object? obj) -> bool
+override VolEngine.FitOptions.GetHashCode() -> int
+override VolEngine.FitOptions.ToString() -> string!
+override VolEngine.Spec.Equals(object? obj) -> bool
+override VolEngine.Spec.GetHashCode() -> int
+override VolEngine.Spec.ToString() -> string!
+static VolEngine.FitOptions.operator !=(VolEngine.FitOptions? left, VolEngine.FitOptions? right) -> bool
+static VolEngine.FitOptions.operator ==(VolEngine.FitOptions? left, VolEngine.FitOptions? right) -> bool
+static VolEngine.Spec.operator !=(VolEngine.Spec? left, VolEngine.Spec? right) -> bool
+static VolEngine.Spec.operator ==(VolEngine.Spec? left, VolEngine.Spec? right) -> bool
 VolEngine.Context
 VolEngine.Context.Context(int threads = 0) -> void
 VolEngine.Context.Dispose() -> void
@@ -25,6 +35,18 @@ VolEngine.Distribution.Norm = 0 -> VolEngine.Distribution
 VolEngine.Distribution.Sged = 4 -> VolEngine.Distribution
 VolEngine.Distribution.Sstd = 3 -> VolEngine.Distribution
 VolEngine.Distribution.Std = 1 -> VolEngine.Distribution
+VolEngine.FitOptions
+VolEngine.FitOptions.<Clone>$() -> VolEngine.FitOptions!
+VolEngine.FitOptions.Equals(VolEngine.FitOptions? other) -> bool
+VolEngine.FitOptions.FitOptions() -> void
+VolEngine.FitOptions.MaxIter.get -> int
+VolEngine.FitOptions.MaxIter.init -> void
+VolEngine.FitOptions.StandardErrors.get -> bool
+VolEngine.FitOptions.StandardErrors.init -> void
+VolEngine.FitOptions.Tolerance.get -> double
+VolEngine.FitOptions.Tolerance.init -> void
+VolEngine.FitOptions.VarInit.get -> VolEngine.VarInit
+VolEngine.FitOptions.VarInit.init -> void
 VolEngine.FitStatus
 VolEngine.FitStatus.Converged = 0 -> VolEngine.FitStatus
 VolEngine.FitStatus.Failed = 2 -> VolEngine.FitStatus
@@ -46,6 +68,37 @@ VolEngine.Model.FGarchTGarch = 7 -> VolEngine.Model
 VolEngine.Model.GjrGarch = 2 -> VolEngine.Model
 VolEngine.Model.IGarch = 4 -> VolEngine.Model
 VolEngine.Model.SGarch = 0 -> VolEngine.Model
+VolEngine.Spec
+VolEngine.Spec.<Clone>$() -> VolEngine.Spec!
+VolEngine.Spec.Archm.get -> int
+VolEngine.Spec.Archm.init -> void
+VolEngine.Spec.Arfima.get -> bool
+VolEngine.Spec.Arfima.init -> void
+VolEngine.Spec.Arma.get -> (int Ar, int Ma)
+VolEngine.Spec.Arma.init -> void
+VolEngine.Spec.Distribution.get -> VolEngine.Distribution
+VolEngine.Spec.Distribution.init -> void
+VolEngine.Spec.Equals(VolEngine.Spec? other) -> bool
+VolEngine.Spec.Fixed.get -> System.Collections.Generic.IReadOnlyDictionary<string!, double>!
+VolEngine.Spec.Fixed.init -> void
+VolEngine.Spec.IncludeMean.get -> bool
+VolEngine.Spec.IncludeMean.init -> void
+VolEngine.Spec.Model.get -> VolEngine.Model
+VolEngine.Spec.Model.init -> void
+VolEngine.Spec.Mxreg.get -> int
+VolEngine.Spec.Mxreg.init -> void
+VolEngine.Spec.P.get -> int
+VolEngine.Spec.P.init -> void
+VolEngine.Spec.Q.get -> int
+VolEngine.Spec.Q.init -> void
+VolEngine.Spec.Spec() -> void
+VolEngine.Spec.Start.get -> System.Collections.Generic.IReadOnlyDictionary<string!, double>!
+VolEngine.Spec.Start.init -> void
+VolEngine.Spec.Validate() -> void
+VolEngine.Spec.VarianceTargeting.get -> bool
+VolEngine.Spec.VarianceTargeting.init -> void
+VolEngine.Spec.Vxreg.get -> int
+VolEngine.Spec.Vxreg.init -> void
 VolEngine.StandardErrorKind
 VolEngine.StandardErrorKind.Hessian = 0 -> VolEngine.StandardErrorKind
 VolEngine.StandardErrorKind.Robust = 1 -> VolEngine.StandardErrorKind
