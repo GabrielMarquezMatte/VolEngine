@@ -1,10 +1,29 @@
 namespace VolEngine;
 
 /// <summary>The coefficient table of a fit, one entry per parameter in <see cref="Names"/> order.</summary>
-/// <param name="Names">The parameter names.</param>
-/// <param name="Estimate">The estimates (fixed and derived parameters included).</param>
-/// <param name="StdError">The standard errors; NaN for fixed and derived parameters.</param>
-/// <param name="TValue">Estimate divided by standard error; NaN where the standard error is.</param>
-/// <param name="PValue">2 (1 - Phi(|t|)); NaN where the standard error is.</param>
-public sealed record CoefTable(IReadOnlyList<string> Names, double[] Estimate, double[] StdError, double[] TValue,
-                               double[] PValue);
+public sealed class CoefTable
+{
+    internal CoefTable(IReadOnlyList<string> names, double[] estimate, double[] stdError, double[] tValue, double[] pValue)
+    {
+        Names = names;
+        Estimate = estimate;
+        StdError = stdError;
+        TValue = tValue;
+        PValue = pValue;
+    }
+
+    /// <summary>The parameter names.</summary>
+    public IReadOnlyList<string> Names { get; }
+
+    /// <summary>The estimates (fixed and derived parameters included).</summary>
+    public double[] Estimate { get; }
+
+    /// <summary>The standard errors; NaN for fixed and derived parameters.</summary>
+    public double[] StdError { get; }
+
+    /// <summary>Estimate divided by standard error; NaN where the standard error is.</summary>
+    public double[] TValue { get; }
+
+    /// <summary>2 (1 - Phi(|t|)); NaN where the standard error is.</summary>
+    public double[] PValue { get; }
+}

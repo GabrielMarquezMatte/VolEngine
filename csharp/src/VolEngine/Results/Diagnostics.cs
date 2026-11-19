@@ -20,10 +20,27 @@ public sealed record SignBiasResult(DiagnosticResult Sign, DiagnosticResult Nega
 public sealed record CriticalValues(double TenPercent, double FivePercent, double OnePercent);
 
 /// <summary>The Nyblom (Hansen) parameter stability test.</summary>
-/// <param name="Individual">The statistic of each estimated parameter, in parameter order; fixed and derived
-/// parameters have none. An estimated parameter whose scores are all zero has NaN.</param>
-/// <param name="Joint">The joint statistic over the estimated parameters.</param>
-/// <param name="IndividualCritical">The critical values for one parameter.</param>
-/// <param name="JointCritical">The critical values for the number of estimated parameters; null outside 1..20.</param>
-public sealed record NyblomResult(IReadOnlyDictionary<string, double> Individual, double Joint,
-                                  CriticalValues IndividualCritical, CriticalValues? JointCritical);
+public sealed class NyblomResult
+{
+    internal NyblomResult(IReadOnlyDictionary<string, double> individual, double joint, CriticalValues individualCritical,
+                          CriticalValues? jointCritical)
+    {
+        Individual = individual;
+        Joint = joint;
+        IndividualCritical = individualCritical;
+        JointCritical = jointCritical;
+    }
+
+    /// <summary>The statistic of each estimated parameter, in parameter order; fixed and derived parameters have none.
+    /// An estimated parameter whose scores are all zero has NaN.</summary>
+    public IReadOnlyDictionary<string, double> Individual { get; }
+
+    /// <summary>The joint statistic over the estimated parameters.</summary>
+    public double Joint { get; }
+
+    /// <summary>The critical values for one parameter.</summary>
+    public CriticalValues IndividualCritical { get; }
+
+    /// <summary>The critical values for the number of estimated parameters; null outside 1..20.</summary>
+    public CriticalValues? JointCritical { get; }
+}

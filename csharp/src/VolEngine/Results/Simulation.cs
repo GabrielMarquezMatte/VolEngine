@@ -3,13 +3,29 @@ using VolEngine.Interop;
 namespace VolEngine;
 
 /// <summary>Simulated paths, path by path. It is a copy: it does not depend on its source or context.</summary>
-/// <param name="Paths">The number of paths.</param>
-/// <param name="Horizon">The number of steps of each path.</param>
-/// <param name="Returns">The simulated returns, Paths x Horizon.</param>
-/// <param name="Sigma">The conditional standard deviation of each step, Paths x Horizon.</param>
-public sealed record Simulation(int Paths, int Horizon, double[][] Returns, double[][] Sigma)
+public sealed class Simulation
 {
+    private Simulation(int paths, int horizon, double[][] returns, double[][] sigma)
+    {
+        Paths = paths;
+        Horizon = horizon;
+        Returns = returns;
+        Sigma = sigma;
+    }
+
     internal delegate int Simulator(SimOptionsHandle options, out SimHandle simulation);
+
+    /// <summary>The number of paths.</summary>
+    public int Paths { get; }
+
+    /// <summary>The number of steps of each path.</summary>
+    public int Horizon { get; }
+
+    /// <summary>The simulated returns, Paths x Horizon.</summary>
+    public double[][] Returns { get; }
+
+    /// <summary>The conditional standard deviation of each step, Paths x Horizon.</summary>
+    public double[][] Sigma { get; }
 
     internal static unsafe Simulation Run(SimulationOptions options, int mxreg, int vxreg, Simulator simulate)
     {
