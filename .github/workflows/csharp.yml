@@ -1,0 +1,121 @@
+name: C# binding
+
+# Builds the library, then builds and tests the .NET binding in csharp/ against it on the three systems. The binding
+# loads the library named by VOLENGINE_LIB, the same file the Python package and the C++ wrapper use.
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'csharp/**'
+      - 'include/**'
+      - 'src/**'
+      - 'CMakeLists.txt'
+      - 'global.json'
+      - 'python/scripts/build_native.py'
+      - 'tests/reference/**'
+      - '.github/workflows/csharp.yml'
+  pull_request:
+    paths:
+      - 'csharp/**'
+      - 'include/**'
+      - 'src/**'
+      - 'CMakeLists.txt'
+      - 'global.json'
+      - 'python/scripts/build_native.py'
+      - 'tests/reference/**'
+      - '.github/workflows/csharp.yml'
+
+concurrency:
+  group: csharp-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: linux
+    runs-on: ubuntu-24.04
+    env:
+      CC: gcc-14
+      CXX: g++-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install GCC 14 and Ninja
+        run: sudo apt-get install -y g++-14 ninja-build
+
+      - name: Build the library
+        run: python3 python/scripts/build_native.py
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Test the binding
+        env:
+          VOLENGINE_LIB: ${{ github.workspace }}/python/src/volengine/_lib/libvolengine.so
+        run: dotnet test --solution csharp/VolEngine.slnx -c Release
+
+  macos:
+    name: macos
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: brew install ninja
+
+      - name: Build the library
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
+        run: python3 python/scripts/build_native.py
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Test the binding
+        env:
+          VOLENGINE_LIB: ${{ github.workspace }}/python/src/volengine/_lib/libvolengine.dylib
+        run: dotnet test --solution csharp/VolEngine.slnx -c Release
+
+  windows:
+    name: windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          path-type: inherit
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+
+      - name: Build the library with MinGW
+        shell: msys2 {0}
+        run: uv run --no-project --python 3.14 python python/scripts/build_native.py
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Test the binding
+        shell: pwsh
+        env:
+          VOLENGINE_LIB: ${{ github.workspace }}\python\src\volengine\_lib\libvolengine.dll
+        run: dotnet test --solution csharp/VolEngine.slnx -c Release
