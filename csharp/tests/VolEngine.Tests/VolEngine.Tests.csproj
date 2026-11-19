@@ -6,12 +6,12 @@
     <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
     <!-- As in ExcelReader's tests: CA1707 (test names use underscores), CA2007 (no synchronization context),
-         CA1515/CA1034/CA1812 (xUnit classes), MA0004; RS0016/RS0026/RS0037 (a test project ships no API). -->
-    <NoWarn>$(NoWarn);CA2007;CA1707;MA0004;CA1034;CA1812;RS0016;RS0026;RS0037</NoWarn>
+         CA1515/CA1034/CA1812 (xUnit classes), MA0004. -->
+    <NoWarn>$(NoWarn);CA2007;CA1707;MA0004;CA1034;CA1812</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="xunit.v3.mtp-v2" />
-    <PackageReference Include="xunit.runner.visualstudio">
+    <PackageReference Include="xunit.v3.mtp-v2" Version="4.0.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>

@@ -15,20 +15,17 @@
          overloads are accepted for ergonomics), CA1819 (records of copied arrays are the API), CA1515, MA0048,
          IDE1006 (the native declarations keep their C names). -->
     <NoWarn>$(NoWarn);CA1062;RS0026;CA1819;CA1515;MA0048;IDE1006</NoWarn>
-    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <NuGetAuditMode>all</NuGetAuditMode>
     <NuGetAuditLevel>high</NuGetAuditLevel>
   </PropertyGroup>
+  <!-- The style analyzers of ExcelReader's STYLEGUIDE, in every project; PrivateAssets keeps them out of the package's
+       dependencies. -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers">
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="11.0.100">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Meziantou.Analyzer">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers">
+    <PackageReference Include="Meziantou.Analyzer" Version="3.0.325">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
