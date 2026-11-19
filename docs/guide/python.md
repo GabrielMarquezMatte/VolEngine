@@ -54,6 +54,10 @@ sims = ctx.simulate(fit, horizon=60, paths=2000, seed=7)   # the same seed gives
 print(np.percentile(sims.returns.sum(axis=1), [5, 50, 95]))
 ```
 
+The forecast follows `rugarch`, so it is not the mean of the simulated paths for a gjrGARCH with a skewed distribution
+(P(z < 0) stands in for E[1{z < 0} z²]) and for a csGARCH from h = 2 (the closed form leaves out the last shock); see
+[validation](validation.md).
+
 ## DCC and Copula-DCC
 
 A DCC takes univariate fits, one per series, and fits the correlation model on their standardized residuals:
@@ -75,10 +79,14 @@ specs = [ve.DccSpec(model, dist="mvnorm") for model in ("dcc", "adcc")]
 candidates = ctx.fit_dcc(specs, fits, standard_errors=False)
 winner = min(candidates, key=lambda candidate: candidate.bic())
 print(winner.estimate)                  # without standard errors `coef()` raises: call `standard_errors`
-print(winner.standard_errors(fits).coef("robust"))
+print(ctx.standard_errors(winner, fits).coef("robust"))  # on ctx's threads
 copula = ctx.fit_dcc(ve.DccSpec("dcc", dist="mvt", copula="parametric"), fits)
 print(copula.status)
 ```
+
+The `mvlaplace` density is singular where every standardized residual of a date is exactly 0 (a common holiday with `mu`
+fixed at 0): the log-likelihood is then not finite and the fit ends `failed`, with no message besides the status.
+Drop such dates before the univariate fits.
 
 The README has the long examples: ARMA means, every distribution, fixed parameters, regressors, ARFIMA and variance
 targeting.

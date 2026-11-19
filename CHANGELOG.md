@@ -8,6 +8,61 @@ From 1.0 the C ABI only grows: a signature or an enum value is never changed or 
 semver major (the Python package and the C++ wrapper refuse a library whose ABI version differs). Before 1.0 it could
 break between 0.x releases.
 
+## [Unreleased]
+
+### Added
+
+- Python: `Context.standard_errors(fit, univariate)` adds the two-stage standard errors to a DCC fit on that context's
+  threads; `DccFit.standard_errors` takes an optional `context` (without one it still uses every core).
+
+### Changed
+
+- A univariate start or fixed value is checked against the closure of what the parameter map reaches, so every
+  estimate passes: the persistence P < 1 (the map keeps it at most 1 - 1e-8 but for rounding), the ARFIMA d in
+  rugarch's closed [1e-8, 0.5], |eta1| and the apARCH |gamma| at most 1, and csGARCH P <= rho < 1. A d of 0.5 or a
+  gamma of 1, rejected before, is accepted, as in rugarch.
+- The ged and sged shape has rugarch's lower bound of 0.1: a start or fixed shape below it ends `VE_FIT_FAILED`.
+
+### Fixed
+
+- A start value on the edge of its domain (a weight of 0, a persistence at its ceiling) no longer freezes it: it mapped
+  to a logit of -708 where the optimizer cannot move, and the fit reported convergence there. `alpha1 = 0` in sGARCH
+  ended 130 below the optimum in loglik, `dcca1 = 0` or `dccb1 = 0` in DCC and `dccg1 = 0` in aDCC as well. Such a
+  start now begins just inside; any other start is taken exactly.
+- A fit whose persistence rounds to its ceiling (high-persistence data) had every standard error NaN, and its estimate
+  failed as a warm start or as fixed values, because the validity check was stricter than the map. The csGARCH rho
+  could also round below P.
+- eGARCH (and ged with shape <= 1) standard errors where the mean estimate sits on a kink of |z|, which a concave kink
+  attracts: the Hessian no longer differences the gradient across it. On simulated series, eGARCH-ARMA(1,1) fits
+  with every standard error NaN fell from 10 in 40 to 1 (an unidentified ARMA), and the plain eGARCH mu standard
+  error, 0.2 to 0.33 of the right one on 5 in 40 fits, is right.
+- A ged or sged fit on a series with exact zeros (stale prices, no mean) had no maximum: the shape ran to 0 and the fit
+  ended `VE_FIT_FAILED` with a loglik of +31775.
+- Python: a forecast horizon of 2**64 or more is rejected instead of wrapping; `VOLENGINE_LIB` with a bare file name
+  loads that file; broadcast (stride 0) arrays are copied instead of rejected; numpy integers are accepted in `arma`
+  and `order`; copying or pickling a fit raises `TypeError` instead of failing in the finalizer; the macOS wheel tag
+  keeps the minor version of the deployment target; the `DccSpec` docstring describes fixed parameters as listed.
+- C++ wrapper: `Batch::set_regressors({}, {})` clears the regressors (it passed 0 jobs); no handle leaks when an
+  allocation fails after a batch fit; the git tag is read only from the VolEngine repository itself, so a vendored
+  `cpp/` no longer downloads the release of the enclosing repository's tag; the download verifies TLS and never
+  reuses a partial file; musl is detected from the toolchain, not from a loader file on the host; a prerelease tag
+  gives its package version (1.1.0 for v1.1.0-rc.1) instead of 0.0.0.
+- Release: a manual run publishes to GitHub Releases and PyPI only on a tag, as nuget.org already did; from a branch
+  it created a release named after the branch.
+- C API: a DCC fit with no parameter (a static copula with Kendall and mvnorm) takes NULL in `ve_dcc_fit_estimates`,
+  `_std_errors`, `_t_values` and `_p_values`, which the .NET binding passes for an empty array; `Estimate()` and
+  `Coef()` threw there. An absurd count (`1 << 62` jobs, specs, regressors or forecast steps) is
+  `VE_INVALID_ARGUMENT`, not `VE_INTERNAL_ERROR`. Forecast, simulation and DCC future regressors with NaN or Inf are
+  rejected, as the fit's already were. `ve_sim_options_set_correlations` takes 0 or 1 only, like every other switch.
+  `ve_dcc_options_create` and `ve_dcc_batch_create` set `*out` to NULL on failure; recording an error message never
+  throws across the C interface; `ve_spec_set_fixed` leaves the spec unchanged when it fails; a NULL DCC parameter
+  name says so.
+- The Pearson goodness-of-fit test sorts the probabilities before binning, so a CDF one ulp out of order across a bin
+  edge can no longer wrap the count of empty bins. `digamma` returns NaN below -1e6 instead of looping forever.
+- Docs: the `ve_dcc_fit_criterion` count for a static ML copula, the mvlaplace singularity at z = 0, the
+  gjrGARCH (skewed) and csGARCH (h >= 2) forecasts that follow rugarch rather than the mean of simulated paths, the
+  C++ `DccOptions` and simulation reproducibility comments, and `Panel.FromSeries` regressors in the C# guide.
+
 ## [1.1.0] - 2026-11-19
 
 ### Added

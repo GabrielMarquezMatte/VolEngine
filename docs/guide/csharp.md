@@ -48,7 +48,10 @@ A fit that does not converge is a status, not an exception. The information crit
 as in rugarch (`Bic(perObs: false)` gives arch's total). `Spec` has the orders (`P`, `Q`, `Arma`), the mean
 (`IncludeMean`, `Archm`, `Arfima`), `Fixed` and `Start` values, `VarianceTargeting`, and the regressor counts `Mxreg`
 and `Vxreg`; the regressors themselves are T x k arrays given to `Fit`, and their horizon values to `Forecast` and
-`SimulationOptions`. `Context.Simulate` also takes a spec with every parameter fixed.
+`SimulationOptions`. `Context.Simulate` also takes a spec with every parameter fixed. The forecast follows `rugarch`, so it
+is not the mean of the simulated paths for a gjrGARCH with a skewed distribution (P(z < 0) stands in for
+E[1{z < 0} z²]) and for a csGARCH from h = 2 (the closed form leaves out the last shock); see
+[validation](validation.md).
 
 ## Many series and specs
 
@@ -69,7 +72,7 @@ for (var j = 0; j < grid.SeriesCount; j++)
 ```
 
 `grid[i, j]` is spec i on series j; the grid owns its fits, so dispose the grid, not them. `Panel.FromSeries` takes
-series of different lengths (one range per series), and both take T x N x k regressors.
+series of different lengths (one range per series), `Panel.FromColumns` takes T x N x k regressors and `Panel.FromSeries` one length x k array per series.
 
 ## Diagnostics
 
@@ -105,6 +108,10 @@ FDCC takes `Groups`, one label per series from 1; `Copula` makes a Copula-DCC, a
 constant correlation. A `DccFit` keeps what it needs to forecast and simulate, so the univariate fits may be disposed
 after `FitDcc`; `StandardErrors` needs them. `DccSimulationOptions { Correlations = true }` keeps R and H of every path
 and step, and `Mxreg`/`Vxreg` take one entry per series (null for a series without regressors).
+
+The `MvLaplace` density is singular where every standardized residual of a date is exactly 0 (a common holiday with
+`mu` fixed at 0): the log-likelihood is then not finite and the fit ends `Failed`, with no message besides the status.
+Drop such dates before the univariate fits.
 
 ## Threads and Dispose
 

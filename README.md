@@ -110,7 +110,7 @@ specs = [
 ]
 grid = ctx.fit_dcc(specs, fits, standard_errors=False)
 best = min((fit for fit in grid if fit.status == "converged"), key=lambda fit: fit.bic())
-print(best.standard_errors(fits).coef("robust"))
+print(ctx.standard_errors(best, fits).coef("robust"))
 print(best.R.shape)               # (5000, 21, 21), read-only, zero-copy
 print(best.H.shape)               # covariance path, calculated on first access
 ```
