@@ -2,6 +2,9 @@
 override VolEngine.CriticalValues.Equals(object? obj) -> bool
 override VolEngine.CriticalValues.GetHashCode() -> int
 override VolEngine.CriticalValues.ToString() -> string!
+override VolEngine.DccSimulationOptions.Equals(object? obj) -> bool
+override VolEngine.DccSimulationOptions.GetHashCode() -> int
+override VolEngine.DccSimulationOptions.ToString() -> string!
 override VolEngine.DccSpec.Equals(object? obj) -> bool
 override VolEngine.DccSpec.GetHashCode() -> int
 override VolEngine.DccSpec.ToString() -> string!
@@ -22,6 +25,8 @@ override VolEngine.Spec.GetHashCode() -> int
 override VolEngine.Spec.ToString() -> string!
 static VolEngine.CriticalValues.operator !=(VolEngine.CriticalValues? left, VolEngine.CriticalValues? right) -> bool
 static VolEngine.CriticalValues.operator ==(VolEngine.CriticalValues? left, VolEngine.CriticalValues? right) -> bool
+static VolEngine.DccSimulationOptions.operator !=(VolEngine.DccSimulationOptions? left, VolEngine.DccSimulationOptions? right) -> bool
+static VolEngine.DccSimulationOptions.operator ==(VolEngine.DccSimulationOptions? left, VolEngine.DccSimulationOptions? right) -> bool
 static VolEngine.DccSpec.operator !=(VolEngine.DccSpec? left, VolEngine.DccSpec? right) -> bool
 static VolEngine.DccSpec.operator ==(VolEngine.DccSpec? left, VolEngine.DccSpec? right) -> bool
 static VolEngine.DiagnosticResult.operator !=(VolEngine.DiagnosticResult? left, VolEngine.DiagnosticResult? right) -> bool
@@ -50,6 +55,7 @@ VolEngine.Context.Fit(System.Collections.Generic.IReadOnlyList<VolEngine.Spec!>!
 VolEngine.Context.Fit(VolEngine.Spec! spec, System.ReadOnlySpan<double> series, VolEngine.FitOptions? options = null, double[,]? mxreg = null, double[,]? vxreg = null) -> VolEngine.Fit!
 VolEngine.Context.FitDcc(System.Collections.Generic.IReadOnlyList<VolEngine.DccSpec!>! specs, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, bool standardErrors = true) -> VolEngine.DccFitBatch!
 VolEngine.Context.FitDcc(VolEngine.DccSpec! spec, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, bool standardErrors = true) -> VolEngine.DccFit!
+VolEngine.Context.Simulate(VolEngine.DccFit! source, VolEngine.DccSimulationOptions! options) -> VolEngine.DccSimulation!
 VolEngine.Context.Simulate(VolEngine.Fit! source, VolEngine.SimulationOptions! options) -> VolEngine.Simulation!
 VolEngine.Context.Simulate(VolEngine.Spec! source, VolEngine.SimulationOptions! options) -> VolEngine.Simulation!
 VolEngine.Context.StandardErrors(VolEngine.DccFit! fit, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate) -> VolEngine.DccFit!
@@ -105,6 +111,31 @@ VolEngine.DccModel.Adcc = 1 -> VolEngine.DccModel
 VolEngine.DccModel.Dcc = 0 -> VolEngine.DccModel
 VolEngine.DccModel.Fdcc = 2 -> VolEngine.DccModel
 VolEngine.DccModel.Static = 3 -> VolEngine.DccModel
+VolEngine.DccSimulation
+VolEngine.DccSimulation.Correlation.get -> double[]![]![]![]?
+VolEngine.DccSimulation.Covariance.get -> double[]![]![]![]?
+VolEngine.DccSimulation.Horizon.get -> int
+VolEngine.DccSimulation.Paths.get -> int
+VolEngine.DccSimulation.Returns.get -> double[]![]![]!
+VolEngine.DccSimulation.Series.get -> int
+VolEngine.DccSimulation.Sigma.get -> double[]![]![]!
+VolEngine.DccSimulationOptions
+VolEngine.DccSimulationOptions.<Clone>$() -> VolEngine.DccSimulationOptions!
+VolEngine.DccSimulationOptions.Correlations.get -> bool
+VolEngine.DccSimulationOptions.Correlations.init -> void
+VolEngine.DccSimulationOptions.DccSimulationOptions(int Horizon, int Paths, ulong Seed) -> void
+VolEngine.DccSimulationOptions.Deconstruct(out int Horizon, out int Paths, out ulong Seed) -> void
+VolEngine.DccSimulationOptions.Equals(VolEngine.DccSimulationOptions? other) -> bool
+VolEngine.DccSimulationOptions.Horizon.get -> int
+VolEngine.DccSimulationOptions.Horizon.init -> void
+VolEngine.DccSimulationOptions.Mxreg.get -> System.Collections.Generic.IReadOnlyList<double[,]?>?
+VolEngine.DccSimulationOptions.Mxreg.init -> void
+VolEngine.DccSimulationOptions.Paths.get -> int
+VolEngine.DccSimulationOptions.Paths.init -> void
+VolEngine.DccSimulationOptions.Seed.get -> ulong
+VolEngine.DccSimulationOptions.Seed.init -> void
+VolEngine.DccSimulationOptions.Vxreg.get -> System.Collections.Generic.IReadOnlyList<double[,]?>?
+VolEngine.DccSimulationOptions.Vxreg.init -> void
 VolEngine.DccSpec
 VolEngine.DccSpec.<Clone>$() -> VolEngine.DccSpec!
 VolEngine.DccSpec.Copula.get -> VolEngine.Copula

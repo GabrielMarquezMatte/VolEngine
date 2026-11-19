@@ -23,12 +23,13 @@ public sealed class Forecast
     /// <summary>The conditional mean (rugarch's seriesFor).</summary>
     public double[] Mean { get; }
 
-    internal static unsafe Forecast Read(ForecastHandle handle, int horizon)
+    internal static unsafe Forecast Read(ForecastHandle handle)
     {
+        Calls.Check(NativeMethods.ve_forecast_horizon(handle, out var horizon));
         double* data;
         nuint length;
         var sigma = Futures.Copy(NativeMethods.ve_forecast_sigma(handle, out data, out length), data, length);
         var mean = Futures.Copy(NativeMethods.ve_forecast_mean(handle, out data, out length), data, length);
-        return new Forecast(horizon, sigma, mean);
+        return new Forecast(checked((int)horizon), sigma, mean);
     }
 }

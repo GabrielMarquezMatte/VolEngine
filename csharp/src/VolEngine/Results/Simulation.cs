@@ -55,13 +55,17 @@ public sealed class Simulation
             Calls.Check(simulate(handle, out var simulation));
             using (simulation)
             {
-                return Read(simulation, options.Paths, options.Horizon);
+                return Read(simulation);
             }
         }
     }
 
-    private static unsafe Simulation Read(SimHandle simulation, int paths, int horizon)
+    private static unsafe Simulation Read(SimHandle simulation)
     {
+        Calls.Check(NativeMethods.ve_sim_paths(simulation, out var pathCount));
+        Calls.Check(NativeMethods.ve_sim_horizon(simulation, out var steps));
+        var paths = checked((int)pathCount);
+        var horizon = checked((int)steps);
         double* data;
         nuint length;
         var returns = Futures.Copy(NativeMethods.ve_sim_returns(simulation, out data, out length), data, length);

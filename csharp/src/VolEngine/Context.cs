@@ -233,6 +233,26 @@ public sealed class Context : IDisposable
         }
     }
 
+    /// <summary>Simulates multivariate paths of a DCC fit after its last observation.</summary>
+    /// <remarks>The fit keeps the final state of each series and needs no univariate <see cref="VolEngine.Fit"/>.
+    /// Path p reads only the stream (seed, p), with the seed rule of
+    /// <see cref="Simulate(VolEngine.Fit, SimulationOptions)"/>. The native library does not promise that DCC fits,
+    /// standard errors and DCC simulations run concurrently on one context.</remarks>
+    /// <param name="source">The DCC fit; it must have a finite point.</param>
+    /// <param name="options">The horizon, number of paths, seed, correlations and per-series horizon regressors.</param>
+    /// <returns>The paths, a copy.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">A horizon or path count below 1, or arrays too large for one
+    /// managed array.</exception>
+    /// <exception cref="ArgumentException">A regressor list without one entry per series, or an entry without
+    /// Horizon rows.</exception>
+    /// <exception cref="VolEngineException">A series' regressors do not match its spec (the message names the series,
+    /// from 1), or the fit has no finite point.</exception>
+    public DccSimulation Simulate(DccFit source, DccSimulationOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return DccSimulation.Run(_handle, source, options);
+    }
+
     /// <summary>Frees the thread pool. Calling it again does nothing.</summary>
     public void Dispose()
     {

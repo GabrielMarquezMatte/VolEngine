@@ -57,10 +57,11 @@ public sealed class DccFitBatch : IDisposable
             owned.Add(options);
             Calls.Check(NativeMethods.ve_dcc_options_set_standard_errors(options, standardErrors ? 1 : 0));
             Calls.Check(NativeMethods.ve_dcc_batch_set_options(batch, options));
-            var results = new nint[specs.Count];
-            Calls.Check(WithFits(univariate, (fits, count) =>
+            Calls.Check(NativeMethods.ve_dcc_batch_spec_count(batch, out var count));
+            var results = new nint[checked((int)count)];
+            Calls.Check(WithFits(univariate, (fits, fitCount) =>
             {
-                var status = NativeMethods.ve_dcc_batch_set_fits(batch, fits, count);
+                var status = NativeMethods.ve_dcc_batch_set_fits(batch, fits, fitCount);
                 if (status != 0)
                 {
                     return status;

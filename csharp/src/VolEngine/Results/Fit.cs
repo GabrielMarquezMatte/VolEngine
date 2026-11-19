@@ -234,7 +234,7 @@ public sealed unsafe class Fit : IDisposable
             Calls.Check(NativeMethods.ve_forecast_create(_handle, (nuint)horizon, meanPanel, variancePanel, out var forecast));
             using (forecast)
             {
-                return VolEngine.Forecast.Read(forecast, horizon);
+                return VolEngine.Forecast.Read(forecast);
             }
         }
     }

@@ -28,7 +28,7 @@ internal static unsafe class Batch
             using var batch = CreateBatch(owned, specs, options, panel);
             SetJobs(batch, specs.Count, panel.Series);
             SetRegressors(owned, batch, specs, panel);
-            return Execute(context, batch, specs.Count * panel.Series);
+            return Execute(context, batch);
         }
         finally
         {
@@ -143,9 +143,10 @@ internal static unsafe class Batch
         return [.. jobs];
     }
 
-    private static Fit[] Execute(ContextHandle context, BatchHandle batch, int jobs)
+    private static Fit[] Execute(ContextHandle context, BatchHandle batch)
     {
-        var pointers = new nint[jobs];
+        Calls.Check(NativeMethods.ve_batch_job_count(batch, out var jobs));
+        var pointers = new nint[checked((int)jobs)];
         fixed (nint* fits = pointers)
         {
             Calls.Check(NativeMethods.ve_fit_batch(context, batch, fits));
