@@ -35,10 +35,6 @@ public sealed unsafe class Fit : IDisposable
         Names = Array.AsReadOnly(names);
     }
 
-    private delegate int ViewReader(FitHandle fit, out double* data, out nuint length);
-
-    private delegate int ValueReader(FitHandle fit, double* values);
-
     private delegate int TestReader(double* result);
 
     /// <summary>How the fit ended. A status added by a newer native library is a value outside the named ones.</summary>
@@ -280,33 +276,13 @@ public sealed unsafe class Fit : IDisposable
         return new CriticalValues(values[0], values[1], values[2]);
     }
 
-    private double[] Values(ValueReader reader)
+    private double[] Values(ValueReader<FitHandle> reader)
     {
-        var values = new double[Names.Count];
-        fixed (double* output = values)
-        {
-            Calls.Check(reader(_handle, output));
-        }
-        return values;
+        return NativeReads.Values(_handle, Names.Count, reader);
     }
 
-    // The view points into the native result, so the handle is held until the copy is done: a Dispose on another
-    // thread then waits for the release instead of freeing the memory under the copy.
-    private double[] View(ViewReader reader)
+    private double[] View(ViewReader<FitHandle> reader)
     {
-        var added = false;
-        _handle.DangerousAddRef(ref added);
-        try
-        {
-            Calls.Check(reader(_handle, out var data, out var length));
-            return new ReadOnlySpan<double>(data, checked((int)length)).ToArray();
-        }
-        finally
-        {
-            if (added)
-            {
-                _handle.DangerousRelease();
-            }
-        }
+        return NativeReads.View(_handle, reader);
     }
 }

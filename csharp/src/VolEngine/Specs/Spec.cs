@@ -77,14 +77,14 @@ public sealed record Spec
     public IReadOnlyDictionary<string, double> Fixed
     {
         get => _fixed;
-        init => _fixed = Frozen(value);
+        init => _fixed = FrozenValues.Frozen(value);
     }
 
     /// <summary>Starting values that replace the defaults (a copy of what is assigned).</summary>
     public IReadOnlyDictionary<string, double> Start
     {
         get => _start;
-        init => _start = Frozen(value);
+        init => _start = FrozenValues.Frozen(value);
     }
 
     /// <summary>Whether omega is derived by variance targeting; false by default.</summary>
@@ -123,7 +123,7 @@ public sealed record Spec
         return (Model, P, Q, Arma, Distribution, IncludeMean, VarianceTargeting, Mxreg, Vxreg, Archm, Arfima)
                == (other.Model, other.P, other.Q, other.Arma, other.Distribution, other.IncludeMean,
                    other.VarianceTargeting, other.Mxreg, other.Vxreg, other.Archm, other.Arfima)
-               && SameValues(_fixed, other._fixed) && SameValues(_start, other._start);
+               && FrozenValues.SameValues(_fixed, other._fixed) && FrozenValues.SameValues(_start, other._start);
     }
 
     /// <summary>A hash consistent with <see cref="Equals(Spec)"/>.</summary>
@@ -132,8 +132,8 @@ public sealed record Spec
     {
         var hash = new HashCode();
         hash.Add((Model, P, Q, Arma, Distribution, IncludeMean, VarianceTargeting, Mxreg, Vxreg, Archm, Arfima));
-        AddValues(ref hash, _fixed);
-        AddValues(ref hash, _start);
+        FrozenValues.AddValues(ref hash, _fixed);
+        FrozenValues.AddValues(ref hash, _start);
         return hash.ToHashCode();
     }
 
@@ -141,16 +141,18 @@ public sealed record Spec
     {
         builder.Append(CultureInfo.InvariantCulture,
                        $"Model = {Model}, P = {P}, Q = {Q}, Arma = {Arma}, Distribution = {Distribution}, ");
-        builder.Append(CultureInfo.InvariantCulture, $"IncludeMean = {IncludeMean}, Fixed = {Entries(_fixed)}, ");
-        builder.Append(CultureInfo.InvariantCulture, $"Start = {Entries(_start)}, VarianceTargeting = {VarianceTargeting}, ");
-        builder.Append(CultureInfo.InvariantCulture, $"Mxreg = {Mxreg}, Vxreg = {Vxreg}, Archm = {Archm}, Arfima = {Arfima}");
+        builder.Append(CultureInfo.InvariantCulture, $"IncludeMean = {IncludeMean}, ");
+        builder.Append(CultureInfo.InvariantCulture,
+                       $"Fixed = {FrozenValues.Print(_fixed)}, Start = {FrozenValues.Print(_start)}, ");
+        builder.Append(CultureInfo.InvariantCulture, $"VarianceTargeting = {VarianceTargeting}, Mxreg = {Mxreg}, ");
+        builder.Append(CultureInfo.InvariantCulture, $"Vxreg = {Vxreg}, Archm = {Archm}, Arfima = {Arfima}");
         return true;
     }
 
     internal SpecHandle CreateHandle()
     {
-        RejectNul(_fixed, nameof(Fixed));
-        RejectNul(_start, nameof(Start));
+        FrozenValues.RejectNul(_fixed, nameof(Fixed));
+        FrozenValues.RejectNul(_start, nameof(Start));
         Library.EnsureLoaded();
         Calls.Check(NativeMethods.ve_spec_create((int)Model, out var handle));
         try
@@ -183,58 +185,6 @@ public sealed record Spec
         foreach (var (name, value) in _start)
         {
             Calls.Check(NativeMethods.ve_spec_set_start(handle, name, value));
-        }
-    }
-
-    // The UTF-8 marshalling stops a name at its first NUL, so the native library would see another name.
-    private static void RejectNul(IReadOnlyDictionary<string, double> values, string property)
-    {
-        foreach (var name in values.Keys)
-        {
-            if (name.Contains('\0', StringComparison.Ordinal))
-            {
-                var shown = name.Replace("\0", "\\0", StringComparison.Ordinal);
-                throw new ArgumentException($"parameter name {shown} contains a NUL character", property);
-            }
-        }
-    }
-
-    // "{ mu = 0.5, shape = 5 }", by name, in the invariant culture.
-    internal static string Entries(IReadOnlyDictionary<string, double> values)
-    {
-        var entries = values.OrderBy(entry => entry.Key, StringComparer.Ordinal)
-            .Select(entry => string.Create(CultureInfo.InvariantCulture, $"{entry.Key} = {entry.Value}"));
-        return values.Count == 0 ? "{ }" : "{ " + string.Join(", ", entries) + " }";
-    }
-
-    private static ReadOnlyDictionary<string, double> Frozen(IReadOnlyDictionary<string, double> values)
-    {
-        ArgumentNullException.ThrowIfNull(values);
-        return new ReadOnlyDictionary<string, double>(new Dictionary<string, double>(values, StringComparer.Ordinal));
-    }
-
-    private static bool SameValues(IReadOnlyDictionary<string, double> left, IReadOnlyDictionary<string, double> right)
-    {
-        if (left.Count != right.Count)
-        {
-            return false;
-        }
-        foreach (var (name, value) in left)
-        {
-            if (!right.TryGetValue(name, out var other) || !value.Equals(other))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static void AddValues(ref HashCode hash, IReadOnlyDictionary<string, double> values)
-    {
-        foreach (var name in values.Keys.Order(StringComparer.Ordinal))
-        {
-            hash.Add(name, StringComparer.Ordinal);
-            hash.Add(values[name]);
         }
     }
 }

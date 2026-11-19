@@ -28,6 +28,13 @@ internal static class ReferenceData
         return values;
     }
 
+    // Every column of a CSV in tests/reference/data, in header order.
+    public static double[][] Columns(string file)
+    {
+        var header = File.ReadLines(Path.Combine(Repository.Root, "tests", "reference", "data", file)).First();
+        return header.Split(',').Select(column => Series(file, column)).ToArray();
+    }
+
     public static JsonElement Fixture(string file)
     {
         var text = File.ReadAllText(Path.Combine(Repository.Root, "tests", "reference", "fixtures", file));

@@ -166,6 +166,73 @@ public sealed class Context : IDisposable
         }
     }
 
+    /// <summary>Fits one DCC spec over ordered univariate fits.</summary>
+    /// <remarks>
+    /// The fits need at least two series with the same T &gt;= 100 and finite points; they are read during the call
+    /// only, and the result outlives them. Disable standard errors to select among many specs, then call
+    /// <see cref="StandardErrors"/> on the one selected. Fits with regressors need standardErrors = false. The native
+    /// library does not promise that DCC fits, standard errors and DCC simulations run concurrently on one context.
+    /// </remarks>
+    /// <param name="spec">The correlation model.</param>
+    /// <param name="univariate">The fit of each series, in series order.</param>
+    /// <param name="standardErrors">Whether to compute the standard errors.</param>
+    /// <returns>The fit; a fit that does not converge is a status, not an exception.</returns>
+    /// <exception cref="ArgumentNullException">A univariate fit is null.</exception>
+    /// <exception cref="ObjectDisposedException">A univariate fit was disposed.</exception>
+    /// <exception cref="VolEngineException">The spec is rejected, or the fits do not match (one series, different
+    /// lengths, no finite point); the message says why.</exception>
+    public DccFit FitDcc(DccSpec spec, IReadOnlyList<Fit> univariate, bool standardErrors = true)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+        return DccFitBatch.Run(_handle, [spec], univariate, standardErrors)[0];
+    }
+
+    /// <summary>Fits several DCC specs over the same ordered univariate fits, in one native batch.</summary>
+    /// <remarks>As <see cref="FitDcc(DccSpec, IReadOnlyList{VolEngine.Fit}, bool)"/>, once per spec.</remarks>
+    /// <param name="specs">The correlation models; at least one.</param>
+    /// <param name="univariate">The fit of each series, in series order.</param>
+    /// <param name="standardErrors">Whether to compute the standard errors.</param>
+    /// <returns>The fits, in spec order.</returns>
+    /// <exception cref="ArgumentException">No specs.</exception>
+    /// <exception cref="ArgumentNullException">A spec or a univariate fit is null.</exception>
+    /// <exception cref="ObjectDisposedException">A univariate fit was disposed.</exception>
+    /// <exception cref="VolEngineException">A spec is rejected, or the fits do not match.</exception>
+    public DccFitBatch FitDcc(IReadOnlyList<DccSpec> specs, IReadOnlyList<Fit> univariate, bool standardErrors = true)
+    {
+        return new DccFitBatch(DccFitBatch.Run(_handle, specs, univariate, standardErrors));
+    }
+
+    /// <summary>A new fit with the standard errors of a fit made without them; the original stays as it was.</summary>
+    /// <remarks>It refilters the whole sample, so it needs the univariate fits the DCC fit was made from, in the same
+    /// order. Fits with regressors are unsupported.</remarks>
+    /// <param name="fit">The DCC fit.</param>
+    /// <param name="univariate">The univariate fits it was made from, in the same order.</param>
+    /// <returns>A new fit sharing R, with standard errors.</returns>
+    /// <exception cref="ArgumentNullException">A univariate fit is null.</exception>
+    /// <exception cref="ObjectDisposedException">The fit or a univariate fit was disposed.</exception>
+    /// <exception cref="VolEngineException">The univariate fits are not the ones of the fit.</exception>
+    public unsafe DccFit StandardErrors(DccFit fit, IReadOnlyList<Fit> univariate)
+    {
+        ArgumentNullException.ThrowIfNull(fit);
+        DccFitBatch.CheckFits(univariate);
+        DccFitHandle? result = null;
+        try
+        {
+            Calls.Check(DccFitBatch.WithFits(univariate, (fits, count) =>
+            {
+                var status = NativeMethods.ve_dcc_standard_errors(_handle, fit.Handle, fits, count, out var handle);
+                result = handle;
+                return status;
+            }));
+            return new DccFit(result!);
+        }
+        catch
+        {
+            result?.Dispose();
+            throw;
+        }
+    }
+
     /// <summary>Frees the thread pool. Calling it again does nothing.</summary>
     public void Dispose()
     {

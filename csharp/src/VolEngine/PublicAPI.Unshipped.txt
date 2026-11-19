@@ -2,6 +2,9 @@
 override VolEngine.CriticalValues.Equals(object? obj) -> bool
 override VolEngine.CriticalValues.GetHashCode() -> int
 override VolEngine.CriticalValues.ToString() -> string!
+override VolEngine.DccSpec.Equals(object? obj) -> bool
+override VolEngine.DccSpec.GetHashCode() -> int
+override VolEngine.DccSpec.ToString() -> string!
 override VolEngine.DiagnosticResult.Equals(object? obj) -> bool
 override VolEngine.DiagnosticResult.GetHashCode() -> int
 override VolEngine.DiagnosticResult.ToString() -> string!
@@ -19,6 +22,8 @@ override VolEngine.Spec.GetHashCode() -> int
 override VolEngine.Spec.ToString() -> string!
 static VolEngine.CriticalValues.operator !=(VolEngine.CriticalValues? left, VolEngine.CriticalValues? right) -> bool
 static VolEngine.CriticalValues.operator ==(VolEngine.CriticalValues? left, VolEngine.CriticalValues? right) -> bool
+static VolEngine.DccSpec.operator !=(VolEngine.DccSpec? left, VolEngine.DccSpec? right) -> bool
+static VolEngine.DccSpec.operator ==(VolEngine.DccSpec? left, VolEngine.DccSpec? right) -> bool
 static VolEngine.DiagnosticResult.operator !=(VolEngine.DiagnosticResult? left, VolEngine.DiagnosticResult? right) -> bool
 static VolEngine.DiagnosticResult.operator ==(VolEngine.DiagnosticResult? left, VolEngine.DiagnosticResult? right) -> bool
 static VolEngine.FitOptions.operator !=(VolEngine.FitOptions? left, VolEngine.FitOptions? right) -> bool
@@ -43,8 +48,11 @@ VolEngine.Context.Context(int threads = 0) -> void
 VolEngine.Context.Dispose() -> void
 VolEngine.Context.Fit(System.Collections.Generic.IReadOnlyList<VolEngine.Spec!>! specs, VolEngine.Panel! data, VolEngine.FitOptions? options = null) -> VolEngine.FitGrid!
 VolEngine.Context.Fit(VolEngine.Spec! spec, System.ReadOnlySpan<double> series, VolEngine.FitOptions? options = null, double[,]? mxreg = null, double[,]? vxreg = null) -> VolEngine.Fit!
+VolEngine.Context.FitDcc(System.Collections.Generic.IReadOnlyList<VolEngine.DccSpec!>! specs, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, bool standardErrors = true) -> VolEngine.DccFitBatch!
+VolEngine.Context.FitDcc(VolEngine.DccSpec! spec, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, bool standardErrors = true) -> VolEngine.DccFit!
 VolEngine.Context.Simulate(VolEngine.Fit! source, VolEngine.SimulationOptions! options) -> VolEngine.Simulation!
 VolEngine.Context.Simulate(VolEngine.Spec! source, VolEngine.SimulationOptions! options) -> VolEngine.Simulation!
+VolEngine.Context.StandardErrors(VolEngine.DccFit! fit, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate) -> VolEngine.DccFit!
 VolEngine.Context.Threads.get -> int
 VolEngine.Copula
 VolEngine.Copula.Empirical = 2 -> VolEngine.Copula
@@ -65,11 +73,50 @@ VolEngine.DccDistribution
 VolEngine.DccDistribution.MvLaplace = 2 -> VolEngine.DccDistribution
 VolEngine.DccDistribution.MvNorm = 0 -> VolEngine.DccDistribution
 VolEngine.DccDistribution.MvT = 1 -> VolEngine.DccDistribution
+VolEngine.DccFit
+VolEngine.DccFit.Aic(bool perObs = true) -> double
+VolEngine.DccFit.Bic(bool perObs = true) -> double
+VolEngine.DccFit.Coef(VolEngine.StandardErrorKind kind = VolEngine.StandardErrorKind.Hessian) -> VolEngine.CoefTable!
+VolEngine.DccFit.Correlation() -> double[]![]![]!
+VolEngine.DccFit.Covariance() -> double[]![]![]!
+VolEngine.DccFit.Dispose() -> void
+VolEngine.DccFit.Estimate() -> double[]!
+VolEngine.DccFit.Hqic(bool perObs = true) -> double
+VolEngine.DccFit.Loglik.get -> double
+VolEngine.DccFit.Names.get -> System.Collections.Generic.IReadOnlyList<string!>!
+VolEngine.DccFit.Nobs.get -> int
+VolEngine.DccFit.Series.get -> int
+VolEngine.DccFit.Sic(bool perObs = true) -> double
+VolEngine.DccFit.Status.get -> VolEngine.FitStatus
+VolEngine.DccFitBatch
+VolEngine.DccFitBatch.Count.get -> int
+VolEngine.DccFitBatch.Dispose() -> void
+VolEngine.DccFitBatch.this[int index].get -> VolEngine.DccFit!
 VolEngine.DccModel
 VolEngine.DccModel.Adcc = 1 -> VolEngine.DccModel
 VolEngine.DccModel.Dcc = 0 -> VolEngine.DccModel
 VolEngine.DccModel.Fdcc = 2 -> VolEngine.DccModel
 VolEngine.DccModel.Static = 3 -> VolEngine.DccModel
+VolEngine.DccSpec
+VolEngine.DccSpec.<Clone>$() -> VolEngine.DccSpec!
+VolEngine.DccSpec.Copula.get -> VolEngine.Copula
+VolEngine.DccSpec.Copula.init -> void
+VolEngine.DccSpec.DccSpec() -> void
+VolEngine.DccSpec.Distribution.get -> VolEngine.DccDistribution
+VolEngine.DccSpec.Distribution.init -> void
+VolEngine.DccSpec.Equals(VolEngine.DccSpec? other) -> bool
+VolEngine.DccSpec.Fixed.get -> System.Collections.Generic.IReadOnlyDictionary<string!, double>!
+VolEngine.DccSpec.Fixed.init -> void
+VolEngine.DccSpec.Groups.get -> System.Collections.Generic.IReadOnlyList<int>?
+VolEngine.DccSpec.Groups.init -> void
+VolEngine.DccSpec.Model.get -> VolEngine.DccModel
+VolEngine.DccSpec.Model.init -> void
+VolEngine.DccSpec.Order.get -> (int P, int Q)
+VolEngine.DccSpec.Order.init -> void
+VolEngine.DccSpec.Start.get -> System.Collections.Generic.IReadOnlyDictionary<string!, double>!
+VolEngine.DccSpec.Start.init -> void
+VolEngine.DccSpec.StaticMethod.get -> VolEngine.StaticMethod
+VolEngine.DccSpec.StaticMethod.init -> void
 VolEngine.DiagnosticResult
 VolEngine.DiagnosticResult.<Clone>$() -> VolEngine.DiagnosticResult!
 VolEngine.DiagnosticResult.Deconstruct(out double Statistic, out double PValue) -> void
