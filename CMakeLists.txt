@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-set(VE_VERSION 1.0.0 CACHE STRING "VolEngine version (x.y.z)")
+set(VE_VERSION 1.1.0 CACHE STRING "VolEngine version (x.y.z)")
 project(VolEngine VERSION ${VE_VERSION} LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
