@@ -1,7 +1,8 @@
 name: C# binding
 
 # Builds the library, then builds and tests the .NET binding in csharp/ against it on the three systems. The binding
-# loads the library named by VOLENGINE_LIB, the same file the Python package and the C++ wrapper use.
+# loads the library named by VOLENGINE_LIB, the same file the Python package and the C++ wrapper use. Each job then
+# packs that library for its own RID and checks the package with a clean consumer and a Native AOT publish.
 on:
   push:
     branches: [ master ]
@@ -43,8 +44,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install GCC 14 and Ninja
-        run: sudo apt-get install -y g++-14 ninja-build
+      - name: Install GCC 14, Ninja and the Native AOT prerequisites
+        run: sudo apt-get install -y g++-14 ninja-build clang zlib1g-dev
 
       - name: Build the library
         run: python3 python/scripts/build_native.py
@@ -58,6 +59,14 @@ jobs:
         env:
           VOLENGINE_LIB: ${{ github.workspace }}/python/src/volengine/_lib/libvolengine.so
         run: dotnet test --solution csharp/VolEngine.slnx -c Release
+
+      - name: Check the package
+        run: |
+          mkdir -p natives
+          cp python/src/volengine/_lib/libvolengine.so natives/volengine-native-linux-x64.so
+          dotnet pack csharp/src/VolEngine -c Release -p:Version=0.0.0-ci -p:VolEngineNativeAssets="$PWD/natives" \
+            -p:VolEngineNativeRids=linux-x64 -o packages
+          bash csharp/scripts/check_package.sh packages 0.0.0-ci
 
   macos:
     name: macos
@@ -83,6 +92,14 @@ jobs:
         env:
           VOLENGINE_LIB: ${{ github.workspace }}/python/src/volengine/_lib/libvolengine.dylib
         run: dotnet test --solution csharp/VolEngine.slnx -c Release
+
+      - name: Check the package
+        run: |
+          mkdir -p natives
+          cp python/src/volengine/_lib/libvolengine.dylib natives/volengine-native-osx-arm64.dylib
+          dotnet pack csharp/src/VolEngine -c Release -p:Version=0.0.0-ci -p:VolEngineNativeAssets="$PWD/natives" \
+            -p:VolEngineNativeRids=osx-arm64 -o packages
+          bash csharp/scripts/check_package.sh packages 0.0.0-ci
 
   windows:
     name: windows
@@ -119,3 +136,12 @@ jobs:
         env:
           VOLENGINE_LIB: ${{ github.workspace }}\python\src\volengine\_lib\libvolengine.dll
         run: dotnet test --solution csharp/VolEngine.slnx -c Release
+
+      - name: Check the package
+        shell: bash
+        run: |
+          mkdir -p natives
+          cp python/src/volengine/_lib/libvolengine.dll natives/volengine-native-win-x64.dll
+          dotnet pack csharp/src/VolEngine -c Release -p:Version=0.0.0-ci -p:VolEngineNativeAssets="$(pwd -W)/natives" \
+            -p:VolEngineNativeRids=win-x64 -o packages
+          bash csharp/scripts/check_package.sh packages 0.0.0-ci

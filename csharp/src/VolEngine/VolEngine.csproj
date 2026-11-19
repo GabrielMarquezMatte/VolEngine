@@ -5,6 +5,25 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
+  <PropertyGroup>
+    <Description>GARCH-family and DCC volatility models (rugarch and rmgarch conventions) on a native C++23 engine:
+fits, grids over many series, standard errors, diagnostics, forecasts and simulation.</Description>
+    <Authors>Gabriel Matte</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/GabrielMarquezMatte/VolEngine</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/GabrielMarquezMatte/VolEngine</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>garch;dcc;volatility;econometrics;finance</PackageTags>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <!-- No baseline until a previous package exists on nuget.org (PackageValidationBaselineVersion). -->
+    <EnablePackageValidation>true</EnablePackageValidation>
+    <!-- The native libraries: VolEngineNativeAssets is a folder of volengine-native-<rid>.<ext> files (the release
+         artifacts); each RID below becomes runtimes/<rid>/native/libvolengine.<ext>. -->
+    <VolEngineNativeRids Condition="'$(VolEngineNativeRids)' == ''">linux-x64;linux-arm64;linux-musl-x64;linux-musl-arm64;osx-arm64;osx-x64;win-x64</VolEngineNativeRids>
+    <BeforePack>$(BeforePack);AddVolEngineNatives</BeforePack>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -14,5 +33,23 @@
   <ItemGroup>
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+    <None Include="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
+
+  <!-- A package never ships without its native libraries: a missing folder or file fails the pack. -->
+  <Target Name="AddVolEngineNatives">
+    <Error Condition="'$(VolEngineNativeAssets)' == ''"
+           Text="Set VolEngineNativeAssets to the folder with the volengine-native-&lt;rid&gt;.&lt;ext&gt; libraries to pack VolEngine." />
+    <ItemGroup>
+      <_VolEngineRid Include="$(VolEngineNativeRids)" NativeExt="so" />
+      <_VolEngineRid NativeExt="dll" Condition="$([System.String]::Copy('%(Identity)').StartsWith('win-'))" />
+      <_VolEngineRid NativeExt="dylib" Condition="$([System.String]::Copy('%(Identity)').StartsWith('osx-'))" />
+      <_VolEngineNative Include="$(VolEngineNativeAssets)/volengine-native-%(_VolEngineRid.Identity).%(_VolEngineRid.NativeExt)"
+                        Rid="%(_VolEngineRid.Identity)" NativeExt="%(_VolEngineRid.NativeExt)" />
+    </ItemGroup>
+    <Error Condition="!Exists('%(_VolEngineNative.Identity)')" Text="Missing native library %(_VolEngineNative.Identity)" />
+    <ItemGroup>
+      <None Include="@(_VolEngineNative)" Pack="true" PackagePath="runtimes/%(_VolEngineNative.Rid)/native/libvolengine.%(_VolEngineNative.NativeExt)" />
+    </ItemGroup>
+  </Target>
 </Project>

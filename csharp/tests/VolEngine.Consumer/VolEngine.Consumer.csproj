@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A clean consumer of the VolEngine package, outside VolEngine.slnx: csharp/scripts/check_package.sh restores it
+       from a local package folder, runs it without VOLENGINE_LIB and publishes it with Native AOT. Warnings are errors
+       (Directory.Build.props), so a trimming or AOT warning fails the check. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <VolEngineVersion Condition="'$(VolEngineVersion)' == ''">0.0.0-unset</VolEngineVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="VolEngine" Version="$(VolEngineVersion)" />
+  </ItemGroup>
+</Project>
