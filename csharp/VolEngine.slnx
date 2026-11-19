@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VolEngine/VolEngine.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/VolEngine.Tests/VolEngine.Tests.csproj" />
+  </Folder>
+</Solution>

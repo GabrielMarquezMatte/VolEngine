@@ -40,16 +40,22 @@ das 130 funções, AOT, NuGet, guia) é outro plano.
   `FitOptions { MaxIter = 500, Tolerance = 1e-6, VarInit = VarInit.Sample, StandardErrors = true }`.
 - Threads: a doc XML promete só o que o header promete (`ve_context_*` exceto free, e `ve_fit_batch`, concorrentes num
   mesmo `Context`; leituras de resultados imutáveis concorrentes). Sem lock no C#.
-- STYLEGUIDE nas regras independentes de linguagem: nunca `else`, retorno cedo, `if` sempre com chaves e corpo na linha
-  seguinte, ≤ 60 linhas por método, ≤ 5 parâmetros, aninhamento ≤ 3, ≤ 8 arquivos `.cs` por pasta, sem
-  `Utils`/`Helpers`, comentário diz o porquê e não guarda achados. Sem checador automático para C# neste plano (minha
-  escolha; a revisão confere). Inglês no código; `docs/superpowers/` em português.
+- Estilo C# = o do ExcelReader (pedido do autor durante a Task 1; `C:/Users/x/Documents/Programs/Csharp/ExcelReader/STYLEGUIDE.md`
+  e seu `.editorconfig`/`Directory.Build.props`): `AnalysisMode=All` com NetAnalyzers, Meziantou e PublicApiAnalyzers
+  como erro; corpo em bloco em métodos, construtores, operadores e funções locais (propriedades podem ser `=>`);
+  chaves em todo `if`; ternário só de valores simples numa linha; `_camelCase` em campos privados; comparação de
+  string sempre com `StringComparison`/`StringComparer`. Somam-se os limites do repositório: nunca `else`, ≤ 60 linhas
+  por método (backstop MA0051 90/50), ≤ 5 parâmetros, aninhamento ≤ 3, ≤ 8 arquivos `.cs` por pasta, sem
+  `Utils`/`Helpers`, comentário diz o porquê e não guarda achados. Testes em xUnit v3 sobre Microsoft.Testing.Platform
+  (`csharp/global.json`). Inglês no código; `docs/superpowers/` em português.
+- A classe das declarações chama-se `NativeMethods` (CA1060), não `Native`; onde o plano diz `Native`, leia-se
+  `NativeMethods`.
 - Biblioteca nativa local (Windows, PowerShell, com `C:\msys64\ucrt64\bin` primeiro no PATH, porque o `ld` chamado pelo
   Bash grava `--output-def` vazio e a libstdc++ do Git mingw64 não tem os símbolos):
   `$env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"; python python/scripts/build_native.py` gera
   `python/src/volengine/_lib/libvolengine.dll`.
-- Testes: `$env:VOLENGINE_LIB = "$PWD\python\src\volengine\_lib\libvolengine.dll"; dotnet test csharp/VolEngine.slnx -c Release`
-  (no Bash: `VOLENGINE_LIB=$PWD/python/src/volengine/_lib/libvolengine.dll PATH=/c/msys64/ucrt64/bin:$PATH dotnet test csharp/VolEngine.slnx -c Release`).
+- Testes: `$env:VOLENGINE_LIB = "$PWD\python\src\volengine\_lib\libvolengine.dll"; dotnet test --solution csharp/VolEngine.slnx -c Release`
+  (no Bash: `VOLENGINE_LIB=$PWD/python/src/volengine/_lib/libvolengine.dll PATH=/c/msys64/ucrt64/bin:$PATH dotnet test --solution csharp/VolEngine.slnx -c Release`).
 - Versões de pacote NuGet de teste/benchmark/analisador: a última estável no momento da Task 1, fixada exatamente em
   `csharp/Directory.Packages.props` (gestão central). O pacote `VolEngine` não tem dependência de runtime.
 - Commits em inglês no estilo do repositório (`feat(csharp): ...`), sem `Co-Authored-By`. Push só com o ok do autor.
@@ -722,7 +728,7 @@ Conteúdo: gatilhos `push` em `master` e `pull_request` com `paths` `csharp/**`,
 exatamente como o job correspondente do `cpp.yml` (linux GCC 14, macOS com `MACOSX_DEPLOYMENT_TARGET: '11.0'`,
 Windows MSYS2 UCRT64 + `uv run --no-project --python 3.14 python python/scripts/build_native.py`),
 `actions/setup-dotnet@v4` com `dotnet-version: 10.0.x`, depois
-`dotnet test csharp/VolEngine.slnx -c Release` com `VOLENGINE_LIB` apontando para
+`dotnet test --solution csharp/VolEngine.slnx -c Release` com `VOLENGINE_LIB` apontando para
 `python/src/volengine/_lib/libvolengine.{so,dylib,dll}`.
 
 - [ ] **Step 1: Escrever o workflow.**

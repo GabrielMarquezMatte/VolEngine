@@ -1,0 +1,61 @@
+#nullable enable
+VolEngine.Copula
+VolEngine.Copula.Empirical = 2 -> VolEngine.Copula
+VolEngine.Copula.None = 0 -> VolEngine.Copula
+VolEngine.Copula.Parametric = 1 -> VolEngine.Copula
+VolEngine.DccDistribution
+VolEngine.DccDistribution.MvLaplace = 2 -> VolEngine.DccDistribution
+VolEngine.DccDistribution.MvNorm = 0 -> VolEngine.DccDistribution
+VolEngine.DccDistribution.MvT = 1 -> VolEngine.DccDistribution
+VolEngine.DccModel
+VolEngine.DccModel.Adcc = 1 -> VolEngine.DccModel
+VolEngine.DccModel.Dcc = 0 -> VolEngine.DccModel
+VolEngine.DccModel.Fdcc = 2 -> VolEngine.DccModel
+VolEngine.DccModel.Static = 3 -> VolEngine.DccModel
+VolEngine.Distribution
+VolEngine.Distribution.Ged = 2 -> VolEngine.Distribution
+VolEngine.Distribution.Ghyp = 6 -> VolEngine.Distribution
+VolEngine.Distribution.Jsu = 7 -> VolEngine.Distribution
+VolEngine.Distribution.Nig = 5 -> VolEngine.Distribution
+VolEngine.Distribution.Norm = 0 -> VolEngine.Distribution
+VolEngine.Distribution.Sged = 4 -> VolEngine.Distribution
+VolEngine.Distribution.Sstd = 3 -> VolEngine.Distribution
+VolEngine.Distribution.Std = 1 -> VolEngine.Distribution
+VolEngine.FitStatus
+VolEngine.FitStatus.Converged = 0 -> VolEngine.FitStatus
+VolEngine.FitStatus.Failed = 2 -> VolEngine.FitStatus
+VolEngine.FitStatus.InsufficientData = 3 -> VolEngine.FitStatus
+VolEngine.FitStatus.MaxIter = 1 -> VolEngine.FitStatus
+VolEngine.Model
+VolEngine.Model.Aparch = 3 -> VolEngine.Model
+VolEngine.Model.CsGarch = 5 -> VolEngine.Model
+VolEngine.Model.EGarch = 1 -> VolEngine.Model
+VolEngine.Model.Ewma = 14 -> VolEngine.Model
+VolEngine.Model.FGarchAllGarch = 13 -> VolEngine.Model
+VolEngine.Model.FGarchAparch = 11 -> VolEngine.Model
+VolEngine.Model.FGarchAvGarch = 8 -> VolEngine.Model
+VolEngine.Model.FGarchGarch = 6 -> VolEngine.Model
+VolEngine.Model.FGarchGjrGarch = 12 -> VolEngine.Model
+VolEngine.Model.FGarchNaGarch = 10 -> VolEngine.Model
+VolEngine.Model.FGarchNGarch = 9 -> VolEngine.Model
+VolEngine.Model.FGarchTGarch = 7 -> VolEngine.Model
+VolEngine.Model.GjrGarch = 2 -> VolEngine.Model
+VolEngine.Model.IGarch = 4 -> VolEngine.Model
+VolEngine.Model.SGarch = 0 -> VolEngine.Model
+VolEngine.StandardErrorKind
+VolEngine.StandardErrorKind.Hessian = 0 -> VolEngine.StandardErrorKind
+VolEngine.StandardErrorKind.Robust = 1 -> VolEngine.StandardErrorKind
+VolEngine.StaticMethod
+VolEngine.StaticMethod.Default = 0 -> VolEngine.StaticMethod
+VolEngine.StaticMethod.Kendall = 1 -> VolEngine.StaticMethod
+VolEngine.StaticMethod.Ml = 2 -> VolEngine.StaticMethod
+VolEngine.Status
+VolEngine.Status.InternalError = 5 -> VolEngine.Status
+VolEngine.Status.InvalidArgument = 1 -> VolEngine.Status
+VolEngine.Status.InvalidHandle = 2 -> VolEngine.Status
+VolEngine.Status.Ok = 0 -> VolEngine.Status
+VolEngine.Status.OutOfMemory = 4 -> VolEngine.Status
+VolEngine.Status.Unsupported = 3 -> VolEngine.Status
+VolEngine.VarInit
+VolEngine.VarInit.Backcast = 1 -> VolEngine.VarInit
+VolEngine.VarInit.Sample = 0 -> VolEngine.VarInit
