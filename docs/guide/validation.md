@@ -646,7 +646,7 @@ the fits below confirm them again. No core change was needed.
   `mu, ar1, ma1, archm, mxreg1, mxreg2, omega, alpha1, beta1`). `arch`'s `Const` and `x0`, `x1` become `mu`, `mxreg1`,
   `mxreg2`.
 - **Stationarity.** `.sgarchfit` imposes the persistence constraint only when the model has no `vxreg` (its
-  `modelinc[15]`, the number of `vxreg`, must be 0). VolEngine keeps P < 1 − 1e-8 with `vxreg` too. The difference does
+  `modelinc[15]`, the number of `vxreg`, must be 0). VolEngine's map keeps P ≤ 1 − 1e-8 with `vxreg` too. The difference does
   not show here: every estimate has P ≤ 0.9825, so the constraint does not bind on either side.
 - **Bounds.** `rugarch` bounds `archm` to [−10, 10], `mxreg` to [−100, 100] and `vxreg` to [0, 100] (`fit@model$pars`);
   VolEngine bounds none of them (σ² ≤ 0 gives ℓ = −∞). An estimate at a bound is not comparable, hence the rule in
@@ -672,9 +672,9 @@ fits below confirm the convention again. No core change was needed.
   The retained count stays max(m, n, p, q), and d does not add to it. The seven compared fits confirm the rule,
   among them the ARMA(1,1), `mxreg` and variance-targeting fits: ℓ within 2.7e-10 and σₜ within 4.3e-5. Each series
   of a panel truncates at its own first row (the C++ test `CapiFit.RaggedArfimaMatchesSlices`).
-- **Domain.** `rugarch` bounds d to the closed interval [1e-8, 0.5]. VolEngine maps it to the open interval
-  (1e-8, 0.5), with d = 1e-8 + (0.5 − 1e-8)·logistic(u). A d within 1e-8 of either end is reported on the
-  boundary, with a NaN standard error. A start or fixed d outside the open interval ends `VE_FIT_FAILED`. On a
+- **Domain.** `rugarch` bounds d to the closed interval [1e-8, 0.5], and so does VolEngine. It maps d to
+  1e-8 + (0.5 − 1e-8)·logistic(u), which reaches the ends only in rounding. A d within 1e-8 of either end is reported
+  on the boundary, with a NaN standard error. A start or fixed d outside the closed interval ends `VE_FIT_FAILED`. On a
   series without long memory, d goes to the lower end (the C++ test `FitArfima.NoMemoryNestsPlain`). The logistic
   map is flat there, so the optimizer can stop short of the 1e-8 band. On the first 2000 observations of the plan-1
   series d̂ = 1.1e-7, which is not on the boundary and keeps a finite standard error; on all 5000, d̂ = 1.2e-8 and the

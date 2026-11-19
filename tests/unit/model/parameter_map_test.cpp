@@ -658,7 +658,8 @@ TEST(ParameterMap, IsValidRejectsVariantViolations)
     EXPECT_FALSE(is_valid(std::vector<double>{0.01, 1.1, -0.1}, igarch));
     Layout aparch = ve::model::layout_of({.model = Model::ApArch, .dist = Dist::Std, .include_mean = false});
     EXPECT_TRUE(is_valid(std::vector<double>{0.01, 0.05, 0.9, 0.3, 1.5, 6.0}, aparch));
-    EXPECT_FALSE(is_valid(std::vector<double>{0.01, 0.05, 0.9, 1.0, 1.5, 6.0}, aparch));
+    EXPECT_TRUE(is_valid(std::vector<double>{0.01, 0.05, 0.9, 1.0, 1.5, 6.0}, aparch));
+    EXPECT_FALSE(is_valid(std::vector<double>{0.01, 0.05, 0.9, 1.01, 1.5, 6.0}, aparch));
     EXPECT_FALSE(is_valid(std::vector<double>{0.01, 0.05, 0.9, 0.3, 0.0, 6.0}, aparch));
     EXPECT_FALSE(is_valid(std::vector<double>{0.01, 0.05, 0.9, 0.3, 6.5, 6.0}, aparch));
     Layout cs = ve::model::layout_of({.model = Model::CsGarch, .include_mean = false});
@@ -1271,6 +1272,35 @@ TEST(ParameterMap, FixedWeightsLeaveTheirBudget)
     }
 }
 
+// An estimate is a point of to_natural, so it must pass is_valid wherever u goes: there the standard errors, a warm
+// start and a fixed evaluation all begin. At u = 40 the logistic rounds to 1, P to the ceiling and d to 0.5 (the
+// apARCH delta stays at 1, where kappa is finite).
+TEST(ParameterMap, ExtremeUStaysValid)
+{
+    const std::vector<Spec> specs{
+        {.include_mean = false},
+        {.model = Model::GjrGarch, .include_mean = false},
+        {.model = Model::ApArch, .include_mean = false},
+        {.model = Model::CsGarch, .include_mean = false},
+        {.arfima = true},
+    };
+    for (const Spec& spec : specs)
+    {
+        Layout layout = ve::model::layout_of(spec);
+        for (double extreme : {40.0, -40.0})
+        {
+            std::vector<double> u(layout.count(), extreme);
+            if (layout.free_power)
+            {
+                u[layout.power()] = 0.0;
+            }
+            std::vector<double> theta(layout.count());
+            to_natural<double>(u, theta, layout, Standardization{});
+            EXPECT_TRUE(is_valid(theta, layout)) << "model " << static_cast<int>(spec.model) << " u " << extreme;
+        }
+    }
+}
+
 TEST(ParameterMap, FixedBeyondBudgetIsNaN)
 {
     // sGARCH (mu, omega, alpha1, beta1): alpha1 + beta1 >= 1 whatever omega is.
@@ -1707,8 +1737,12 @@ TEST(ParameterMap, ArfimaRoundTrip)
 TEST(ParameterMap, ArfimaValidity)
 {
     Layout layout = arfima_layout(Model::SGarch);
-    EXPECT_TRUE(is_valid(arfima_theta(layout, 0.25), layout));
-    for (double d : {1e-8, 0.0, -0.1, 0.5, 0.6})
+    // rugarch's closed interval [1e-8, 0.5]: the map reaches both ends in rounding.
+    for (double d : {1e-8, 0.25, 0.5})
+    {
+        EXPECT_TRUE(is_valid(arfima_theta(layout, d), layout)) << "d " << d;
+    }
+    for (double d : {9e-9, 0.0, -0.1, 0.5000001, 0.6})
     {
         EXPECT_FALSE(is_valid(arfima_theta(layout, d), layout)) << "d " << d;
     }

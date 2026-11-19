@@ -57,8 +57,7 @@ bool all_finite(std::span<const double> values)
 
 // The mean negative log-likelihood of the standardized series r / scale, -loglik / n - log(scale), over the
 // unconstrained parameters: tolerances depend neither on the sample size nor on the units of r. Validity is
-// judged by the log-likelihood alone, which is not finite outside its domain: model::is_valid can reject
-// points that model::to_natural produces at extreme u. The gradient over theta comes from the adjoint where
+// judged by the log-likelihood alone, which is not finite outside its domain. The gradient over theta comes from the adjoint where
 // model::has_adjoint covers the spec, and is chained to u through the Jacobian that the forward Dual of to_natural
 // carries; elsewhere the whole likelihood runs on the Dual.
 template <std::size_t N>

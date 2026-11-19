@@ -24,7 +24,7 @@ using ad::log_ratio;
 using ad::logistic;
 using ad::scaled_softmax;
 
-// rugarch bounds the ARFIMA d to [1e-8, 0.5]; the map reaches the open interval.
+// rugarch bounds the ARFIMA d to [1e-8, 0.5], and so does is_valid: the map reaches the ends in rounding.
 constexpr double kArfimaFloor = 1e-8;
 constexpr double kArfimaCeiling = 0.5;
 
@@ -86,6 +86,12 @@ double skew_to_unconstrained(double skew, Dist dist)
     return skew;
 }
 
+bool is_ged(Dist dist)
+{
+    return dist == Dist::Ged || dist == Dist::Sged;
+}
+
+// std, sstd: 2 + exp(x); ged, sged: 0.1 + exp(x) (dist::kGedShapeFloor); the others exp(x).
 template <class T>
 T shape_to_natural(const T& x, Dist dist)
 {
@@ -93,6 +99,10 @@ T shape_to_natural(const T& x, Dist dist)
     if (is_student(dist))
     {
         return 2.0 + exp(x);
+    }
+    if (is_ged(dist))
+    {
+        return dist::kGedShapeFloor + exp(x);
     }
     return exp(x);
 }
@@ -102,6 +112,10 @@ double shape_to_unconstrained(double shape, Dist dist)
     if (is_student(dist))
     {
         return std::log(shape - 2.0);
+    }
+    if (is_ged(dist))
+    {
+        return log_ratio(shape - dist::kGedShapeFloor, 1.0);
     }
     return std::log(shape);
 }
@@ -364,10 +378,15 @@ void csgarch_to_natural(std::span<const T> u, std::span<T> theta, const Layout& 
     std::span<const T> natural = theta;
     T persistence = sum_of(natural.subspan(layout.alpha_begin(), count_of(layout.arch + layout.garch)));
     T beta_sum = sum_of(natural.subspan(layout.beta_begin(), count_of(layout.garch)));
+    // P can round an ulp above the ceiling, and rho must not fall below it.
+    T room = kPersistenceCeiling - persistence;
+    if (ad::value_of(room) < 0.0)
+    {
+        room = T{0.0};
+    }
     if (layout.is_estimated(layout.eta1_begin()))
     {
-        theta[layout.eta1_begin()] =
-            persistence + (kPersistenceCeiling - persistence) * logistic(u[layout.eta1_begin()]);
+        theta[layout.eta1_begin()] = persistence + room * logistic(u[layout.eta1_begin()]);
     }
     if (layout.is_estimated(layout.eta2_begin()))
     {
@@ -504,7 +523,7 @@ bool shock_parameters_valid(std::span<const double> theta, const Layout& layout)
         return false;
     }
     std::span<const double> asymmetry = theta.subspan(layout.asymmetry_begin(), layout.asymmetry_count());
-    bool asymmetry_valid = std::ranges::all_of(asymmetry, [](double value) { return std::abs(value) < 1.0; });
+    bool asymmetry_valid = std::ranges::all_of(asymmetry, [](double value) { return std::abs(value) <= 1.0; });
     return asymmetry_valid && (!layout.free_power || theta[layout.power()] > 0.0);
 }
 
@@ -528,12 +547,12 @@ bool weights_valid(std::span<const double> theta, const Layout& layout)
     {
         return sum <= 1.0;
     }
-    return sum < kPersistenceCeiling;
+    return sum < 1.0;
 }
 
 bool arfima_valid(double d)
 {
-    return d > kArfimaFloor && d < kArfimaCeiling;
+    return d >= kArfimaFloor && d <= kArfimaCeiling;
 }
 
 bool csgarch_valid(std::span<const double> theta, const Layout& layout)
@@ -542,7 +561,7 @@ bool csgarch_valid(std::span<const double> theta, const Layout& layout)
     double beta_sum = sum_of(theta.subspan(layout.beta_begin(), count_of(layout.garch)));
     double rho = theta[layout.eta1_begin()];
     double phi = theta[layout.eta2_begin()];
-    return persistence < rho && rho < kPersistenceCeiling && phi >= 0.0 && phi <= beta_sum;
+    return persistence <= rho && rho < 1.0 && phi >= 0.0 && phi <= beta_sum;
 }
 
 template <class T>

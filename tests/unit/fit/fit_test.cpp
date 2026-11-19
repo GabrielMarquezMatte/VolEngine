@@ -83,6 +83,97 @@ TEST(Fit, RecoversSimulatedParameters)
     EXPECT_EQ(result.nobs, kObservations);
 }
 
+// A start on the edge of the domain is legal, and the fit must leave it: alpha1 = 0 once mapped to a logit of -708,
+// where the optimiser could not move it, and the fit reported convergence at alpha1 = 0.
+TEST(Fit, ZeroWeightStartReachesTheOptimum)
+{
+    FitResult free = fit_simulated(Spec{});
+    ASSERT_EQ(free.status, FitStatus::Converged);
+    for (const char* name : {"alpha1", "beta1"})
+    {
+        Spec spec;
+        spec.start = {{name, 0.0}};
+        FitResult started = fit_simulated(spec);
+        ASSERT_EQ(started.status, FitStatus::Converged) << name;
+        EXPECT_NEAR(started.loglik, free.loglik, 1e-6 * std::abs(free.loglik)) << name;
+    }
+}
+
+// An estimate where the persistence rounds to its ceiling still passes is_valid: its standard errors exist, and it
+// works as a start and as fixed values. Explosive data (alpha + beta = 1.01) drives the persistence there.
+TEST(Fit, EstimateAtThePersistenceCeilingIsUsable)
+{
+    std::mt19937_64 engine(2);
+    ve::testing::PortableNormal shock{1.0};
+    std::vector<double> r(3000);
+    double sigma2 = 1.0;
+    for (double& value : r)
+    {
+        value = std::sqrt(sigma2) * shock(engine);
+        sigma2 = 0.01 + 0.08 * value * value + 0.93 * sigma2;
+    }
+    FitResult result = ve::fit_one(r, Spec{}, ve::FitConfig{});
+    ASSERT_EQ(result.status, FitStatus::Converged);
+    EXPECT_GT(result.estimate[2] + result.estimate[3], 1.0 - 1e-6);
+    EXPECT_TRUE(std::isfinite(result.se_hessian[0]));
+    Spec again;
+    Spec fixed;
+    for (std::size_t i = 0; i < result.names.size(); ++i)
+    {
+        again.start.push_back({result.names[i], result.estimate[i]});
+        fixed.fixed.push_back({result.names[i], result.estimate[i]});
+    }
+    EXPECT_EQ(ve::fit_one(r, again, ve::FitConfig{}).status, FitStatus::Converged);
+    EXPECT_EQ(ve::fit_one(r, fixed, ve::FitConfig{}).status, FitStatus::Converged);
+}
+
+// The eGARCH |z| kinks the likelihood in the mean parameters wherever a residual is 0, and the optimum lands on such
+// a kink. The central difference of the gradient across it left the Hessian indefinite on about a quarter of these
+// ARMA(1,1) fits, every standard error NaN.
+TEST(Fit, EgarchMeanOnAKinkHasStandardErrors)
+{
+    Spec spec;
+    spec.model = ve::Model::EGarch;
+    spec.ar = 1;
+    spec.ma = 1;
+    std::size_t missing = 0;
+    for (std::uint64_t seed = 0; seed < 12; ++seed)
+    {
+        std::mt19937_64 engine(seed);
+        ve::testing::PortableNormal shock{1.0};
+        std::vector<double> r(1500);
+        double sigma2 = 1.0;
+        for (double& value : r)
+        {
+            double residual = std::sqrt(sigma2) * shock(engine);
+            value = 0.02 + residual;
+            sigma2 = 0.05 + 0.1 * residual * residual + 0.85 * sigma2;
+        }
+        FitResult result = ve::fit_one(r, spec, ve::FitConfig{});
+        ASSERT_EQ(result.status, FitStatus::Converged) << seed;
+        missing += std::isnan(result.se_hessian[0]) ? 1 : 0;
+    }
+    EXPECT_EQ(missing, 0u);
+}
+
+// Exact zeros in a series without mean make the ged likelihood unbounded as the shape falls to 0; the shape stops at
+// rugarch's floor of 0.1 instead, where the fit has a maximum.
+TEST(Fit, GedShapeStopsAtItsFloorOnExactZeros)
+{
+    std::vector<double> r = simulated();
+    for (std::size_t t = 0; t < r.size(); t += 5)
+    {
+        r[t] = 0.0;
+    }
+    Spec spec;
+    spec.dist = ve::Dist::Ged;
+    spec.include_mean = false;
+    FitResult result = ve::fit_one(r, spec, ve::FitConfig{});
+    ASSERT_NE(result.status, FitStatus::Failed);
+    EXPECT_TRUE(std::isfinite(result.loglik));
+    EXPECT_GE(result.estimate.back(), 0.1);
+}
+
 TEST(Fit, ReportsItsWork)
 {
     FitResult result = fit_simulated(Spec{});
@@ -1842,7 +1933,7 @@ TEST(FitArfima, UnitEquivariance)
 // Review Focus 2.
 TEST(FitArfima, StartOutsideDomainFails)
 {
-    for (double d : {0.6, 0.5, 0.0, -0.1})
+    for (double d : {0.6, 0.0, -0.1})
     {
         for (bool fixed : {false, true})
         {

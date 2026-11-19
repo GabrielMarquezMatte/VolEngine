@@ -86,7 +86,7 @@ inline bool in_domain(Dist dist, const ShapeParameters<double>& parameters)
         case Dist::Sstd:
             return positive_skew && parameters.shape > 2.0;
         case Dist::Sged:
-            return positive_skew && positive_shape;
+            return positive_skew && parameters.shape >= kGedShapeFloor;
         case Dist::Nig:
             return hyperbolic_computable(parameters.skew, parameters.shape, -0.5);
         case Dist::Ghyp:

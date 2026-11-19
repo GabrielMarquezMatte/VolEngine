@@ -57,8 +57,9 @@ template <class T>
 void to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout,
                 const Standardization& standardization);
 
-// theta must satisfy is_valid. Weights enter log(weight / reference weight) floored at DBL_MIN, so zero
-// weights give finite values. u is 0 at the fixed and derived entries.
+// theta must satisfy is_valid. Bounded entries go through ad::log_ratio: a start on the edge of its domain (a zero
+// weight, a persistence at the ceiling) is moved inside, where the optimiser can still move it. u is 0 at the fixed
+// and derived entries.
 void to_unconstrained(std::span<const double> theta, std::span<double> u, const Layout& layout,
                       const Standardization& standardization);
 
@@ -67,10 +68,11 @@ void to_unconstrained(std::span<const double> theta, std::span<double> u, const 
 double natural_scale(const Layout& layout, const Standardization& standardization, std::span<const double> theta,
                      std::size_t index);
 
-// All entries finite; 1e-8 < arfima d < 0.5; skew, shape and ghlambda in their domain; |eta1|, |apARCH gamma| < 1;
-// delta, lambda > 0; omega > 0 (but in eGARCH); weights >= 0 with P < 1 - 1e-8 (iGARCH: alpha, beta_{<q} >= 0
-// summing to at most 1), so kappa is finite; gjrGARCH: 0 < pi < 1; csGARCH: P < rho < 1 - 1e-8 and
-// 0 <= phi <= sum(beta). The derived entries (the iGARCH beta_q, omega under variance targeting) are not read.
+// All entries finite; 1e-8 <= arfima d <= 0.5; skew, shape and ghlambda in their domain; |eta1|, |apARCH gamma| <= 1;
+// delta, lambda > 0; omega > 0 (but in eGARCH); weights >= 0 with P < 1 (iGARCH: alpha, beta_{<q} >= 0
+// summing to at most 1), so kappa is finite; gjrGARCH: 0 < pi < 1; csGARCH: P <= rho < 1 and
+// 0 <= phi <= sum(beta). The closure of what to_natural reaches, rounding included (its P stays at most
+// 1 - 1e-8 but for rounding, its d and eta1 reach their ends), so that every estimate passes. The derived entries (the iGARCH beta_q, omega under variance targeting) are not read.
 bool is_valid(std::span<const double> theta, const Layout& layout);
 
 // Whether theta[index] sits on the boundary of its domain, where it leaves the Hessian: an arfima d within 1e-8

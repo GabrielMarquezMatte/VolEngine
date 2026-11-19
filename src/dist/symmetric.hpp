@@ -22,6 +22,11 @@ struct LogDensity
     T power;
 };
 
+// rugarch's lower bound of the ged and sged shape. Below it the density at 0 grows without bound as the shape falls
+// (f(0) ~ 1 / (lambda 2^(1 + 1/nu) Gamma(1/nu)) nu), so a series with exact zeros (stale prices, no mean) had a
+// likelihood with no maximum: the shape ran to 0.009 and the fit ended FAILED with loglik +31775.
+constexpr double kGedShapeFloor = 0.1;
+
 inline bool in_domain(Dist dist, double shape)
 {
     if (dist == Dist::Std)
@@ -30,7 +35,7 @@ inline bool in_domain(Dist dist, double shape)
     }
     if (dist == Dist::Ged)
     {
-        return shape > 0.0;
+        return shape >= kGedShapeFloor;
     }
     return true;
 }

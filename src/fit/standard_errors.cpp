@@ -19,6 +19,8 @@ constexpr double kRelativeStep = 1e-5;
 constexpr double kWeightStepFloor = 1e-6;
 constexpr double kRealStepFloor = 1e-3;
 constexpr int kMaxStepHalvings = 30;
+// Smooth columns agree to ~1e-5 of their size at the steps above; a kink makes them differ by its jump / step.
+constexpr double kKinkTolerance = 1e-2;
 
 using Matrix = std::vector<double>;
 using Indices = std::vector<std::size_t>;
@@ -39,23 +41,79 @@ bool gradient_at(const Problem& problem, std::span<const double> theta, std::spa
                                                                 });
 }
 
+bool shifted_gradient(const Problem& problem, std::span<const double> theta, std::size_t index, double shift,
+                      std::span<double> grad)
+{
+    std::vector<double> point(theta.begin(), theta.end());
+    point[index] += shift;
+    return gradient_at(problem, point, grad);
+}
+
+double median_of(double a, double b, double c)
+{
+    return std::max(std::min(a, b), std::min(std::max(a, b), c));
+}
+
+// A residual through 0 is a kink of the likelihood in the mean parameters (|z| in eGARCH, |z|^nu in a ged with
+// nu <= 1), and a concave kink attracts the optimum: an eGARCH mu-hat lands on a data point, within 1e-11. The
+// central difference across it adds the jump of the gradient over 2 step, which left 10 in 40 eGARCH-ARMA(1,1) fits
+// with an indefinite Hessian and plain eGARCH fits with a mu standard error 0.2 to 0.33 of the right one. The
+// one-sided differences on [step, 2 step] and [-2 step, -step] do not straddle it: when the three disagree, a
+// kink lies within 2 step, and with one kink there their median is one of the two it misses. On a smooth likelihood
+// they agree to O(step) and the central difference stands.
+void step_beside_kink(const Problem& problem, std::span<const double> theta, std::size_t index, double step,
+                      std::span<const double> up, std::span<const double> down, std::span<double> column)
+{
+    std::size_t k = theta.size();
+    std::vector<double> far_up(k);
+    std::vector<double> far_down(k);
+    if (!shifted_gradient(problem, theta, index, 2.0 * step, far_up) ||
+        !shifted_gradient(problem, theta, index, -2.0 * step, far_down))
+    {
+        return;
+    }
+    std::vector<double> right(k);
+    std::vector<double> left(k);
+    double spread = 0.0;
+    double size = 0.0;
+    for (std::size_t j = 0; j < k; ++j)
+    {
+        right[j] = (far_up[j] - up[j]) / step;
+        left[j] = (down[j] - far_down[j]) / step;
+        double highest = std::max({column[j], right[j], left[j]});
+        double lowest = std::min({column[j], right[j], left[j]});
+        spread = std::max(spread, highest - lowest);
+        size = std::max(size, std::abs(column[j]));
+    }
+    if (!(spread > kKinkTolerance * size))
+    {
+        return;
+    }
+    for (std::size_t j = 0; j < k; ++j)
+    {
+        column[j] = median_of(column[j], left[j], right[j]);
+    }
+}
+
 bool difference_column(const Problem& problem, std::span<const double> theta, std::size_t index, double step,
                        std::span<double> column)
 {
     std::size_t k = theta.size();
-    std::vector<double> up(theta.begin(), theta.end());
-    std::vector<double> down(theta.begin(), theta.end());
-    up[index] += step;
-    down[index] -= step;
     std::vector<double> grad_up(k);
     std::vector<double> grad_down(k);
-    if (!gradient_at(problem, up, grad_up) || !gradient_at(problem, down, grad_down))
+    if (!shifted_gradient(problem, theta, index, step, grad_up) ||
+        !shifted_gradient(problem, theta, index, -step, grad_down))
     {
         return false;
     }
     for (std::size_t j = 0; j < k; ++j)
     {
         column[j] = (grad_up[j] - grad_down[j]) / (2.0 * step);
+    }
+    // Only the mean parameters move a residual through 0: the variance ones scale z, and z = 0 stays 0.
+    if (index < problem.layout.omega())
+    {
+        step_beside_kink(problem, theta, index, step, grad_up, grad_down, column);
     }
     return true;
 }

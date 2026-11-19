@@ -65,6 +65,21 @@ TEST(DccFit, AdccDefaultStartRespectsPanelAsymmetry)
     EXPECT_TRUE(std::isnan(invalid.loglik));
 }
 
+// A DCC weight started at exactly 0 must leave it: the start once mapped to a logit of -708 and stayed there.
+TEST(DccFit, ZeroWeightStartReachesTheOptimum)
+{
+    const auto free = ve::dcc::fit_dcc(dcc3(), DccSpec{}, FitConfig{});
+    ASSERT_EQ(free.status, FitStatus::Converged);
+    for (const char* name : {"dcca1", "dccb1"})
+    {
+        DccSpec spec;
+        spec.start = {{name, 0.0}};
+        const auto started = ve::dcc::fit_dcc(dcc3(), spec, FitConfig{});
+        ASSERT_EQ(started.status, FitStatus::Converged) << name;
+        EXPECT_NEAR(started.loglik, free.loglik, 1e-6 * std::abs(free.loglik)) << name;
+    }
+}
+
 DccSpec spec_of(DccModel model, DccDist dist, Convention convention)
 {
     DccSpec spec;

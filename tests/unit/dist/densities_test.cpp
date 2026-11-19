@@ -104,7 +104,8 @@ TEST(Densities, ShapeDomain)
     EXPECT_FALSE(ve::dist::in_domain(Dist::Std, 2.0));
     EXPECT_TRUE(ve::dist::in_domain(Dist::Std, 2.0001));
     EXPECT_FALSE(ve::dist::in_domain(Dist::Ged, 0.0));
-    EXPECT_TRUE(ve::dist::in_domain(Dist::Ged, 0.01));
+    EXPECT_FALSE(ve::dist::in_domain(Dist::Ged, 0.09));
+    EXPECT_TRUE(ve::dist::in_domain(Dist::Ged, 0.1));
     EXPECT_FALSE(ve::dist::in_domain(Dist::Ged, std::nan("")));
 }
 
