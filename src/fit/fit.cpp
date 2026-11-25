@@ -147,6 +147,7 @@ optim::LbfgsResult minimize(const fit::LikelihoodProblem& problem,
     optim::LbfgsOptions options;
     options.max_iter = config.max_iter;
     options.gtol = config.tol;
+    options.cancel = config.cancel;
     NegativeMeanLoglik<N> objective(problem, standardization);
     return optim::lbfgs_minimize(objective, u, options);
 }

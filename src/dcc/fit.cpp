@@ -143,6 +143,7 @@ optim::LbfgsResult minimize(const DccProblem& problem, const FitConfig& config, 
     optim::LbfgsOptions options;
     options.max_iter = config.max_iter;
     options.gtol = config.tol;
+    options.cancel = config.cancel;
     MeanObjective<N> objective(problem);
     return optim::lbfgs_minimize(objective, x, options);
 }

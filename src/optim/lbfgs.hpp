@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/cancel.hpp"
 #include "optim/curvature_memory.hpp"
 #include "optim/line_search.hpp"
 #include "optim/vector_math.hpp"
@@ -34,6 +35,8 @@ struct LbfgsOptions
     // 4.5 machine epsilons). A larger ftol stops on ill-conditioned ridges, where every step is small but the
     // gradient is still far above gtol.
     double ftol = 1e-15;
+    // Polled once per iteration; null never cancels.
+    const CancelFlag* cancel = nullptr;
 };
 
 struct LbfgsResult
@@ -78,6 +81,7 @@ public:
             {
                 return finish(Stop::MaxIter, iterations);
             }
+            throw_if_cancelled(options_.cancel);
             Step step = iterate();
             if (step == Step::Failed && gradient_nearly_small())
             {
