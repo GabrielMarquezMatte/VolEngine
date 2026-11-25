@@ -466,6 +466,9 @@ VE_API ve_status ve_dcc_batch_spec_count(const ve_dcc_batch* b, size_t* out);
 VE_API void ve_dcc_batch_free(ve_dcc_batch* b);
 /* out holds spec_count handles in spec order. Nonconvergence is a per-fit status. */
 VE_API ve_status ve_dcc_fit_batch(ve_context* ctx, const ve_dcc_batch* b, ve_dcc_fit** out);
+/* ve_dcc_fit_batch, cancellable by c (see ve_cancel_create). Since 1.3.0. */
+VE_API ve_status ve_dcc_fit_batch_with_cancel(ve_context* ctx, const ve_dcc_batch* b, const ve_cancel* c,
+                                              ve_dcc_fit** out);
 VE_API ve_status ve_dcc_fit_status(const ve_dcc_fit* f, int32_t* out);
 VE_API ve_status ve_dcc_fit_nobs(const ve_dcc_fit* f, size_t* out);
 VE_API ve_status ve_dcc_fit_series(const ve_dcc_fit* f, size_t* out);
@@ -491,6 +494,9 @@ VE_API ve_status ve_dcc_fit_covariance(const ve_dcc_fit* f, const double** data,
 /* Returns a new immutable fit sharing R; fits must match the original univariate estimates and order. */
 VE_API ve_status ve_dcc_standard_errors(ve_context* ctx, const ve_dcc_fit* f, const ve_fit* const* fits, size_t m,
                                         ve_dcc_fit** out);
+/* ve_dcc_standard_errors, cancellable by c (see ve_cancel_create). Since 1.3.0. */
+VE_API ve_status ve_dcc_standard_errors_with_cancel(ve_context* ctx, const ve_dcc_fit* f, const ve_fit* const* fits,
+                                                    size_t m, const ve_cancel* c, ve_dcc_fit** out);
 VE_API void ve_dcc_fit_free(ve_dcc_fit* f);
 
 /* ---- DCC forecast and simulation ----
@@ -536,6 +542,9 @@ VE_API ve_status ve_sim_options_set_correlations(ve_sim_options* o, int32_t on);
    memory addresses. */
 VE_API ve_status ve_simulate_dcc(ve_context* ctx, const ve_dcc_fit* f, const ve_sim_options* o,
                                  const ve_dcc_future* x, ve_dcc_sim** out);
+/* ve_simulate_dcc, cancellable by c (see ve_cancel_create). Since 1.3.0. */
+VE_API ve_status ve_simulate_dcc_with_cancel(ve_context* ctx, const ve_dcc_fit* f, const ve_sim_options* o,
+                                             const ve_dcc_future* x, const ve_cancel* c, ve_dcc_sim** out);
 VE_API ve_status ve_dcc_sim_paths(const ve_dcc_sim* sim, size_t* out);
 VE_API ve_status ve_dcc_sim_horizon(const ve_dcc_sim* sim, size_t* out);
 VE_API ve_status ve_dcc_sim_series(const ve_dcc_sim* sim, size_t* out);

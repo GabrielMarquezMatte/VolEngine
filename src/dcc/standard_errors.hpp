@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/cancel.hpp"
 #include "dcc/fit.hpp"
 #include "dcc/spec.hpp"
 #include "fit/fit_result.hpp"
@@ -57,10 +58,11 @@ std::expected<DccStandardErrors, std::string> dcc_standard_errors(const DccFitRe
 // The same for several fits of one panel, in one call: the preparation of each fit and every column of its cross
 // terms (one series refiltered per column, the bulk of the work) is spread over the pool, and entry i is the result of
 // the function above for dcc_fits[i], bit for bit, whatever the number of threads. Call it from outside the pool's own
-// tasks, with the pool and threads that Context::with_pool hands over.
+// tasks, with the pool and threads that Context::with_pool hands over. cancel is borrowed and polled at the start of
+// each block of work; null never cancels.
 std::vector<std::expected<DccStandardErrors, std::string>>
 dcc_standard_errors(BS::light_thread_pool& pool, int threads, std::span<const DccFitResult* const> dcc_fits,
-                    std::span<const FitResult* const> fits);
+                    std::span<const FitResult* const> fits, const CancelFlag* cancel = nullptr);
 
 // Why the two-stage standard errors cannot be computed from fits, or nullopt: a series with mxreg or vxreg, whose
 // regressors its fit does not keep for the refiltering (the message names "regressors").

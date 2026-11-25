@@ -1,7 +1,9 @@
 #include "capi_scope.hpp"
+#include "dcc/dcc3_panel.hpp"
 #include "simulated_garch.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -365,6 +367,393 @@ TEST(SimulateWithCancel, RequestFromAnotherThreadStops)
                                [&] {
                                    return ve_simulate_spec_with_cancel(context.get(), spec.get(), options.get(),
                                                                        cancel.get(), &out);
+                               }),
+              VE_CANCELLED);
+    EXPECT_EQ(out, nullptr);
+}
+
+namespace
+{
+
+template <class Handle, void (*Free)(Handle*)>
+struct Release
+{
+    void operator()(Handle* handle) const
+    {
+        Free(handle);
+    }
+};
+
+using DccSpecPtr = std::unique_ptr<ve_dcc_spec, Release<ve_dcc_spec, ve_dcc_spec_free>>;
+using DccOptionsPtr = std::unique_ptr<ve_dcc_options, Release<ve_dcc_options, ve_dcc_options_free>>;
+using DccBatchPtr = std::unique_ptr<ve_dcc_batch, Release<ve_dcc_batch, ve_dcc_batch_free>>;
+using DccFitPtr = std::unique_ptr<ve_dcc_fit, Release<ve_dcc_fit, ve_dcc_fit_free>>;
+using DccSimPtr = std::unique_ptr<ve_dcc_sim, Release<ve_dcc_sim, ve_dcc_sim_free>>;
+
+// The long DCC batch is this many specs, many times the work that fits in kSignalDelay.
+constexpr std::size_t kLongSpecs = 300;
+
+// Owns the ve_dcc_fit handles a batch writes. They start as sentinels, so a call that must not publish shows it.
+class DccFitSet
+{
+public:
+    explicit DccFitSet(std::size_t count) : fits_(count, sentinel<ve_dcc_fit>())
+    {
+    }
+
+    DccFitSet(const DccFitSet&) = delete;
+    DccFitSet& operator=(const DccFitSet&) = delete;
+
+    ~DccFitSet()
+    {
+        for (ve_dcc_fit* fit : fits_)
+        {
+            if (fit != sentinel<ve_dcc_fit>())
+            {
+                ve_dcc_fit_free(fit);
+            }
+        }
+    }
+
+    ve_dcc_fit** out()
+    {
+        return fits_.data();
+    }
+
+    ve_dcc_fit* operator[](std::size_t index) const
+    {
+        return fits_.at(index);
+    }
+
+    bool all_null() const
+    {
+        return std::ranges::all_of(fits_, [](const ve_dcc_fit* fit) { return fit == nullptr; });
+    }
+
+private:
+    std::vector<ve_dcc_fit*> fits_;
+};
+
+// The T x 3 rows of dcc3 in C order, kept alive for the borrowed panel.
+const std::vector<double>& dcc3_rows()
+{
+    static const std::vector<double> rows = []
+    {
+        const std::vector<std::vector<double>> columns = ve::testing::read_dcc3();
+        std::vector<double> flat(ve::testing::kDcc3Rows * ve::testing::kDcc3Series);
+        for (std::size_t t = 0; t < ve::testing::kDcc3Rows; ++t)
+        {
+            for (std::size_t i = 0; i < ve::testing::kDcc3Series; ++i)
+            {
+                flat[t * ve::testing::kDcc3Series + i] = columns[i][t];
+            }
+        }
+        return flat;
+    }();
+    return rows;
+}
+
+DccSpecPtr dcc_spec(int32_t model, int32_t dist)
+{
+    ve_dcc_spec* raw = nullptr;
+    EXPECT_EQ(ve_dcc_spec_create(model, &raw), VE_OK) << ve_last_error();
+    DccSpecPtr spec(raw);
+    EXPECT_EQ(ve_dcc_spec_set_dist(raw, dist), VE_OK);
+    return spec;
+}
+
+// A static copula with Kendall's tau: nothing for the optimizer to estimate.
+DccSpecPtr kendall_spec()
+{
+    DccSpecPtr spec = dcc_spec(VE_DCC_MODEL_STATIC, VE_DCC_DIST_MVNORM);
+    EXPECT_EQ(ve_dcc_spec_set_copula(spec.get(), VE_DCC_COPULA_PARAMETRIC), VE_OK);
+    EXPECT_EQ(ve_dcc_spec_set_static_method(spec.get(), VE_DCC_STATIC_KENDALL), VE_OK);
+    return spec;
+}
+
+DccOptionsPtr dcc_options(bool standard_errors)
+{
+    ve_dcc_options* raw = nullptr;
+    EXPECT_EQ(ve_dcc_options_create(&raw), VE_OK);
+    DccOptionsPtr options(raw);
+    EXPECT_EQ(ve_dcc_options_set_standard_errors(raw, standard_errors ? 1 : 0), VE_OK);
+    return options;
+}
+
+FitSet fit_dcc3_univariates()
+{
+    ContextPtr context = ve::testing::make_context(1);
+    SpecPtr spec = ve::testing::make_spec(1);
+    PanelPtr panel = ve::testing::make_panel(dcc3_rows().data(), ve::testing::kDcc3Rows, ve::testing::kDcc3Series);
+    BatchInputs inputs;
+    inputs.specs = {spec.get()};
+    inputs.panel = panel.get();
+    inputs.job_spec = {0, 0, 0};
+    inputs.job_series = {0, 1, 2};
+    BatchPtr batch = ve::testing::build_batch(inputs);
+    return ve::testing::fit_all(context.get(), batch.get());
+}
+
+// The sGARCH(1,1) fits of the three series of dcc3, and a context to run DCC calls on.
+struct DccWork
+{
+    ContextPtr context = ve::testing::make_context(kThreads);
+    FitSet univariate = fit_dcc3_univariates();
+    std::vector<const ve_fit*> fits;
+
+    DccWork()
+    {
+        for (std::size_t i = 0; i < univariate.size(); ++i)
+        {
+            fits.push_back(univariate[i]);
+        }
+    }
+
+    // `count` specs cycling through `specs`, fitted with or without the standard errors.
+    DccBatchPtr batch(const std::vector<const ve_dcc_spec*>& specs, std::size_t count, bool standard_errors) const
+    {
+        std::vector<const ve_dcc_spec*> cycled;
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            cycled.push_back(specs[i % specs.size()]);
+        }
+        ve_dcc_batch* raw = nullptr;
+        EXPECT_EQ(ve_dcc_batch_create(&raw), VE_OK);
+        DccBatchPtr owner(raw);
+        EXPECT_EQ(ve_dcc_batch_set_specs(raw, cycled.data(), cycled.size()), VE_OK) << ve_last_error();
+        EXPECT_EQ(ve_dcc_batch_set_fits(raw, fits.data(), fits.size()), VE_OK) << ve_last_error();
+        DccOptionsPtr options = dcc_options(standard_errors);
+        EXPECT_EQ(ve_dcc_batch_set_options(raw, options.get()), VE_OK);
+        return owner;
+    }
+
+    // A dcc/mvnorm fit without standard errors, to hand to ve_dcc_standard_errors* and ve_simulate_dcc*.
+    DccFitPtr fitted() const
+    {
+        DccSpecPtr spec = dcc_spec(VE_DCC_MODEL_DCC, VE_DCC_DIST_MVNORM);
+        DccBatchPtr one = batch({spec.get()}, 1, false);
+        ve_dcc_fit* raw = nullptr;
+        EXPECT_EQ(ve_dcc_fit_batch(context.get(), one.get(), &raw), VE_OK) << ve_last_error();
+        return DccFitPtr(raw);
+    }
+};
+
+// What a DCC fit reports (estimates, loglik, both standard errors), as bit patterns so that NaN compares.
+std::vector<std::uint64_t> report_of(const ve_dcc_fit* fit)
+{
+    size_t count = 0;
+    EXPECT_EQ(ve_dcc_fit_param_count(fit, &count), VE_OK);
+    std::vector<double> numbers(count);
+    EXPECT_EQ(ve_dcc_fit_estimates(fit, numbers.data()), VE_OK);
+    double loglik = 0.0;
+    EXPECT_EQ(ve_dcc_fit_loglik(fit, &loglik), VE_OK);
+    numbers.push_back(loglik);
+    for (int32_t kind : {VE_SE_HESSIAN, VE_SE_ROBUST})
+    {
+        std::vector<double> errors(count);
+        EXPECT_EQ(ve_dcc_fit_std_errors(fit, kind, errors.data()), VE_OK) << ve_last_error();
+        numbers.insert(numbers.end(), errors.begin(), errors.end());
+    }
+    std::vector<std::uint64_t> bits;
+    for (double number : numbers)
+    {
+        bits.push_back(std::bit_cast<std::uint64_t>(number));
+    }
+    return bits;
+}
+
+std::vector<double> dcc_view(ve_status (*read)(const ve_dcc_sim*, const double**, size_t*), const ve_dcc_sim* sim)
+{
+    const double* data = nullptr;
+    size_t len = 0;
+    EXPECT_EQ(read(sim, &data, &len), VE_OK);
+    return {data, data + len};
+}
+
+// The returns, sigma, correlation and covariance of a simulation with correlations that must succeed.
+std::vector<std::vector<double>> simulated_dcc(const DccWork& work, const ve_dcc_fit* fit, const ve_sim_options* options,
+                                               const ve_cancel* c)
+{
+    ve_dcc_sim* raw = nullptr;
+    const ve_status status =
+        ve_simulate_dcc_with_cancel(work.context.get(), fit, options, nullptr, c, &raw);
+    DccSimPtr sim(raw);
+    EXPECT_EQ(status, VE_OK) << ve_last_error();
+    return {dcc_view(ve_dcc_sim_returns, sim.get()), dcc_view(ve_dcc_sim_sigma, sim.get()),
+            dcc_view(ve_dcc_sim_correlation, sim.get()), dcc_view(ve_dcc_sim_covariance, sim.get())};
+}
+
+}
+
+TEST(DccFitBatchWithCancel, RequestedBeforeCall)
+{
+    const DccWork work;
+    DccSpecPtr spec = dcc_spec(VE_DCC_MODEL_DCC, VE_DCC_DIST_MVNORM);
+    DccBatchPtr batch = work.batch({spec.get()}, 3, true);
+    CancelPtr cancel = requested_cancel();
+    DccFitSet out(3);
+    EXPECT_EQ(ve_dcc_fit_batch_with_cancel(work.context.get(), batch.get(), cancel.get(), out.out()), VE_CANCELLED);
+    EXPECT_EQ(ve_last_error(), std::string("cancelled"));
+    EXPECT_TRUE(out.all_null());
+}
+
+TEST(DccFitBatchWithCancel, NullEqualsUnrequested)
+{
+    const DccWork work;
+    DccSpecPtr dcc = dcc_spec(VE_DCC_MODEL_DCC, VE_DCC_DIST_MVNORM);
+    DccSpecPtr adcc = dcc_spec(VE_DCC_MODEL_ADCC, VE_DCC_DIST_MVT);
+    DccBatchPtr batch = work.batch({dcc.get(), adcc.get()}, 2, true);
+    CancelPtr cancel = make_cancel();
+    DccFitSet without(2);
+    DccFitSet with(2);
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(work.context.get(), batch.get(), nullptr, without.out()), VE_OK)
+        << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(work.context.get(), batch.get(), cancel.get(), with.out()), VE_OK)
+        << ve_last_error();
+    for (std::size_t i = 0; i < 2; ++i)
+    {
+        SCOPED_TRACE(i);
+        EXPECT_EQ(report_of(with[i]), report_of(without[i]));
+    }
+}
+
+// Review Focus 4: nothing to optimize, the check at the start of the spec still cancels.
+TEST(DccFitBatchWithCancel, NothingToEstimateStillCancels)
+{
+    const DccWork work;
+    DccSpecPtr spec = kendall_spec();
+    DccBatchPtr batch = work.batch({spec.get()}, 1, false);
+    DccFitSet unrequested(1);
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(work.context.get(), batch.get(), nullptr, unrequested.out()), VE_OK)
+        << ve_last_error();
+    CancelPtr cancel = requested_cancel();
+    DccFitSet out(1);
+    EXPECT_EQ(ve_dcc_fit_batch_with_cancel(work.context.get(), batch.get(), cancel.get(), out.out()), VE_CANCELLED);
+    EXPECT_TRUE(out.all_null());
+}
+
+TEST(DccFitBatchWithCancel, InvalidArgumentWinsOverCancel)
+{
+    const DccWork work;
+    ve_dcc_batch* raw = nullptr;
+    ASSERT_EQ(ve_dcc_batch_create(&raw), VE_OK);
+    DccBatchPtr empty(raw);
+    CancelPtr cancel = requested_cancel();
+    DccFitSet out(1);
+    EXPECT_EQ(ve_dcc_fit_batch_with_cancel(work.context.get(), empty.get(), cancel.get(), out.out()),
+              VE_INVALID_ARGUMENT);
+}
+
+TEST(DccFitBatchWithCancel, RequestFromAnotherThreadStops)
+{
+    const DccWork work;
+    DccSpecPtr dcc = dcc_spec(VE_DCC_MODEL_DCC, VE_DCC_DIST_MVNORM);
+    DccSpecPtr adcc = dcc_spec(VE_DCC_MODEL_ADCC, VE_DCC_DIST_MVNORM);
+    DccSpecPtr mvt = dcc_spec(VE_DCC_MODEL_DCC, VE_DCC_DIST_MVT);
+    DccBatchPtr batch = work.batch({dcc.get(), adcc.get(), mvt.get()}, kLongSpecs, true);
+    CancelPtr cancel = make_cancel();
+    DccFitSet out(kLongSpecs);
+    EXPECT_EQ(cancelled_during(cancel.get(),
+                               [&]
+                               {
+                                   return ve_dcc_fit_batch_with_cancel(work.context.get(), batch.get(), cancel.get(),
+                                                                       out.out());
+                               }),
+              VE_CANCELLED);
+    EXPECT_TRUE(out.all_null());
+}
+
+TEST(DccStandardErrorsWithCancel, RequestedBeforeCall)
+{
+    const DccWork work;
+    DccFitPtr fit = work.fitted();
+    CancelPtr cancel = requested_cancel();
+    ve_dcc_fit* out = sentinel<ve_dcc_fit>();
+    EXPECT_EQ(ve_dcc_standard_errors_with_cancel(work.context.get(), fit.get(), work.fits.data(), work.fits.size(),
+                                                 cancel.get(), &out),
+              VE_CANCELLED);
+    EXPECT_EQ(out, nullptr);
+    EXPECT_EQ(ve_last_error(), std::string("cancelled"));
+}
+
+TEST(DccStandardErrorsWithCancel, NullEqualsUnrequested)
+{
+    const DccWork work;
+    DccFitPtr fit = work.fitted();
+    CancelPtr cancel = make_cancel();
+    ve_dcc_fit* without = nullptr;
+    ve_dcc_fit* with = nullptr;
+    ASSERT_EQ(ve_dcc_standard_errors_with_cancel(work.context.get(), fit.get(), work.fits.data(), work.fits.size(),
+                                                 nullptr, &without),
+              VE_OK)
+        << ve_last_error();
+    DccFitPtr without_owner(without);
+    ASSERT_EQ(ve_dcc_standard_errors_with_cancel(work.context.get(), fit.get(), work.fits.data(), work.fits.size(),
+                                                 cancel.get(), &with),
+              VE_OK)
+        << ve_last_error();
+    DccFitPtr with_owner(with);
+    EXPECT_EQ(report_of(with), report_of(without));
+}
+
+TEST(DccStandardErrorsWithCancel, InvalidArgumentWinsOverCancel)
+{
+    const DccWork work;
+    DccFitPtr fit = work.fitted();
+    CancelPtr cancel = requested_cancel();
+    ve_dcc_fit* out = sentinel<ve_dcc_fit>();
+    EXPECT_EQ(ve_dcc_standard_errors_with_cancel(work.context.get(), fit.get(), work.fits.data(), 2, cancel.get(),
+                                                 &out),
+              VE_INVALID_ARGUMENT);
+}
+
+TEST(SimulateDccWithCancel, RequestedBeforeCall)
+{
+    const DccWork work;
+    DccFitPtr fit = work.fitted();
+    OptionsPtr options = make_options(10, 300);
+    CancelPtr cancel = requested_cancel();
+    ve_dcc_sim* out = sentinel<ve_dcc_sim>();
+    EXPECT_EQ(ve_simulate_dcc_with_cancel(work.context.get(), fit.get(), options.get(), nullptr, cancel.get(), &out),
+              VE_CANCELLED);
+    EXPECT_EQ(out, nullptr);
+    EXPECT_EQ(ve_last_error(), std::string("cancelled"));
+}
+
+TEST(SimulateDccWithCancel, NullEqualsUnrequested)
+{
+    const DccWork work;
+    DccFitPtr fit = work.fitted();
+    OptionsPtr options = make_options(10, 300);
+    ASSERT_EQ(ve_sim_options_set_correlations(options.get(), 1), VE_OK);
+    CancelPtr cancel = make_cancel();
+    EXPECT_EQ(simulated_dcc(work, fit.get(), options.get(), cancel.get()),
+              simulated_dcc(work, fit.get(), options.get(), nullptr));
+}
+
+TEST(SimulateDccWithCancel, InvalidArgumentWinsOverCancel)
+{
+    const DccWork work;
+    DccFitPtr fit = work.fitted();
+    CancelPtr cancel = requested_cancel();
+    ve_dcc_sim* out = sentinel<ve_dcc_sim>();
+    EXPECT_EQ(ve_simulate_dcc_with_cancel(work.context.get(), fit.get(), nullptr, nullptr, cancel.get(), &out),
+              VE_INVALID_HANDLE);
+    EXPECT_EQ(out, nullptr);
+}
+
+TEST(SimulateDccWithCancel, RequestFromAnotherThreadStops)
+{
+    const DccWork work;
+    DccFitPtr fit = work.fitted();
+    OptionsPtr options = make_options(kLongHorizon, kLongPaths);
+    CancelPtr cancel = make_cancel();
+    ve_dcc_sim* out = sentinel<ve_dcc_sim>();
+    EXPECT_EQ(cancelled_during(cancel.get(),
+                               [&]
+                               {
+                                   return ve_simulate_dcc_with_cancel(work.context.get(), fit.get(), options.get(),
+                                                                      nullptr, cancel.get(), &out);
                                }),
               VE_CANCELLED);
     EXPECT_EQ(out, nullptr);

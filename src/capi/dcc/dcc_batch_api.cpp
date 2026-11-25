@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+using ve::capi::flag_of;
 using ve::capi::guard;
 using ve::capi::set_error;
 using ve::capi::dcc::check;
@@ -139,6 +140,12 @@ void publish(std::vector<ve::dcc::DccFitResult> results, ve_dcc_fit** out)
 
 extern "C" ve_status ve_dcc_fit_batch(ve_context* ctx, const ve_dcc_batch* b, ve_dcc_fit** out)
 {
+    return ve_dcc_fit_batch_with_cancel(ctx, b, nullptr, out);
+}
+
+extern "C" ve_status ve_dcc_fit_batch_with_cancel(ve_context* ctx, const ve_dcc_batch* b, const ve_cancel* c,
+                                                  ve_dcc_fit** out)
+{
     return guard(
         [&]
         {
@@ -174,7 +181,7 @@ extern "C" ve_status ve_dcc_fit_batch(ve_context* ctx, const ve_dcc_batch* b, ve
                     return set_error(VE_UNSUPPORTED, *problem);
                 }
             }
-            publish(ve::dcc::fit_dcc_batch(ctx->context, fits, b->specs, b->options), out);
+            publish(ve::dcc::fit_dcc_batch(ctx->context, fits, b->specs, b->options, flag_of(c)), out);
             return VE_OK;
         });
 }

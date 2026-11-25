@@ -324,6 +324,7 @@ future::DccEnd end_of(const SpecBatch& batch, const DccFitResult& result)
 
 DccFitResult fit_in_batch(const SpecBatch& batch, std::size_t index)
 {
+    throw_if_cancelled(batch.options.config.cancel);
     DccFitResult result = fit_one_spec(batch, batch.specs[index]);
     result.univariate_parameters = batch.stage.parameters;
     result.univariate_estimates = batch.stage.estimates;
@@ -352,7 +353,7 @@ void add_standard_errors(BS::light_thread_pool& pool, int threads, const SpecBat
         }
     }
     std::vector<std::expected<DccStandardErrors, std::string>> errors =
-        dcc_standard_errors(pool, threads, converged, batch.fits);
+        dcc_standard_errors(pool, threads, converged, batch.fits, batch.options.config.cancel);
     for (std::size_t k = 0; k < slots.size(); ++k)
     {
         assert(errors[k].has_value());
@@ -430,9 +431,12 @@ std::optional<std::string> check_dcc_batch(std::span<const FitResult* const> fit
 }
 
 std::vector<DccFitResult> fit_dcc_batch(Context& context, std::span<const FitResult* const> fits,
-                                        std::span<const DccSpec> specs, const DccOptions& options)
+                                        std::span<const DccSpec> specs, const DccOptions& options,
+                                        const CancelFlag* cancel)
 {
     assert(!check_dcc_batch(fits, specs, options));
+    DccOptions run_options = options;
+    run_options.config.cancel = cancel;
     const auto panel = std::make_shared<const StandardizedPanel>(standardize(fits));
     const UnivariateStage stage = univariate_stage(fits);
     std::vector<DccFitResult> results(specs.size());
@@ -443,7 +447,7 @@ std::vector<DccFitResult> fit_dcc_batch(Context& context, std::span<const FitRes
         ends.push_back({fit->spec, fit->estimate, fit->state});
     }
     const auto series_end = std::make_shared<const std::vector<future::SeriesEnd>>(std::move(ends));
-    const SpecBatch batch{panel, specs, options, fits, stage, copula, series_end};
+    const SpecBatch batch{panel, specs, run_options, fits, stage, copula, series_end};
     context.with_pool(
         [&](BS::light_thread_pool& pool, int threads)
         {

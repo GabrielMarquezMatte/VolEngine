@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/cancel.hpp"
 #include "core/context.hpp"
 #include "dcc/fit.hpp"
 #include "dcc/future/forecast.hpp"
@@ -18,6 +19,8 @@ struct DccRequest
     std::uint64_t seed = 0;
     bool correlations = false;
     SeriesRegressors future{};
+    // Borrowed, polled before each path; null never cancels.
+    const CancelFlag* cancel = nullptr;
 };
 
 // returns and sigma paths x horizon x m; r and h paths x horizon x m x m, empty without correlations.

@@ -661,13 +661,18 @@ std::expected<DccStandardErrors, std::string> dcc_standard_errors(const DccFitRe
 
 std::vector<std::expected<DccStandardErrors, std::string>>
 dcc_standard_errors(BS::light_thread_pool& pool, int threads, std::span<const DccFitResult* const> dcc_fits,
-                    std::span<const FitResult* const> fits)
+                    std::span<const FitResult* const> fits, const CancelFlag* cancel)
 {
     const auto run = [&](std::size_t count, const auto& work)
     {
         if (count != 0)
         {
-            run_in_blocks(pool, threads, count, kBlocksPerThread, work);
+            run_in_blocks(pool, threads, count, kBlocksPerThread,
+                          [&](std::size_t first, std::size_t last)
+                          {
+                              throw_if_cancelled(cancel);
+                              work(first, last);
+                          });
         }
     };
     const std::vector<Job> jobs = build_jobs(dcc_fits, fits, run);

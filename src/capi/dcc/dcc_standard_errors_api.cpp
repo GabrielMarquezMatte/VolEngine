@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+using ve::capi::flag_of;
 using ve::capi::guard;
 using ve::capi::set_error;
 using ve::capi::dcc::check;
@@ -14,6 +15,13 @@ using ve::capi::dcc::check;
 
 extern "C" ve_status ve_dcc_standard_errors(ve_context* ctx, const ve_dcc_fit* f, const ve_fit* const* fits, size_t m,
                                           ve_dcc_fit** out)
+{
+    return ve_dcc_standard_errors_with_cancel(ctx, f, fits, m, nullptr, out);
+}
+
+extern "C" ve_status ve_dcc_standard_errors_with_cancel(ve_context* ctx, const ve_dcc_fit* f,
+                                                        const ve_fit* const* fits, size_t m, const ve_cancel* c,
+                                                        ve_dcc_fit** out)
 {
     return guard(
         [&]
@@ -53,7 +61,7 @@ extern "C" ve_status ve_dcc_standard_errors(ve_context* ctx, const ve_dcc_fit* f
             const std::vector<const ve::dcc::DccFitResult*> one{&f->result};
             const auto errors = ctx->context.with_pool(
                 [&](BS::light_thread_pool& pool, int threads)
-                { return ve::dcc::dcc_standard_errors(pool, threads, one, pointers).front(); });
+                { return ve::dcc::dcc_standard_errors(pool, threads, one, pointers, flag_of(c)).front(); });
             if (!errors)
             {
                 return set_error(VE_INVALID_ARGUMENT, errors.error());

@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+using ve::capi::flag_of;
 using ve::capi::guard;
 using ve::capi::set_error;
 
@@ -105,6 +106,12 @@ ve_status read_size(const ve_dcc_sim* sim, SimSize member, size_t* out)
 extern "C" ve_status ve_simulate_dcc(ve_context* ctx, const ve_dcc_fit* f, const ve_sim_options* o,
                                      const ve_dcc_future* x, ve_dcc_sim** out)
 {
+    return ve_simulate_dcc_with_cancel(ctx, f, o, x, nullptr, out);
+}
+
+extern "C" ve_status ve_simulate_dcc_with_cancel(ve_context* ctx, const ve_dcc_fit* f, const ve_sim_options* o,
+                                                 const ve_dcc_future* x, const ve_cancel* c, ve_dcc_sim** out)
+{
     return guard(
         [&]
         {
@@ -125,6 +132,7 @@ extern "C" ve_status ve_simulate_dcc(ve_context* ctx, const ve_dcc_fit* f, const
                 return status;
             }
             ve::dcc::future::DccRequest request{o->horizon, o->paths, o->seed, o->correlations, std::move(future)};
+            request.cancel = flag_of(c);
             auto handle = std::make_unique<ve_dcc_sim>();
             handle->simulation = ve::dcc::future::simulate_dcc(ctx->context, f->result, request);
             handle->correlations = o->correlations;

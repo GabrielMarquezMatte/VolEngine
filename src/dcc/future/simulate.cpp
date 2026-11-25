@@ -241,6 +241,7 @@ DccSimulation simulate_dcc(Context& context, const DccFitResult& fit, const DccR
     {
         for (std::size_t path = first; path < last; ++path)
         {
+            throw_if_cancelled(request.cancel);
             PathRun(setup, path).run(out);
         }
     };
