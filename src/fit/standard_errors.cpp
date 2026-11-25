@@ -61,9 +61,18 @@ double median_of(double a, double b, double c)
 // one-sided differences on [step, 2 step] and [-2 step, -step] do not straddle it: when the three disagree, a
 // kink lies within 2 step, and with one kink there their median is one of the two it misses. On a smooth likelihood
 // they agree to O(step) and the central difference stands.
-void step_beside_kink(const Problem& problem, std::span<const double> theta, std::size_t index, double step,
-                      std::span<const double> up, std::span<const double> down, std::span<double> column)
+struct Probe
 {
+    const Problem& problem;
+    std::span<const double> theta;
+    std::size_t index;
+    double step;
+};
+
+void step_beside_kink(const Probe& probe, std::span<const double> up, std::span<const double> down,
+                      std::span<double> column)
+{
+    const auto& [problem, theta, index, step] = probe;
     std::size_t k = theta.size();
     std::vector<double> far_up(k);
     std::vector<double> far_down(k);
@@ -113,7 +122,7 @@ bool difference_column(const Problem& problem, std::span<const double> theta, st
     // Only the mean parameters move a residual through 0: the variance ones scale z, and z = 0 stays 0.
     if (index < problem.layout.omega())
     {
-        step_beside_kink(problem, theta, index, step, grad_up, grad_down, column);
+        step_beside_kink({problem, theta, index, step}, grad_up, grad_down, column);
     }
     return true;
 }
