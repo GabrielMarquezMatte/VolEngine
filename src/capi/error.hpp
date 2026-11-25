@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/cancel.hpp"
+
 #include <exception>
 #include <new>
 #include <stdexcept>
@@ -44,6 +46,10 @@ ve_status guard(F&& callable)
     catch (const std::length_error&)
     {
         return set_error(VE_INVALID_ARGUMENT, "a count or size is too large to allocate");
+    }
+    catch (const Cancelled&)
+    {
+        return set_error(VE_CANCELLED, "cancelled");
     }
     catch (const std::exception& error)
     {

@@ -37,6 +37,8 @@ typedef int32_t ve_status;
 #define VE_UNSUPPORTED 3
 #define VE_OUT_OF_MEMORY 4
 #define VE_INTERNAL_ERROR 5
+/* The call stopped on a request of its ve_cancel; see ve_cancel_create. Since 1.3.0. */
+#define VE_CANCELLED 6
 
 typedef struct ve_context ve_context;
 
@@ -55,6 +57,24 @@ VE_API ve_status ve_context_create(ve_context** out);
 VE_API ve_status ve_context_set_threads(ve_context* ctx, int32_t threads);
 VE_API ve_status ve_context_threads(const ve_context* ctx, int32_t* out);
 VE_API void ve_context_free(ve_context* ctx);
+
+/* ---- Cancellation ----
+   A cancellation signal for the *_with_cancel calls, which take it as `const ve_cancel* c` right before their output.
+   ve_cancel_request may be called from any thread at any time, also while a call uses the handle, and more than once:
+   the handle stays requested and has no reset. One handle may be passed to several calls, concurrent or not, and a
+   request cancels all of them. Freeing the handle while a call uses it is undefined behavior.
+   A cancelled call returns VE_CANCELLED with ve_last_error "cancelled" and its output set to NULL (each of the n
+   handles of a batch), and no thread of the pool still works on it. It stops within the work between two checks: an
+   optimizer iteration, a stage of the standard errors or a simulated path. A request that arrives after the last check
+   leaves the call to return VE_OK with the whole result, so a request does not always give VE_CANCELLED. The arguments
+   are checked first: an invalid one gives the same error with or without a requested handle. c NULL never cancels: the
+   call does exactly what the function without _with_cancel does. Since 1.3.0. */
+typedef struct ve_cancel ve_cancel;
+/* NULL out is VE_INVALID_ARGUMENT. */
+VE_API ve_status ve_cancel_create(ve_cancel** out);
+/* NULL c is VE_INVALID_HANDLE. */
+VE_API ve_status ve_cancel_request(ve_cancel* c);
+VE_API void ve_cancel_free(ve_cancel* c);
 
 /* Parameter names and order for every model: mu, ar1..arm, ma1..man, omega, alpha1..alphap,
    beta1..betaq, gamma1..gammap, eta11..eta1p, eta21..eta2p, delta or lambda, skew, shape, ghlambda. A
@@ -270,6 +290,9 @@ VE_API void ve_batch_free(ve_batch* b);
    does not converge is not an error: see ve_fit_status. The fits own their data: they stay valid after
    the batch, panel, specs and ctx are freed. */
 VE_API ve_status ve_fit_batch(ve_context* ctx, const ve_batch* batch, ve_fit** fits_out);
+/* ve_fit_batch, cancellable by c (see ve_cancel_create). Since 1.3.0. */
+VE_API ve_status ve_fit_batch_with_cancel(ve_context* ctx, const ve_batch* batch, const ve_cancel* c,
+                                          ve_fit** fits_out);
 
 /* VE_FIT_FAILED means "did not converge to a usable optimum": the values of such a fit are those of
    the best finite point the optimizer reached, or NaN (empty series) when it reached none (invalid
@@ -368,11 +391,17 @@ VE_API void ve_sim_options_free(ve_sim_options* o);
 /* VE_INVALID_ARGUMENT for a fit with no finite point (see ve_fit_status) or regressors that do not match its spec;
    a VE_FIT_FAILED fit that has a finite point simulates from it. */
 VE_API ve_status ve_simulate_fit(ve_context* ctx, const ve_fit* f, const ve_sim_options* o, ve_sim** out);
+/* ve_simulate_fit, cancellable by c (see ve_cancel_create). Since 1.3.0. */
+VE_API ve_status ve_simulate_fit_with_cancel(ve_context* ctx, const ve_fit* f, const ve_sim_options* o,
+                                             const ve_cancel* c, ve_sim** out);
 /* VE_INVALID_ARGUMENT, with the reason in ve_last_error, for a spec with a free parameter, variance targeting,
    iGARCH or EWMA (no unconditional variance), parameters outside their domain, persistence >= 1, or regressors that do not
    match it. The presample holds the unconditional sigma2 (with the first row of vxreg), the unconditional mean
    and residuals drawn from the paths themselves. */
 VE_API ve_status ve_simulate_spec(ve_context* ctx, const ve_spec* s, const ve_sim_options* o, ve_sim** out);
+/* ve_simulate_spec, cancellable by c (see ve_cancel_create). Since 1.3.0. */
+VE_API ve_status ve_simulate_spec_with_cancel(ve_context* ctx, const ve_spec* s, const ve_sim_options* o,
+                                              const ve_cancel* c, ve_sim** out);
 VE_API ve_status ve_sim_paths(const ve_sim* sim, size_t* out);
 VE_API ve_status ve_sim_horizon(const ve_sim* sim, size_t* out);
 /* paths x horizon values, row-major (row p is path p), valid until sim is freed: the simulated series and its

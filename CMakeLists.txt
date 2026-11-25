@@ -130,6 +130,7 @@ target_compile_options(volengine_core PRIVATE ${VE_WARNING_FLAGS} ${VE_FLOAT_FLA
 add_library(volengine SHARED
     src/capi/version_api.cpp
     src/capi/batch_api.cpp
+    src/capi/cancel_api.cpp
     src/capi/context_api.cpp
     src/capi/dcc/dcc_batch_api.cpp
     src/capi/dcc/dcc_standard_errors_api.cpp
@@ -183,6 +184,7 @@ if(VE_BUILD_TESTS)
         tests/unit/ad/special_test.cpp
         tests/unit/capi/abi_test.cpp
         tests/unit/capi/batch_test.cpp
+        tests/unit/capi/cancel_test.cpp
         tests/unit/capi/context_test.cpp
         tests/unit/capi/dcc_test.cpp
         tests/unit/capi/results/fit_accessors_test.cpp

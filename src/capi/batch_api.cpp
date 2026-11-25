@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+using ve::capi::flag_of;
 using ve::capi::guard;
 using ve::capi::set_error;
 
@@ -223,6 +224,12 @@ extern "C" void ve_batch_free(ve_batch* b)
 
 extern "C" ve_status ve_fit_batch(ve_context* ctx, const ve_batch* batch, ve_fit** fits_out)
 {
+    return ve_fit_batch_with_cancel(ctx, batch, nullptr, fits_out);
+}
+
+extern "C" ve_status ve_fit_batch_with_cancel(ve_context* ctx, const ve_batch* batch, const ve_cancel* c,
+                                              ve_fit** fits_out)
+{
     if (batch != nullptr && fits_out != nullptr)
     {
         std::fill_n(fits_out, batch->batch.jobs.size(), nullptr);
@@ -239,7 +246,7 @@ extern "C" ve_status ve_fit_batch(ve_context* ctx, const ve_batch* batch, ve_fit
             {
                 return set_error(VE_INVALID_ARGUMENT, *problem);
             }
-            publish_results(ve::run_batch(ctx->context, batch->batch), fits_out);
+            publish_results(ve::run_batch(ctx->context, batch->batch, flag_of(c)), fits_out);
             return VE_OK;
         });
 }

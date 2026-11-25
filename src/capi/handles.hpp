@@ -2,6 +2,7 @@
 
 #include "capi/dcc/table.hpp"
 #include "capi/results/regressor_rows.hpp"
+#include "core/cancel.hpp"
 #include "core/context.hpp"
 #include "dcc/fit.hpp"
 #include "dcc/future/forecast.hpp"
@@ -22,6 +23,22 @@ struct ve_context
 {
     ve::Context context;
 };
+
+struct ve_cancel
+{
+    ve::CancelFlag flag;
+};
+
+namespace ve::capi
+{
+
+// Null for a null handle, which never cancels.
+inline const CancelFlag* flag_of(const ve_cancel* c)
+{
+    return c == nullptr ? nullptr : &c->flag;
+}
+
+}
 
 struct ve_spec
 {

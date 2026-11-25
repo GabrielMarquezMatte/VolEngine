@@ -39,6 +39,7 @@ void run_blocks(BS::light_thread_pool& pool, int threads, const Start& start, co
     {
         for (std::size_t path = first; path < last; ++path)
         {
+            throw_if_cancelled(request.cancel);
             simulate_path(start, request, sampler, path, out);
         }
     };

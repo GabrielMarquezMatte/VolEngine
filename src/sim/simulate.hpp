@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/cancel.hpp"
 #include "core/context.hpp"
 #include "forecast/forecast.hpp"
 #include "sim/start.hpp"
@@ -12,13 +13,14 @@ namespace ve::sim
 {
 
 // horizon steps of paths paths under seed; future holds horizon rows of the spec's regressors, the same for every
-// path (the caller checks them).
+// path (the caller checks them). cancel is borrowed and polled before each path; null never cancels.
 struct Request
 {
     std::size_t horizon = 0;
     std::size_t paths = 0;
     std::uint64_t seed = 0;
     forecast::FutureRegressors future{};
+    const CancelFlag* cancel = nullptr;
 };
 
 // paths x horizon, row-major: row p holds path p.

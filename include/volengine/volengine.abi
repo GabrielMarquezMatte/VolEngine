@@ -7,6 +7,7 @@ define VE_INVALID_HANDLE 2
 define VE_UNSUPPORTED 3
 define VE_OUT_OF_MEMORY 4
 define VE_INTERNAL_ERROR 5
+define VE_CANCELLED 6
 typedef struct ve_context ve_context
 function const char* ve_last_error(void)
 define VE_MAX_THREADS 1024
@@ -14,6 +15,10 @@ function ve_status ve_context_create(ve_context**)
 function ve_status ve_context_set_threads(ve_context*, int32_t)
 function ve_status ve_context_threads(const ve_context*, int32_t*)
 function void ve_context_free(ve_context*)
+typedef struct ve_cancel ve_cancel
+function ve_status ve_cancel_create(ve_cancel**)
+function ve_status ve_cancel_request(ve_cancel*)
+function void ve_cancel_free(ve_cancel*)
 define VE_MODEL_SGARCH 0
 define VE_MODEL_EGARCH 1
 define VE_MODEL_GJRGARCH 2
@@ -87,6 +92,7 @@ function ve_status ve_batch_set_regressors(ve_batch*, const ve_panel* const*, co
 function ve_status ve_batch_job_count(const ve_batch*, size_t*)
 function void ve_batch_free(ve_batch*)
 function ve_status ve_fit_batch(ve_context*, const ve_batch*, ve_fit**)
+function ve_status ve_fit_batch_with_cancel(ve_context*, const ve_batch*, const ve_cancel*, ve_fit**)
 function ve_status ve_fit_status(const ve_fit*, int32_t*)
 function ve_status ve_fit_nobs(const ve_fit*, size_t*)
 function ve_status ve_fit_param_count(const ve_fit*, size_t*)
@@ -124,7 +130,9 @@ function ve_status ve_sim_options_create(size_t, size_t, uint64_t, ve_sim_option
 function ve_status ve_sim_options_set_regressors(ve_sim_options*, const ve_panel*, const ve_panel*)
 function void ve_sim_options_free(ve_sim_options*)
 function ve_status ve_simulate_fit(ve_context*, const ve_fit*, const ve_sim_options*, ve_sim**)
+function ve_status ve_simulate_fit_with_cancel(ve_context*, const ve_fit*, const ve_sim_options*, const ve_cancel*, ve_sim**)
 function ve_status ve_simulate_spec(ve_context*, const ve_spec*, const ve_sim_options*, ve_sim**)
+function ve_status ve_simulate_spec_with_cancel(ve_context*, const ve_spec*, const ve_sim_options*, const ve_cancel*, ve_sim**)
 function ve_status ve_sim_paths(const ve_sim*, size_t*)
 function ve_status ve_sim_horizon(const ve_sim*, size_t*)
 function ve_status ve_sim_returns(const ve_sim*, const double**, size_t*)

@@ -38,7 +38,8 @@ std::optional<std::string> check_batch(const Batch& batch);
 
 // Results are indexed like batch.jobs and do not depend on the thread count. Rethrows the first
 // exception raised by a fit, after every started fit has finished. The batch must pass check_batch.
-// Runs inside context.with_pool, so a concurrent set_threads waits for it.
-std::vector<FitResult> run_batch(Context& context, const Batch& batch);
+// Runs inside context.with_pool, so a concurrent set_threads waits for it. cancel replaces batch.config.cancel: it is
+// polled before each job and inside each fit; null never cancels.
+std::vector<FitResult> run_batch(Context& context, const Batch& batch, const CancelFlag* cancel = nullptr);
 
 }

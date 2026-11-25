@@ -13,6 +13,7 @@
 #include <vector>
 
 using ve::capi::check_stored;
+using ve::capi::flag_of;
 using ve::capi::guard;
 using ve::capi::set_error;
 using ve::capi::store_rows;
@@ -192,6 +193,12 @@ extern "C" void ve_sim_options_free(ve_sim_options* o)
 
 extern "C" ve_status ve_simulate_fit(ve_context* ctx, const ve_fit* f, const ve_sim_options* o, ve_sim** out)
 {
+    return ve_simulate_fit_with_cancel(ctx, f, o, nullptr, out);
+}
+
+extern "C" ve_status ve_simulate_fit_with_cancel(ve_context* ctx, const ve_fit* f, const ve_sim_options* o,
+                                                 const ve_cancel* c, ve_sim** out)
+{
     return guard(
         [&]
         {
@@ -211,11 +218,18 @@ extern "C" ve_status ve_simulate_fit(ve_context* ctx, const ve_fit* f, const ve_
             {
                 return status;
             }
+            request.cancel = flag_of(c);
             return publish(ctx, ve::sim::start_of_fit(f->result), request, out);
         });
 }
 
 extern "C" ve_status ve_simulate_spec(ve_context* ctx, const ve_spec* s, const ve_sim_options* o, ve_sim** out)
+{
+    return ve_simulate_spec_with_cancel(ctx, s, o, nullptr, out);
+}
+
+extern "C" ve_status ve_simulate_spec_with_cancel(ve_context* ctx, const ve_spec* s, const ve_sim_options* o,
+                                                  const ve_cancel* c, ve_sim** out)
 {
     return guard(
         [&]
@@ -231,6 +245,7 @@ extern "C" ve_status ve_simulate_spec(ve_context* ctx, const ve_spec* s, const v
             {
                 return status;
             }
+            request.cancel = flag_of(c);
             auto start = ve::sim::start_of_spec(s->spec, request.future);
             if (!start.has_value())
             {
