@@ -26,6 +26,12 @@ break between 0.x releases.
   the mean and standard deviation of the forecast sum of the next h returns; `ve_dcc_forecast_cumulative_mean` and
   `ve_dcc_forecast_cumulative_covariance` give the mean and covariance for a DCC. The variance weights each step by
   the MA(inf) weights of an ARMA/ARFIMA mean, so it is the plain sum of sigma^2 (or of H) only without one.
+- C++: `cumulative_mean()` and `cumulative_sigma()` on `Forecast`, `cumulative_mean()` and `cumulative_covariance()` on
+  `DccForecast`.
+- C#: `CumulativeMean` and `CumulativeSigma` on `Forecast`, `CumulativeMean` and `CumulativeCovariance` on
+  `DccForecast`.
+- Python: `cumulative_mean` and `cumulative_sigma` on `Forecast`, `cumulative_mean` and `cumulative_covariance` on
+  `DccForecast`.
 - C++: `SimOptions::checkpoints`, and `cumulative()` and `checkpoints()` on `Simulation` and `DccSimulation`.
 - C#: `Checkpoints` on the simulation options, and `Cumulative` and `Checkpoints` on the results; `Returns` and `Sigma`
   are empty in that mode.

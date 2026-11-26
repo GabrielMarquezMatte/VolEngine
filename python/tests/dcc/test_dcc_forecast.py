@@ -123,3 +123,33 @@ def test_mixed_regressors(ctx, returns):
         dcc.forecast(HORIZON, mxreg=[None, future[:-1], None])
     with pytest.raises(ve.VolEngineError, match="series 2"):
         ctx.simulate(dcc, horizon=HORIZON, paths=4, seed=1, mxreg=[None, future[:-1], None])
+
+
+def test_cumulative_mean_is_the_left_to_right_sum_of_the_means(ctx, univariate):
+    forecast = ctx.fit_dcc(make_spec("dcc"), univariate).forecast(HORIZON)
+    cumulative = forecast.cumulative_mean
+    assert cumulative.shape == (HORIZON, 3)
+    assert not cumulative.flags.writeable
+    expected = np.zeros(3)
+    for h in range(HORIZON):
+        for i in range(3):
+            expected[i] += forecast.mean[h, i]
+        assert np.array_equal(cumulative[h].view(np.uint64), expected.view(np.uint64))
+
+
+def test_cumulative_covariance_without_arma_is_the_summed_covariance_and_symmetric(ctx, univariate):
+    forecast = ctx.fit_dcc(make_spec("dcc"), univariate).forecast(HORIZON)
+    cumulative = forecast.cumulative_covariance
+    assert cumulative.shape == (HORIZON, 3, 3)
+    assert not cumulative.flags.writeable
+    assert np.array_equal(cumulative.view(np.uint64), cumulative.transpose(0, 2, 1).view(np.uint64))
+    np.testing.assert_allclose(cumulative, np.cumsum(forecast.H, axis=0), rtol=1e-14)
+
+
+def test_cumulative_views_outlive_the_dcc_fit(ctx, univariate):
+    fit = ctx.fit_dcc(make_spec("dcc"), univariate)
+    forecast = fit.forecast(HORIZON)
+    covariance = forecast.cumulative_covariance.copy()
+    del fit
+    gc.collect()
+    np.testing.assert_array_equal(forecast.cumulative_covariance, covariance)

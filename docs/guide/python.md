@@ -58,6 +58,26 @@ The forecast follows `rugarch`, so it is not the mean of the simulated paths for
 (P(z < 0) stands in for E[1{z < 0} z²]) and for a csGARCH from h = 2 (the closed form leaves out the last shock); see
 [validation](validation.md).
 
+## Cumulative forecast
+
+For the return over the next h days, `cumulative_mean` and `cumulative_sigma` give the mean and standard deviation of
+R_h = r_{T+1} + ... + r_{T+h} for every h = 1..horizon (a DCC forecast has `cumulative_mean` and `cumulative_covariance`,
+of shape (horizon, N) and (horizon, N, N), the covariance exactly symmetric). The mean is the left-to-right sum of
+`mean`. The variance is sum_k a(h - k)^2 sigma[k]^2, with a(n) = psi_0 + ... + psi_n the sums of the MA(inf) weights
+of the ARMA/ARFIMA mean (psi_j = theta_j + sum_i phi_i psi_(j-i), convolved with the coefficients of (1 - L)^(-d) for
+an ARFIMA); without one a(n) = 1 and it is the plain sum of sigma^2. A DCC covariance is sum_k a_i(h - k) a_j(h - k)
+H[k] with the weights of each series.
+
+```python
+ar = ctx.fit(ve.Spec(arma=(1, 0)), returns).forecast(10)
+print(ar.cumulative_mean)
+print(ar.cumulative_sigma)              # above sqrt(cumsum(sigma^2)) for h > 1 when phi > 0
+```
+
+The approximations: sigma[k] is the sigma the forecast returns, so models whose sigma is not the root of E[sigma^2]
+(eGARCH, apARCH, fGARCH with a free power) carry that approximation; with GARCH-in-mean the randomness of the future
+sigma inside the mean is ignored, as the forecast mean does; and in a DCC H[k] for k >= 2 is the forecast of H.
+
 ## Cumulative simulation
 
 For a risk number over several horizons, `checkpoints=` keeps only the sum of the returns up to each checkpoint instead
