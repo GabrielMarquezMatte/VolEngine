@@ -12,12 +12,13 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ._cancel import Cancel, cancel_pointer
 from ._fit import IC_PER_OBS, IC_TOTAL, SE_KINDS, CoefTable, Fit, status_name
 from ._forecast import DccForecast
 from ._native import (
+    Cancel,
     Handle,
     bounded,
+    cancel_pointer,
     check,
     create_handle,
     int32,

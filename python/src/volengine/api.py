@@ -11,16 +11,17 @@ from typing import TYPE_CHECKING, Any, TypedDict, overload
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ._cancel import Cancel, cancel_pointer
 from ._dcc import DccFit, DccSpec, dcc_standard_errors, fit_dcc, open_future
 from ._diagnostics import DiagnosticResult, Nyblom, SignBias
 from ._fit import CoefTable, Fit, future_panel
 from ._forecast import DccForecast, Forecast
 from ._native import (
+    Cancel,
     Cancelled,
     Handle,
     VolEngineError,
     bounded,
+    cancel_pointer,
     check,
     create_handle,
     int32,
@@ -69,19 +70,21 @@ class FitKeywords(TypedDict, total=False):
 
 
 class FutureKeywords(TypedDict, total=False):
-    """The optional keywords of `Context.simulate`: the regressors of the horizon."""
+    """The optional keywords of `Context.simulate`: the regressors of the horizon and `cancel`."""
 
     mxreg: ArrayLike | None
     vxreg: ArrayLike | None
+    cancel: Cancel | None
 
 
 class DccSimulateKeywords(TypedDict, total=False):
-    """The optional keywords of `Context.simulate` from a DccFit: `correlations` and one entry per series of each
-    regressor kind, as in `DccFit.forecast`."""
+    """The optional keywords of `Context.simulate` from a DccFit: `correlations`, one entry per series of each
+    regressor kind, as in `DccFit.forecast`, and `cancel`."""
 
     correlations: bool
     mxreg: Sequence[ArrayLike | None] | None
     vxreg: Sequence[ArrayLike | None] | None
+    cancel: Cancel | None
 
 
 def panel_array(data: ArrayLike) -> tuple[NDArray[np.float64], bool]:
@@ -254,7 +257,7 @@ class Context:
             regressor_array(keywords.get("mxreg"), "mxreg", [item.mxreg for item in specs], data_shape),
             regressor_array(keywords.get("vxreg"), "vxreg", [item.vxreg for item in specs], data_shape),
         )
-        fits = self._run(specs, array, keywords.get("options"), ranges, regressors, keywords.get("cancel"))
+        fits = self._run(specs, array, keywords, ranges, regressors)
         if isinstance(spec, Spec) and one_dimensional:
             return fits[0]
         if isinstance(spec, Spec):
@@ -313,7 +316,6 @@ class Context:
         horizon: int,
         paths: int,
         seed: int,
-        cancel: Cancel | None = None,
         **regressors: Unpack[FutureKeywords],
     ) -> Simulation: ...
 
@@ -325,7 +327,6 @@ class Context:
         horizon: int,
         paths: int,
         seed: int,
-        cancel: Cancel | None = None,
         **options: Unpack[DccSimulateKeywords],
     ) -> DccSimulation: ...
 
@@ -336,7 +337,6 @@ class Context:
         horizon: int,
         paths: int,
         seed: int,
-        cancel: Cancel | None = None,
         **regressors: Any,
     ) -> Simulation | DccSimulation:
         """Simulate `paths` paths of `horizon` steps from a fit or from a spec with every parameter fixed.
@@ -357,13 +357,14 @@ class Context:
         paths = bounded(paths, "paths", 1)
         seed = bounded(seed, "seed", 0)
         if isinstance(source, DccFit):
-            return self._simulate_dcc(source, horizon, paths, seed, regressors, cancel)
+            return self._simulate_dcc(source, horizon, paths, seed, regressors)
         if "correlations" in regressors:
             raise TypeError("correlations is only for a DccFit")
         unknown = sorted(regressors.keys() - FutureKeywords.__annotations__.keys())
         if unknown:
             raise TypeError(f"simulate() got an unexpected keyword argument {unknown[0]!r}")
         counts = regressor_counts(source)
+        cancel = cancel_pointer(regressors.get("cancel"))
         with ExitStack() as stack:
             mean = future_panel(stack, regressors.get("mxreg"), "mxreg", counts[0], horizon)
             variance = future_panel(stack, regressors.get("vxreg"), "vxreg", counts[1], horizon)
@@ -380,7 +381,7 @@ class Context:
                         self._handle.pointer,
                         spec.pointer,
                         options.pointer,
-                        cancel_pointer(cancel),
+                        cancel,
                     )
                 )
             return Simulation(
@@ -390,12 +391,12 @@ class Context:
                     self._handle.pointer,
                     source._handle.pointer,
                     options.pointer,
-                    cancel_pointer(cancel),
+                    cancel,
                 )
             )
 
     def _simulate_dcc(
-        self, source: DccFit, horizon: int, paths: int, seed: int, options: dict[str, Any], cancel: Cancel | None
+        self, source: DccFit, horizon: int, paths: int, seed: int, options: dict[str, Any]
     ) -> DccSimulation:
         unknown = sorted(options.keys() - DccSimulateKeywords.__annotations__.keys())
         if unknown:
@@ -414,7 +415,7 @@ class Context:
                     source._handle.pointer,
                     handle.pointer,
                     future,
-                    cancel_pointer(cancel),
+                    cancel_pointer(options.get("cancel")),
                 )
             )
 
@@ -422,10 +423,9 @@ class Context:
         self,
         specs: list[Spec],
         array: NDArray[np.float64],
-        options: FitOptions | None,
+        keywords: FitKeywords,
         ranges: tuple[NDArray[np.uintp], NDArray[np.uintp]] | None,
         regressors: tuple[NDArray[np.float64] | None, NDArray[np.float64] | None],
-        cancel: Cancel | None,
     ) -> list[Fit]:
         array = native_layout(array)
         series_count = array.shape[1]
@@ -433,12 +433,12 @@ class Context:
             panel = open_panel(stack, array)
             if ranges is not None:
                 set_ranges(panel, ranges[0], ranges[1])
-            batch = open_batch(stack, specs, panel, options)
+            batch = open_batch(stack, specs, panel, keywords.get("options"))
             set_jobs(batch, len(specs), series_count)
             mean = open_regressors(stack, regressors[0], [spec.mxreg for spec in specs])
             variance = open_regressors(stack, regressors[1], [spec.vxreg for spec in specs])
             set_regressors(batch, mean, variance)
-            return self._fit_batch(batch, cancel)
+            return self._fit_batch(batch, keywords.get("cancel"))
 
     def _fit_batch(self, batch: Handle, cancel: Cancel | None) -> list[Fit]:
         count = ctypes.c_size_t()
