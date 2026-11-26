@@ -215,7 +215,7 @@ internal static partial class ContractCheck
     }
 
     // const T* is an input buffer (T* only); T* is an output (out T) or an output buffer (T*); const double** is an out
-    // view.
+    // view; const size_t** is the same for the checkpoints.
     private static Type[] Pointers(Type scalar, int stars, bool input)
     {
         if (stars == 0)
@@ -226,7 +226,8 @@ internal static partial class ContractCheck
         {
             return input ? [scalar.MakePointerType()] : [scalar.MakeByRefType(), scalar.MakePointerType()];
         }
-        return stars == 2 && scalar == typeof(double) ? [typeof(double).MakePointerType().MakeByRefType()] : [];
+        var view = stars == 2 && (scalar == typeof(double) || scalar == typeof(nuint));
+        return view ? [scalar.MakePointerType().MakeByRefType()] : [];
     }
 
     private static string HandleName(string cName)

@@ -128,5 +128,11 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(LibraryName)]
     internal static partial int ve_dcc_sim_covariance(DccSimHandle simulation, out double* data, out nuint length);
 
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_dcc_sim_cumulative(DccSimHandle simulation, out double* data, out nuint length);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_dcc_sim_checkpoints(DccSimHandle simulation, out nuint* data, out nuint length);
+
     [LibraryImport(LibraryName)] internal static partial void ve_dcc_sim_free(nint simulation);
 }
