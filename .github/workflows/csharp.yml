@@ -62,11 +62,13 @@ jobs:
 
       - name: Check the package
         run: |
+          # The project version, so the assembly is never older than the package validation baseline (CP0003).
+          version="$(grep -o 'VE_VERSION [0-9.]*' CMakeLists.txt | head -n 1 | cut -d ' ' -f 2)-ci"
           mkdir -p natives
           cp python/src/volengine/_lib/libvolengine.so natives/volengine-native-linux-x64.so
-          dotnet pack csharp/src/VolEngine -c Release -p:Version=0.0.0-ci -p:VolEngineNativeAssets="$PWD/natives" \
+          dotnet pack csharp/src/VolEngine -c Release -p:Version="$version" -p:VolEngineNativeAssets="$PWD/natives" \
             -p:VolEngineNativeRids=linux-x64 -o packages
-          bash csharp/scripts/check_package.sh packages 0.0.0-ci
+          bash csharp/scripts/check_package.sh packages "$version"
 
   macos:
     name: macos
@@ -95,11 +97,13 @@ jobs:
 
       - name: Check the package
         run: |
+          # The project version, so the assembly is never older than the package validation baseline (CP0003).
+          version="$(grep -o 'VE_VERSION [0-9.]*' CMakeLists.txt | head -n 1 | cut -d ' ' -f 2)-ci"
           mkdir -p natives
           cp python/src/volengine/_lib/libvolengine.dylib natives/volengine-native-osx-arm64.dylib
-          dotnet pack csharp/src/VolEngine -c Release -p:Version=0.0.0-ci -p:VolEngineNativeAssets="$PWD/natives" \
+          dotnet pack csharp/src/VolEngine -c Release -p:Version="$version" -p:VolEngineNativeAssets="$PWD/natives" \
             -p:VolEngineNativeRids=osx-arm64 -o packages
-          bash csharp/scripts/check_package.sh packages 0.0.0-ci
+          bash csharp/scripts/check_package.sh packages "$version"
 
   windows:
     name: windows
@@ -140,8 +144,10 @@ jobs:
       - name: Check the package
         shell: bash
         run: |
+          # The project version, so the assembly is never older than the package validation baseline (CP0003).
+          version="$(grep -o 'VE_VERSION [0-9.]*' CMakeLists.txt | head -n 1 | cut -d ' ' -f 2)-ci"
           mkdir -p natives
           cp python/src/volengine/_lib/libvolengine.dll natives/volengine-native-win-x64.dll
-          dotnet pack csharp/src/VolEngine -c Release -p:Version=0.0.0-ci -p:VolEngineNativeAssets="$(pwd -W)/natives" \
+          dotnet pack csharp/src/VolEngine -c Release -p:Version="$version" -p:VolEngineNativeAssets="$(pwd -W)/natives" \
             -p:VolEngineNativeRids=win-x64 -o packages
-          bash csharp/scripts/check_package.sh packages 0.0.0-ci
+          bash csharp/scripts/check_package.sh packages "$version"
