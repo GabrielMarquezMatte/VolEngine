@@ -44,6 +44,8 @@ break between 0.x releases.
 - Simulation: a simulated step no longer allocates (outside an ARFIMA mean), so `ve_simulate_fit` and
   `ve_simulate_spec` take 0.33 to 0.45 of their time on one thread and 0.43 to 0.58 on all of them (10000 paths of 60
   steps), and `ve_simulate_dcc` about half. The paths have the same bits for the same seed.
+- Copula-DCC standard errors take about 0.4 of their time (21 series, 5000 rows), with the same bits: each cross
+  column computes again the uniforms and scores of the one series it refilters, not of all of them.
 
 ## [1.3.0] - 2026-11-26
 

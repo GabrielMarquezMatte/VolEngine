@@ -109,4 +109,22 @@ std::vector<double> uniforms(std::span<const Margin> margins, const Standardized
     return u;
 }
 
+void uniforms_of_column(const Margin& margin, const StandardizedPanel& panel, std::size_t i, DccCopula how,
+                        Convention convention, std::span<double> u)
+{
+    assert(how != DccCopula::None && u.size() == panel.t * panel.m && i < panel.m);
+    if (how == DccCopula::Parametric)
+    {
+        parametric(margin, panel, i, u);
+    }
+    if (how == DccCopula::Empirical)
+    {
+        empirical(panel, i, u, convention);
+    }
+    for (std::size_t t = 0; t < panel.t; ++t)
+    {
+        cut(u.subspan(t * panel.m + i, 1), convention);
+    }
+}
+
 }

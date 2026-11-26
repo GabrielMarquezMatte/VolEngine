@@ -9,6 +9,7 @@
 #include <numbers>
 #include <cstddef>
 #include <gtest/gtest.h>
+#include <utility>
 #include <vector>
 
 namespace
@@ -73,6 +74,46 @@ TEST(CopulaScores, StandardizedStudentQuantilesAndMarginal)
         marginal += std::log(boost::math::pdf(student, expected / scale) / scale);
     }
     EXPECT_NEAR(scores.marginal_log_density, marginal, 1e-13);
+}
+
+// Column 2 of u and of sigma move (the standard errors refilter one series): the panel built from base's other
+// columns has the bits of the full one.
+TEST(CopulaScores, OneColumnAgainHasTheBitsOfTheFullPanel)
+{
+    constexpr std::size_t kRows = 60;
+    constexpr std::size_t kSeries = 4;
+    constexpr std::size_t kColumn = 2;
+    StandardizedPanel univariate = univariate_of(kRows, kSeries);
+    std::vector<double> u(kRows * kSeries);
+    for (std::size_t k = 0; k < u.size(); ++k)
+    {
+        u[k] = 0.01 + 0.98 * std::fmod(0.6180339887498949 * static_cast<double>(k + 1), 1.0);
+    }
+    for (const auto& [dist, shape] : {std::pair{DccDist::MvNorm, 0.0}, std::pair{DccDist::MvT, 7.5}})
+    {
+        const CopulaPanel base = copula_panel(u, univariate, dist, shape);
+        std::vector<double> moved = u;
+        StandardizedPanel moved_univariate = univariate;
+        for (std::size_t t = 0; t < kRows; ++t)
+        {
+            moved[t * kSeries + kColumn] = 1.0 - moved[t * kSeries + kColumn];
+            moved_univariate.sigma[t * kSeries + kColumn] *= 1.25;
+        }
+        const CopulaPanel full = copula_panel(moved, moved_univariate, dist, shape);
+        const CopulaPanel column =
+            ve::dcc::copula::copula_panel_with_column(base, moved, moved_univariate, kColumn, dist, shape);
+        EXPECT_EQ(column.panel->z, full.panel->z);
+        EXPECT_EQ(column.panel->sigma, full.panel->sigma);
+        EXPECT_EQ(column.panel->qbar, full.panel->qbar);
+        EXPECT_EQ(column.panel->qbar_raw, full.panel->qbar_raw);
+        EXPECT_EQ(column.panel->nbar, full.panel->nbar);
+        EXPECT_EQ(column.panel->nbar_centered, full.panel->nbar_centered);
+        EXPECT_EQ(column.panel->delta, full.panel->delta);
+        EXPECT_EQ(column.panel->delta_centered, full.panel->delta_centered);
+        EXPECT_EQ(column.marginal_entries, full.marginal_entries);
+        EXPECT_EQ(column.marginal_terms, full.marginal_terms);
+        EXPECT_EQ(column.marginal_log_density, full.marginal_log_density);
+    }
 }
 
 }
