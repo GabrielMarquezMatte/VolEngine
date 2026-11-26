@@ -10,6 +10,7 @@
 #include "sim/start.hpp"
 #include "simulated_garch.hpp"
 
+#include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -380,6 +381,79 @@ TEST(Simulate, PathStepMatchesSimulate)
             EXPECT_EQ(draw.sigma, sim.sigma[h]) << h;
         }
     }
+}
+
+ve::sim::Simulation run_cumulative(const Case& c, std::size_t paths, std::size_t horizon,
+                                   std::vector<std::size_t> checkpoints, int threads = 4)
+{
+    ve::Context context;
+    context.set_threads(threads);
+    ve::sim::Request request{horizon, paths, 42, c.future};
+    request.checkpoints = std::move(checkpoints);
+    return ve::sim::simulate(context, ve::sim::start_of_fit(c.fit), request);
+}
+
+// cumulative[p * K + j] against the left-to-right sum of the first checkpoints[j] steps of the full path p.
+void expect_left_sums(const ve::sim::Simulation& cumulative, const ve::sim::Simulation& full)
+{
+    const std::size_t k = cumulative.checkpoints.size();
+    ASSERT_EQ(cumulative.cumulative.size(), full.paths * k);
+    for (std::size_t p = 0; p < full.paths; ++p)
+    {
+        double sum = 0.0;
+        std::size_t h = 0;
+        for (std::size_t j = 0; j < k; ++j)
+        {
+            for (; h < cumulative.checkpoints[j]; ++h)
+            {
+                sum += full.returns[p * full.horizon + h];
+            }
+            EXPECT_EQ(std::bit_cast<std::uint64_t>(cumulative.cumulative[p * k + j]), std::bit_cast<std::uint64_t>(sum))
+                << "path " << p << " checkpoint " << j;
+        }
+    }
+}
+
+TEST(SimCumulative, EqualsTheLeftSumOfTheFullPath)
+{
+    Case c = fitted(ve::Spec{.dist = Dist::Std}, 20);
+    const ve::sim::Simulation full = run(c, 50, 20);
+    const ve::sim::Simulation cumulative = run_cumulative(c, 50, 20, {1, 5, 20});
+    EXPECT_TRUE(cumulative.returns.empty());
+    EXPECT_TRUE(cumulative.sigma.empty());
+    EXPECT_EQ(cumulative.checkpoints, (std::vector<std::size_t>{1, 5, 20}));
+    expect_left_sums(cumulative, full);
+}
+
+TEST(SimCumulative, SameForAnyThreadCount)
+{
+    Case c = fitted(ve::Spec{}, 20);
+    EXPECT_EQ(run_cumulative(c, 50, 20, {3, 20}, 1).cumulative, run_cumulative(c, 50, 20, {3, 20}, 4).cumulative);
+}
+
+TEST(SimCumulative, SingleCheckpointIsTheWholeSum)
+{
+    Case c = fitted(ve::Spec{}, 20);
+    expect_left_sums(run_cumulative(c, 30, 20, {20}), run(c, 30, 20));
+    Case one = fitted(ve::Spec{}, 1);
+    const ve::sim::Simulation step = run_cumulative(one, 30, 1, {1});
+    const ve::sim::Simulation full = run(one, 30, 1);
+    for (std::size_t p = 0; p < 30; ++p)
+    {
+        EXPECT_EQ(std::bit_cast<std::uint64_t>(step.cumulative[p]), std::bit_cast<std::uint64_t>(full.returns[p]));
+    }
+}
+
+TEST(SimCumulative, NoCheckpointsChangesNothing)
+{
+    Case c = fitted(ve::Spec{}, 20);
+    const ve::sim::Simulation first = run(c, 30, 20);
+    const ve::sim::Simulation second = run(c, 30, 20);
+    EXPECT_TRUE(first.cumulative.empty());
+    EXPECT_TRUE(first.checkpoints.empty());
+    EXPECT_EQ(first.returns.size(), 30U * 20U);
+    EXPECT_EQ(first.returns, second.returns);
+    EXPECT_EQ(first.sigma, second.sigma);
 }
 
 }
