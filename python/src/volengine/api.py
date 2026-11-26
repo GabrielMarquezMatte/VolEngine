@@ -67,7 +67,6 @@ class FitKeywords(TypedDict, total=False):
     lengths: ArrayLike | None
     mxreg: ArrayLike | None
     vxreg: ArrayLike | None
-    checkpoints: Sequence[int] | None
     cancel: Cancel | None
 
 
@@ -95,9 +94,10 @@ def set_checkpoints(options: Handle, checkpoints: Sequence[int] | None) -> None:
     """Pass `checkpoints` (None keeps the full output) to the simulation options; the native call checks the order."""
     if checkpoints is None:
         return
-    if not all(is_integer(k) for k in checkpoints):
+    given = list(checkpoints)
+    if not all(is_integer(k) for k in given):
         raise TypeError("checkpoints must be a sequence of integers")
-    values = [bounded(k, "checkpoints", 0) for k in checkpoints]
+    values = [bounded(k, "checkpoints", 0) for k in given]
     array = (ctypes.c_size_t * len(values))(*values)
     check(lib.ve_sim_options_set_checkpoints(options.pointer, array, len(values)))
 

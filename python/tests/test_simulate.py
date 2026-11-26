@@ -132,3 +132,14 @@ def test_cumulative_mode_has_no_full_returns(ctx):
         sims.returns
     with pytest.raises(ve.VolEngineError):
         sims.sigma
+
+
+def test_fit_rejects_checkpoints(ctx, series):
+    with pytest.raises(TypeError, match="checkpoints"):
+        ctx.fit(ve.Spec(), series, checkpoints=[1, 5])
+
+
+def test_checkpoints_from_an_iterator(ctx):
+    sims = ctx.simulate(ve.Spec(fixed=FIXED_SGARCH), horizon=20, paths=3, seed=0, checkpoints=(k for k in [1, 20]))
+    assert sims.checkpoints == (1, 20)
+    assert sims.cumulative.shape == (3, 2)
