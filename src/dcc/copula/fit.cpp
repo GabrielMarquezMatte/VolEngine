@@ -363,7 +363,7 @@ CopulaInputs inputs_at(std::shared_ptr<const StandardizedPanel> univariate, std:
 }
 
 CopulaInputs inputs_at_column(std::shared_ptr<const StandardizedPanel> univariate, const Margin& margin,
-                              std::size_t column, const DccSpec& spec, const CopulaInputs& at_base, double shape)
+                              std::size_t column, const DccSpec& spec, const CopulaInputs& at_base)
 {
     const std::size_t index = uniform_index(spec.copula, spec.convention);
     CopulaInputs inputs;
@@ -372,20 +372,19 @@ CopulaInputs inputs_at_column(std::shared_ptr<const StandardizedPanel> univariat
     inputs.u[index] = at_base.u[index];
     if (!(fixed_ranks && spec.copula == DccCopula::Empirical))
     {
-        uniforms_of_column(margin, *inputs.univariate, column, spec.copula, spec.convention, inputs.u[index]);
+        uniforms_of_column(margin, *inputs.univariate, column, spec, inputs.u[index]);
     }
     inputs.kendall[index] = at_base.kendall[index];
     if (reads_kendall(spec) && !fixed_ranks)
     {
         inputs.kendall[index] = kendall_correlation(inputs.u[index], inputs.univariate->t, inputs.univariate->m);
     }
-    if (spec.dist != DccDist::MvT || shape > 2.0)
+    // inputs_at gave at_base scores exactly where it gives them to these inputs (same dist, same shape).
+    if (at_base.scores != nullptr)
     {
-        assert(at_base.scores != nullptr && std::bit_cast<std::uint64_t>(at_base.scores_shape) ==
-                                                  std::bit_cast<std::uint64_t>(shape));
-        inputs.scores = std::make_shared<const CopulaPanel>(copula_panel_with_column(
-            *at_base.scores, inputs.u[index], *inputs.univariate, column, spec.dist, shape));
-        inputs.scores_shape = shape;
+        inputs.scores = std::make_shared<const CopulaPanel>(
+            copula_panel_with_column(*at_base.scores, inputs.u[index], *inputs.univariate, column));
+        inputs.scores_shape = at_base.scores_shape;
     }
     return inputs;
 }

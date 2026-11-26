@@ -355,7 +355,7 @@ void cross_column(const TwoStage& stage, const DccDifferences& differences, std:
         const copula::Margin margin{series.spec, estimate};
         point.copula = std::make_shared<const copula::CopulaInputs>(
             copula::inputs_at_column(std::make_shared<const StandardizedPanel>(point.panel), margin, index,
-                                     stage.spec, *stage.base.copula, shape_at(stage)));
+                                     stage.spec, *stage.base.copula));
     }
     const double shifted = reported_total(point, stage.spec, stage.theta);
     const std::size_t n = stage.parameters();

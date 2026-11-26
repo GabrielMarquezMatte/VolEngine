@@ -60,10 +60,10 @@ std::vector<double> copula_terms(const CopulaInputs& inputs, const DccSpec& spec
 CopulaInputs inputs_at(std::shared_ptr<const StandardizedPanel> univariate, std::span<const Margin> margins,
                        const DccSpec& spec, const CopulaInputs& base, double shape);
 
-// inputs_at when only series `column` moved from the point at_base was built for by inputs_at (same spec and shape):
-// that series' uniforms and scores are computed again and the rest is at_base's, with the same bits.
+// inputs_at when only series `column` moved from the point at_base was built for by inputs_at (same spec, and its
+// scores_shape): that series' uniforms and scores are computed again and the rest is at_base's, with the same bits.
 CopulaInputs inputs_at_column(std::shared_ptr<const StandardizedPanel> univariate, const Margin& margin,
-                              std::size_t column, const DccSpec& spec, const CopulaInputs& at_base, double shape);
+                              std::size_t column, const DccSpec& spec, const CopulaInputs& at_base);
 
 namespace detail
 {

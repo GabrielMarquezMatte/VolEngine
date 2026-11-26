@@ -101,7 +101,7 @@ TEST(CopulaScores, OneColumnAgainHasTheBitsOfTheFullPanel)
         }
         const CopulaPanel full = copula_panel(moved, moved_univariate, dist, shape);
         const CopulaPanel column =
-            ve::dcc::copula::copula_panel_with_column(base, moved, moved_univariate, kColumn, dist, shape);
+            ve::dcc::copula::copula_panel_with_column(base, moved, moved_univariate, kColumn);
         EXPECT_EQ(column.panel->z, full.panel->z);
         EXPECT_EQ(column.panel->sigma, full.panel->sigma);
         EXPECT_EQ(column.panel->qbar, full.panel->qbar);

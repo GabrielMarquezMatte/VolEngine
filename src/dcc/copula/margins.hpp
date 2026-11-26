@@ -33,9 +33,10 @@ struct Margin
 std::vector<double> uniforms(std::span<const Margin> margins, const StandardizedPanel& panel, DccCopula how,
                              Convention convention);
 
-// Column i of u (T x m, from uniforms) again from margin and column i of panel, cut as uniforms cuts it; the other
-// columns are kept. With the other columns unchanged, u is then uniforms(margins, panel, how, convention).
-void uniforms_of_column(const Margin& margin, const StandardizedPanel& panel, std::size_t i, DccCopula how,
-                        Convention convention, std::span<double> u);
+// Column i of u (T x m, from uniforms) again from margin and column i of panel, by the copula and convention of
+// spec and cut as uniforms cuts it; the other columns are kept. With the other columns unchanged, u is then
+// uniforms(margins, panel, spec.copula, spec.convention).
+void uniforms_of_column(const Margin& margin, const StandardizedPanel& panel, std::size_t i, const DccSpec& spec,
+                        std::span<double> u);
 
 }

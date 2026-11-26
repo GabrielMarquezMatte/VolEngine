@@ -20,17 +20,19 @@ struct CopulaPanel
     std::vector<double> marginal_terms;
     // log f1(epsilon_it) of each entry, T x m: what copula_panel_with_column sums again.
     std::vector<double> marginal_entries;
+    // The dist and shape the scores were computed at.
+    DccDist dist = DccDist::MvNorm;
+    double shape = 0.0;
 };
 
 // epsilon = Phi^-1(u) (MvNorm), or the standardized t quantile t_nu^-1(u) sqrt((nu - 2) / nu) (MvT, shape = nu > 2).
 // u is T x m like univariate.z, inside (0, 1).
 CopulaPanel copula_panel(std::span<const double> u, const StandardizedPanel& univariate, DccDist dist, double shape);
 
-// copula_panel(u, univariate, dist, shape) when only column `column` of u and of univariate differ from those base
-// was built from at the same dist and shape (one series refiltered by the standard errors): the other scores and
-// their moments are base's, and the result has the bits of copula_panel at O(T m) instead of O(T m^2).
+// copula_panel(u, univariate, base.dist, base.shape) when only column `column` of u and of univariate differ from
+// those base was built from (one series refiltered by the standard errors): the other scores and their moments are
+// base's, and the result has the bits of copula_panel at O(T m) instead of O(T m^2).
 CopulaPanel copula_panel_with_column(const CopulaPanel& base, std::span<const double> u,
-                                     const StandardizedPanel& univariate, std::size_t column, DccDist dist,
-                                     double shape);
+                                     const StandardizedPanel& univariate, std::size_t column);
 
 }

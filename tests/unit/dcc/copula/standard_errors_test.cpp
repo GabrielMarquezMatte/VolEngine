@@ -277,7 +277,7 @@ TEST(CopulaStandardErrors, OneSeriesAgainHasTheBitsOfAllSeries)
         auto moved_panel = std::make_shared<const ve::dcc::StandardizedPanel>(moved);
         const CopulaInputs full = ve::dcc::copula::inputs_at(moved_panel, margins, spec, batch, shape);
         const CopulaInputs column =
-            ve::dcc::copula::inputs_at_column(moved_panel, margins[kColumn], kColumn, spec, at_base, shape);
+            ve::dcc::copula::inputs_at_column(moved_panel, margins[kColumn], kColumn, spec, at_base);
         EXPECT_EQ(column.u, full.u);
         EXPECT_EQ(column.kendall, full.kendall);
         ASSERT_NE(full.scores, nullptr);

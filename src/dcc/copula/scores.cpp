@@ -52,11 +52,12 @@ void student_scores(std::span<const double> u, double nu, std::span<double> epsi
 
 // The panel with the sums of its entries: marginal_terms[t] adds the m entries of row t in order, and the density
 // the rows in order.
-CopulaPanel finished(std::shared_ptr<const StandardizedPanel> panel, std::vector<double> each)
+CopulaPanel finished(std::shared_ptr<const StandardizedPanel> panel, std::vector<double> each, DccDist dist,
+                     double shape)
 {
     const std::size_t m = panel->m;
     const std::size_t t = panel->t;
-    CopulaPanel out{std::move(panel), 0.0, std::vector<double>(t, 0.0), std::move(each)};
+    CopulaPanel out{std::move(panel), 0.0, std::vector<double>(t, 0.0), std::move(each), dist, shape};
     for (std::size_t k = 0; k < out.marginal_entries.size(); ++k)
     {
         out.marginal_terms[k / m] += out.marginal_entries[k];
@@ -88,13 +89,14 @@ CopulaPanel copula_panel(std::span<const double> u, const StandardizedPanel& uni
         normal_scores(u, panel->z, each);
     }
     refresh_moments(*panel);
-    return finished(std::move(panel), std::move(each));
+    return finished(std::move(panel), std::move(each), dist, shape);
 }
 
 CopulaPanel copula_panel_with_column(const CopulaPanel& base, std::span<const double> u,
-                                     const StandardizedPanel& univariate, std::size_t column, DccDist dist,
-                                     double shape)
+                                     const StandardizedPanel& univariate, std::size_t column)
 {
+    const DccDist dist = base.dist;
+    const double shape = base.shape;
     const std::size_t t = univariate.t;
     const std::size_t m = univariate.m;
     assert(u.size() == t * m && base.panel->t == t && base.panel->m == m && column < m);
@@ -122,7 +124,7 @@ CopulaPanel copula_panel_with_column(const CopulaPanel& base, std::span<const do
         each[row * m + column] = marginal[row];
     }
     refresh_moments_of_column(*panel, column);
-    return finished(std::move(panel), std::move(each));
+    return finished(std::move(panel), std::move(each), dist, shape);
 }
 
 }
