@@ -1452,3 +1452,46 @@ TEST(CapiDccSimCumulative, RefusesCorrelations)
     EXPECT_TRUE(mentions("checkpoints and correlations")) << ve_last_error();
     EXPECT_EQ(raw, nullptr);
 }
+
+TEST(CapiDccForecastCumulative, MatchesCore)
+{
+    FittedDcc fitted;
+    ve_dcc_forecast* raw = nullptr;
+    ASSERT_EQ(ve_dcc_forecast_create(fitted.fits[0], 12, nullptr, &raw), VE_OK) << ve_last_error();
+    DccForecastPtr forecast(raw);
+    const ve::dcc::future::DccForecast core =
+        ve::dcc::future::forecast_dcc(fitted.fits[0]->result, 12, ve::dcc::future::SeriesRegressors(kSeries));
+    EXPECT_EQ(view_of(ve_dcc_forecast_cumulative_mean, raw), core.cumulative_mean);
+    EXPECT_EQ(view_of(ve_dcc_forecast_cumulative_covariance, raw), ve::dcc::future::cumulative_covariance(core));
+    EXPECT_EQ(core.cumulative_mean.size(), 12 * kSeries);
+    const double* data = nullptr;
+    size_t len = 0;
+    EXPECT_EQ(ve_dcc_forecast_cumulative_covariance(nullptr, &data, &len), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_dcc_forecast_cumulative_mean(raw, nullptr, &len), VE_INVALID_ARGUMENT);
+}
+
+// Review Focus 5.
+TEST(CapiDccForecastCumulative, ConcurrentFirstAccess)
+{
+    FittedDcc fitted;
+    ve_dcc_forecast* raw = nullptr;
+    ASSERT_EQ(ve_dcc_forecast_create(fitted.fits[0], 30, nullptr, &raw), VE_OK) << ve_last_error();
+    DccForecastPtr forecast(raw);
+    const double* first = nullptr;
+    const double* second = nullptr;
+    size_t first_len = 0;
+    size_t second_len = 0;
+    ve_status first_status = VE_INTERNAL_ERROR;
+    ve_status second_status = VE_INTERNAL_ERROR;
+    {
+        std::jthread a([&] { first_status = ve_dcc_forecast_cumulative_covariance(raw, &first, &first_len); });
+        std::jthread b([&] { second_status = ve_dcc_forecast_cumulative_covariance(raw, &second, &second_len); });
+    }
+    ASSERT_EQ(first_status, VE_OK);
+    ASSERT_EQ(second_status, VE_OK);
+    EXPECT_EQ(first, second);
+    EXPECT_EQ(first_len, second_len);
+    const ve::dcc::future::DccForecast core =
+        ve::dcc::future::forecast_dcc(fitted.fits[0]->result, 30, ve::dcc::future::SeriesRegressors(kSeries));
+    EXPECT_EQ(std::vector<double>(first, first + first_len), ve::dcc::future::cumulative_covariance(core));
+}

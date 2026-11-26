@@ -1,6 +1,7 @@
 #include "capi/dcc/boundary.hpp"
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -180,6 +181,32 @@ extern "C" ve_status ve_dcc_forecast_sigma(const ve_dcc_forecast* fc, const doub
 extern "C" ve_status ve_dcc_forecast_mean(const ve_dcc_forecast* fc, const double** data, size_t* len)
 {
     return read_view(fc, &ve::dcc::future::DccForecast::mean, data, len);
+}
+
+extern "C" ve_status ve_dcc_forecast_cumulative_mean(const ve_dcc_forecast* fc, const double** data, size_t* len)
+{
+    return read_view(fc, &ve::dcc::future::DccForecast::cumulative_mean, data, len);
+}
+
+extern "C" ve_status ve_dcc_forecast_cumulative_covariance(const ve_dcc_forecast* fc, const double** data, size_t* len)
+{
+    return guard(
+        [&]
+        {
+            if (fc == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "fc must not be null");
+            }
+            if (data == nullptr || len == nullptr)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "data and len must not be null");
+            }
+            std::call_once(fc->cumulative_once,
+                           [&] { fc->cumulative_covariance = ve::dcc::future::cumulative_covariance(fc->forecast); });
+            *data = fc->cumulative_covariance.data();
+            *len = fc->cumulative_covariance.size();
+            return VE_OK;
+        });
 }
 
 extern "C" void ve_dcc_forecast_free(ve_dcc_forecast* fc)

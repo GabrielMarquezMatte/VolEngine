@@ -123,6 +123,8 @@ function ve_status ve_forecast_create(const ve_fit*, size_t, const ve_panel*, co
 function ve_status ve_forecast_horizon(const ve_forecast*, size_t*)
 function ve_status ve_forecast_sigma(const ve_forecast*, const double**, size_t*)
 function ve_status ve_forecast_mean(const ve_forecast*, const double**, size_t*)
+function ve_status ve_forecast_cumulative_mean(const ve_forecast*, const double**, size_t*)
+function ve_status ve_forecast_cumulative_sigma(const ve_forecast*, const double**, size_t*)
 function void ve_forecast_free(ve_forecast*)
 typedef struct ve_sim_options ve_sim_options
 typedef struct ve_sim ve_sim
@@ -207,6 +209,8 @@ function ve_status ve_dcc_forecast_correlation(const ve_dcc_forecast*, const dou
 function ve_status ve_dcc_forecast_covariance(const ve_dcc_forecast*, const double**, size_t*)
 function ve_status ve_dcc_forecast_sigma(const ve_dcc_forecast*, const double**, size_t*)
 function ve_status ve_dcc_forecast_mean(const ve_dcc_forecast*, const double**, size_t*)
+function ve_status ve_dcc_forecast_cumulative_mean(const ve_dcc_forecast*, const double**, size_t*)
+function ve_status ve_dcc_forecast_cumulative_covariance(const ve_dcc_forecast*, const double**, size_t*)
 function void ve_dcc_forecast_free(ve_dcc_forecast*)
 function ve_status ve_sim_options_set_correlations(ve_sim_options*, int32_t)
 function ve_status ve_simulate_dcc(ve_context*, const ve_dcc_fit*, const ve_sim_options*, const ve_dcc_future*, ve_dcc_sim**)

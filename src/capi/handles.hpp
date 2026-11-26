@@ -155,6 +155,8 @@ struct ve_dcc_future
 struct ve_dcc_forecast
 {
     ve::dcc::future::DccForecast forecast;
+    mutable std::once_flag cumulative_once;
+    mutable std::vector<double> cumulative_covariance;
 };
 
 struct ve_dcc_sim

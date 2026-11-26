@@ -380,6 +380,13 @@ VE_API ve_status ve_forecast_horizon(const ve_forecast* fc, size_t* out);
    sqrt(E[sigma2]); in the other models it is sqrt(E[sigma2]). mean is the conditional mean (seriesFor). */
 VE_API ve_status ve_forecast_sigma(const ve_forecast* fc, const double** data, size_t* len);
 VE_API ve_status ve_forecast_mean(const ve_forecast* fc, const double** data, size_t* len);
+/* The forecast of the cumulative return R_h = r_{T+1} + ... + r_{T+h} for h = 1..horizon (horizon values each, valid
+   until fc is freed): its mean (the left-to-right sum of ve_forecast_mean) and its standard deviation
+   sqrt(sum_k a(h-k)^2 sigma_{T+k}^2), with a(n) = psi_0 + ... + psi_n from the MA(inf) weights of the ARMA/ARFIMA
+   mean (a = 1 without one). sigma_{T+k} is ve_forecast_sigma, with its approximation in eGARCH, apARCH and fGARCH;
+   with GARCH-in-mean the randomness of the future sigma in the mean is ignored. Since 1.3.0. */
+VE_API ve_status ve_forecast_cumulative_mean(const ve_forecast* fc, const double** data, size_t* len);
+VE_API ve_status ve_forecast_cumulative_sigma(const ve_forecast* fc, const double** data, size_t* len);
 VE_API void ve_forecast_free(ve_forecast* fc);
 
 /* ---- Simulation ----
@@ -555,6 +562,11 @@ VE_API ve_status ve_dcc_forecast_correlation(const ve_dcc_forecast* fc, const do
 VE_API ve_status ve_dcc_forecast_covariance(const ve_dcc_forecast* fc, const double** data, size_t* len);
 VE_API ve_status ve_dcc_forecast_sigma(const ve_dcc_forecast* fc, const double** data, size_t* len);
 VE_API ve_status ve_dcc_forecast_mean(const ve_dcc_forecast* fc, const double** data, size_t* len);
+/* As ve_forecast_cumulative_* for a DCC forecast: horizon x m (mean) and horizon x m x m (covariance,
+   sum_k a_i(h-k) a_j(h-k) H_k with each series' weights, exactly symmetric), row-major, valid until fc is freed. The
+   covariance is computed once, on first access. Since 1.3.0. */
+VE_API ve_status ve_dcc_forecast_cumulative_mean(const ve_dcc_forecast* fc, const double** data, size_t* len);
+VE_API ve_status ve_dcc_forecast_cumulative_covariance(const ve_dcc_forecast* fc, const double** data, size_t* len);
 VE_API void ve_dcc_forecast_free(ve_dcc_forecast* fc);
 /* Paths of a DCC fit, as ve_simulate_fit does for one series (the seed rule included). Each step takes R from the
    exact recursion and draws a shock of covariance R (a Gaussian scale mixture for the mvt and the mvlaplace); the

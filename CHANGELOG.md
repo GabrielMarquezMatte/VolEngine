@@ -22,6 +22,10 @@ break between 0.x releases.
   simulated series up to each checkpoint, read with `ve_sim_cumulative` / `ve_dcc_sim_cumulative` (and the list with
   `ve_sim_checkpoints` / `ve_dcc_sim_checkpoints`). Memory is paths x checkpoints x series instead of
   paths x horizon x series, and each sum equals the left-to-right sum of the full output with the same seed.
+- Cumulative forecasts. `ve_forecast_cumulative_mean` and `ve_forecast_cumulative_sigma` give, for h = 1..horizon,
+  the mean and standard deviation of the forecast sum of the next h returns; `ve_dcc_forecast_cumulative_mean` and
+  `ve_dcc_forecast_cumulative_covariance` give the mean and covariance for a DCC. The variance weights each step by
+  the MA(inf) weights of an ARMA/ARFIMA mean, so it is the plain sum of sigma^2 (or of H) only without one.
 - C++: `SimOptions::checkpoints`, and `cumulative()` and `checkpoints()` on `Simulation` and `DccSimulation`.
 - C#: `Checkpoints` on the simulation options, and `Cumulative` and `Checkpoints` on the results; `Returns` and `Sigma`
   are empty in that mode.

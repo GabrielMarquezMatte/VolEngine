@@ -229,4 +229,19 @@ TEST(CapiForecast, NullViewArguments)
     ve_forecast_free(nullptr);
 }
 
+TEST(CapiForecastCumulative, MatchesCore)
+{
+    OneFit one(ve::testing::simulate_garch_series(5, kT), 0);
+    ForecastPtr fc = create(one.fit(), kHorizon);
+    const ve::forecast::Forecast core = ve::forecast::forecast(one.fit()->result, kHorizon);
+    EXPECT_EQ(view(ve_forecast_cumulative_mean, fc.get()), core.cumulative_mean);
+    EXPECT_EQ(view(ve_forecast_cumulative_sigma, fc.get()), core.cumulative_sigma);
+    EXPECT_EQ(core.cumulative_sigma.size(), kHorizon);
+    const double* data = nullptr;
+    size_t len = 0;
+    EXPECT_EQ(ve_forecast_cumulative_mean(nullptr, &data, &len), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_forecast_cumulative_sigma(fc.get(), nullptr, &len), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_forecast_cumulative_sigma(fc.get(), &data, nullptr), VE_INVALID_ARGUMENT);
+}
+
 }

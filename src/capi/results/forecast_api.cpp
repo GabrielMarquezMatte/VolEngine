@@ -122,6 +122,16 @@ extern "C" ve_status ve_forecast_mean(const ve_forecast* fc, const double** data
     return read_view(fc, &ve::forecast::Forecast::mean, data, len);
 }
 
+extern "C" ve_status ve_forecast_cumulative_mean(const ve_forecast* fc, const double** data, size_t* len)
+{
+    return read_view(fc, &ve::forecast::Forecast::cumulative_mean, data, len);
+}
+
+extern "C" ve_status ve_forecast_cumulative_sigma(const ve_forecast* fc, const double** data, size_t* len)
+{
+    return read_view(fc, &ve::forecast::Forecast::cumulative_sigma, data, len);
+}
+
 extern "C" void ve_forecast_free(ve_forecast* fc)
 {
     std::unique_ptr<ve_forecast> owner(fc);
