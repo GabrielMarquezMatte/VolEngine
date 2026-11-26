@@ -34,6 +34,10 @@ break between 0.x releases.
   linear in the horizon. The results have the same bits.
 - Student Copula-DCC: the fits of `dcc`, `adcc` and static ML Student copulas take about 0.64 of their time (21
   series, 5000 rows), with the same bits: each point of the shape profile reuses the scores its inner fit ran on.
+- C#: large results are copied once, straight from the native views into the jagged arrays, instead of into a
+  flat array that was then split. A DCC simulation of 10 series with R and H (1000 paths, 60 steps) allocates 145 MB
+  instead of 246 MB and takes 0.70 of its time, a univariate one (10000 paths) half the memory and 0.78 of the
+  time, and `DccFit.Correlation()` 0.35 of the time.
 
 ## [1.3.0] - 2026-11-26
 

@@ -17,13 +17,12 @@ public sealed class DccForecast
     {
         Horizon = horizon;
         Series = series;
-        Correlation = NativeReads.Matrices(NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_correlation), series);
-        Covariance = NativeReads.Matrices(NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_covariance), series);
-        Sigma = NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_sigma).Chunk(series).ToArray();
-        Mean = NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_mean).Chunk(series).ToArray();
-        CumulativeMean = NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_cumulative_mean).Chunk(series).ToArray();
-        CumulativeCovariance = NativeReads.Matrices(
-            NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_cumulative_covariance), series);
+        Correlation = NativeReads.Matrices(forecast, NativeMethods.ve_dcc_forecast_correlation, series, series);
+        Covariance = NativeReads.Matrices(forecast, NativeMethods.ve_dcc_forecast_covariance, series, series);
+        Sigma = NativeReads.Rows(forecast, NativeMethods.ve_dcc_forecast_sigma, series);
+        Mean = NativeReads.Rows(forecast, NativeMethods.ve_dcc_forecast_mean, series);
+        CumulativeMean = NativeReads.Rows(forecast, NativeMethods.ve_dcc_forecast_cumulative_mean, series);
+        CumulativeCovariance = NativeReads.Matrices(forecast, NativeMethods.ve_dcc_forecast_cumulative_covariance, series, series);
     }
 
     /// <summary>The number of steps.</summary>
