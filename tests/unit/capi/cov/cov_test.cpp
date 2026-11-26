@@ -143,3 +143,19 @@ TEST(CapiCov, InfRefused)
     expect_refused(panel);
     ve_panel_free(panel);
 }
+
+// Every value is finite, but the products overflow: refused, out and shrinkage left as they were.
+TEST(CapiCov, OverflowRefused)
+{
+    const std::vector<double> data{1e200, -1e200, 3e199, 2.0, -1e200, 5.0};
+    ve_panel* panel = make_panel(data, 3, 2);
+    std::vector<double> out(4, kUntouched);
+    double shrinkage = kUntouched;
+    EXPECT_EQ(ve_cov_sample(panel, out.data()), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(std::string(ve_last_error()), "a covariance is not finite (an input overflows)");
+    EXPECT_EQ(ve_cov_ledoit_wolf(panel, out.data(), &shrinkage), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(std::string(ve_last_error()), "a covariance is not finite (an input overflows)");
+    EXPECT_EQ(out, std::vector<double>(4, kUntouched));
+    EXPECT_EQ(shrinkage, kUntouched);
+    ve_panel_free(panel);
+}

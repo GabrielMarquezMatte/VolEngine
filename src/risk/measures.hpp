@@ -41,7 +41,9 @@ struct Location
     double sigma = 0.0;
 };
 
-// The return mean + sigma z: VaR = -(mean + sigma q_p), ES = -(mean + sigma tail_mean), p = 1 - confidence.
+// The return mean + sigma z: VaR = -(mean + sigma q_p), ES = -(mean + sigma tail_mean), p = 1 - confidence. NaN where
+// the density's standardisation is not a double (a jsu scale below the smallest normal); +-inf where sigma q_p
+// overflows.
 Measure parametric(Dist dist, const dist::ShapeParameters<double>& parameters, Location location, double confidence);
 
 }

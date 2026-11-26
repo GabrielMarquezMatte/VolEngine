@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <span>
 
 using ve::capi::guard;
 using ve::capi::set_error;
@@ -54,6 +55,17 @@ ve_status check_panel(const ve_panel* panel, const double* out)
     return VE_OK;
 }
 
+// Finite inputs can still overflow in the products; such a matrix is refused before anything is written.
+bool all_finite(std::span<const double> values)
+{
+    return std::ranges::all_of(values, [](double value) { return std::isfinite(value); });
+}
+
+ve_status overflowed()
+{
+    return set_error(VE_INVALID_ARGUMENT, "a covariance is not finite (an input overflows)");
+}
+
 }
 
 extern "C" ve_status ve_cov_sample(const ve_panel* panel, double* out)
@@ -66,6 +78,10 @@ extern "C" ve_status ve_cov_sample(const ve_panel* panel, double* out)
                 return status;
             }
             const auto covariance = ve::cov::sample(panel->view);
+            if (!all_finite(covariance))
+            {
+                return overflowed();
+            }
             std::ranges::copy(covariance, out);
             return VE_OK;
         });
@@ -85,6 +101,10 @@ extern "C" ve_status ve_cov_ledoit_wolf(const ve_panel* panel, double* out, doub
                 return set_error(VE_INVALID_ARGUMENT, "shrinkage must not be null");
             }
             const auto result = ve::cov::ledoit_wolf(panel->view);
+            if (!all_finite(result.covariance) || !std::isfinite(result.shrinkage))
+            {
+                return overflowed();
+            }
             std::ranges::copy(result.covariance, out);
             *shrinkage = result.shrinkage;
             return VE_OK;

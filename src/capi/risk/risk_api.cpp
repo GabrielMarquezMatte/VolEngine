@@ -13,9 +13,44 @@ using ve::capi::set_error;
 namespace
 {
 
+// Below ~1.1e-16, 1 - confidence rounds to 1 and the quantile is +inf.
 bool valid_confidence(double confidence)
 {
-    return confidence > 0.0 && confidence < 1.0;
+    return confidence > 0.0 && confidence < 1.0 && 1.0 - confidence < 1.0;
+}
+
+// The parameters the density reads; the ones it lacks are not looked at.
+bool read_parameters_finite(ve::Dist dist, const ve::dist::ShapeParameters<double>& parameters)
+{
+    switch (dist)
+    {
+        case ve::Dist::Norm:
+            return true;
+        case ve::Dist::Std:
+        case ve::Dist::Ged:
+            return std::isfinite(parameters.shape);
+        case ve::Dist::Ghyp:
+            return std::isfinite(parameters.skew) && std::isfinite(parameters.shape)
+                && std::isfinite(parameters.ghlambda);
+        case ve::Dist::Sstd:
+        case ve::Dist::Sged:
+        case ve::Dist::Nig:
+        case ve::Dist::Jsu:
+            break;
+    }
+    return std::isfinite(parameters.skew) && std::isfinite(parameters.shape);
+}
+
+// VE_OK and the measure written, or the overflow refused with the outputs left unchanged.
+ve_status write_measure(const ve::risk::Measure& measure, double* var, double* es)
+{
+    if (!std::isfinite(measure.var) || !std::isfinite(measure.es))
+    {
+        return set_error(VE_INVALID_ARGUMENT, "the risk measure is not finite (an input overflows)");
+    }
+    *var = measure.var;
+    *es = measure.es;
+    return VE_OK;
 }
 
 bool all_finite(const ve::PanelView& view)
@@ -80,7 +115,8 @@ ve_status check_distribution(int32_t dist, const ve::dist::ShapeParameters<doubl
     {
         return set_error(VE_INVALID_ARGUMENT, "dist must be one of VE_DIST_NORM .. VE_DIST_JSU");
     }
-    if (!ve::dist::in_domain(static_cast<ve::Dist>(dist), parameters))
+    const auto density = static_cast<ve::Dist>(dist);
+    if (!read_parameters_finite(density, parameters) || !ve::dist::in_domain(density, parameters))
     {
         return set_error(VE_INVALID_ARGUMENT, "the distribution parameters are outside the density's domain");
     }
@@ -114,7 +150,7 @@ extern "C" ve_status ve_risk_empirical(const ve_panel* returns, const double* we
             const auto return_kind = kind == VE_RETURNS_LOG ? ve::risk::ReturnKind::log : ve::risk::ReturnKind::simple;
             const auto measure = ve::risk::empirical(returns->view, std::span(weights, returns->view.n), return_kind,
                                                      confidence);
-            if (!std::isfinite(measure.var))
+            if (!std::isfinite(measure.var) || !std::isfinite(measure.es))
             {
                 return set_error(VE_INVALID_ARGUMENT, "a portfolio return is not finite (an input overflows)");
             }
@@ -145,8 +181,6 @@ extern "C" ve_status ve_risk_parametric(int32_t dist, double skew, double shape,
             }
             const auto measure = ve::risk::parametric(static_cast<ve::Dist>(dist), parameters,
                                                       ve::risk::Location{.mean = mean, .sigma = sigma}, confidence);
-            *var = measure.var;
-            *es = measure.es;
-            return VE_OK;
+            return write_measure(measure, var, es);
         });
 }

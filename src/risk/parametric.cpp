@@ -118,8 +118,29 @@ double tail_mean(Dist dist, const dist::ShapeParameters<double>& parameters, dou
     return tail_mean_at(dist, parameters, p, dist::quantile(dist, parameters, p));
 }
 
-Measure parametric(Dist dist, const dist::ShapeParameters<double>& parameters, Location location, double confidence)
+namespace
 {
+
+// Past a skew of ~1.3e154 (or below its inverse) xi^2 overflows the Fernandez-Steel standardisation. From 1e150 on
+// the density already is its half-kernel limit to rounding: the other half holds a mass 1 / (1 + xi^2) below 1e-300
+// and the shift and stretch move by a relative xi^-2, so a skew past the edge is measured at the edge.
+constexpr double kFernandezSteelSkewEdge = 1e150;
+
+dist::ShapeParameters<double> within_skew_edge(Dist dist, dist::ShapeParameters<double> parameters)
+{
+    if (dist::is_fernandez_steel(dist))
+    {
+        parameters.skew = std::clamp(parameters.skew, 1.0 / kFernandezSteelSkewEdge, kFernandezSteelSkewEdge);
+    }
+    return parameters;
+}
+
+}
+
+Measure parametric(Dist dist, const dist::ShapeParameters<double>& shape_parameters, Location location,
+                   double confidence)
+{
+    const dist::ShapeParameters<double> parameters = within_skew_edge(dist, shape_parameters);
     const double p = 1.0 - confidence;
     const double q = dist::quantile(dist, parameters, p);
     return Measure{.var = -(location.mean + location.sigma * q),

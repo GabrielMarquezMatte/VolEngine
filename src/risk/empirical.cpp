@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <span>
 #include <vector>
 
 namespace ve::risk
@@ -26,6 +27,44 @@ std::vector<double> portfolio_returns(const PanelView& returns, std::span<const 
     return portfolio;
 }
 
+// numpy.quantile's linear interpolation (numpy's _lerp), digit for digit; where b - a overflows, the weighted sum
+// of the two, which lies between them.
+double interpolate(double a, double b, double t)
+{
+    const double difference = b - a;
+    if (!std::isfinite(difference))
+    {
+        return (1.0 - t) * a + t * b;
+    }
+    if (t >= 0.5)
+    {
+        return b - difference * (1.0 - t);
+    }
+    return a + difference * t;
+}
+
+// The mean of the sorted returns at or below the quantile; where their sum overflows, the sum of each over the
+// count, whose magnitude is at most the largest of them.
+double mean_at_or_below(std::span<const double> sorted, double quantile)
+{
+    std::size_t count = 0;
+    double tail = 0.0;
+    for (; count < sorted.size() && sorted[count] <= quantile; ++count)
+    {
+        tail += sorted[count];
+    }
+    if (std::isfinite(tail))
+    {
+        return tail / static_cast<double>(count);
+    }
+    double mean = 0.0;
+    for (std::size_t k = 0; k < count; ++k)
+    {
+        mean += sorted[k] / static_cast<double>(count);
+    }
+    return mean;
+}
+
 }
 
 Measure empirical(const PanelView& returns, std::span<const double> weights, ReturnKind kind, double confidence)
@@ -40,14 +79,8 @@ Measure empirical(const PanelView& returns, std::span<const double> weights, Ret
     const double position = static_cast<double>(sorted.size() - 1) * (1.0 - confidence);
     const auto lower = static_cast<std::size_t>(std::floor(position));
     const std::size_t upper = std::min(lower + 1, sorted.size() - 1);
-    const double quantile = sorted[lower] + (position - static_cast<double>(lower)) * (sorted[upper] - sorted[lower]);
-    double tail = 0.0;
-    std::size_t count = 0;
-    for (; count < sorted.size() && sorted[count] <= quantile; ++count)
-    {
-        tail += sorted[count];
-    }
-    return Measure{.var = -quantile, .es = -tail / static_cast<double>(count)};
+    const double quantile = interpolate(sorted[lower], sorted[upper], position - static_cast<double>(lower));
+    return Measure{.var = -quantile, .es = -mean_at_or_below(sorted, quantile)};
 }
 
 }
