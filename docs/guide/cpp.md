@@ -78,3 +78,25 @@ if (dcc && dcc->status() == ve::FitStatus::converged)
 `std_errors`, `t_values` and `p_values` of a `DccFit` made with `DccOptions{.standard_errors = false}` are errors, as for
 a `Fit`; `context.standard_errors(fit, univariate_fits)` returns a fit that has them. The Copula-DCC is
 `DccSpec::copula`. Every function of the C API is called by the wrapper, so nothing in the interface is out of reach.
+
+## Cancellation
+
+`fit`, `fit_dcc`, `standard_errors` and `simulate` take an optional `std::stop_token` as their last argument. A stop
+requested before or during the call makes it fail soon after with `ve::Status::cancelled`, and no result is made; a
+call that finishes first succeeds. Without a token, or with one that can never be stopped, nothing changes.
+
+```cpp
+std::stop_source source;
+std::jthread deadline([&source] {
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    source.request_stop();
+});
+auto fits = context.fit(grid, panel, {}, source.get_token());
+if (!fits && fits.error().status == ve::Status::cancelled)
+{
+    // stopped before the grid finished
+}
+```
+
+`std::jthread` also stops on its own: a token from `std::jthread`'s `get_stop_token()` cancels the call when the
+thread is asked to stop.

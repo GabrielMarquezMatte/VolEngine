@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <span>
+#include <stop_token>
 #include <utility>
 #include <vector>
 #include <volengine/dcc.hpp>
@@ -13,6 +14,30 @@
 
 namespace ve
 {
+
+namespace detail
+{
+
+// Runs call(c) with a ve_cancel that `stop` requests, or with NULL when `stop` can never be requested. The callback
+// is destroyed before the handle is freed, so a late stop never touches a freed handle.
+template <class Call>
+Result<void> cancellable(std::stop_token stop, Call call)
+{
+    if (!stop.stop_possible())
+    {
+        return check(call(nullptr));
+    }
+    ve_cancel* raw = nullptr;
+    if (auto created = check(ve_cancel_create(&raw)); !created)
+    {
+        return created;
+    }
+    const Owned<ve_cancel, ve_cancel_free> handle{raw};
+    const std::stop_callback request(std::move(stop), [raw]() noexcept { ve_cancel_request(raw); });
+    return check(call(raw));
+}
+
+} // namespace detail
 
 // Owns the native thread pool. Fits, forecasts and simulations do not depend on it afterwards.
 class Context
@@ -53,8 +78,9 @@ public:
         return count;
     }
 
-    // One Fit per job of the batch, in job order. On any error no Fit is made.
-    Result<std::vector<Fit>> fit(const Batch& batch) const
+    // One Fit per job of the batch, in job order. On any error no Fit is made. Here and in the other long calls, a stop
+    // requested on `stop` before or during the call makes it fail with Status::cancelled soon after.
+    Result<std::vector<Fit>> fit(const Batch& batch, std::stop_token stop = {}) const
     {
         const auto jobs = batch.job_count();
         if (!jobs)
@@ -64,8 +90,9 @@ public:
         std::vector<ve_fit*> raw(*jobs, nullptr);
         std::vector<Fit> fits;
         fits.reserve(raw.size()); // before the native call: nothing may throw while raw holds handles
-        if (auto fitted = detail::check(ve_fit_batch_with_cancel(handle_.get(), batch.native(), nullptr,
-                                                                 raw.data())); !fitted)
+        auto fitted = detail::cancellable(std::move(stop), [&](const ve_cancel* c)
+            { return ve_fit_batch_with_cancel(handle_.get(), batch.native(), c, raw.data()); });
+        if (!fitted)
         {
             return detail::failure(fitted);
         }
@@ -77,7 +104,8 @@ public:
     }
 
     // Every spec on every series of the panel: the fit of spec s on series j is at index s * panel.cols() + j.
-    Result<std::vector<Fit>> fit(std::span<const Spec> specs, const Panel& panel, const FitOptions& options = {}) const
+    Result<std::vector<Fit>> fit(std::span<const Spec> specs, const Panel& panel, const FitOptions& options = {},
+        std::stop_token stop = {}) const
     {
         std::vector<std::size_t> spec_index;
         std::vector<std::size_t> series_index;
@@ -102,17 +130,18 @@ public:
         {
             return detail::failure(described);
         }
-        return fit(*batch);
+        return fit(*batch, std::move(stop));
     }
 
-    Result<Fit> fit(const Spec& spec, std::span<const double> series, const FitOptions& options = {}) const
+    Result<Fit> fit(const Spec& spec, std::span<const double> series, const FitOptions& options = {},
+        std::stop_token stop = {}) const
     {
         auto panel = Panel::create(series, series.size(), 1);
         if (!panel)
         {
             return detail::failure(panel);
         }
-        auto fits = fit(std::span<const Spec>(&spec, 1), *panel, options);
+        auto fits = fit(std::span<const Spec>(&spec, 1), *panel, options, std::move(stop));
         if (!fits)
         {
             return detail::failure(fits);
@@ -121,28 +150,29 @@ public:
     }
 
     // Paths continuing after the last observation of the fit.
-    Result<Simulation> simulate(const Fit& fit, const SimOptions& options) const
+    Result<Simulation> simulate(const Fit& fit, const SimOptions& options, std::stop_token stop = {}) const
     {
-        return simulate_with(options, [&](const ve_sim_options* native, ve_sim** out)
-            { return ve_simulate_fit_with_cancel(handle_.get(), fit.native(), native, nullptr, out); });
+        return simulate_with(options, std::move(stop),
+            [&](const ve_sim_options* native, const ve_cancel* c, ve_sim** out)
+            { return ve_simulate_fit_with_cancel(handle_.get(), fit.native(), native, c, out); });
     }
 
     // Paths of a spec with every parameter fixed, from its unconditional state.
-    Result<Simulation> simulate(const Spec& spec, const SimOptions& options) const
+    Result<Simulation> simulate(const Spec& spec, const SimOptions& options, std::stop_token stop = {}) const
     {
         auto native = spec.make_handle();
         if (!native)
         {
             return detail::failure(native);
         }
-        return simulate_with(options, [&](const ve_sim_options* sim_options, ve_sim** out)
-            { return ve_simulate_spec_with_cancel(handle_.get(), native->get(), sim_options, nullptr,
-                                                  out); });
+        return simulate_with(options, std::move(stop),
+            [&](const ve_sim_options* sim_options, const ve_cancel* c, ve_sim** out)
+            { return ve_simulate_spec_with_cancel(handle_.get(), native->get(), sim_options, c, out); });
     }
 
     // Every DCC spec over the same univariate fits (at least two, finite, of one length >= 100), in spec order.
-    Result<std::vector<DccFit>> fit_dcc(
-        std::span<const DccSpec> specs, std::span<const Fit> univariate, const DccOptions& options = {}) const
+    Result<std::vector<DccFit>> fit_dcc(std::span<const DccSpec> specs, std::span<const Fit> univariate,
+        const DccOptions& options = {}, std::stop_token stop = {}) const
     {
         auto batch = make_dcc_batch(specs, univariate, options);
         if (!batch)
@@ -157,8 +187,9 @@ public:
         std::vector<ve_dcc_fit*> raw(*count, nullptr);
         std::vector<DccFit> fits;
         fits.reserve(raw.size()); // before the native call: nothing may throw while raw holds handles
-        if (auto fitted = detail::check(ve_dcc_fit_batch_with_cancel(handle_.get(), batch->get(), nullptr,
-                                                                     raw.data())); !fitted)
+        auto fitted = detail::cancellable(std::move(stop), [&](const ve_cancel* c)
+            { return ve_dcc_fit_batch_with_cancel(handle_.get(), batch->get(), c, raw.data()); });
+        if (!fitted)
         {
             return detail::failure(fitted);
         }
@@ -169,10 +200,10 @@ public:
         return fits;
     }
 
-    Result<DccFit> fit_dcc(
-        const DccSpec& spec, std::span<const Fit> univariate, const DccOptions& options = {}) const
+    Result<DccFit> fit_dcc(const DccSpec& spec, std::span<const Fit> univariate, const DccOptions& options = {},
+        std::stop_token stop = {}) const
     {
-        auto fits = fit_dcc(std::span<const DccSpec>(&spec, 1), univariate, options);
+        auto fits = fit_dcc(std::span<const DccSpec>(&spec, 1), univariate, options, std::move(stop));
         if (!fits)
         {
             return detail::failure(fits);
@@ -181,13 +212,14 @@ public:
     }
 
     // The same fit with its standard errors, computed from the univariate fits it came from (in the same order).
-    Result<DccFit> standard_errors(const DccFit& fit, std::span<const Fit> univariate) const
+    Result<DccFit> standard_errors(
+        const DccFit& fit, std::span<const Fit> univariate, std::stop_token stop = {}) const
     {
         const auto pointers = fit_pointers(univariate);
         ve_dcc_fit* raw = nullptr;
-        if (auto computed = detail::check(
-                ve_dcc_standard_errors_with_cancel(handle_.get(), fit.native(), pointers.data(),
-                                                   pointers.size(), nullptr, &raw));
+        if (auto computed = detail::cancellable(std::move(stop), [&](const ve_cancel* c)
+                { return ve_dcc_standard_errors_with_cancel(
+                      handle_.get(), fit.native(), pointers.data(), pointers.size(), c, &raw); });
             !computed)
         {
             return detail::failure(computed);
@@ -196,8 +228,8 @@ public:
     }
 
     // Paths of a DCC fit. The regressors of the horizon go in `future`, not in the options.
-    Result<DccSimulation> simulate(
-        const DccFit& fit, const SimOptions& options, const DccFuture* future = nullptr) const
+    Result<DccSimulation> simulate(const DccFit& fit, const SimOptions& options, const DccFuture* future = nullptr,
+        std::stop_token stop = {}) const
     {
         auto native = options.make_handle();
         if (!native)
@@ -210,9 +242,9 @@ public:
             native_future = future->native();
         }
         ve_dcc_sim* raw = nullptr;
-        if (auto simulated = detail::check(
-                ve_simulate_dcc_with_cancel(handle_.get(), fit.native(), native->get(), native_future,
-                                            nullptr, &raw));
+        if (auto simulated = detail::cancellable(std::move(stop), [&](const ve_cancel* c)
+                { return ve_simulate_dcc_with_cancel(
+                      handle_.get(), fit.native(), native->get(), native_future, c, &raw); });
             !simulated)
         {
             return detail::failure(simulated);
@@ -276,7 +308,7 @@ private:
     }
 
     template <class Run>
-    static Result<Simulation> simulate_with(const SimOptions& options, Run run)
+    static Result<Simulation> simulate_with(const SimOptions& options, std::stop_token stop, Run run)
     {
         auto native = options.make_handle();
         if (!native)
@@ -284,7 +316,9 @@ private:
             return detail::failure(native);
         }
         ve_sim* raw = nullptr;
-        if (auto simulated = detail::check(run(native->get(), &raw)); !simulated)
+        if (auto simulated = detail::cancellable(
+                std::move(stop), [&](const ve_cancel* c) { return run(native->get(), c, &raw); });
+            !simulated)
         {
             return detail::failure(simulated);
         }
