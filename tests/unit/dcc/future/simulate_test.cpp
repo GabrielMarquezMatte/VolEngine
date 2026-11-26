@@ -12,12 +12,14 @@
 #include "model/layout.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <gtest/gtest.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -309,6 +311,66 @@ TEST(DccSimulate, ArfimaAndComponentSeries)
         ASSERT_FALSE(values->empty());
         EXPECT_TRUE(std::ranges::all_of(*values, [](double v) { return std::isfinite(v); }));
     }
+}
+
+DccSimulation simulate_cumulative(const DccFitResult& fit, std::size_t horizon, std::size_t paths,
+                                  std::vector<std::size_t> checkpoints, int threads = 4)
+{
+    ve::Context context;
+    context.set_threads(threads);
+    DccRequest request{horizon, paths, 5, false, SeriesRegressors(fit.series)};
+    request.checkpoints = std::move(checkpoints);
+    return ve::dcc::future::simulate_dcc(context, fit, request);
+}
+
+// cumulative[(p * K + j) * m + i] against the left-to-right sum of the first checkpoints[j] returns of series i.
+void expect_left_sums(const DccSimulation& cumulative, const DccSimulation& full)
+{
+    const std::size_t k = cumulative.checkpoints.size();
+    const std::size_t m = full.series;
+    ASSERT_EQ(cumulative.cumulative.size(), full.paths * k * m);
+    EXPECT_TRUE(cumulative.returns.empty() && cumulative.sigma.empty());
+    EXPECT_TRUE(cumulative.r.empty() && cumulative.h.empty());
+    for (std::size_t p = 0; p < full.paths; ++p)
+    {
+        for (std::size_t i = 0; i < m; ++i)
+        {
+            double sum = 0.0;
+            std::size_t h = 0;
+            for (std::size_t j = 0; j < k; ++j)
+            {
+                for (; h < cumulative.checkpoints[j]; ++h)
+                {
+                    sum += full.returns[(p * full.horizon + h) * m + i];
+                }
+                EXPECT_EQ(std::bit_cast<std::uint64_t>(cumulative.cumulative[(p * k + j) * m + i]),
+                          std::bit_cast<std::uint64_t>(sum))
+                    << "path " << p << " checkpoint " << j << " series " << i;
+            }
+        }
+    }
+}
+
+TEST(DccSimCumulative, EqualsTheLeftSumOfTheFullPath)
+{
+    const std::vector<DccFitResult> fits = run_batch(dcc3_fits(), {dcc_spec(DccModel::ADcc, DccDist::MvT)});
+    const DccSimulation cumulative = simulate_cumulative(fits[0], 10, 30, {2, 10});
+    EXPECT_EQ(cumulative.checkpoints, (std::vector<std::size_t>{2, 10}));
+    expect_left_sums(cumulative, simulate(fits[0], 10, 30, 5));
+}
+
+TEST(DccSimCumulative, CopulaMatchesToo)
+{
+    const std::vector<DccFitResult> fits =
+        run_batch(copula3_fits(), {dcc_spec(DccModel::Dcc, DccDist::MvT, DccCopula::Parametric)});
+    expect_left_sums(simulate_cumulative(fits[0], 10, 30, {1, 4, 10}), simulate(fits[0], 10, 30, 5));
+}
+
+TEST(DccSimCumulative, SameForAnyThreadCount)
+{
+    const std::vector<DccFitResult> fits = run_batch(dcc3_fits(), {dcc_spec(DccModel::Dcc)});
+    EXPECT_EQ(simulate_cumulative(fits[0], 10, 30, {3, 10}, 1).cumulative,
+              simulate_cumulative(fits[0], 10, 30, {3, 10}, 4).cumulative);
 }
 
 }
