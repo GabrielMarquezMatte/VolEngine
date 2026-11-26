@@ -24,6 +24,8 @@ break between 0.x releases.
   A state sigma^power that is not positive is now outside the domain, in the likelihood and in the forecast.
 - jsu innovations in apARCH and fGARCH: at an asymmetry of exactly -1 or 1 (fixed, or reached by the optimizer), the
   shock moment had a NaN gradient and the fit failed. The gradient is now finite.
+- C#: `Context.Fit` with more than `int.MaxValue` jobs (specs x series) wrapped the job count around and fitted only
+  part of the grid. It now throws `OverflowException` before calling the library.
 
 ## [1.3.0] - 2026-11-26
 

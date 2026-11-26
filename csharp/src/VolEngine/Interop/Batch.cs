@@ -90,7 +90,7 @@ internal static unsafe class Batch
 
     private static void SetJobs(BatchHandle batch, int specCount, int seriesCount)
     {
-        var jobs = specCount * seriesCount;
+        var jobs = checked(specCount * seriesCount);
         var jobSpec = new nuint[jobs];
         var jobSeries = new nuint[jobs];
         for (var job = 0; job < jobs; job++)
