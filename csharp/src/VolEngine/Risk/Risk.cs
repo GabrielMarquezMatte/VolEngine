@@ -18,6 +18,7 @@ public static class Risk
     {
         ArgumentNullException.ThrowIfNull(returns);
         ArgumentNullException.ThrowIfNull(weights);
+        Library.EnsureLoaded();
         if (weights.Length != returns.GetLength(1))
         {
             throw new ArgumentException($"weights has {weights.Length} values for {returns.GetLength(1)} series",
@@ -45,6 +46,7 @@ public static class Risk
     public static unsafe RiskMeasure Parametric(ShockDistribution distribution, double mean, double sigma, double confidence)
     {
         ArgumentNullException.ThrowIfNull(distribution);
+        Library.EnsureLoaded();
         double var;
         double es;
         Calls.Check(NativeMethods.ve_risk_parametric((int)distribution.Distribution, distribution.Skew, distribution.Shape,

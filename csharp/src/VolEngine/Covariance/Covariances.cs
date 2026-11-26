@@ -13,6 +13,7 @@ public static class Covariances
     public static unsafe double[][] Sample(double[,] returns)
     {
         ArgumentNullException.ThrowIfNull(returns);
+        Library.EnsureLoaded();
         var series = returns.GetLength(1);
         var covariance = new double[checked(series * series)];
         fixed (double* data = returns)
@@ -31,6 +32,7 @@ public static class Covariances
     public static unsafe LedoitWolfResult LedoitWolf(double[,] returns)
     {
         ArgumentNullException.ThrowIfNull(returns);
+        Library.EnsureLoaded();
         var series = returns.GetLength(1);
         var covariance = new double[checked(series * series)];
         double shrinkage;
