@@ -621,12 +621,12 @@ struct JohnsonShockIntegrand
 
     T operator()(const T& r) const
     {
-        using std::exp;
         using std::log;
         T u = (r + density.skew) / density.shape;
         SignedLog<T> distance = johnson_log_distance(density, eta2, u);
+        // At |eta1| = 1 one side has log(0), whose slope is infinite: exp_or_zero keeps the 0 it multiplies.
         T log_shock = power * (distance.log + log(1.0 - eta1 * distance.sign));
-        return exp(log_shock - 0.5 * (r * r) - 0.5 * std::log(2.0 * std::numbers::pi));
+        return exp_or_zero(log_shock - 0.5 * (r * r) - 0.5 * std::log(2.0 * std::numbers::pi));
     }
 };
 

@@ -79,6 +79,23 @@ TEST(PowerGarch, FixedPowerMatchesFreePower)
     }
 }
 
+// TGARCH (power 1) with a variance regressor that drives sigma_1 to -0.23: its square is not a variance.
+TEST(PowerGarch, NegativeStateUnderFixedPowerIsNotAVariance)
+{
+    std::vector<double> residuals{0.1, -0.2, 0.3};
+    std::vector<double> alpha{0.1};
+    std::vector<double> beta{0.8};
+    std::vector<double> moments{1.0};
+    std::vector<double> shift{0.0, -0.5, 0.0};
+    std::vector<double> sigma2(3);
+    ve::garch::PowerGarchParameters<double> p{0.1, alpha, beta, {}, {}, 1.0, moments};
+    p.free_power = false;
+    p.intercept_shift = shift;
+    ve::garch::power_garch_variance<double>(residuals, p, {0.04, 1}, sigma2);
+    EXPECT_DOUBLE_EQ(sigma2[0], 0.04);
+    EXPECT_TRUE(std::isnan(sigma2[1]));
+}
+
 // z_0 = eta2 exactly: the smoothed |z - eta2| is sqrt(1e-6) there, not 0.
 TEST(PowerGarch, SmoothedAbsoluteValue)
 {

@@ -122,14 +122,14 @@ public sealed unsafe class DccFit : IDisposable
     /// <returns>A copy, T x m x m.</returns>
     public double[][][] Correlation()
     {
-        return NativeReads.Matrices(NativeReads.View(_handle, NativeMethods.ve_dcc_fit_correlation), Series);
+        return NativeReads.Matrices(_handle, NativeMethods.ve_dcc_fit_correlation, Series, Series);
     }
 
     /// <summary>The conditional covariance H_t = D_t R_t D_t of every observation, D_t the univariate sigmas.</summary>
     /// <returns>A copy, T x m x m.</returns>
     public double[][][] Covariance()
     {
-        return NativeReads.Matrices(NativeReads.View(_handle, NativeMethods.ve_dcc_fit_covariance), Series);
+        return NativeReads.Matrices(_handle, NativeMethods.ve_dcc_fit_covariance, Series, Series);
     }
 
     /// <summary>R, H, sigma and mean for h = 1..horizon after the last observation, as rmgarch's dccforecast

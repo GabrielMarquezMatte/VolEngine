@@ -89,11 +89,8 @@ ve_status read_path(const ve_dcc_fit* f, const double** data, size_t* len, bool 
             {
                 return VE_OK;
             }
-            if (covariance)
-            {
-                std::call_once(f->covariance_once, [&] { f->covariance = ve::dcc::covariance_path(f->result); });
-            }
-            const auto& path = covariance ? f->covariance : *f->result.r;
+            const auto compute = [&] { return ve::dcc::covariance_path(f->result); };
+            const auto& path = covariance ? f->covariance.get(compute) : *f->result.r;
             if (!path.empty())
             {
                 *data = path.data();

@@ -40,6 +40,29 @@ inline const CancelFlag* flag_of(const ve_cancel* c)
     return c == nullptr ? nullptr : &c->flag;
 }
 
+// Values computed on the first read and shared by every reader after it. A computation that throws leaves
+// them unset, so the next read tries again. Not std::call_once: libstdc++ over pthread_once (MinGW) keeps
+// the flag busy after a throw, so every later read of the handle would hang.
+class LazyValues
+{
+public:
+    template <class Compute> const std::vector<double>& get(Compute compute) const
+    {
+        std::scoped_lock lock(mutex_);
+        if (!ready_)
+        {
+            values_ = compute();
+            ready_ = true;
+        }
+        return values_;
+    }
+
+private:
+    mutable std::mutex mutex_;
+    mutable bool ready_ = false;
+    mutable std::vector<double> values_;
+};
+
 }
 
 struct ve_spec
@@ -139,8 +162,7 @@ struct ve_dcc_fit
     ve::dcc::DccFitResult result;
     // Every parameter, fixed ones included; result holds the estimated ones (src/capi/dcc/table.hpp).
     ve::capi::dcc::DccTable table;
-    mutable std::once_flag covariance_once;
-    mutable std::vector<double> covariance;
+    ve::capi::LazyValues covariance;
 };
 
 // The regressors of the horizon of each series of a DCC fit.
@@ -155,8 +177,7 @@ struct ve_dcc_future
 struct ve_dcc_forecast
 {
     ve::dcc::future::DccForecast forecast;
-    mutable std::once_flag cumulative_once;
-    mutable std::vector<double> cumulative_covariance;
+    ve::capi::LazyValues cumulative_covariance;
 };
 
 struct ve_dcc_sim

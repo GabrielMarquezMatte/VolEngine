@@ -33,6 +33,16 @@ inline double log_bessel_k_scaled_slope(double order, double x)
     return 1.0 - ratio - order / x;
 }
 
+struct LogBesselWithSlope
+{
+    double value;
+    double slope;
+};
+
+// log_bessel_k_scaled(order, x) and log_bessel_k_scaled_slope(order, x), with their bits, at the cost of fewer
+// Boost calls: the value once, and at order -1 (nig) K_2 from the K_0 and K_1 Boost's own recurrence starts from.
+LogBesselWithSlope log_bessel_k_scaled_with_slope(double order, double x);
+
 // d f / d order by Richardson extrapolation of central differences at step and 2 step, accurate to O(step^4).
 // log K is analytic in the order, so the step can be large. Boost computes K in double where long double is
 // double (Apple Silicon, MSVC), and a step of 1e-5 turned its rounding into 1e-7 of a likelihood gradient.
@@ -80,8 +90,8 @@ T log_bessel_k(const T& order, const T& x)
 template <class T>
 T log_bessel_k_scaled(double order, const T& x)
 {
-    double v = log_bessel_k_scaled(order, ad::value_of(x));
-    return ad::chain(x, v, detail::log_bessel_k_scaled_slope(order, ad::value_of(x)));
+    detail::LogBesselWithSlope k = detail::log_bessel_k_scaled_with_slope(order, ad::value_of(x));
+    return ad::chain(x, k.value, k.slope);
 }
 
 template <class T>

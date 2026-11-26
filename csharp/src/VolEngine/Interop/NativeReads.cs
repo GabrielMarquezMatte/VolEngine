@@ -63,9 +63,72 @@ internal static unsafe class NativeReads
         return values;
     }
 
-    // A flat row-major block of count x m x m matrices as count jagged matrices.
-    public static double[][][] Matrices(double[] values, int m)
+    // A row-major view as count rows of width values (count = length / width), each row copied straight from the
+    // native memory while the handle is held: no flat copy in between, which for the R and H of a simulation was as
+    // large as the result.
+    public static double[][] Rows<THandle>(THandle owner, ViewReader<THandle> read, int width)
+        where THandle : SafeHandle
     {
-        return values.Chunk(m).Chunk(m).ToArray();
+        return Held(owner, () =>
+        {
+            Calls.Check(read(owner, out var data, out var length));
+            return RowsAt(data, Count(length, width), width);
+        });
+    }
+
+    // count x rows x width, as Rows.
+    public static double[][][] Matrices<THandle>(THandle owner, ViewReader<THandle> read, int rows, int width)
+        where THandle : SafeHandle
+    {
+        return Held(owner, () =>
+        {
+            Calls.Check(read(owner, out var data, out var length));
+            var size = (long)rows * width;
+            var matrices = new double[Count(length, size)][][];
+            for (var i = 0; i < matrices.Length; i++)
+            {
+                matrices[i] = RowsAt(data + i * size, rows, width);
+            }
+            return matrices;
+        });
+    }
+
+    // count x blocks x rows x width, as Rows.
+    public static double[][][][] Blocks<THandle>(THandle owner, ViewReader<THandle> read, int blocks, int rows,
+                                                 int width)
+        where THandle : SafeHandle
+    {
+        return Held(owner, () =>
+        {
+            Calls.Check(read(owner, out var data, out var length));
+            var matrix = (long)rows * width;
+            var size = blocks * matrix;
+            var result = new double[Count(length, size)][][][];
+            for (var i = 0; i < result.Length; i++)
+            {
+                var block = new double[blocks][][];
+                for (var j = 0; j < blocks; j++)
+                {
+                    block[j] = RowsAt(data + i * size + j * matrix, rows, width);
+                }
+                result[i] = block;
+            }
+            return result;
+        });
+    }
+
+    private static int Count(nuint length, long size)
+    {
+        return size == 0 ? 0 : checked((int)((long)length / size));
+    }
+
+    private static double[][] RowsAt(double* data, int count, int width)
+    {
+        var rows = new double[count][];
+        for (var i = 0; i < count; i++)
+        {
+            rows[i] = new ReadOnlySpan<double>(data + (long)i * width, width).ToArray();
+        }
+        return rows;
     }
 }

@@ -610,7 +610,7 @@ bool joint_power(JointMean<T>& mean, std::span<const T> theta, const Layout& lay
                              {
                                  sigma_power[t] = garch::power_garch_step<T>(e, p, presample_power, sigma_power, t);
                              }
-                             return garch::raise(sigma_power[t], exponent, p.free_power);
+                             return garch::variance_of_power(sigma_power[t], exponent, p.free_power);
                          });
 }
 

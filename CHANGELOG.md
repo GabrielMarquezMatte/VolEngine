@@ -8,6 +8,45 @@ From 1.0 the C ABI only grows: a signature or an enum value is never changed or 
 semver major (the Python package and the C++ wrapper refuse a library whose ABI version differs). Before 1.0 it could
 break between 0.x releases.
 
+## [1.3.1] - 2026-11-26
+
+### Fixed
+
+- Python: the regressors of a horizon given to `Fit.forecast`, `DccFit.forecast` or `Context.simulate` as a list, a
+  1D array or any input that had to be copied were freed before the library read them, so the forecast or the
+  simulation could silently use other values (for example `vxreg`'s in place of `mxreg`'s) or read freed memory. The
+  copies now live until the native call is done.
+- DCC: with the gcc (MinGW) build, a `ve_dcc_fit_covariance` or `ve_dcc_forecast_cumulative_covariance` whose
+  computation failed (for example `VE_OUT_OF_MEMORY` for a large m) made every later call on that handle hang. A
+  failed computation now leaves the cache empty and the next call tries again.
+- fGARCH TGARCH and AVGARCH (power fixed at 1) with variance regressors: a point where omega + zeta v_t drove
+  sigma_t negative was accepted, because its square is a positive sigma2, so the fit could settle outside the model.
+  A state sigma^power that is not positive is now outside the domain, in the likelihood and in the forecast.
+- jsu innovations in apARCH and fGARCH: at an asymmetry of exactly -1 or 1 (fixed, or reached by the optimizer), the
+  shock moment had a NaN gradient and the fit failed. The gradient is now finite.
+- C#: `Context.Fit` with more than `int.MaxValue` jobs (specs x series) wrapped the job count around and fitted only
+  part of the grid. It now throws `OverflowException` before calling the library.
+
+### Performance
+
+- DCC forecast: `ve_dcc_forecast_create` at m = 21, h = 60 takes 0.18 of its time (one `pow` per step outside FDCC
+  instead of one per entry of R), and `ve_dcc_forecast_cumulative_covariance` without an ARMA mean is a running sum,
+  linear in the horizon. The results have the same bits.
+- Student Copula-DCC: the fits of `dcc`, `adcc` and static ML Student copulas take about 0.64 of their time (21
+  series, 5000 rows), with the same bits: each point of the shape profile reuses the scores its inner fit ran on.
+- C#: large results are copied once, straight from the native views into the jagged arrays, instead of into a
+  flat array that was then split. A DCC simulation of 10 series with R and H (1000 paths, 60 steps) allocates 145 MB
+  instead of 246 MB and takes 0.70 of its time, a univariate one (10000 paths) half the memory and 0.78 of the
+  time, and `DccFit.Correlation()` 0.35 of the time.
+- nig: the Dual log-likelihood and the fit take about 0.78 of their time, with the same bits: the Bessel K of each
+  observation and its slope cost two Boost calls instead of four kernels (K_2 from the K_0 and K_1 of Boost's own
+  recurrence, and the value computed once).
+- Simulation: a simulated step no longer allocates (outside an ARFIMA mean), so `ve_simulate_fit` and
+  `ve_simulate_spec` take 0.33 to 0.45 of their time on one thread and 0.43 to 0.58 on all of them (10000 paths of 60
+  steps), and `ve_simulate_dcc` about half. The paths have the same bits for the same seed.
+- Copula-DCC standard errors take about 0.4 of their time (21 series, 5000 rows), with the same bits: each cross
+  column computes again the uniforms and scores of the one series it refilters, not of all of them.
+
 ## [1.3.0] - 2026-11-26
 
 ### Added

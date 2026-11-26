@@ -81,22 +81,14 @@ public sealed class Simulation
         var checkpoints = NativeReads.Sizes(simulation, NativeMethods.ve_sim_checkpoints);
         if (checkpoints.Length > 0)
         {
-            var sums = NativeReads.View(simulation, NativeMethods.ve_sim_cumulative);
             return new Simulation(paths, horizon, [], [])
             {
-                Cumulative = sums.Chunk(checkpoints.Length).ToArray(),
+                Cumulative = NativeReads.Rows(simulation, NativeMethods.ve_sim_cumulative, checkpoints.Length),
                 Checkpoints = checkpoints,
             };
         }
-        double* data;
-        nuint length;
-        var returns = Futures.Copy(NativeMethods.ve_sim_returns(simulation, out data, out length), data, length);
-        var sigma = Futures.Copy(NativeMethods.ve_sim_sigma(simulation, out data, out length), data, length);
-        return new Simulation(paths, horizon, Rows(returns, paths, horizon), Rows(sigma, paths, horizon));
-    }
-
-    private static double[][] Rows(double[] values, int paths, int horizon)
-    {
-        return Enumerable.Range(0, paths).Select(path => values.AsSpan(path * horizon, horizon).ToArray()).ToArray();
+        var returns = NativeReads.Rows(simulation, NativeMethods.ve_sim_returns, horizon);
+        var sigma = NativeReads.Rows(simulation, NativeMethods.ve_sim_sigma, horizon);
+        return new Simulation(paths, horizon, returns, sigma);
     }
 }

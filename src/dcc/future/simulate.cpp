@@ -234,12 +234,17 @@ private:
     void store_correlations(std::span<const double> r, std::size_t cell, DccSimulation& out) const
     {
         const std::size_t size = m();
-        for (std::size_t k = 0; k < size * size; ++k)
+        const double* sigma = out.sigma.data() + cell * size;
+        double* r_out = out.r.data() + cell * size * size;
+        double* h_out = out.h.data() + cell * size * size;
+        for (std::size_t i = 0; i < size; ++i)
         {
-            const double sigma_row = out.sigma[cell * size + k / size];
-            const double sigma_column = out.sigma[cell * size + k % size];
-            out.r[cell * size * size + k] = r[k];
-            out.h[cell * size * size + k] = sigma_row * r[k] * sigma_column;
+            for (std::size_t j = 0; j < size; ++j)
+            {
+                const std::size_t k = i * size + j;
+                r_out[k] = r[k];
+                h_out[k] = sigma[i] * r[k] * sigma[j];
+            }
         }
     }
 

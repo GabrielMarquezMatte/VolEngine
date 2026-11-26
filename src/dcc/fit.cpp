@@ -456,10 +456,17 @@ std::vector<double> covariance_path(const DccFitResult& fit)
     const std::vector<double>& sigma = fit.panel->sigma;
     const std::size_t m = fit.panel->m;
     h.resize(r.size());
-    for (std::size_t k = 0; k < h.size(); ++k)
+    const std::size_t rows = m == 0 ? 0 : r.size() / (m * m);
+    for (std::size_t t = 0; t < rows; ++t)
     {
-        const std::size_t t = k / (m * m);
-        h[k] = sigma[t * m + (k / m) % m] * r[k] * sigma[t * m + k % m];
+        for (std::size_t i = 0; i < m; ++i)
+        {
+            for (std::size_t j = 0; j < m; ++j)
+            {
+                const std::size_t k = (t * m + i) * m + j;
+                h[k] = sigma[t * m + i] * r[k] * sigma[t * m + j];
+            }
+        }
     }
     return h;
 }

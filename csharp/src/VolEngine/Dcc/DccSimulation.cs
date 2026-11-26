@@ -104,24 +104,18 @@ public sealed class DccSimulation
         var checkpoints = NativeReads.Sizes(simulation, NativeMethods.ve_dcc_sim_checkpoints);
         if (checkpoints.Length > 0)
         {
-            var sums = NativeReads.View(simulation, NativeMethods.ve_dcc_sim_cumulative);
             return new DccSimulation(paths, horizon, m, [], [])
             {
-                Cumulative = sums.Chunk(m).Chunk(checkpoints.Length).ToArray(),
+                Cumulative = NativeReads.Matrices(simulation, NativeMethods.ve_dcc_sim_cumulative, checkpoints.Length, m),
                 Checkpoints = checkpoints,
             };
         }
-        var returns = NativeReads.View(simulation, NativeMethods.ve_dcc_sim_returns).Chunk(m).Chunk(horizon).ToArray();
-        var sigma = NativeReads.View(simulation, NativeMethods.ve_dcc_sim_sigma).Chunk(m).Chunk(horizon).ToArray();
+        var returns = NativeReads.Matrices(simulation, NativeMethods.ve_dcc_sim_returns, horizon, m);
+        var sigma = NativeReads.Matrices(simulation, NativeMethods.ve_dcc_sim_sigma, horizon, m);
         return new DccSimulation(paths, horizon, m, returns, sigma)
         {
-            Correlation = correlations ? PerPath(NativeReads.View(simulation, NativeMethods.ve_dcc_sim_correlation), horizon, m) : null,
-            Covariance = correlations ? PerPath(NativeReads.View(simulation, NativeMethods.ve_dcc_sim_covariance), horizon, m) : null,
+            Correlation = correlations ? NativeReads.Blocks(simulation, NativeMethods.ve_dcc_sim_correlation, horizon, m, m) : null,
+            Covariance = correlations ? NativeReads.Blocks(simulation, NativeMethods.ve_dcc_sim_covariance, horizon, m, m) : null,
         };
-    }
-
-    private static double[][][][] PerPath(double[] values, int horizon, int m)
-    {
-        return NativeReads.Matrices(values, m).Chunk(horizon).ToArray();
     }
 }

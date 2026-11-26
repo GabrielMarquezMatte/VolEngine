@@ -50,6 +50,25 @@ void student_scores(std::span<const double> u, double nu, std::span<double> epsi
     }
 }
 
+// The panel with the sums of its entries: marginal_terms[t] adds the m entries of row t in order, and the density
+// the rows in order.
+CopulaPanel finished(std::shared_ptr<const StandardizedPanel> panel, std::vector<double> each, DccDist dist,
+                     double shape)
+{
+    const std::size_t m = panel->m;
+    const std::size_t t = panel->t;
+    CopulaPanel out{std::move(panel), 0.0, std::vector<double>(t, 0.0), std::move(each), dist, shape};
+    for (std::size_t k = 0; k < out.marginal_entries.size(); ++k)
+    {
+        out.marginal_terms[k / m] += out.marginal_entries[k];
+    }
+    for (const double term : out.marginal_terms)
+    {
+        out.marginal_log_density += term;
+    }
+    return out;
+}
+
 }
 
 CopulaPanel copula_panel(std::span<const double> u, const StandardizedPanel& univariate, DccDist dist, double shape)
@@ -70,16 +89,42 @@ CopulaPanel copula_panel(std::span<const double> u, const StandardizedPanel& uni
         normal_scores(u, panel->z, each);
     }
     refresh_moments(*panel);
-    CopulaPanel out{std::move(panel), 0.0, std::vector<double>(univariate.t, 0.0)};
-    for (std::size_t k = 0; k < each.size(); ++k)
+    return finished(std::move(panel), std::move(each), dist, shape);
+}
+
+CopulaPanel copula_panel_with_column(const CopulaPanel& base, std::span<const double> u,
+                                     const StandardizedPanel& univariate, std::size_t column)
+{
+    const DccDist dist = base.dist;
+    const double shape = base.shape;
+    const std::size_t t = univariate.t;
+    const std::size_t m = univariate.m;
+    assert(u.size() == t * m && base.panel->t == t && base.panel->m == m && column < m);
+    auto panel = std::make_shared<StandardizedPanel>(*base.panel);
+    panel->sigma = univariate.sigma;
+    std::vector<double> each = base.marginal_entries;
+    std::vector<double> u_column(t);
+    for (std::size_t row = 0; row < t; ++row)
     {
-        out.marginal_terms[k / univariate.m] += each[k];
+        u_column[row] = u[row * m + column];
     }
-    for (const double term : out.marginal_terms)
+    std::vector<double> epsilon(t);
+    std::vector<double> marginal(t);
+    if (dist == DccDist::MvT)
     {
-        out.marginal_log_density += term;
+        student_scores(u_column, shape, epsilon, marginal);
     }
-    return out;
+    if (dist != DccDist::MvT)
+    {
+        normal_scores(u_column, epsilon, marginal);
+    }
+    for (std::size_t row = 0; row < t; ++row)
+    {
+        panel->z[row * m + column] = epsilon[row];
+        each[row * m + column] = marginal[row];
+    }
+    refresh_moments_of_column(*panel, column);
+    return finished(std::move(panel), std::move(each), dist, shape);
 }
 
 }

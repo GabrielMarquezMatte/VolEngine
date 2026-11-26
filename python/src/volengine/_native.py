@@ -354,6 +354,8 @@ def native_layout(array: NDArray[np.float64]) -> NDArray[np.float64]:
 
 
 def open_panel(stack: ExitStack, array: NDArray[np.float64]) -> Handle:
+    # The panel borrows the array, which may be a temporary copy: the stack keeps it alive until the panel is freed.
+    stack.callback(lambda: array)
     panel = stack.enter_context(
         create_handle(lib.ve_panel_create, lib.ve_panel_free, array.ctypes.data, array.shape[0], array.shape[1])
     )

@@ -2,6 +2,7 @@
 
 #include "copula3_panel.hpp"
 #include "core/context.hpp"
+#include "dcc/copula/fit.hpp"
 #include "dcc/fit.hpp"
 #include "dcc/panel.hpp"
 #include "dcc/spec.hpp"
@@ -14,6 +15,7 @@
 #include <cstdint>
 #include <expected>
 #include <gtest/gtest.h>
+#include <memory>
 #include <span>
 #include <string>
 #include <utility>
@@ -235,6 +237,58 @@ TEST(CopulaStandardErrors, OptionMatchesExplicit)
         {
             EXPECT_TRUE(std::isfinite(value) && value > 0.0);
         }
+    }
+}
+
+// The standard errors refilter one series per cross column: inputs_at_column from the inputs of the base point has
+// the bits of inputs_at at the moved point, for parametric and empirical margins, with and without Kendall.
+TEST(CopulaStandardErrors, OneSeriesAgainHasTheBitsOfAllSeries)
+{
+    using ve::dcc::copula::CopulaInputs;
+    using ve::dcc::copula::Margin;
+    const Pointers fits = pointers_of(estimated_fits());
+    const std::vector<DccSpec> specs{
+        copula_spec(DccModel::Dcc, DccDist::MvT, DccCopula::Parametric, Convention::Standard),
+        copula_spec(DccModel::Dcc, DccDist::MvNorm, DccCopula::Parametric, Convention::Rmgarch),
+        copula_spec(DccModel::Static, DccDist::MvNorm, DccCopula::Empirical, Convention::Rmgarch, StaticMethod::Kendall),
+        copula_spec(DccModel::Static, DccDist::MvT, DccCopula::Empirical, Convention::Standard, StaticMethod::Kendall)};
+    constexpr std::size_t kColumn = 1;
+    for (const DccSpec& spec : specs)
+    {
+        const double shape = spec.dist == DccDist::MvT ? 8.0 : 0.0;
+        const CopulaInputs batch = ve::dcc::copula::copula_inputs(fits, std::span<const DccSpec>(&spec, 1));
+        auto base_panel = std::make_shared<const ve::dcc::StandardizedPanel>(ve::dcc::standardize(fits));
+        std::vector<Margin> margins;
+        for (const FitResult* fit : fits)
+        {
+            margins.push_back({&fit->spec, fit->estimate});
+        }
+        const CopulaInputs at_base = ve::dcc::copula::inputs_at(base_panel, margins, spec, batch, shape);
+        ve::dcc::StandardizedPanel moved = *base_panel;
+        for (std::size_t t = 0; t < moved.t; ++t)
+        {
+            moved.z[t * moved.m + kColumn] *= 1.01;
+            moved.sigma[t * moved.m + kColumn] /= 1.01;
+        }
+        ve::dcc::refresh_moments_of_column(moved, kColumn);
+        std::vector<double> estimate = fits[kColumn]->estimate;
+        estimate.back() += 0.1;
+        margins[kColumn].estimate = estimate;
+        auto moved_panel = std::make_shared<const ve::dcc::StandardizedPanel>(moved);
+        const CopulaInputs full = ve::dcc::copula::inputs_at(moved_panel, margins, spec, batch, shape);
+        const CopulaInputs column =
+            ve::dcc::copula::inputs_at_column(moved_panel, margins[kColumn], kColumn, spec, at_base);
+        EXPECT_EQ(column.u, full.u);
+        EXPECT_EQ(column.kendall, full.kendall);
+        ASSERT_NE(full.scores, nullptr);
+        ASSERT_NE(column.scores, nullptr);
+        EXPECT_EQ(column.scores->panel->z, full.scores->panel->z);
+        EXPECT_EQ(column.scores->panel->sigma, full.scores->panel->sigma);
+        EXPECT_EQ(column.scores->panel->qbar, full.scores->panel->qbar);
+        EXPECT_EQ(column.scores->panel->nbar, full.scores->panel->nbar);
+        EXPECT_EQ(column.scores->panel->nbar_centered, full.scores->panel->nbar_centered);
+        EXPECT_EQ(column.scores->marginal_terms, full.scores->marginal_terms);
+        EXPECT_EQ(column.scores->marginal_log_density, full.scores->marginal_log_density);
     }
 }
 

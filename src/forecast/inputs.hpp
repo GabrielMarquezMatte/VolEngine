@@ -24,7 +24,7 @@ struct Moments
 struct Inputs
 {
     const ForecastState& state;
-    model::Layout layout;
+    const model::Layout& layout;
     std::span<const double> theta;
     const FutureRegressors& future;
     std::size_t horizon;

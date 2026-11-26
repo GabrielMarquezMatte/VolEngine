@@ -79,8 +79,8 @@ guide in step). A new public member fails the build (RS0016) until it is listed 
 To check a package as a user gets it, copy the library to a folder as `volengine-native-<rid>.<ext>` and run
 
 ```
-dotnet pack csharp/src/VolEngine -c Release -p:Version=1.3.0-local -p:VolEngineNativeAssets=<folder> -p:VolEngineNativeRids=win-x64 -o <packages>
-bash csharp/scripts/check_package.sh <packages> 1.3.0-local
+dotnet pack csharp/src/VolEngine -c Release -p:Version=1.3.1-local -p:VolEngineNativeAssets=<folder> -p:VolEngineNativeRids=win-x64 -o <packages>
+bash csharp/scripts/check_package.sh <packages> 1.3.1-local
 ```
 
 which runs the clean consumer without `VOLENGINE_LIB` and again published with Native AOT (on Windows that needs the

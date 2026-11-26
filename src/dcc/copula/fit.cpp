@@ -117,6 +117,33 @@ std::vector<double> static_dependence(const CopulaInputs& inputs, const DccSpec&
                                shape_of(spec, theta, layout_of(spec, scores.panel->m)));
 }
 
+// The summands of copula_terms from scores, which are those of theta's shape.
+std::vector<double> terms_with(const CopulaInputs& inputs, const DccSpec& spec, std::span<const double> theta,
+                               const CopulaPanel& scores, std::span<double> r)
+{
+    std::vector<double> terms = spec.model == DccModel::Static ? static_dependence(inputs, spec, theta, scores, r)
+                                                               : dynamic_terms(*scores.panel, spec, theta, r);
+    for (std::size_t t = 0; t < terms.size(); ++t)
+    {
+        terms[t] -= scores.marginal_terms[t];
+    }
+    return terms;
+}
+
+// copula_loglik at a profile point from the scores its fit used, at the point's shape: building them again was
+// as costly as the fit of a Student point.
+double point_loglik(const CopulaInputs& inputs, const DccSpec& spec, std::span<const double> theta,
+                    const CopulaPanel& scores)
+{
+    const DccLayout layout = layout_of(spec, inputs.univariate->m);
+    if (layout.has_shape && !(shape_of(spec, theta, layout) > 2.0))
+    {
+        return copula_loglik(inputs, spec, theta);
+    }
+    const std::vector<double> terms = terms_with(inputs, spec, theta, scores, {});
+    return std::accumulate(terms.begin(), terms.end(), inputs.univariate_loglik);
+}
+
 // The estimated parameters of layout at theta, as a start list.
 std::vector<ParameterValue> start_at(const DccLayout& layout, std::span<const double> theta)
 {
@@ -148,7 +175,7 @@ ProfilePoint dynamic_point(const CopulaInputs& inputs, const DccSpec& spec, doub
     const CopulaPanel scores = copula_panel(inputs.uniforms_of(spec), *inputs.univariate, spec.dist, nu);
     const DccFitResult inner = fit_dcc(scores.panel, inner_spec, config);
     ProfilePoint point{inner.status, full_parameters(inner_layout, inner.estimate), kNaN, nu};
-    point.loglik = copula_loglik(inputs, spec, point.theta);
+    point.loglik = point_loglik(inputs, spec, point.theta, scores);
     return point;
 }
 
@@ -172,6 +199,8 @@ ProfilePoint static_point(const CopulaInputs& inputs, const DccSpec& spec, doubl
         const StaticCorrelation correlation = static_ml(*scores.panel, layout, nu, config, start);
         std::ranges::copy(correlation.x, point.theta.begin() + static_cast<std::ptrdiff_t>(layout.c_begin()));
         point.status = correlation.status;
+        point.loglik = point_loglik(inputs, spec, point.theta, scores);
+        return point;
     }
     point.loglik = copula_loglik(inputs, spec, point.theta);
     return point;
@@ -283,13 +312,12 @@ std::vector<double> copula_terms(const CopulaInputs& inputs, const DccSpec& spec
 {
     const DccLayout layout = layout_of(spec, inputs.univariate->m);
     assert(theta.size() == layout.count());
-    std::vector<double> terms(inputs.univariate->t, kNaN);
     // Like the plan 4a recursion, the terms are evaluated off the constraints too (the standard errors' differences
     // step there around a weight at 0 or a shape at its ceiling); only the scores need nu > 2.
     const double nu = shape_of(spec, theta, layout);
     if (layout.has_shape && !(nu > 2.0))
     {
-        return terms;
+        return std::vector<double>(inputs.univariate->t, kNaN);
     }
     const bool cached = inputs.scores != nullptr &&
                         (spec.dist != DccDist::MvT || std::bit_cast<std::uint64_t>(nu) ==
@@ -300,14 +328,7 @@ std::vector<double> copula_terms(const CopulaInputs& inputs, const DccSpec& spec
         fresh = std::make_shared<const CopulaPanel>(
             copula_panel(inputs.uniforms_of(spec), *inputs.univariate, spec.dist, nu));
     }
-    const CopulaPanel& scores = cached ? *inputs.scores : *fresh;
-    terms = spec.model == DccModel::Static ? static_dependence(inputs, spec, theta, scores, r)
-                                           : dynamic_terms(*scores.panel, spec, theta, r);
-    for (std::size_t t = 0; t < terms.size(); ++t)
-    {
-        terms[t] -= scores.marginal_terms[t];
-    }
-    return terms;
+    return terms_with(inputs, spec, theta, cached ? *inputs.scores : *fresh, r);
 }
 
 double copula_loglik(const CopulaInputs& inputs, const DccSpec& spec, std::span<const double> theta,
@@ -337,6 +358,33 @@ CopulaInputs inputs_at(std::shared_ptr<const StandardizedPanel> univariate, std:
         inputs.scores = std::make_shared<const CopulaPanel>(
             copula_panel(inputs.u[index], *inputs.univariate, spec.dist, shape));
         inputs.scores_shape = shape;
+    }
+    return inputs;
+}
+
+CopulaInputs inputs_at_column(std::shared_ptr<const StandardizedPanel> univariate, const Margin& margin,
+                              std::size_t column, const DccSpec& spec, const CopulaInputs& at_base)
+{
+    const std::size_t index = uniform_index(spec.copula, spec.convention);
+    CopulaInputs inputs;
+    inputs.univariate = std::move(univariate);
+    const bool fixed_ranks = spec.convention == Convention::Standard;
+    inputs.u[index] = at_base.u[index];
+    if (!(fixed_ranks && spec.copula == DccCopula::Empirical))
+    {
+        uniforms_of_column(margin, *inputs.univariate, column, spec, inputs.u[index]);
+    }
+    inputs.kendall[index] = at_base.kendall[index];
+    if (reads_kendall(spec) && !fixed_ranks)
+    {
+        inputs.kendall[index] = kendall_correlation(inputs.u[index], inputs.univariate->t, inputs.univariate->m);
+    }
+    // inputs_at gave at_base scores exactly where it gives them to these inputs (same dist, same shape).
+    if (at_base.scores != nullptr)
+    {
+        inputs.scores = std::make_shared<const CopulaPanel>(
+            copula_panel_with_column(*at_base.scores, inputs.u[index], *inputs.univariate, column));
+        inputs.scores_shape = at_base.scores_shape;
     }
     return inputs;
 }

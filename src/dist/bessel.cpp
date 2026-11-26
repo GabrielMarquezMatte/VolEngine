@@ -96,6 +96,29 @@ double boost_log_k(double order, double x)
     return std::log(boost::math::cyl_bessel_k(order, x, IgnoreErrors()));
 }
 
+// K_2(x) from K_0 and K_1 as Boost's bessel_kn takes it (detail/bessel_kn.hpp), its rescaling and overflow
+// included, so that the result has the bits of cyl_bessel_k(2, x) for 0 < x.
+double k2_from(double k0, double k1, double x)
+{
+    constexpr double kMax = std::numeric_limits<double>::max();
+    double prev = k0;
+    double current = k1;
+    double scale = 1.0;
+    double fact = 2.0 / x;
+    if ((kMax - std::fabs(prev)) / fact < std::fabs(current))
+    {
+        scale /= current;
+        prev /= current;
+        current = 1.0;
+    }
+    double value = fact * current + prev;
+    if (kMax * scale < std::fabs(value))
+    {
+        return std::numeric_limits<double>::infinity();
+    }
+    return value / scale;
+}
+
 // order >= 0 and x < kAsymptoticFrom. Beside 5/2, K_v = K_(v-2) + 2 (v - 1) / x K_(v-1), from orders Boost
 // takes by its general method.
 double log_k_avoiding_five_halves_shortcut(double order, double x)
@@ -133,6 +156,8 @@ struct TrapezoidGrid
     double x;
     double peak;
     double step;
+    double cosh_peak;
+    double exp_peak;
 };
 
 struct TrapezoidSums
@@ -145,9 +170,9 @@ struct TrapezoidSums
 // One side of the grid, t = peak + direction k h, k >= 1, to the cutoff; e^t by recurrence.
 void add_trapezoid_side(const TrapezoidGrid& grid, double direction, TrapezoidSums& sums)
 {
-    double cosh_peak = std::cosh(grid.peak);
+    double cosh_peak = grid.cosh_peak;
     double ratio = std::exp(direction * grid.step);
-    double up = std::exp(grid.peak);
+    double up = grid.exp_peak;
     double down = 1.0 / up;
     for (int k = 1; k <= kSlopeMaxNodes; ++k)
     {
@@ -175,7 +200,7 @@ detail::LogBesselSlopes trapezoid_slopes(double order, double x)
     double step = std::min(kSlopeMaxStep, kSlopeStepOverSigma * sigma);
     double cosh_peak = std::cosh(peak);
     TrapezoidSums sums{1.0, cosh_peak, peak};
-    TrapezoidGrid grid{v, x, peak, step};
+    TrapezoidGrid grid{v, x, peak, step, cosh_peak, std::exp(peak)};
     add_trapezoid_side(grid, 1.0, sums);
     add_trapezoid_side(grid, -1.0, sums);
     double sign = std::copysign(1.0, order);
@@ -213,6 +238,22 @@ double log_bessel_k_scaled(double order, double x)
 
 namespace detail
 {
+
+LogBesselWithSlope log_bessel_k_scaled_with_slope(double order, double x)
+{
+    // At order -1 and 0 < x < kAsymptoticFrom both logs are Boost's (orders 1 and 2 are far from 5/2).
+    if (order == -1.0 && x > 0.0 && x < kAsymptoticFrom)
+    {
+        IgnoreErrors policy;
+        double k0 = boost::math::cyl_bessel_k(0.0, x, policy);
+        double k1 = boost::math::cyl_bessel_k(1.0, x, policy);
+        double value = std::log(k1) + x;
+        double below = std::log(k2_from(k0, k1, x)) + x;
+        return {value, 1.0 - std::exp(below - value) - order / x};
+    }
+    double value = log_bessel_k_scaled(order, x);
+    return {value, 1.0 - std::exp(log_bessel_k_scaled(order - 1.0, x) - value) - order / x};
+}
 
 LogBesselSlopes log_bessel_k_slopes(double order, double x, bool scaled)
 {
