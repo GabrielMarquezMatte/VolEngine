@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 #include <limits>
 #include <memory>
+#include <new>
 #include <string>
 #include <thread>
 #include <vector>
@@ -1494,4 +1495,12 @@ TEST(CapiDccForecastCumulative, ConcurrentFirstAccess)
     const ve::dcc::future::DccForecast core =
         ve::dcc::future::forecast_dcc(fitted.fits[0]->result, 30, ve::dcc::future::SeriesRegressors(kSeries));
     EXPECT_EQ(std::vector<double>(first, first + first_len), ve::dcc::future::cumulative_covariance(core));
+}
+
+TEST(CapiDcc, LazyValuesRetryAfterAThrowInsteadOfHanging)
+{
+    const ve::capi::LazyValues lazy;
+    EXPECT_THROW(lazy.get([]() -> std::vector<double> { throw std::bad_alloc(); }), std::bad_alloc);
+    EXPECT_EQ(lazy.get([] { return std::vector<double>{1.0, 2.0}; }), (std::vector<double>{1.0, 2.0}));
+    EXPECT_EQ(lazy.get([] { return std::vector<double>{3.0}; }), (std::vector<double>{1.0, 2.0}));
 }

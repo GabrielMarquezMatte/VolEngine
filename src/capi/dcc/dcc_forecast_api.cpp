@@ -201,10 +201,10 @@ extern "C" ve_status ve_dcc_forecast_cumulative_covariance(const ve_dcc_forecast
             {
                 return set_error(VE_INVALID_ARGUMENT, "data and len must not be null");
             }
-            std::call_once(fc->cumulative_once,
-                           [&] { fc->cumulative_covariance = ve::dcc::future::cumulative_covariance(fc->forecast); });
-            *data = fc->cumulative_covariance.data();
-            *len = fc->cumulative_covariance.size();
+            const auto& path = fc->cumulative_covariance.get(
+                [&] { return ve::dcc::future::cumulative_covariance(fc->forecast); });
+            *data = path.data();
+            *len = path.size();
             return VE_OK;
         });
 }

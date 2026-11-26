@@ -16,6 +16,9 @@ break between 0.x releases.
   1D array or any input that had to be copied were freed before the library read them, so the forecast or the
   simulation could silently use other values (for example `vxreg`'s in place of `mxreg`'s) or read freed memory. The
   copies now live until the native call is done.
+- DCC: with the gcc (MinGW) build, a `ve_dcc_fit_covariance` or `ve_dcc_forecast_cumulative_covariance` whose
+  computation failed (for example `VE_OUT_OF_MEMORY` for a large m) made every later call on that handle hang. A
+  failed computation now leaves the cache empty and the next call tries again.
 
 ## [1.3.0] - 2026-11-26
 
