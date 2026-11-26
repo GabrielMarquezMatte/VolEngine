@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <span>
 
 namespace ve::garch
@@ -55,6 +56,18 @@ T raise(const T& x, const T& exponent, bool free_power)
         return sqrt(x);
     }
     return pow(x, exponent);
+}
+
+// sigma2 from the state sigma^power. A state that is not positive lies outside the model and gives NaN, which
+// the variance checks reject: under a fixed power of 1 the square would make a negative state a variance.
+template <class T>
+T variance_of_power(const T& state, const T& exponent, bool free_power)
+{
+    if (!(ad::value_of(state) > 0.0))
+    {
+        return T(std::numeric_limits<double>::quiet_NaN());
+    }
+    return raise(state, exponent, free_power);
 }
 
 // sigma |u| for u = z - eta2 and shift = sigma u: |shift| or, smoothed, sqrt(shift^2 + c sigma^2).
@@ -126,7 +139,8 @@ void power_garch_variance(std::span<const T> residuals, const PowerGarchParamete
     }
     T exponent = 2.0 / p.power;
     std::ranges::transform(sigma2, sigma2.begin(),
-                           [&exponent, &p](const T& power) { return raise(power, exponent, p.free_power); });
+                           [&exponent, &p](const T& power)
+                           { return variance_of_power(power, exponent, p.free_power); });
 }
 
 }

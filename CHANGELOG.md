@@ -19,6 +19,9 @@ break between 0.x releases.
 - DCC: with the gcc (MinGW) build, a `ve_dcc_fit_covariance` or `ve_dcc_forecast_cumulative_covariance` whose
   computation failed (for example `VE_OUT_OF_MEMORY` for a large m) made every later call on that handle hang. A
   failed computation now leaves the cache empty and the next call tries again.
+- fGARCH TGARCH and AVGARCH (power fixed at 1) with variance regressors: a point where omega + zeta v_t drove
+  sigma_t negative was accepted, because its square is a positive sigma2, so the fit could settle outside the model.
+  A state sigma^power that is not positive is now outside the domain, in the likelihood and in the forecast.
 
 ## [1.3.0] - 2026-11-26
 

@@ -194,7 +194,8 @@ std::vector<double> power_variance(const Inputs& in)
         x[h - 1] = value;
     }
     std::ranges::transform(x, x.begin(),
-                           [&p](double value) { return garch::raise(value, 2.0 / p.power, p.free_power); });
+                           [&p](double value)
+                           { return garch::variance_of_power(value, 2.0 / p.power, p.free_power); });
     return x;
 }
 
