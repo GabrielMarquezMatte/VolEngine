@@ -12,6 +12,7 @@
 #include "simulated_garch.hpp"
 
 #include <bit>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstddef>
@@ -706,6 +707,16 @@ TEST(CumulativeForecast, MatchesTheSimulation)
         at_point(ve::Spec{.ar = 1, .ma = 1}, {0.05, 0.6, 0.3, 0.02, 0.08, 0.9}, {{0.2}, {1.2}, {}, {0.6}}));
     expect_matches_simulation(at_point(ve::Spec{.ar = 1, .arfima = true}, {0.05, 0.3, 0.25, 0.02, 0.08, 0.9},
                                        {{0.2}, {1.2}, {}, {0.6, -0.3, 0.2, 0.5, -0.1}}));
+}
+
+// Without ARMA the cumulative variance is a running sum: a long horizon stays linear in time.
+TEST(CumulativeForecast, LongHorizonWithoutArmaIsLinear)
+{
+    const ve::FitResult fit = at_point(ve::Spec{}, {0.05, 0.02, 0.08, 0.9}, {{0.3}, {1.1}, {}, {0.3}});
+    const auto start = std::chrono::steady_clock::now();
+    const Forecast forecast = ve::forecast::forecast(fit, 100000);
+    EXPECT_LT(std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count(), 0.5);
+    expect_plain_sums(forecast);
 }
 
 }

@@ -127,11 +127,21 @@ void add_cumulative(const model::Layout& layout, std::span<const double> estimat
     const std::vector<double> weights = cumulative_weights(layout, estimate, horizon);
     std::vector<double> variances(horizon);
     std::ranges::transform(result.sigma, variances.begin(), [](double sigma) { return sigma * sigma; });
+    // ponytail: O(h^2) with an ARMA/ARFIMA mean; without one every weight is 1 and the variance is a running sum,
+    // the same additions in the same order as cumulative_variance.
+    const bool plain = std::ranges::all_of(weights, [](double a) { return a == 1.0; });
     double mean = 0.0;
+    double variance = 0.0;
     for (std::size_t h = 1; h <= horizon; ++h)
     {
         mean += result.mean[h - 1];
+        variance += variances[h - 1];
         result.cumulative_mean.push_back(mean);
+        if (plain)
+        {
+            result.cumulative_sigma.push_back(std::sqrt(variance));
+            continue;
+        }
         result.cumulative_sigma.push_back(std::sqrt(cumulative_variance(weights, variances, h)));
     }
 }
