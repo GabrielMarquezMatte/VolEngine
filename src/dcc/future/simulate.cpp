@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <limits>
 #include <span>
 
@@ -34,8 +35,13 @@ struct Margin
     std::vector<double> sorted{};
 };
 
+// A NaN u (the shock of an R without a Cholesky factor) has the NaN quantile.
 double margin_quantile(const Margin& margin, double u)
 {
+    if (std::isnan(u))
+    {
+        return kNaN;
+    }
     if (margin.sorted.empty())
     {
         return margin.table(u);
@@ -110,7 +116,7 @@ public:
     PathRun(const Setup& setup, std::size_t path)
         : setup_(setup), stream_(setup.request.seed, path), path_(path),
           stepper_(setup.fit.end, setup.fit.spec, setup.fit.series), factor_(m() * m()), draws_(m()), shock_(m()),
-          z_(m())
+          z_(m()), sums_(m())
     {
         for (const sim::Start& start : setup.starts)
         {
@@ -122,6 +128,7 @@ public:
     {
         for (std::size_t h = 0; h < setup_.request.horizon; ++h)
         {
+            throw_if_cancelled(setup_.request.cancel);
             step(h, out);
         }
     }
@@ -190,14 +197,38 @@ private:
         {
             const forecast::FutureRegressors row = sim::future_row(setup_.request.future[i], h);
             const sim::Path::Draw draw = series_[i].step(row, z_[i]);
-            out.returns[cell * size + i] = draw.r;
-            out.sigma[cell * size + i] = draw.sigma;
+            store(cell * size + i, draw, out);
         }
+        record_checkpoint(h, out);
         if (setup_.request.correlations)
         {
             store_correlations(r, cell, out);
         }
         stepper_.push(setup_.margins.empty() ? z_ : shock_);
+    }
+
+    // The step itself, or its return added to the running sum of the series (index = cell * m + series).
+    void store(std::size_t index, const sim::Path::Draw& draw, DccSimulation& out)
+    {
+        if (setup_.request.checkpoints.empty())
+        {
+            out.returns[index] = draw.r;
+            out.sigma[index] = draw.sigma;
+            return;
+        }
+        sums_[index % m()] += draw.r;
+    }
+
+    void record_checkpoint(std::size_t h, DccSimulation& out)
+    {
+        const std::vector<std::size_t>& checkpoints = setup_.request.checkpoints;
+        if (next_ == checkpoints.size() || h + 1 != checkpoints[next_])
+        {
+            return;
+        }
+        const std::size_t first = (path_ * checkpoints.size() + next_) * m();
+        std::ranges::copy(sums_, out.cumulative.begin() + static_cast<std::ptrdiff_t>(first));
+        ++next_;
     }
 
     void store_correlations(std::span<const double> r, std::size_t cell, DccSimulation& out) const
@@ -221,16 +252,23 @@ private:
     std::vector<double> draws_;
     std::vector<double> shock_;
     std::vector<double> z_;
+    std::vector<double> sums_;
+    std::size_t next_ = 0;
 };
 
 }
 
 DccSimulation simulate_dcc(Context& context, const DccFitResult& fit, const DccRequest& request)
 {
+    throw_if_cancelled(request.cancel);
     const std::size_t m = fit.series;
-    DccSimulation out{request.paths, request.horizon, m, {}, {}, {}, {}};
-    out.returns.resize(request.paths * request.horizon * m);
-    out.sigma.resize(out.returns.size());
+    DccSimulation out{request.paths, request.horizon, m, {}, {}, {}, {}, request.checkpoints, {}};
+    out.cumulative.resize(request.paths * request.checkpoints.size() * m);
+    if (request.checkpoints.empty())
+    {
+        out.returns.resize(request.paths * request.horizon * m);
+        out.sigma.resize(out.returns.size());
+    }
     if (request.correlations)
     {
         out.r.resize(request.paths * request.horizon * m * m);

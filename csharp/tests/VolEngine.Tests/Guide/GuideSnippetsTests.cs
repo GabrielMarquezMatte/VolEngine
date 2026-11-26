@@ -68,6 +68,80 @@ public sealed class GuideSnippetsTests
     }
 
     [Fact]
+    public void Cumulative_simulation()
+    {
+        using var context = new Context();
+        using var fit = context.Fit(new Spec(), ReferenceData.Series("sgarch11_norm.csv", "t1500"));
+        // BEGIN guide: Cumulative simulation
+        // `fit` as in "Fit, forecast, simulate". The paths keep only their sum at 1, 5 and 10 steps.
+        var options = new SimulationOptions(Horizon: 10, Paths: 10_000, Seed: 1) { Checkpoints = [1, 5, 10] };
+        Simulation sums = context.Simulate(fit, options);
+        for (var k = 0; k < sums.Checkpoints.Count; k++)
+        {
+            double[] sorted = sums.Cumulative!.Select(path => path[k]).Order().ToArray();
+            Console.WriteLine($"1% VaR at {sums.Checkpoints[k]} steps: {-sorted[sorted.Length / 100]:F4}");
+        }
+        // END guide
+        Assert.Equal(3, sums.Checkpoints.Count);
+    }
+
+    [Fact]
+    public void Cumulative_forecast()
+    {
+        using var context = new Context();
+        using var fit = context.Fit(new Spec(), ReferenceData.Series("sgarch11_norm.csv", "t1500"));
+        // BEGIN guide: Cumulative forecast
+        // `fit` as in "Fit, forecast, simulate": the mean and the standard deviation of the 1..10 step return.
+        Forecast ahead = fit.Forecast(10);
+        Console.WriteLine($"10-step return: mean {ahead.CumulativeMean[^1]:F5}, sigma {ahead.CumulativeSigma[^1]:F5}");
+        // END guide
+        Assert.Equal(10, ahead.CumulativeSigma.Length);
+    }
+
+    [Fact]
+    public void Covariance_estimators()
+    {
+        var columns = ReferenceData.Columns("copula3.csv");
+        var returns = new double[columns[0].Length, columns.Length];
+        for (var row = 0; row < columns[0].Length; row++)
+        {
+            for (var column = 0; column < columns.Length; column++)
+            {
+                returns[row, column] = columns[column][row];
+            }
+        }
+        // BEGIN guide: Covariance estimators
+        // `returns` is a T x N double[,]: dates in rows, series in columns.
+        LedoitWolfResult shrunk = Covariances.LedoitWolf(returns);
+        Console.WriteLine($"intensity {shrunk.Shrinkage:F3}, first variance {shrunk.Covariance[0][0]:E3}");
+        // END guide
+        Assert.InRange(shrunk.Shrinkage, 0.0, 1.0);
+    }
+
+    [Fact]
+    public void Risk_measures()
+    {
+        var columns = ReferenceData.Columns("copula3.csv");
+        var returns = new double[columns[0].Length, columns.Length];
+        for (var row = 0; row < columns[0].Length; row++)
+        {
+            for (var column = 0; column < columns.Length; column++)
+            {
+                returns[row, column] = 0.01 * columns[column][row];
+            }
+        }
+        // BEGIN guide: Risk measures
+        // `returns` as above, log returns; equal weights, the 1% tail.
+        double[] weights = Enumerable.Repeat(1.0 / returns.GetLength(1), returns.GetLength(1)).ToArray();
+        RiskMeasure historical = Risk.Empirical(returns, weights, ReturnKind.Log, 0.99);
+        RiskMeasure studentT = Risk.Parametric(new ShockDistribution(Distribution.Std, Shape: 6.0), 0.0, 0.012, 0.99);
+        Console.WriteLine($"historical VaR {historical.Var:F4} ES {historical.Es:F4}, Student t VaR {studentT.Var:F4}");
+        // END guide
+        Assert.True(historical.Es > historical.Var);
+        Assert.True(studentT.Es > studentT.Var);
+    }
+
+    [Fact]
     public void Diagnostics()
     {
         using var context = new Context();
@@ -104,5 +178,27 @@ public sealed class GuideSnippetsTests
         // END guide
         Assert.Equal(1500, correlation.Length);
         Assert.Equal(100, paths.Paths);
+    }
+
+    [Fact]
+    public void Cancellation()
+    {
+        using var context = new Context();
+        var data = Panel.FromSeries(ReferenceData.Columns("dcc3.csv"));
+        Spec[] specs = [new Spec(), new Spec { Model = Model.GjrGarch }];
+        // BEGIN guide: Cancellation
+        // `specs` and `data` as in "Many series and specs": stop the grid if it takes more than two seconds.
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        try
+        {
+            using FitGrid grid = context.Fit(specs, data, cancellationToken: deadline.Token);
+            Console.WriteLine($"{grid.SpecCount} specs on {grid.SeriesCount} series");
+        }
+        catch (OperationCanceledException error) when (deadline.IsCancellationRequested)
+        {
+            throw new TimeoutException("the grid took more than two seconds", error);
+        }
+        // END guide
+        Assert.False(deadline.IsCancellationRequested);
     }
 }

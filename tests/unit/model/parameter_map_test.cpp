@@ -395,12 +395,13 @@ double ged_log_moment(const Layout& layout, std::span<const double> theta, std::
     return log_abs_moment + std::log(0.5 * (std::pow(1.0 - eta1, power) + std::pow(1.0 + eta1, power)));
 }
 
-// kappa itself is past the double range: +inf at an extreme power, or, at a ged shape near 0 with power != 2
-// (log kappa ~ -0.2 / nu), below the smallest normal double, where alpha = w / kappa overflows.
+// kappa itself is past the double range: +inf at an extreme power, or below the smallest normal double, where
+// alpha = w / kappa overflows (the closed-form ged at a shape near 0 with power != 2, log kappa ~ -0.2 / nu, and
+// the quadrature at an extreme power, such as ged shape 32, power 156 and eta1 near 1).
 bool moment_past_double_range(const Layout& layout, std::span<const double> theta, std::size_t i)
 {
     double kappa = shock_moment<double>(theta, layout, i);
-    if (std::isinf(kappa))
+    if (std::isinf(kappa) || kappa < std::numeric_limits<double>::min())
     {
         return true;
     }
@@ -418,7 +419,7 @@ bool quadrature_out_of_range(const Layout& layout, std::span<const double> theta
 }
 
 // Outside the domain whatever the map does: std or sstd with shape <= power, where kappa is infinite, or a
-// kappa that is not a positive double.
+// kappa that is not a finite normal double.
 bool moment_out_of_range(const Layout& layout, std::span<const double> theta)
 {
     if (!layout.is_power_family())
@@ -634,7 +635,14 @@ TEST(ParameterMap, BoundaryRules)
     // cs (omega, alpha1, beta1, rho, phi)
     Layout cs = ve::model::layout_of({.model = Model::CsGarch, .include_mean = false});
     EXPECT_EQ(boundary_of(cs, std::vector<double>{0.01, 0.05, 0.9, 0.98, 1e-9}), Indices{4});
-    EXPECT_EQ(boundary_of(cs, std::vector<double>{0.01, 0.05, 0.9, 0.95 + 1e-9, 0.03}), Indices{3});
+    // At rho = P a step up in any weight leaves the domain, and at phi = sum(beta) a step down in a beta does.
+    EXPECT_EQ(boundary_of(cs, std::vector<double>{0.01, 0.05, 0.9, 0.95 + 1e-9, 0.03}), (Indices{1, 2, 3}));
+    EXPECT_EQ(boundary_of(cs, std::vector<double>{0.01, 0.05, 0.9, 0.98, 0.9 - 1e-9}), (Indices{2, 4}));
+    EXPECT_EQ(boundary_of(cs, std::vector<double>{0.01, 0.05, 0.9, 0.98, 0.9}), (Indices{2, 4}));
+    // cs(1, 2) (omega, alpha1, beta1, beta2, rho, phi)
+    Layout cs12 = ve::model::layout_of({.model = Model::CsGarch, .q = 2, .include_mean = false});
+    EXPECT_EQ(boundary_of(cs12, std::vector<double>{0.01, 0.05, 0.5, 0.4, 0.98, 0.9}), (Indices{2, 3, 5}));
+    EXPECT_EQ(boundary_of(cs12, std::vector<double>{0.01, 0.05, 0.5, 0.4, 0.95, 0.3}), (Indices{1, 2, 3, 4}));
     // iGARCH (mu, omega, alpha1, beta1, beta2): the derived beta2, always.
     Layout igarch = ve::model::layout_of({.model = Model::IGarch, .q = 2});
     EXPECT_EQ(boundary_of(igarch, std::vector<double>{0.0, 0.01, 0.1, 0.5, 0.4}), Indices{4});
@@ -667,6 +675,53 @@ TEST(ParameterMap, IsValidRejectsVariantViolations)
     EXPECT_FALSE(is_valid(std::vector<double>{0.01, 0.05, 0.9, 0.94, 0.03}, cs));
     EXPECT_FALSE(is_valid(std::vector<double>{0.01, 0.05, 0.9, 0.98, 0.91}, cs));
     EXPECT_FALSE(is_valid(std::vector<double>{0.01, 0.05, 0.9, 1.0, 0.03}, cs));
+}
+
+// s^2 exp(u) underflows to 0 below u ~ -745, outside omega > 0: omega stops at the smallest normal double, with the
+// derivative 0 that the underflow had, and an ordinary u maps as before.
+TEST(ParameterMap, OmegaStopsAtTheSmallestNormal)
+{
+    using Dual32 = ve::ad::Dual<32>;
+    const Standardization standardization{0.0, 1.3};
+    for (Model model : {Model::SGarch, Model::IGarch, Model::CsGarch, Model::FGarchTGarch, Model::ApArch})
+    {
+        Layout layout = ve::model::layout_of({.model = model, .include_mean = false});
+        SCOPED_TRACE(name_of(layout));
+        std::size_t omega = layout.omega();
+        for (double u_omega : {-800.0, -1e6})
+        {
+            std::vector<double> u(layout.count(), 0.0);
+            u[omega] = u_omega;
+            std::vector<double> theta(layout.count());
+            to_natural<double>(u, theta, layout, standardization);
+            EXPECT_EQ(theta[omega], std::numeric_limits<double>::min());
+            EXPECT_TRUE(is_valid(theta, layout));
+            EXPECT_TRUE(on_boundary(layout, theta, omega));
+            std::vector<double> back(layout.count());
+            to_unconstrained(theta, back, layout, standardization);
+            EXPECT_TRUE(std::ranges::all_of(back, [](double value) { return std::isfinite(value); }));
+            std::vector<Dual32> seeds;
+            for (std::size_t i = 0; i < u.size(); ++i)
+            {
+                seeds.push_back(ve::ad::variable<32>(u[i], i));
+            }
+            std::vector<Dual32> dual_theta(u.size());
+            to_natural<Dual32>(seeds, dual_theta, layout, standardization);
+            EXPECT_EQ(dual_theta[omega].value, std::numeric_limits<double>::min());
+            EXPECT_EQ(dual_theta[omega].grad[omega], 0.0);
+        }
+        std::vector<double> u(layout.count(), 0.0);
+        u[omega] = -700.0;
+        std::vector<double> theta(layout.count());
+        to_natural<double>(u, theta, layout, standardization);
+        double scale_term = 1.3 * 1.3;
+        if (layout.is_power_family())
+        {
+            scale_term = std::pow(1.3, power_of<double>(theta, layout));
+        }
+        EXPECT_NEAR(theta[omega], scale_term * std::exp(-700.0), 1e-14 * scale_term * std::exp(-700.0));
+        EXPECT_FALSE(on_boundary(layout, theta, omega));
+    }
 }
 
 }
@@ -844,7 +899,7 @@ bool shock_out_of_range(const Layout& layout, std::span<const double> theta)
     return !(pi >= 1e-8 && pi <= 1.0 - 1e-8);
 }
 
-// Outside the computable domain whatever the map does: some kappa not a positive finite double, pi within
+// Outside the computable domain whatever the map does: some kappa not a finite normal double, pi within
 // 1e-8 of 0 or 1, or a density that is not finite at 0.
 bool outside_computable_domain(const Layout& layout, std::span<const double> theta)
 {
@@ -935,7 +990,7 @@ TEST(ParameterMap, GjrNeedsProbabilityBelowZeroInsideUnitInterval)
     EXPECT_TRUE(is_valid(std::vector<double>{0.01, 0.05, 0.85, 0.1, 19.48, 1.5}, layout));
 }
 
-// alpha_i is read back as w / kappa_i, so a kappa that is not a positive finite double makes theta invalid:
+// alpha_i is read back as w / kappa_i, so a kappa that is not a finite normal double makes theta invalid:
 // here the jsu constant c overflows to 0 at tau = 0.03, and kappa is NaN.
 TEST(ParameterMap, PowerFamilyNeedsPositiveFiniteMoment)
 {
@@ -943,6 +998,39 @@ TEST(ParameterMap, PowerFamilyNeedsPositiveFiniteMoment)
     Layout layout = ve::model::layout_of({.model = Model::ApArch, .dist = Dist::Jsu, .include_mean = false});
     EXPECT_FALSE(is_valid(std::vector<double>{0.01, 0.05, 0.9, 0.0, 2.0, 0.5, 0.03}, layout));
     EXPECT_TRUE(is_valid(std::vector<double>{0.01, 0.05, 0.9, 0.0, 2.0, 0.5, 2.0}, layout));
+}
+
+// ged shape 32, lambda 156 and eta12 near 1 give a subnormal kappa2 ~ 3.6e-316, where alpha2 = w / kappa2
+// overflows: it is not computable, and the mapped theta fails is_valid.
+TEST(ParameterMap, SubnormalMomentIsNotComputable)
+{
+    // ALLGARCH(2, 2) ged (mu, omega, alpha1, alpha2, beta1, beta2, eta11, eta12, eta21, eta22, lambda, shape)
+    Layout layout = ve::model::layout_of({.model = Model::FGarchAllGarch, .p = 2, .q = 2, .dist = Dist::Ged});
+    double eta12 = 0.99813420225011051;
+    double lambda = 156.0430084161263;
+    double shape = 32.233987250370561;
+    std::vector<double> theta{0.0, 0.01, 0.05, 0.05, 0.1, 0.1, 0.73925467026937164, eta12, -1.6635099962035553,
+                              -3.4828590162210658, lambda, shape};
+    double kappa = shock_moment<double>(theta, layout, 1);
+    ASSERT_GT(kappa, 0.0);
+    ASSERT_LT(kappa, std::numeric_limits<double>::min());
+    EXPECT_FALSE(is_valid(theta, layout));
+    EXPECT_TRUE(std::isnan(ve::model::weight_terms(theta, layout).terms[1]));
+    std::vector<double> u(layout.count(), 0.0);
+    std::size_t eta1 = layout.eta1_begin();
+    for (std::size_t index : {eta1, eta1 + 1})
+    {
+        u[index] = std::log((1.0 + theta[index]) / (1.0 - theta[index]));
+    }
+    u[layout.eta2_begin()] = theta[layout.eta2_begin()];
+    u[layout.eta2_begin() + 1] = theta[layout.eta2_begin() + 1];
+    u[layout.power()] = std::log(lambda);
+    u[layout.shape()] = std::log(shape - ve::dist::kGedShapeFloor);
+    std::vector<double> mapped(layout.count());
+    to_natural<double>(u, mapped, layout, Standardization{0.01, 1.3});
+    ASSERT_LT(shock_moment<double>(mapped, layout, 1), std::numeric_limits<double>::min());
+    EXPECT_TRUE(std::isnan(ve::model::weight_terms(mapped, layout).terms[1]));
+    EXPECT_FALSE(is_valid(mapped, layout));
 }
 
 // jsu with skew 2.89 and shape 0.063 puts pi = P(z < 0) within ~1e-13 of 1, where 1 - pi keeps only a few

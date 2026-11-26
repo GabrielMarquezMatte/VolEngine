@@ -16,6 +16,7 @@ from numpy.typing import NDArray
 
 VE_ABI_VERSION = 1
 VE_INTERNAL_ERROR = 5
+VE_CANCELLED = 6
 INT32_MIN = -(2**31)
 INT32_MAX = 2**31 - 1
 LIBRARY_ENV = "VOLENGINE_LIB"
@@ -24,6 +25,7 @@ LIBRARY_NAMES = ("libvolengine.dll", "volengine.dll", "libvolengine.so", "libvol
 
 _HANDLE = ctypes.c_void_p
 _OUT_HANDLE = ctypes.POINTER(ctypes.c_void_p)
+_CANCEL = ctypes.c_void_p
 _STATUS = ctypes.c_int32
 _SIZE = ctypes.c_size_t
 _I32 = ctypes.c_int32
@@ -52,8 +54,11 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_dcc_batch_set_specs": (_STATUS, [_HANDLE, ctypes.POINTER(_HANDLE), _SIZE]),
     "ve_dcc_batch_set_fits": (_STATUS, [_HANDLE, ctypes.POINTER(_HANDLE), _SIZE]),
     "ve_dcc_batch_set_options": (_STATUS, [_HANDLE, _HANDLE]),
-    "ve_dcc_fit_batch": (_STATUS, [_HANDLE, _HANDLE, ctypes.POINTER(_HANDLE)]),
-    "ve_dcc_standard_errors": (_STATUS, [_HANDLE, _HANDLE, ctypes.POINTER(_HANDLE), _SIZE, _OUT_HANDLE]),
+    "ve_dcc_fit_batch_with_cancel": (_STATUS, [_HANDLE, _HANDLE, _CANCEL, ctypes.POINTER(_HANDLE)]),
+    "ve_dcc_standard_errors_with_cancel": (
+        _STATUS,
+        [_HANDLE, _HANDLE, ctypes.POINTER(_HANDLE), _SIZE, _CANCEL, _OUT_HANDLE],
+    ),
     "ve_dcc_fit_status": (_STATUS, [_HANDLE, _OUT_I32]),
     "ve_dcc_fit_nobs": (_STATUS, [_HANDLE, _OUT_SIZE]),
     "ve_dcc_fit_series": (_STATUS, [_HANDLE, _OUT_SIZE]),
@@ -83,6 +88,9 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_context_set_threads": (_STATUS, [_HANDLE, _I32]),
     "ve_context_threads": (_STATUS, [_HANDLE, _OUT_I32]),
     "ve_context_free": (None, [_HANDLE]),
+    "ve_cancel_create": (_STATUS, [_OUT_HANDLE]),
+    "ve_cancel_request": (_STATUS, [_HANDLE]),
+    "ve_cancel_free": (None, [_HANDLE]),
     "ve_spec_create": (_STATUS, [_I32, _OUT_HANDLE]),
     "ve_spec_set_order": (_STATUS, [_HANDLE, _I32, _I32]),
     "ve_spec_set_arma": (_STATUS, [_HANDLE, _I32, _I32]),
@@ -115,7 +123,7 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_batch_set_regressors": (_STATUS, [_HANDLE, _HANDLE, _HANDLE, _SIZE]),
     "ve_batch_job_count": (_STATUS, [_HANDLE, _OUT_SIZE]),
     "ve_batch_free": (None, [_HANDLE]),
-    "ve_fit_batch": (_STATUS, [_HANDLE, _HANDLE, ctypes.POINTER(ctypes.c_void_p)]),
+    "ve_fit_batch_with_cancel": (_STATUS, [_HANDLE, _HANDLE, _CANCEL, ctypes.POINTER(ctypes.c_void_p)]),
     "ve_fit_status": (_STATUS, [_HANDLE, _OUT_I32]),
     "ve_fit_nobs": (_STATUS, [_HANDLE, _OUT_SIZE]),
     "ve_fit_param_count": (_STATUS, [_HANDLE, _OUT_SIZE]),
@@ -135,16 +143,21 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_forecast_horizon": (_STATUS, [_HANDLE, _OUT_SIZE]),
     "ve_forecast_sigma": (_STATUS, _VIEW),
     "ve_forecast_mean": (_STATUS, _VIEW),
+    "ve_forecast_cumulative_mean": (_STATUS, _VIEW),
+    "ve_forecast_cumulative_sigma": (_STATUS, _VIEW),
     "ve_forecast_free": (None, [_HANDLE]),
     "ve_sim_options_create": (_STATUS, [_SIZE, _SIZE, ctypes.c_uint64, _OUT_HANDLE]),
     "ve_sim_options_set_regressors": (_STATUS, [_HANDLE, _HANDLE, _HANDLE]),
+    "ve_sim_options_set_checkpoints": (_STATUS, [_HANDLE, ctypes.POINTER(_SIZE), _SIZE]),
     "ve_sim_options_free": (None, [_HANDLE]),
-    "ve_simulate_fit": (_STATUS, [_HANDLE, _HANDLE, _HANDLE, _OUT_HANDLE]),
-    "ve_simulate_spec": (_STATUS, [_HANDLE, _HANDLE, _HANDLE, _OUT_HANDLE]),
+    "ve_simulate_fit_with_cancel": (_STATUS, [_HANDLE, _HANDLE, _HANDLE, _CANCEL, _OUT_HANDLE]),
+    "ve_simulate_spec_with_cancel": (_STATUS, [_HANDLE, _HANDLE, _HANDLE, _CANCEL, _OUT_HANDLE]),
     "ve_sim_paths": (_STATUS, [_HANDLE, _OUT_SIZE]),
     "ve_sim_horizon": (_STATUS, [_HANDLE, _OUT_SIZE]),
     "ve_sim_returns": (_STATUS, _VIEW),
     "ve_sim_sigma": (_STATUS, _VIEW),
+    "ve_sim_cumulative": (_STATUS, _VIEW),
+    "ve_sim_checkpoints": (_STATUS, [_HANDLE, ctypes.POINTER(ctypes.POINTER(_SIZE)), _OUT_SIZE]),
     "ve_sim_free": (None, [_HANDLE]),
     "ve_dcc_future_create": (_STATUS, [_SIZE, _SIZE, _OUT_HANDLE]),
     "ve_dcc_future_set": (_STATUS, [_HANDLE, _SIZE, _HANDLE, _HANDLE]),
@@ -156,17 +169,28 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_dcc_forecast_covariance": (_STATUS, _VIEW),
     "ve_dcc_forecast_sigma": (_STATUS, _VIEW),
     "ve_dcc_forecast_mean": (_STATUS, _VIEW),
+    "ve_dcc_forecast_cumulative_mean": (_STATUS, _VIEW),
+    "ve_dcc_forecast_cumulative_covariance": (_STATUS, _VIEW),
     "ve_dcc_forecast_free": (None, [_HANDLE]),
     "ve_sim_options_set_correlations": (_STATUS, [_HANDLE, _I32]),
-    "ve_simulate_dcc": (_STATUS, [_HANDLE, _HANDLE, _HANDLE, _HANDLE, _OUT_HANDLE]),
+    "ve_simulate_dcc_with_cancel": (_STATUS, [_HANDLE, _HANDLE, _HANDLE, _HANDLE, _CANCEL, _OUT_HANDLE]),
     "ve_dcc_sim_paths": (_STATUS, [_HANDLE, _OUT_SIZE]),
     "ve_dcc_sim_horizon": (_STATUS, [_HANDLE, _OUT_SIZE]),
     "ve_dcc_sim_series": (_STATUS, [_HANDLE, _OUT_SIZE]),
     "ve_dcc_sim_returns": (_STATUS, _VIEW),
     "ve_dcc_sim_sigma": (_STATUS, _VIEW),
+    "ve_dcc_sim_cumulative": (_STATUS, _VIEW),
+    "ve_dcc_sim_checkpoints": (_STATUS, [_HANDLE, ctypes.POINTER(ctypes.POINTER(_SIZE)), _OUT_SIZE]),
     "ve_dcc_sim_correlation": (_STATUS, _VIEW),
     "ve_dcc_sim_covariance": (_STATUS, _VIEW),
     "ve_dcc_sim_free": (None, [_HANDLE]),
+    "ve_cov_sample": (_STATUS, [_HANDLE, _HANDLE]),
+    "ve_cov_ledoit_wolf": (_STATUS, [_HANDLE, _HANDLE, _OUT_DOUBLE]),
+    "ve_risk_empirical": (_STATUS, [_HANDLE, _HANDLE, _I32, _DOUBLE, _OUT_DOUBLE, _OUT_DOUBLE]),
+    "ve_risk_parametric": (
+        _STATUS,
+        [_I32, _DOUBLE, _DOUBLE, _DOUBLE, _DOUBLE, _DOUBLE, _DOUBLE, _OUT_DOUBLE, _OUT_DOUBLE],
+    ),
 }
 
 
@@ -176,6 +200,10 @@ class VolEngineError(Exception):
     def __init__(self, status: int, message: str) -> None:
         super().__init__(message)
         self.status = status
+
+
+class Cancelled(VolEngineError):
+    """The call was stopped by `Cancel.cancel()` before it finished; it has no result."""
 
 
 def locate_library(override: str | None, directory: Path) -> Path:
@@ -244,6 +272,8 @@ def int32(value: int, name: str) -> int:
 
 
 def check(status: int) -> None:
+    if status == VE_CANCELLED:
+        raise Cancelled(status, last_error())
     if status != 0:
         raise VolEngineError(status, last_error())
 
@@ -349,3 +379,36 @@ def native_view(owner: object, function: Callable[..., int], pointer: int) -> ND
     buffer = (ctypes.c_double * length.value).from_address(address)
     setattr(buffer, "_owner", owner)
     return read_only(np.frombuffer(buffer, dtype=np.float64))
+
+
+def read_checkpoints(function: Callable[..., int], pointer: int) -> tuple[int, ...]:
+    """The checkpoint list a ve_*_checkpoints function returns for `pointer`, copied (empty without checkpoints)."""
+    data = ctypes.POINTER(ctypes.c_size_t)()
+    length = ctypes.c_size_t()
+    check(function(pointer, ctypes.byref(data), ctypes.byref(length)))
+    return tuple(data[i] for i in range(length.value))
+
+
+class Cancel:
+    """A signal that stops the calls it is passed to (`cancel=`), with `Cancelled`.
+
+    `cancel()` may be called from any thread, also while a call runs (a `threading.Timer` gives a deadline), and more
+    than once; a Cancel stays requested and cannot be reset, so make a new one for the next call. One Cancel can be
+    passed to several calls: a request stops all of them. A request that arrives after the last check of a call
+    leaves it to return its result.
+    """
+
+    def __init__(self) -> None:
+        self._handle = create_handle(lib.ve_cancel_create, lib.ve_cancel_free)
+
+    def cancel(self) -> None:
+        check(lib.ve_cancel_request(self._handle.pointer))
+
+
+def cancel_pointer(cancel: Cancel | None) -> int | None:
+    """The native pointer of `cancel`, or None (a null pointer) for no cancellation."""
+    if cancel is None:
+        return None
+    if not isinstance(cancel, Cancel):
+        raise TypeError("cancel must be a volengine.Cancel or None")
+    return cancel._handle.pointer

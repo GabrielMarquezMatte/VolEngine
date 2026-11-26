@@ -32,7 +32,7 @@ FetchContent:
 include(FetchContent)
 FetchContent_Declare(volengine
     GIT_REPOSITORY https://github.com/GabrielMarquezMatte/VolEngine
-    GIT_TAG v1.1.0
+    GIT_TAG v1.3.0
     SOURCE_SUBDIR cpp)
 FetchContent_MakeAvailable(volengine)
 

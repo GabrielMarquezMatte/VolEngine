@@ -22,3 +22,12 @@ def dcc_cases(ctx: ve.Context, fit: ve.Fit, dcc_fit: ve.DccFit, spec: ve.Spec) -
     assert_type(ctx.simulate(dcc_fit, horizon=5, paths=10, seed=1, correlations=True), ve.DccSimulation)
     assert_type(dcc_fit.forecast(5), ve.DccForecast)
     assert_type(dcc_fit.forecast(5).H, NDArray[np.float64])
+
+
+def cancel_cases(ctx: ve.Context, fit: ve.Fit, dcc_fit: ve.DccFit, spec: ve.DccSpec, one: list[float]) -> None:
+    c = ve.Cancel()
+    assert_type(ctx.fit(ve.Spec(), one, cancel=c), ve.Fit)
+    assert_type(ctx.fit_dcc(spec, [fit, fit], cancel=c), ve.DccFit)
+    assert_type(ctx.standard_errors(dcc_fit, [fit, fit], cancel=c), ve.DccFit)
+    assert_type(ctx.simulate(fit, horizon=5, paths=10, seed=1, cancel=c), ve.Simulation)
+    assert_type(ctx.simulate(dcc_fit, horizon=5, paths=10, seed=1, cancel=c), ve.DccSimulation)

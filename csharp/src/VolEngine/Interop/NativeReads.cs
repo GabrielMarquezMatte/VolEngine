@@ -4,6 +4,8 @@ namespace VolEngine.Interop;
 
 internal unsafe delegate int ViewReader<in THandle>(THandle owner, out double* data, out nuint length);
 
+internal unsafe delegate int SizeViewReader<in THandle>(THandle owner, out nuint* data, out nuint length);
+
 internal unsafe delegate int ValueReader<in THandle>(THandle owner, double* values);
 
 // Copies out of a native result: zero-copy views (sigma, R, H) and per-parameter values.
@@ -14,12 +16,32 @@ internal static unsafe class NativeReads
     public static double[] View<THandle>(THandle owner, ViewReader<THandle> read)
         where THandle : SafeHandle
     {
+        return Held(owner, () =>
+        {
+            Calls.Check(read(owner, out var data, out var length));
+            return new ReadOnlySpan<double>(data, checked((int)length)).ToArray();
+        });
+    }
+
+    // A view of size_t values (the checkpoints) as ints; the engine holds them at most as large as an int horizon.
+    public static int[] Sizes<THandle>(THandle owner, SizeViewReader<THandle> read)
+        where THandle : SafeHandle
+    {
+        return Held(owner, () =>
+        {
+            Calls.Check(read(owner, out var data, out var length));
+            return new ReadOnlySpan<nuint>(data, checked((int)length)).ToArray().Select(size => checked((int)size)).ToArray();
+        });
+    }
+
+    private static T Held<THandle, T>(THandle owner, Func<T> copy)
+        where THandle : SafeHandle
+    {
         var added = false;
         owner.DangerousAddRef(ref added);
         try
         {
-            Calls.Check(read(owner, out var data, out var length));
-            return new ReadOnlySpan<double>(data, checked((int)length)).ToArray();
+            return copy();
         }
         finally
         {

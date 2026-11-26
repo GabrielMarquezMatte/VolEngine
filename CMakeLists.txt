@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-set(VE_VERSION 1.1.0 CACHE STRING "VolEngine version (x.y.z)")
+set(VE_VERSION 1.3.0 CACHE STRING "VolEngine version (x.y.z)")
 project(VolEngine VERSION ${VE_VERSION} LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -87,6 +87,7 @@ add_library(volengine_core STATIC
     src/dcc/likelihood/gradient.cpp
     src/dcc/likelihood.cpp
     src/dcc/panel.cpp
+    src/cov/estimators.cpp
     src/dcc/parameter_map.cpp
     src/dcc/standard_errors.cpp
     src/diagnostics/portmanteau.cpp
@@ -101,6 +102,7 @@ add_library(volengine_core STATIC
     src/fit/criteria.cpp
     src/fit/fit.cpp
     src/fit/standard_errors.cpp
+    src/forecast/cumulative.cpp
     src/forecast/forecast.cpp
     src/forecast/variance_forecast.cpp
     src/linalg/cholesky.cpp
@@ -112,6 +114,8 @@ add_library(volengine_core STATIC
     src/model/likelihood/adjoint.cpp
     src/model/parameter_map.cpp
     src/model/start_values.cpp
+    src/risk/empirical.cpp
+    src/risk/parametric.cpp
     src/sim/path.cpp
     src/sim/samplers.cpp
     src/sim/simulate.cpp
@@ -130,7 +134,9 @@ target_compile_options(volengine_core PRIVATE ${VE_WARNING_FLAGS} ${VE_FLOAT_FLA
 add_library(volengine SHARED
     src/capi/version_api.cpp
     src/capi/batch_api.cpp
+    src/capi/cancel_api.cpp
     src/capi/context_api.cpp
+    src/capi/cov/cov_api.cpp
     src/capi/dcc/dcc_batch_api.cpp
     src/capi/dcc/dcc_standard_errors_api.cpp
     src/capi/dcc/dcc_fit_api.cpp
@@ -142,6 +148,7 @@ src/capi/dcc/dcc_sim_api.cpp
     src/capi/results/forecast_api.cpp
     src/capi/results/regressor_rows.cpp
     src/capi/results/sim_api.cpp
+    src/capi/risk/risk_api.cpp
     src/capi/spec_api.cpp
     src/capi/panel_api.cpp
     src/capi/error.cpp)
@@ -183,13 +190,18 @@ if(VE_BUILD_TESTS)
         tests/unit/ad/special_test.cpp
         tests/unit/capi/abi_test.cpp
         tests/unit/capi/batch_test.cpp
+        tests/unit/capi/cancel/cancel_test.cpp
+        tests/unit/capi/cancel/deprecated_test.cpp
         tests/unit/capi/context_test.cpp
+        tests/unit/capi/cov/cov_test.cpp
         tests/unit/capi/dcc_test.cpp
         tests/unit/capi/results/fit_accessors_test.cpp
         tests/unit/capi/results/forecast_test.cpp
         tests/unit/capi/panel_test.cpp
         tests/unit/capi/results/sim_test.cpp
+        tests/unit/capi/risk/risk_test.cpp
         tests/unit/capi/spec_test.cpp
+        tests/unit/cov/estimators_test.cpp
         tests/unit/dcc/copula/fit_test.cpp
         tests/unit/dcc/copula/margins_test.cpp
         tests/unit/dcc/copula/scores_test.cpp
@@ -240,6 +252,7 @@ if(VE_BUILD_TESTS)
         tests/unit/model/parameter_map_test.cpp
         tests/unit/model/start_values_test.cpp
         tests/unit/optim/lbfgs_test.cpp
+        tests/unit/risk/measures_test.cpp
         tests/unit/sim/philox_test.cpp
         tests/unit/sim/samplers_test.cpp
         tests/unit/sim/simulate_test.cpp

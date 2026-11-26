@@ -76,6 +76,12 @@ double constraint_delta(const StandardizedPanel& panel, const DccSpec& spec);
 // values and the fixed values.
 std::vector<double> start_values(const DccLayout& layout);
 
+// start_values when it is_valid. Otherwise the default weights (estimated, not started) shrink to fit beside the
+// fixed and started ones: DCC/aDCC, the default g terms take half of what the ceiling leaves, then, if that is not
+// enough, all the default terms do, in proportion; FDCC, a group with one default weight sets it to half of
+// sqrt(c^2 - other^2). An uncentred Nbar can give delta >= 1, which the nominal g does not fit.
+std::vector<double> feasible_start(const DccLayout& layout, double delta);
+
 // u and theta follow the layout, each u entry at the position of the natural one it maps to; fixed entries hold
 // layout.given and their u is unused (0).
 //   DCC/aDCC: the terms t = (a, b, delta g) are >= 0 and sum to P = logistic(v) B, with B = 1 - 1e-8 less the

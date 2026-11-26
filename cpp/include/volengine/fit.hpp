@@ -83,17 +83,16 @@ namespace detail
 {
 
 // A read-only view `(data, length)` of a C handle; the pointer lives as long as the handle.
-template <class Handle>
-Result<std::span<const double>> view(
-    const Handle* handle, ve_status (*function)(const Handle*, const double**, std::size_t*))
+template <class T, class Handle>
+Result<std::span<const T>> view(const Handle* handle, ve_status (*function)(const Handle*, const T**, std::size_t*))
 {
-    const double* data = nullptr;
+    const T* data = nullptr;
     std::size_t length = 0;
     if (auto read = check(function(handle, &data, &length)); !read)
     {
         return failure(read);
     }
-    return std::span<const double>(data, length);
+    return std::span<const T>(data, length);
 }
 
 } // namespace detail
@@ -127,6 +126,19 @@ public:
     Result<std::span<const double>> mean() const
     {
         return detail::view(handle_.get(), ve_forecast_mean);
+    }
+
+    // The forecast of the sum of the next h returns, h = 1..horizon: the sum of mean(), and the standard deviation
+    // with each step weighted by the MA(inf) weights of an ARMA/ARFIMA mean (the root of the summed variance
+    // without one). See ve_forecast_cumulative_sigma for the approximations.
+    Result<std::span<const double>> cumulative_mean() const
+    {
+        return detail::view(handle_.get(), ve_forecast_cumulative_mean);
+    }
+
+    Result<std::span<const double>> cumulative_sigma() const
+    {
+        return detail::view(handle_.get(), ve_forecast_cumulative_sigma);
     }
 
 private:

@@ -71,3 +71,49 @@ def test_first_step_matches_the_forecast(ctx, univariate):
     for path in range(PATHS):
         np.testing.assert_array_equal(simulation.sigma[path, 0], forecast.sigma[0])
         np.testing.assert_array_equal(simulation.R[path, 0], forecast.R[0])
+
+
+def left_sum(values, k):
+    """Sum of the first k values, added left to right (np.cumsum may group differently)."""
+    total = 0.0
+    for value in values[:k]:
+        total += value
+    return total
+
+
+def left_sums(returns, checkpoints):
+    """(paths, K, N): the left-to-right sum of the first k steps of each path and series."""
+    return np.array([[[left_sum(path[:, s], k) for s in range(path.shape[1])] for k in checkpoints] for path in returns])
+
+
+@pytest.mark.parametrize("copula", [False, True])
+def test_cumulative_matches_the_left_sum(ctx, univariate, copula):
+    spec = ve.DccSpec("adcc", dist="mvt")
+    if copula:
+        spec = ve.DccSpec("dcc", dist="mvt", copula="parametric")
+    fit = ctx.fit_dcc(spec, univariate)
+    full = ctx.simulate(fit, horizon=HORIZON, paths=PATHS, seed=3)
+    cumulative = ctx.simulate(fit, horizon=HORIZON, paths=PATHS, seed=3, checkpoints=[1, 4, HORIZON])
+    assert cumulative.checkpoints == (1, 4, HORIZON)
+    assert cumulative.cumulative.shape == (PATHS, 3, 3)
+    assert np.array_equal(cumulative.cumulative, left_sums(full.returns, [1, 4, HORIZON]))
+    assert full.checkpoints == ()
+    with pytest.raises(ve.VolEngineError):
+        full.cumulative
+
+
+@pytest.mark.parametrize("checkpoints", [[0, HORIZON], [2, 2, HORIZON], [2, HORIZON - 1]])
+def test_checkpoints_are_validated(ctx, univariate, checkpoints):
+    fit = ctx.fit_dcc(ve.DccSpec("dcc"), univariate)
+    with pytest.raises(ve.VolEngineError):
+        ctx.simulate(fit, horizon=HORIZON, paths=PATHS, seed=0, checkpoints=checkpoints)
+
+
+def test_cumulative_mode_has_no_full_returns_or_correlations(ctx, univariate):
+    fit = ctx.fit_dcc(ve.DccSpec("dcc"), univariate)
+    sims = ctx.simulate(fit, horizon=HORIZON, paths=PATHS, seed=0, checkpoints=[HORIZON])
+    for name in ("returns", "sigma"):
+        with pytest.raises(ve.VolEngineError):
+            getattr(sims, name)
+    with pytest.raises(ve.VolEngineError):
+        ctx.simulate(fit, horizon=HORIZON, paths=PATHS, seed=0, checkpoints=[HORIZON], correlations=True)

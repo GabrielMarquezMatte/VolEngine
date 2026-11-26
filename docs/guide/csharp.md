@@ -44,14 +44,14 @@ Console.WriteLine($"loglik {fit.Loglik:F3}, BIC {fit.Bic():F4}, sigma in 10 step
 Console.WriteLine($"{table.Names[1]} = {table.Estimate[1]:F6} ({table.StdError[1]:F6})");
 ```
 
-A fit that does not converge is a status, not an exception. The information criteria are per observation by default,
-as in rugarch (`Bic(perObs: false)` gives arch's total). `Spec` has the orders (`P`, `Q`, `Arma`), the mean
-(`IncludeMean`, `Archm`, `Arfima`), `Fixed` and `Start` values, `VarianceTargeting`, and the regressor counts `Mxreg`
-and `Vxreg`; the regressors themselves are T x k arrays given to `Fit`, and their horizon values to `Forecast` and
-`SimulationOptions`. `Context.Simulate` also takes a spec with every parameter fixed. The forecast follows `rugarch`, so it
-is not the mean of the simulated paths for a gjrGARCH with a skewed distribution (P(z < 0) stands in for
-E[1{z < 0} z²]) and for a csGARCH from h = 2 (the closed form leaves out the last shock); see
-[validation](validation.md).
+The engine is scale invariant, so returns can be passed as fractions (0.01 for 1%), with no x100 needed. A fit that
+does not converge is a status, not an exception. The information criteria are per observation by default, as in
+rugarch (`Bic(perObs: false)` gives arch's total). `Spec` has the orders (`P`, `Q`, `Arma`), the mean (`IncludeMean`,
+`Archm`, `Arfima`), `Fixed` and `Start` values, `VarianceTargeting`, and the regressor counts `Mxreg` and `Vxreg`; the
+regressors themselves are T x k arrays given to `Fit`, and their horizon values to `Forecast` and `SimulationOptions`.
+`Context.Simulate` also takes a spec with every parameter fixed. The forecast follows `rugarch`, so it is not the mean
+of the simulated paths for a gjrGARCH with a skewed distribution (P(z < 0) stands in for E[1{z < 0} z²]) and for a
+csGARCH from h = 2 (the closed form leaves out the last shock); see [validation](validation.md).
 
 ## Many series and specs
 
@@ -73,6 +73,54 @@ for (var j = 0; j < grid.SeriesCount; j++)
 
 `grid[i, j]` is spec i on series j; the grid owns its fits, so dispose the grid, not them. `Panel.FromSeries` takes
 series of different lengths (one range per series), `Panel.FromColumns` takes T x N x k regressors and `Panel.FromSeries` one length x k array per series.
+
+## Cumulative forecast
+
+```csharp
+// `fit` as in "Fit, forecast, simulate": the mean and the standard deviation of the 1..10 step return.
+Forecast ahead = fit.Forecast(10);
+Console.WriteLine($"10-step return: mean {ahead.CumulativeMean[^1]:F5}, sigma {ahead.CumulativeSigma[^1]:F5}");
+```
+
+`Forecast.CumulativeMean` and `CumulativeSigma` (and `DccForecast.CumulativeMean`, Horizon x m, and
+`CumulativeCovariance`, Horizon x m x m, exactly symmetric) describe the return R_h = r(T+1) + ... + r(T+h) for
+h = 1..Horizon. The mean is the left-to-right sum of `Mean`. The variance is the sum over k of a(h - k)^2 sigma(T+k)^2
+(a_i(h - k) a_j(h - k) H(T+k) in the DCC), with a(n) = psi_0 + ... + psi_n and psi the MA(inf) weights of the ARMA/ARFIMA
+mean (psi_0 = 1; ARFIMA convolves them with those of (1 - L)^(-d)). Without ARMA and ARFIMA, a = 1 and it is the plain
+sum of the variances. Approximations: sigma(T+k) is the `Sigma` the forecast already returns, so eGARCH, apARCH and
+fGARCH with a free power inherit its approximation; with GARCH-in-mean the randomness of the future sigma in the mean
+is ignored; in the DCC, H(T+k) for k >= 2 is the forecast of H.
+
+## Covariance estimators
+
+```csharp
+// `returns` is a T x N double[,]: dates in rows, series in columns.
+LedoitWolfResult shrunk = Covariances.LedoitWolf(returns);
+Console.WriteLine($"intensity {shrunk.Shrinkage:F3}, first variance {shrunk.Covariance[0][0]:E3}");
+```
+
+`Covariances.Sample` is `numpy.cov(returns, rowvar=False)` and `Covariances.LedoitWolf` is
+`sklearn.covariance.ledoit_wolf(returns)`, the shrinkage of Z'Z / T towards mu * I (mu the mean variance), with its
+intensity in [0, 1]. Both remove each series' mean and return N rows of N, exactly symmetric; fewer than 2 rows or a
+value that is not finite throws a `VolEngineException` with `Status.InvalidArgument`.
+
+## Risk measures
+
+```csharp
+// `returns` as above, log returns; equal weights, the 1% tail.
+double[] weights = Enumerable.Repeat(1.0 / returns.GetLength(1), returns.GetLength(1)).ToArray();
+RiskMeasure historical = Risk.Empirical(returns, weights, ReturnKind.Log, 0.99);
+RiskMeasure studentT = Risk.Parametric(new ShockDistribution(Distribution.Std, Shape: 6.0), 0.0, 0.012, 0.99);
+Console.WriteLine($"historical VaR {historical.Var:F4} ES {historical.Es:F4}, Student t VaR {studentT.Var:F4}");
+```
+
+`Risk.Empirical` takes a T x N array with dates or simulated paths in rows (copy a checkpoint of
+`DccSimulation.Cumulative` into one) and one weight per column, not normalized: each row becomes the portfolio's simple
+return sum_j w_j (exp(r_j) - 1) (`ReturnKind.Simple` takes simple returns), the VaR is minus its `numpy.quantile` at
+1 - confidence and the ES minus the mean at or below it. `Risk.Parametric` takes the return mean + sigma * z with z any
+of the eight standardized densities and the fit's skew, shape and ghlambda in a `ShockDistribution`; the ES is a
+closed form for the normal, the Student t and the Johnson SU and a quadrature for the others. Both are positive as losses, at a
+confidence in (0, 1); anything out of range throws a `VolEngineException` with `Status.InvalidArgument`.
 
 ## Diagnostics
 
@@ -112,6 +160,52 @@ and step, and `Mxreg`/`Vxreg` take one entry per series (null for a series witho
 The `MvLaplace` density is singular where every standardized residual of a date is exactly 0 (a common holiday with
 `mu` fixed at 0): the log-likelihood is then not finite and the fit ends `Failed`, with no message besides the status.
 Drop such dates before the univariate fits.
+
+## Cumulative simulation
+
+```csharp
+// `fit` as in "Fit, forecast, simulate". The paths keep only their sum at 1, 5 and 10 steps.
+var options = new SimulationOptions(Horizon: 10, Paths: 10_000, Seed: 1) { Checkpoints = [1, 5, 10] };
+Simulation sums = context.Simulate(fit, options);
+for (var k = 0; k < sums.Checkpoints.Count; k++)
+{
+    double[] sorted = sums.Cumulative!.Select(path => path[k]).Order().ToArray();
+    Console.WriteLine($"1% VaR at {sums.Checkpoints[k]} steps: {-sorted[sorted.Length / 100]:F4}");
+}
+```
+
+`Checkpoints` (also on `DccSimulationOptions`) lists the steps at which to keep the running sum of each path: strictly
+increasing from 1, the last one equal to `Horizon`. `Cumulative` is then Paths x K (Paths x K x m for a DCC), and each
+value is exactly the left-to-right sum of the first k steps of the full simulation with the same seed. The memory is
+Paths x K whatever the horizon, so `Returns` and `Sigma` are empty arrays. The sums are in the scale of the series: for
+log-returns, `Math.Exp(sum) - 1` is the simple return. A DCC simulation with checkpoints cannot keep `Correlations`.
+Without `Checkpoints`, `Cumulative` is null and `Checkpoints` is empty.
+
+## Cancellation
+
+`Fit`, `FitDcc`, `StandardErrors` and `Simulate` take an optional `CancellationToken` as their last argument. A token
+cancelled before or during the call makes it throw `OperationCanceledException` soon after (within one optimizer
+iteration, one block of the standard errors or one step of a simulated path) and no result is made; a call that
+finishes first returns its result. Without a token, or with one that can never be cancelled, nothing changes. On a
+`Context` that other calls keep busy, a cancelled call waits for its turn in the context's queue before it stops: give
+each caller that needs a deadline its own `Context`. A token that is already cancelled throws before the native call,
+so it hides an argument error that only the native library would report.
+
+```csharp
+// `specs` and `data` as in "Many series and specs": stop the grid if it takes more than two seconds.
+using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+try
+{
+    using FitGrid grid = context.Fit(specs, data, cancellationToken: deadline.Token);
+    Console.WriteLine($"{grid.SpecCount} specs on {grid.SeriesCount} series");
+}
+catch (OperationCanceledException error) when (deadline.IsCancellationRequested)
+{
+    throw new TimeoutException("the grid took more than two seconds", error);
+}
+```
+
+One token may go to several calls at once, on any threads, and cancelling it stops all of them.
 
 ## Threads and Dispose
 

@@ -11,6 +11,7 @@
 #include "fit/fit_result.hpp"
 #include "linalg/cholesky.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -29,6 +30,7 @@ using ve::FitStatus;
 using ve::dcc::Convention;
 using ve::dcc::DccDist;
 using ve::dcc::DccFitResult;
+using ve::dcc::DccLayout;
 using ve::dcc::DccModel;
 using ve::dcc::DccSpec;
 using ve::dcc::StandardizedPanel;
@@ -342,6 +344,77 @@ TEST(DccFit, FixedAndStart)
     const std::vector<double> point{rmgarch[0], rmgarch[1], 8.0};
     EXPECT_EQ(evaluated.loglik, ve::dcc::reported_loglik(*panel, all_fixed, point));
     EXPECT_NEAR(evaluated.loglik, -6132.56175655, 1e-6 * 6132.56175655);
+}
+
+std::shared_ptr<const StandardizedPanel> independent_panel(std::size_t t, std::size_t m)
+{
+    auto panel = std::make_shared<StandardizedPanel>();
+    panel->t = t;
+    panel->m = m;
+    panel->sigma.assign(t * m, 1.0);
+    std::mt19937_64 random(1);
+    std::normal_distribution<double> normal;
+    panel->z.resize(panel->sigma.size());
+    for (double& value : panel->z)
+    {
+        value = normal(random);
+    }
+    ve::dcc::refresh_moments(*panel);
+    return panel;
+}
+
+// 30 groups with one weight fixed estimate kMaxParameterCount parameters, but the objective has one more.
+TEST(DccFit, FdccWithMoreWeightsThanTheDualWidth)
+{
+    constexpr std::size_t kGroups = 30;
+    DccSpec spec;
+    spec.model = DccModel::FDcc;
+    for (int group = 1; group <= static_cast<int>(kGroups); ++group)
+    {
+        spec.groups.push_back(group);
+    }
+    spec.fixed = {{"fdcca1", 0.05}};
+    ASSERT_FALSE(ve::dcc::spec_problem(spec, kGroups).has_value());
+    ASSERT_EQ(ve::dcc::layout_of(spec, kGroups).count(), ve::kMaxParameterCount + 1);
+    FitConfig config;
+    config.max_iter = 1;
+    const DccFitResult fit = ve::dcc::fit_dcc(independent_panel(40, kGroups), spec, config);
+    EXPECT_EQ(fit.status, FitStatus::MaxIter);
+    ASSERT_EQ(fit.estimate.size(), ve::kMaxParameterCount);
+    EXPECT_TRUE(std::ranges::all_of(fit.estimate, [](double value) { return std::isfinite(value); }));
+    EXPECT_TRUE(std::isfinite(fit.loglik));
+}
+
+DccSpec with_fixed(DccModel model, std::vector<ve::ParameterValue> fixed)
+{
+    DccSpec spec = spec_of(model, DccDist::MvNorm, Convention::Standard);
+    if (model == DccModel::FDcc)
+    {
+        spec.groups = {1, 1, 1};
+    }
+    spec.fixed = std::move(fixed);
+    return spec;
+}
+
+// A feasible fixed weight that leaves no room for the default start of the others: the defaults shrink into it.
+TEST(DccFit, DefaultStartMakesRoomForAFixedWeight)
+{
+    const std::array<DccSpec, 3> specs{with_fixed(DccModel::Dcc, {{"dcca1", 0.15}}),
+                                       with_fixed(DccModel::ADcc, {{"dcca1", 0.15}}),
+                                       with_fixed(DccModel::FDcc, {{"fdcca1", 0.5}})};
+    for (const DccSpec& spec : specs)
+    {
+        SCOPED_TRACE(static_cast<int>(spec.model));
+        const DccLayout layout = ve::dcc::layout_of(spec, 3);
+        ASSERT_FALSE(ve::dcc::is_valid(ve::dcc::start_values(layout), layout, dcc3()->delta));
+        const DccFitResult fit = ve::dcc::fit_dcc(dcc3(), spec, FitConfig{});
+        EXPECT_EQ(fit.status, FitStatus::Converged);
+        EXPECT_TRUE(std::isfinite(fit.loglik));
+        EXPECT_TRUE(ve::dcc::is_valid(ve::dcc::full_parameters(layout, fit.estimate), layout, dcc3()->delta));
+    }
+    DccSpec started = specs[0];
+    started.start = {{"dccb1", 0.9}};
+    EXPECT_EQ(ve::dcc::fit_dcc(dcc3(), started, FitConfig{}).status, FitStatus::Failed);
 }
 
 TEST(DccFit, FailsOutsideTheDomain)

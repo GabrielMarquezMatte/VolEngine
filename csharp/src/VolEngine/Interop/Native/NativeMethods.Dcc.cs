@@ -38,6 +38,10 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(LibraryName)]
     internal static partial int ve_dcc_fit_batch(ContextHandle context, DccBatchHandle batch, nint* fits);
 
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_dcc_fit_batch_with_cancel(ContextHandle context, DccBatchHandle batch, CancelHandle cancel,
+                                                             nint* fits);
+
     [LibraryImport(LibraryName)] internal static partial int ve_dcc_fit_status(DccFitHandle fit, out int status);
     [LibraryImport(LibraryName)] internal static partial int ve_dcc_fit_nobs(DccFitHandle fit, out nuint nobs);
     [LibraryImport(LibraryName)] internal static partial int ve_dcc_fit_series(DccFitHandle fit, out nuint series);
@@ -61,6 +65,10 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(LibraryName)]
     internal static partial int ve_dcc_standard_errors(ContextHandle context, DccFitHandle fit, nint* fits, nuint count,
                                                        out DccFitHandle result);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_dcc_standard_errors_with_cancel(ContextHandle context, DccFitHandle fit, nint* fits,
+                                                                   nuint count, CancelHandle cancel, out DccFitHandle result);
 
     [LibraryImport(LibraryName)] internal static partial void ve_dcc_fit_free(nint fit);
 
@@ -91,6 +99,13 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(LibraryName)]
     internal static partial int ve_dcc_forecast_mean(DccForecastHandle forecast, out double* data, out nuint length);
 
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_dcc_forecast_cumulative_mean(DccForecastHandle forecast, out double* data, out nuint length);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_dcc_forecast_cumulative_covariance(DccForecastHandle forecast, out double* data,
+                                                                      out nuint length);
+
     [LibraryImport(LibraryName)] internal static partial void ve_dcc_forecast_free(nint forecast);
 
     [LibraryImport(LibraryName)] internal static partial int ve_sim_options_set_correlations(SimOptionsHandle options, int on);
@@ -98,6 +113,11 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(LibraryName)]
     internal static partial int ve_simulate_dcc(ContextHandle context, DccFitHandle fit, SimOptionsHandle options,
                                                 DccFutureHandle future, out DccSimHandle simulation);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_simulate_dcc_with_cancel(ContextHandle context, DccFitHandle fit, SimOptionsHandle options,
+                                                            DccFutureHandle future, CancelHandle cancel,
+                                                            out DccSimHandle simulation);
 
     [LibraryImport(LibraryName)] internal static partial int ve_dcc_sim_paths(DccSimHandle simulation, out nuint paths);
     [LibraryImport(LibraryName)] internal static partial int ve_dcc_sim_horizon(DccSimHandle simulation, out nuint horizon);
@@ -114,6 +134,12 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(LibraryName)]
     internal static partial int ve_dcc_sim_covariance(DccSimHandle simulation, out double* data, out nuint length);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_dcc_sim_cumulative(DccSimHandle simulation, out double* data, out nuint length);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_dcc_sim_checkpoints(DccSimHandle simulation, out nuint* data, out nuint length);
 
     [LibraryImport(LibraryName)] internal static partial void ve_dcc_sim_free(nint simulation);
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/cancel.hpp"
 #include "core/var_init.hpp"
 
 #include <cstddef>
@@ -80,6 +81,8 @@ struct FitConfig
     VarInit var_init = VarInit::Sample;
     // false skips the inference at the estimate: Hessian and robust standard errors, scores and Nyblom.
     bool standard_errors = true;
+    // Not owned, and not kept after the fit returns. Null never cancels.
+    const CancelFlag* cancel = nullptr;
 };
 
 }

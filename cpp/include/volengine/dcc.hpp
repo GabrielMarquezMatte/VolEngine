@@ -204,12 +204,25 @@ public:
         return detail::view(handle_.get(), ve_dcc_forecast_mean);
     }
 
+    // The forecast of the sums of the next h returns, h = 1..horizon: horizon x m (mean) and horizon x m x m
+    // (covariance, each pair weighted by the MA(inf) weights of its two series' means; exactly symmetric).
+    Result<std::span<const double>> cumulative_mean() const
+    {
+        return detail::view(handle_.get(), ve_dcc_forecast_cumulative_mean);
+    }
+
+    Result<std::span<const double>> cumulative_covariance() const
+    {
+        return detail::view(handle_.get(), ve_dcc_forecast_cumulative_covariance);
+    }
+
 private:
     detail::Owned<ve_dcc_forecast, ve_dcc_forecast_free> handle_;
 };
 
 // Paths of a DccFit: returns and sigma are paths x horizon x m, correlation and covariance paths x horizon x m x m
-// (only with SimOptions::correlations; otherwise they fail). Row-major, valid until it is destroyed.
+// (only with SimOptions::correlations; otherwise they fail). With SimOptions::checkpoints only cumulative(),
+// paths x K x m, and the others fail. Row-major, valid until it is destroyed.
 class DccSimulation
 {
 public:
@@ -250,6 +263,17 @@ public:
     Result<std::span<const double>> covariance() const
     {
         return detail::view(handle_.get(), ve_dcc_sim_covariance);
+    }
+
+    Result<std::span<const double>> cumulative() const
+    {
+        return detail::view(handle_.get(), ve_dcc_sim_cumulative);
+    }
+
+    // Empty without checkpoints.
+    Result<std::span<const std::size_t>> checkpoints() const
+    {
+        return detail::view(handle_.get(), ve_dcc_sim_checkpoints);
     }
 
 private:

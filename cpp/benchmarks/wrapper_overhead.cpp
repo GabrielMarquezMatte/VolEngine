@@ -103,7 +103,7 @@ double fit_with_c(ve_context* context, const Workload& workload)
     check(ve_batch_set_jobs(batch, spec_index.data(), series_index.data(), spec_index.size()));
     check(ve_batch_set_options(batch, options));
     std::vector<ve_fit*> fits(spec_index.size(), nullptr);
-    check(ve_fit_batch(context, batch, fits.data()));
+    check(ve_fit_batch_with_cancel(context, batch, nullptr, fits.data()));
     double total = 0.0;
     for (ve_fit* fit : fits)
     {

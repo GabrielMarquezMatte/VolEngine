@@ -27,6 +27,7 @@ using ad::scaled_softmax;
 // rugarch bounds the ARFIMA d to [1e-8, 0.5], and so does is_valid: the map reaches the ends in rounding.
 constexpr double kArfimaFloor = 1e-8;
 constexpr double kArfimaCeiling = 0.5;
+constexpr double kOmegaFloor = std::numeric_limits<double>::min();
 
 template <class T>
 T sum_of(std::span<const T> values)
@@ -411,6 +412,17 @@ T omega_to_natural(std::span<const T> u, std::span<const T> theta, const Layout&
     return (scale * scale) * exp(x);
 }
 
+// S exp(u) underflows to 0 below u ~ -745, outside omega > 0: omega stops at the smallest normal double instead,
+// with the derivative 0 that the underflow had.
+template <class T>
+void floor_omega(T& omega)
+{
+    if (ad::value_of(omega) < kOmegaFloor)
+    {
+        omega = T{kOmegaFloor};
+    }
+}
+
 void shock_parameters_to_unconstrained(std::span<const double> theta, std::span<double> u, const Layout& layout)
 {
     distribution_to_unconstrained(theta, u, layout);
@@ -527,7 +539,7 @@ bool shock_parameters_valid(std::span<const double> theta, const Layout& layout)
     return asymmetry_valid && (!layout.free_power || theta[layout.power()] > 0.0);
 }
 
-// A kappa that is not a positive finite double, or a gjrGARCH pi outside (0, 1), gives NaN weights (see
+// A kappa that is not a finite normal double, or a gjrGARCH pi outside (0, 1), gives NaN weights (see
 // weight_terms.hpp), which fail here.
 bool weights_valid(std::span<const double> theta, const Layout& layout)
 {
@@ -608,6 +620,21 @@ bool distribution_on_boundary(const Layout& layout, std::span<const double> thet
     return shape_limit && 1.0 / theta[layout.shape()] < kBoundary;
 }
 
+// At rho = P a step up in any weight takes P above rho, and at phi = sum(beta) a step down in any beta takes sum(beta)
+// below phi, at every step size: those weights leave the Hessian with rho or phi.
+bool csgarch_on_boundary(const Layout& layout, std::span<const double> theta, std::size_t index)
+{
+    WeightBlock block = weight_block(layout);
+    bool beside_rho = index == layout.eta1_begin() || in_block(index, block.begin, block.count);
+    if (beside_rho && theta[layout.eta1_begin()] - persistence<double>(theta, layout) < kBoundary)
+    {
+        return true;
+    }
+    bool beside_phi = index == layout.eta2_begin() || in_block(index, layout.beta_begin(), count_of(layout.garch));
+    double beta_sum = sum_of(theta.subspan(layout.beta_begin(), count_of(layout.garch)));
+    return beside_phi && beta_sum - theta[layout.eta2_begin()] < kBoundary;
+}
+
 }
 
 template <class T>
@@ -651,6 +678,10 @@ void to_natural(std::span<const T> u, std::span<T> theta, const Layout& layout,
     if (layout.is_estimated(layout.omega()))
     {
         theta[layout.omega()] = omega_to_natural<T>(u, theta, layout, standardization.scale);
+    }
+    if (layout.model != Model::EGarch && layout.is_estimated(layout.omega()))
+    {
+        floor_omega<T>(theta[layout.omega()]);
     }
     if (layout.model == Model::Ewma)
     {
@@ -812,13 +843,18 @@ bool on_boundary(const Layout& layout, std::span<const double> theta, std::size_
     {
         return value - kArfimaFloor < kBoundary || kArfimaCeiling - value < kBoundary;
     }
+    // At its floor omega is far below the variance it adds to, which its step then leaves unchanged.
+    if (index == layout.omega() && layout.model != Model::EGarch && layout.is_estimated(index))
+    {
+        return value <= kOmegaFloor;
+    }
     if (index >= layout.skew())
     {
         return distribution_on_boundary(layout, theta, index);
     }
-    if (layout.model == Model::CsGarch && index == layout.eta1_begin())
+    if (layout.model == Model::CsGarch && csgarch_on_boundary(layout, theta, index))
     {
-        return value - persistence<double>(theta, layout) < kBoundary;
+        return true;
     }
     if (layout.model == Model::GjrGarch && in_block(index, layout.gamma_begin(), count_of(layout.gamma)))
     {

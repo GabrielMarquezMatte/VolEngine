@@ -209,7 +209,7 @@ std::vector<double> gather_rows(const PanelView* panel, std::size_t start, std::
     return values;
 }
 
-FitResult run_job(const Batch& batch, std::size_t index)
+FitResult run_job(const Batch& batch, const FitConfig& config, std::size_t index)
 {
     const FitJob& job = batch.jobs[index];
     const auto [start, length] = batch.panel->series_range(job.series);
@@ -225,7 +225,7 @@ FitResult run_job(const Batch& batch, std::size_t index)
     const std::vector<double> variance = gather_rows(variance_panel, start, length);
     const model::Data data{series, {mean, mean_panel == nullptr ? 0 : mean_panel->n},
                            {variance, variance_panel == nullptr ? 0 : variance_panel->n}};
-    return fit_one(data, batch.specs[job.spec], batch.config);
+    return fit_one(data, batch.specs[job.spec], config);
 }
 
 // The jobs by decreasing parameter count of their spec, ties in job order: the costliest fits start first, so the
@@ -245,14 +245,16 @@ std::vector<std::size_t> costliest_first(const Batch& batch)
 
 // One fit per block, the costliest first. Every job writes only its own slot of `results`, so the order changes no
 // result.
-void run_blocks(BS::light_thread_pool& pool, int threads, const Batch& batch, std::vector<FitResult>& results)
+void run_blocks(BS::light_thread_pool& pool, int threads, const Batch& batch, const FitConfig& config,
+                std::vector<FitResult>& results)
 {
     const std::vector<std::size_t> order = costliest_first(batch);
     auto run_block = [&](std::size_t first, std::size_t last)
     {
         for (std::size_t position = first; position < last; ++position)
         {
-            results[order[position]] = run_job(batch, order[position]);
+            throw_if_cancelled(config.cancel);
+            results[order[position]] = run_job(batch, config, order[position]);
         }
     };
     run_in_blocks(pool, threads, results.size(), results.size(), run_block);
@@ -280,11 +282,14 @@ std::optional<std::string> check_batch(const Batch& batch)
         .or_else([&batch] { return check_regressors(batch); });
 }
 
-std::vector<FitResult> run_batch(Context& context, const Batch& batch)
+std::vector<FitResult> run_batch(Context& context, const Batch& batch, const CancelFlag* cancel)
 {
+    throw_if_cancelled(cancel);
+    FitConfig config = batch.config;
+    config.cancel = cancel;
     std::vector<FitResult> results(batch.jobs.size());
     context.with_pool([&](BS::light_thread_pool& pool, int threads)
-                      { run_blocks(pool, threads, batch, results); });
+                      { run_blocks(pool, threads, batch, config, results); });
     return results;
 }
 

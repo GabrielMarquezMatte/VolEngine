@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/cancel.hpp"
+
 #include <exception>
 #include <new>
 #include <stdexcept>
@@ -26,7 +28,7 @@ inline ve_status no_dcc_standard_errors()
 {
     return set_error(VE_INVALID_ARGUMENT,
                      "standard errors were not computed: fit with ve_dcc_options_set_standard_errors(o, 1) or call "
-                     "ve_dcc_standard_errors");
+                     "ve_dcc_standard_errors_with_cancel");
 }
 
 template <typename F>
@@ -44,6 +46,10 @@ ve_status guard(F&& callable)
     catch (const std::length_error&)
     {
         return set_error(VE_INVALID_ARGUMENT, "a count or size is too large to allocate");
+    }
+    catch (const Cancelled&)
+    {
+        return set_error(VE_CANCELLED, "cancelled");
     }
     catch (const std::exception& error)
     {

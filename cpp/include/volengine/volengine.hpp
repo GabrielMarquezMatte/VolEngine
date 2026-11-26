@@ -8,6 +8,8 @@
 #include <volengine/error.hpp>
 #include <volengine/fit.hpp>
 #include <volengine/input.hpp>
+#include <volengine/risk/covariance.hpp>
+#include <volengine/risk/measures.hpp>
 #include <volengine/simulation.hpp>
 
 #endif

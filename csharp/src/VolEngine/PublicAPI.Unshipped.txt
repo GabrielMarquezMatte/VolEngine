@@ -1,1 +1,85 @@
 #nullable enable
+*REMOVED*VolEngine.Context.Fit(System.Collections.Generic.IReadOnlyList<VolEngine.Spec!>! specs, VolEngine.Panel! data, VolEngine.FitOptions? options = null) -> VolEngine.FitGrid!
+*REMOVED*VolEngine.Context.Fit(VolEngine.Spec! spec, System.ReadOnlySpan<double> series, VolEngine.FitOptions? options = null, double[,]? mxreg = null, double[,]? vxreg = null) -> VolEngine.Fit!
+*REMOVED*VolEngine.Context.FitDcc(System.Collections.Generic.IReadOnlyList<VolEngine.DccSpec!>! specs, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, bool standardErrors = true) -> VolEngine.DccFitBatch!
+*REMOVED*VolEngine.Context.FitDcc(VolEngine.DccSpec! spec, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, bool standardErrors = true) -> VolEngine.DccFit!
+VolEngine.Context.Fit(System.Collections.Generic.IReadOnlyList<VolEngine.Spec!>! specs, VolEngine.Panel! data, VolEngine.FitOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.FitGrid!
+VolEngine.Context.Fit(System.Collections.Generic.IReadOnlyList<VolEngine.Spec!>! specs, VolEngine.Panel! data, VolEngine.FitOptions? options) -> VolEngine.FitGrid!
+VolEngine.Context.Fit(VolEngine.Spec! spec, System.ReadOnlySpan<double> series, VolEngine.FitOptions? options = null, double[,]? mxreg = null, double[,]? vxreg = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.Fit!
+VolEngine.Context.Fit(VolEngine.Spec! spec, System.ReadOnlySpan<double> series, VolEngine.FitOptions? options, double[,]? mxreg, double[,]? vxreg) -> VolEngine.Fit!
+VolEngine.Context.FitDcc(System.Collections.Generic.IReadOnlyList<VolEngine.DccSpec!>! specs, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, bool standardErrors = true, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.DccFitBatch!
+VolEngine.Context.FitDcc(System.Collections.Generic.IReadOnlyList<VolEngine.DccSpec!>! specs, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, bool standardErrors) -> VolEngine.DccFitBatch!
+VolEngine.Context.FitDcc(VolEngine.DccSpec! spec, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, bool standardErrors = true, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.DccFit!
+VolEngine.Context.FitDcc(VolEngine.DccSpec! spec, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, bool standardErrors) -> VolEngine.DccFit!
+VolEngine.Context.Simulate(VolEngine.DccFit! source, VolEngine.DccSimulationOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.DccSimulation!
+VolEngine.Context.Simulate(VolEngine.Fit! source, VolEngine.SimulationOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.Simulation!
+VolEngine.Context.Simulate(VolEngine.Spec! source, VolEngine.SimulationOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.Simulation!
+VolEngine.Context.StandardErrors(VolEngine.DccFit! fit, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.DccFit!
+VolEngine.Status.Cancelled = 6 -> VolEngine.Status
+VolEngine.DccSimulation.Checkpoints.get -> System.Collections.Generic.IReadOnlyList<int>!
+VolEngine.DccSimulation.Cumulative.get -> double[]![]![]?
+VolEngine.DccSimulationOptions.Checkpoints.get -> System.Collections.Generic.IReadOnlyList<int>?
+VolEngine.DccSimulationOptions.Checkpoints.init -> void
+VolEngine.Simulation.Checkpoints.get -> System.Collections.Generic.IReadOnlyList<int>!
+VolEngine.Simulation.Cumulative.get -> double[]![]?
+VolEngine.SimulationOptions.Checkpoints.get -> System.Collections.Generic.IReadOnlyList<int>?
+VolEngine.SimulationOptions.Checkpoints.init -> void
+VolEngine.DccForecast.CumulativeCovariance.get -> double[]![]![]!
+VolEngine.DccForecast.CumulativeMean.get -> double[]![]!
+VolEngine.Forecast.CumulativeMean.get -> double[]!
+VolEngine.Forecast.CumulativeSigma.get -> double[]!
+VolEngine.Covariances
+VolEngine.LedoitWolfResult
+VolEngine.LedoitWolfResult.<Clone>$() -> VolEngine.LedoitWolfResult!
+VolEngine.LedoitWolfResult.Covariance.get -> double[]![]!
+VolEngine.LedoitWolfResult.Covariance.init -> void
+VolEngine.LedoitWolfResult.Deconstruct(out double[]![]! Covariance, out double Shrinkage) -> void
+VolEngine.LedoitWolfResult.Equals(VolEngine.LedoitWolfResult? other) -> bool
+VolEngine.LedoitWolfResult.LedoitWolfResult(double[]![]! Covariance, double Shrinkage) -> void
+VolEngine.LedoitWolfResult.Shrinkage.get -> double
+VolEngine.LedoitWolfResult.Shrinkage.init -> void
+override VolEngine.LedoitWolfResult.Equals(object? obj) -> bool
+override VolEngine.LedoitWolfResult.GetHashCode() -> int
+override VolEngine.LedoitWolfResult.ToString() -> string!
+static VolEngine.Covariances.LedoitWolf(double[,]! returns) -> VolEngine.LedoitWolfResult!
+static VolEngine.Covariances.Sample(double[,]! returns) -> double[]![]!
+static VolEngine.LedoitWolfResult.operator !=(VolEngine.LedoitWolfResult? left, VolEngine.LedoitWolfResult? right) -> bool
+static VolEngine.LedoitWolfResult.operator ==(VolEngine.LedoitWolfResult? left, VolEngine.LedoitWolfResult? right) -> bool
+VolEngine.ReturnKind
+VolEngine.ReturnKind.Log = 0 -> VolEngine.ReturnKind
+VolEngine.ReturnKind.Simple = 1 -> VolEngine.ReturnKind
+VolEngine.Risk
+VolEngine.RiskMeasure
+VolEngine.RiskMeasure.<Clone>$() -> VolEngine.RiskMeasure!
+VolEngine.RiskMeasure.Deconstruct(out double Var, out double Es) -> void
+VolEngine.RiskMeasure.Equals(VolEngine.RiskMeasure? other) -> bool
+VolEngine.RiskMeasure.Es.get -> double
+VolEngine.RiskMeasure.Es.init -> void
+VolEngine.RiskMeasure.RiskMeasure(double Var, double Es) -> void
+VolEngine.RiskMeasure.Var.get -> double
+VolEngine.RiskMeasure.Var.init -> void
+VolEngine.ShockDistribution
+VolEngine.ShockDistribution.<Clone>$() -> VolEngine.ShockDistribution!
+VolEngine.ShockDistribution.Deconstruct(out VolEngine.Distribution Distribution, out double Skew, out double Shape, out double GhLambda) -> void
+VolEngine.ShockDistribution.Distribution.get -> VolEngine.Distribution
+VolEngine.ShockDistribution.Distribution.init -> void
+VolEngine.ShockDistribution.Equals(VolEngine.ShockDistribution? other) -> bool
+VolEngine.ShockDistribution.GhLambda.get -> double
+VolEngine.ShockDistribution.GhLambda.init -> void
+VolEngine.ShockDistribution.Shape.get -> double
+VolEngine.ShockDistribution.Shape.init -> void
+VolEngine.ShockDistribution.ShockDistribution(VolEngine.Distribution Distribution, double Skew = NaN, double Shape = NaN, double GhLambda = NaN) -> void
+VolEngine.ShockDistribution.Skew.get -> double
+VolEngine.ShockDistribution.Skew.init -> void
+override VolEngine.RiskMeasure.Equals(object? obj) -> bool
+override VolEngine.RiskMeasure.GetHashCode() -> int
+override VolEngine.RiskMeasure.ToString() -> string!
+override VolEngine.ShockDistribution.Equals(object? obj) -> bool
+override VolEngine.ShockDistribution.GetHashCode() -> int
+override VolEngine.ShockDistribution.ToString() -> string!
+static VolEngine.Risk.Empirical(double[,]! returns, double[]! weights, VolEngine.ReturnKind kind, double confidence) -> VolEngine.RiskMeasure!
+static VolEngine.Risk.Parametric(VolEngine.ShockDistribution! distribution, double mean, double sigma, double confidence) -> VolEngine.RiskMeasure!
+static VolEngine.RiskMeasure.operator !=(VolEngine.RiskMeasure? left, VolEngine.RiskMeasure? right) -> bool
+static VolEngine.RiskMeasure.operator ==(VolEngine.RiskMeasure? left, VolEngine.RiskMeasure? right) -> bool
+static VolEngine.ShockDistribution.operator !=(VolEngine.ShockDistribution? left, VolEngine.ShockDistribution? right) -> bool
+static VolEngine.ShockDistribution.operator ==(VolEngine.ShockDistribution? left, VolEngine.ShockDistribution? right) -> bool

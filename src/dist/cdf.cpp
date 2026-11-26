@@ -52,6 +52,21 @@ double ged_upper_gamma(const LogDensity<double>& density, double z, double argum
     return 1.0 - std::exp(order * log_argument - ve::ad::log_gamma(order + 1.0));
 }
 
+// P(t < -|z|) = I_x(nu / 2, 1/2) / 2 at x = scale / (scale + z^2), which is 1 - I_(1 - x)(1/2, nu / 2) / 2. x rounds
+// towards 1 as z^2 falls below scale (z near 0, or a large nu), where its complement z^2 / (scale + z^2) keeps the
+// digits: each form takes the argument below 1/2.
+double student_tail(const LogDensity<double>& density, double z)
+{
+    double nu = 2.0 * density.power - 1.0;
+    double z_squared = z * z;
+    double denominator = density.scale + z_squared;
+    if (z_squared < density.scale)
+    {
+        return 0.5 * boost::math::ibetac(0.5, nu / 2.0, z_squared / denominator, DoublePolicy{});
+    }
+    return 0.5 * boost::math::ibeta(nu / 2.0, 0.5, density.scale / denominator, DoublePolicy{});
+}
+
 double kernel_cdf(const LogDensity<double>& density, double z)
 {
     if (density.dist == Dist::Norm)
@@ -60,8 +75,7 @@ double kernel_cdf(const LogDensity<double>& density, double z)
     }
     if (density.dist == Dist::Std)
     {
-        double nu = 2.0 * density.power - 1.0;
-        double tail = 0.5 * boost::math::ibeta(nu / 2.0, 0.5, density.scale / (density.scale + z * z), DoublePolicy{});
+        double tail = student_tail(density, z);
         if (z < 0.0)
         {
             return tail;
@@ -156,7 +170,7 @@ double central_cdf(const detail::DensityIntegrand<double>& integrand, double bel
 
 double central_cdf(const detail::DensityIntegrand<double>& integrand, double z)
 {
-    return central_cdf(integrand, detail::below_zero_quadrature(integrand, 1.0), z);
+    return central_cdf(integrand, detail::below_zero_quadrature(integrand, detail::TailMaps<double>{}), z);
 }
 
 // Beyond |z| = 1 the tail integral, scaled so that it meets the central integral at +-1: the two quadratures differ
@@ -166,22 +180,24 @@ double quadrature_cdf(const detail::DensityIntegrand<double>& integrand, double 
 {
     if (z < -1.0)
     {
-        double scale = central_cdf(integrand, -1.0) / detail::tail_integral(integrand, 0.0, -1.0, 1.0);
-        return std::clamp(scale * detail::tail_integral(integrand, z + 1.0, -1.0, 1.0), 0.0, 1.0);
+        double scale = central_cdf(integrand, -1.0) / detail::power_tail_integral(integrand, 0.0, -1.0, 1.0);
+        return std::clamp(scale * detail::power_tail_integral(integrand, z + 1.0, -1.0, 1.0), 0.0, 1.0);
     }
     if (z > 1.0)
     {
-        double scale = (1.0 - central_cdf(integrand, 1.0)) / detail::tail_integral(integrand, 0.0, 1.0, 1.0);
-        return std::clamp(1.0 - scale * detail::tail_integral(integrand, z - 1.0, 1.0, 1.0), 0.0, 1.0);
+        double scale = (1.0 - central_cdf(integrand, 1.0)) / detail::power_tail_integral(integrand, 0.0, 1.0, 1.0);
+        return std::clamp(1.0 - scale * detail::power_tail_integral(integrand, z - 1.0, 1.0, 1.0), 0.0, 1.0);
     }
     return std::clamp(central_cdf(integrand, z), 0.0, 1.0);
 }
 
 detail::CdfConstants cdf_constants(const detail::DensityIntegrand<double>& integrand)
 {
-    double below_zero = detail::below_zero_quadrature(integrand, 1.0);
-    return {below_zero, central_cdf(integrand, below_zero, -1.0) / detail::tail_integral(integrand, 0.0, -1.0, 1.0),
-            (1.0 - central_cdf(integrand, below_zero, 1.0)) / detail::tail_integral(integrand, 0.0, 1.0, 1.0)};
+    double below_zero = detail::below_zero_quadrature(integrand, detail::TailMaps<double>{});
+    double lower_tail = detail::power_tail_integral(integrand, 0.0, -1.0, 1.0);
+    double upper_tail = detail::power_tail_integral(integrand, 0.0, 1.0, 1.0);
+    return {below_zero, central_cdf(integrand, below_zero, -1.0) / lower_tail,
+            (1.0 - central_cdf(integrand, below_zero, 1.0)) / upper_tail};
 }
 
 // quadrature_cdf with the constants taken from cdf_constants: the same arithmetic, so the same bits.
@@ -190,11 +206,13 @@ double quadrature_cdf(const detail::DensityIntegrand<double>& integrand, const d
 {
     if (z < -1.0)
     {
-        return std::clamp(constants.lower_scale * detail::tail_integral(integrand, z + 1.0, -1.0, 1.0), 0.0, 1.0);
+        double tail = detail::power_tail_integral(integrand, z + 1.0, -1.0, 1.0);
+        return std::clamp(constants.lower_scale * tail, 0.0, 1.0);
     }
     if (z > 1.0)
     {
-        return std::clamp(1.0 - constants.upper_scale * detail::tail_integral(integrand, z - 1.0, 1.0, 1.0), 0.0, 1.0);
+        double tail = detail::power_tail_integral(integrand, z - 1.0, 1.0, 1.0);
+        return std::clamp(1.0 - constants.upper_scale * tail, 0.0, 1.0);
     }
     return std::clamp(central_cdf(integrand, constants.below_zero, z), 0.0, 1.0);
 }

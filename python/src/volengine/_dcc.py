@@ -15,8 +15,10 @@ from numpy.typing import ArrayLike, NDArray
 from ._fit import IC_PER_OBS, IC_TOTAL, SE_KINDS, CoefTable, Fit, status_name
 from ._forecast import DccForecast
 from ._native import (
+    Cancel,
     Handle,
     bounded,
+    cancel_pointer,
     check,
     create_handle,
     int32,
@@ -100,11 +102,11 @@ class DccSpec:
         return handle
 
 
-def dcc_standard_errors(context: Handle, fit: DccFit, univariate: Sequence[Fit]) -> DccFit:
+def dcc_standard_errors(context: Handle, fit: DccFit, univariate: Sequence[Fit], cancel: Cancel | None = None) -> DccFit:
     fits = fit_pointers(univariate)
     return DccFit(create_handle(
-        lib.ve_dcc_standard_errors, lib.ve_dcc_fit_free,
-        context.pointer, fit._handle.pointer, fits, len(univariate),
+        lib.ve_dcc_standard_errors_with_cancel, lib.ve_dcc_fit_free,
+        context.pointer, fit._handle.pointer, fits, len(univariate), cancel_pointer(cancel),
     ))
 
 
@@ -114,7 +116,9 @@ def fit_pointers(fits: Sequence[Fit]) -> Any:
     return (ctypes.c_void_p * len(fits))(*(fit._handle.pointer for fit in fits))
 
 
-def fit_dcc(context: Handle, spec: DccSpec | Sequence[DccSpec], univariate: Sequence[Fit], standard_errors: bool) -> list[DccFit]:
+def fit_dcc(
+    context: Handle, spec: DccSpec | Sequence[DccSpec], univariate: Sequence[Fit], standard_errors: bool, cancel: Cancel | None = None
+) -> list[DccFit]:
     specs: list[DccSpec] = []
     if isinstance(spec, DccSpec):
         specs.append(spec)
@@ -135,7 +139,7 @@ def fit_dcc(context: Handle, spec: DccSpec | Sequence[DccSpec], univariate: Sequ
         check(lib.ve_dcc_batch_set_fits(batch.pointer, fits, len(univariate)))
         check(lib.ve_dcc_batch_set_options(batch.pointer, options.pointer))
         out = (ctypes.c_void_p * len(specs))()
-        check(lib.ve_dcc_fit_batch(context.pointer, batch.pointer, out))
+        check(lib.ve_dcc_fit_batch_with_cancel(context.pointer, batch.pointer, cancel_pointer(cancel), out))
         owned = [Handle(pointer, lib.ve_dcc_fit_free) for pointer in out]
         return [DccFit(handle) for handle in owned]
 
@@ -281,9 +285,14 @@ class DccFit:
             )
         return DccForecast(handle)
 
-    def standard_errors(self, univariate: Sequence[Fit], context: Context | None = None) -> DccFit:
-        """This fit with its standard errors. `context` sets the thread limit; by default it is the hardware's."""
+    def standard_errors(
+        self, univariate: Sequence[Fit], context: Context | None = None, *, cancel: Cancel | None = None
+    ) -> DccFit:
+        """This fit with its standard errors. `context` sets the thread limit; by default it is the hardware's.
+
+        `cancel` stops the call with `Cancelled` (see `Cancel`).
+        """
         if context is not None:
-            return context.standard_errors(self, univariate)
+            return context.standard_errors(self, univariate, cancel=cancel)
         with create_handle(lib.ve_context_create, lib.ve_context_free) as default:
-            return dcc_standard_errors(default, self, univariate)
+            return dcc_standard_errors(default, self, univariate, cancel)

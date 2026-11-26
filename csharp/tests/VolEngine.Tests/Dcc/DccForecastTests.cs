@@ -115,4 +115,64 @@ public sealed class DccForecastTests
             Assert.All(sigma, row => Assert.All(row, value => Assert.True(double.IsFinite(value))));
         }
     }
+
+    [Fact]
+    public void Cumulative_mean_is_the_left_sum_of_the_mean()
+    {
+        using var univariate = Univariate.Dcc3();
+        using var dcc = univariate.Context.FitDcc(new DccSpec(), univariate.Fits, standardErrors: false);
+        var forecast = dcc.Forecast(6);
+        Assert.Equal(6, forecast.CumulativeMean.Length);
+        var sum = new double[3];
+        for (var h = 0; h < 6; h++)
+        {
+            for (var j = 0; j < 3; j++)
+            {
+                sum[j] += forecast.Mean[h][j];
+                Assert.Equal(BitConverter.DoubleToInt64Bits(sum[j]),
+                             BitConverter.DoubleToInt64Bits(forecast.CumulativeMean[h][j]));
+            }
+        }
+    }
+
+    [Fact]
+    public void Cumulative_covariance_is_symmetric()
+    {
+        using var univariate = Univariate.Dcc3();
+        using var dcc = univariate.Context.FitDcc(new DccSpec(), univariate.Fits, standardErrors: false);
+        var forecast = dcc.Forecast(6);
+        Assert.Equal(6, forecast.CumulativeCovariance.Length);
+        for (var h = 0; h < 6; h++)
+        {
+            var matrix = forecast.CumulativeCovariance[h];
+            Assert.Equal(3, matrix.Length);
+            for (var i = 0; i < 3; i++)
+            {
+                for (var j = 0; j < 3; j++)
+                {
+                    Assert.Equal(BitConverter.DoubleToInt64Bits(matrix[i][j]), BitConverter.DoubleToInt64Bits(matrix[j][i]));
+                }
+            }
+        }
+        for (var i = 0; i < 3; i++)
+        {
+            Assert.Equal(forecast.Covariance[0][i][i], forecast.CumulativeCovariance[0][i][i], 1e-14);
+        }
+    }
+
+    [Fact]
+    public void Cumulative_covariance_is_the_summed_covariance_without_arma()
+    {
+        using var univariate = Univariate.Dcc3();
+        using var dcc = univariate.Context.FitDcc(new DccSpec(), univariate.Fits, standardErrors: false);
+        var forecast = dcc.Forecast(6);
+        for (var h = 0; h < 6; h++)
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                var plain = Enumerable.Range(0, h + 1).Sum(k => forecast.Covariance[k][i][i]);
+                Assert.True(Math.Abs(forecast.CumulativeCovariance[h][i][i] / plain - 1) <= 1e-14, $"h = {h + 1}, i = {i}");
+            }
+        }
+    }
 }

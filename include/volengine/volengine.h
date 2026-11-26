@@ -14,6 +14,15 @@
 #define VE_API __attribute__((visibility("default")))
 #endif
 
+/* Marks a call that a later ABI removes. Define VE_NO_DEPRECATED_WARNINGS to silence the warnings. */
+#if defined(VE_NO_DEPRECATED_WARNINGS)
+#define VE_DEPRECATED(message)
+#elif defined(_MSC_VER)
+#define VE_DEPRECATED(message) __declspec(deprecated(message))
+#else
+#define VE_DEPRECATED(message) __attribute__((deprecated(message)))
+#endif
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -37,6 +46,8 @@ typedef int32_t ve_status;
 #define VE_UNSUPPORTED 3
 #define VE_OUT_OF_MEMORY 4
 #define VE_INTERNAL_ERROR 5
+/* The call stopped on a request of its ve_cancel; see ve_cancel_create. Since 1.3.0. */
+#define VE_CANCELLED 6
 
 typedef struct ve_context ve_context;
 
@@ -55,6 +66,26 @@ VE_API ve_status ve_context_create(ve_context** out);
 VE_API ve_status ve_context_set_threads(ve_context* ctx, int32_t threads);
 VE_API ve_status ve_context_threads(const ve_context* ctx, int32_t* out);
 VE_API void ve_context_free(ve_context* ctx);
+
+/* ---- Cancellation ----
+   A cancellation signal for the *_with_cancel calls, which take it as `const ve_cancel* c` right before their output.
+   ve_cancel_request may be called from any thread at any time, also while a call uses the handle, and more than once:
+   the handle stays requested and has no reset. One handle may be passed to several calls, concurrent or not, and a
+   request cancels all of them. Freeing the handle while a call uses it is undefined behavior.
+   A cancelled call returns VE_CANCELLED with ve_last_error "cancelled" and its output set to NULL (each of the n
+   handles of a batch), and no thread of the pool still works on it. It stops within the work between two checks: an
+   optimizer iteration, a block of the standard errors or a step of a simulated path. On a context that other calls
+   keep busy, the rest of its work waits in the context's queue behind theirs before it stops, so give each caller
+   that needs a deadline its own context. A request that arrives after the last check leaves the call to return VE_OK
+   with the whole result, so a request does not always give VE_CANCELLED. The arguments are checked first: an invalid
+   one gives the same error with or without a requested handle. c NULL never cancels: the call does exactly what the
+   function without _with_cancel does. Since 1.3.0. */
+typedef struct ve_cancel ve_cancel;
+/* NULL out is VE_INVALID_ARGUMENT. */
+VE_API ve_status ve_cancel_create(ve_cancel** out);
+/* NULL c is VE_INVALID_HANDLE. */
+VE_API ve_status ve_cancel_request(ve_cancel* c);
+VE_API void ve_cancel_free(ve_cancel* c);
 
 /* Parameter names and order for every model: mu, ar1..arm, ma1..man, omega, alpha1..alphap,
    beta1..betaq, gamma1..gammap, eta11..eta1p, eta21..eta2p, delta or lambda, skew, shape, ghlambda. A
@@ -269,7 +300,11 @@ VE_API void ve_batch_free(ve_batch* b);
    or infinite value in a used series is VE_INVALID_ARGUMENT. A fit that
    does not converge is not an error: see ve_fit_status. The fits own their data: they stay valid after
    the batch, panel, specs and ctx are freed. */
+VE_DEPRECATED("use ve_fit_batch_with_cancel with a NULL ve_cancel; removed in ABI 2")
 VE_API ve_status ve_fit_batch(ve_context* ctx, const ve_batch* batch, ve_fit** fits_out);
+/* ve_fit_batch, cancellable by c (see ve_cancel_create). Since 1.3.0. */
+VE_API ve_status ve_fit_batch_with_cancel(ve_context* ctx, const ve_batch* batch, const ve_cancel* c,
+                                          ve_fit** fits_out);
 
 /* VE_FIT_FAILED means "did not converge to a usable optimum": the values of such a fit are those of
    the best finite point the optimizer reached, or NaN (empty series) when it reached none (invalid
@@ -345,6 +380,13 @@ VE_API ve_status ve_forecast_horizon(const ve_forecast* fc, size_t* out);
    sqrt(E[sigma2]); in the other models it is sqrt(E[sigma2]). mean is the conditional mean (seriesFor). */
 VE_API ve_status ve_forecast_sigma(const ve_forecast* fc, const double** data, size_t* len);
 VE_API ve_status ve_forecast_mean(const ve_forecast* fc, const double** data, size_t* len);
+/* The forecast of the cumulative return R_h = r_{T+1} + ... + r_{T+h} for h = 1..horizon (horizon values each, valid
+   until fc is freed): its mean (the left-to-right sum of ve_forecast_mean) and its standard deviation
+   sqrt(sum_k a(h-k)^2 sigma_{T+k}^2), with a(n) = psi_0 + ... + psi_n from the MA(inf) weights of the ARMA/ARFIMA
+   mean (a = 1 without one). sigma_{T+k} is ve_forecast_sigma, with its approximation in eGARCH, apARCH and fGARCH;
+   with GARCH-in-mean the randomness of the future sigma in the mean is ignored. Since 1.3.0. */
+VE_API ve_status ve_forecast_cumulative_mean(const ve_forecast* fc, const double** data, size_t* len);
+VE_API ve_status ve_forecast_cumulative_sigma(const ve_forecast* fc, const double** data, size_t* len);
 VE_API void ve_forecast_free(ve_forecast* fc);
 
 /* ---- Simulation ----
@@ -364,22 +406,41 @@ VE_API ve_status ve_sim_options_create(size_t horizon, size_t paths, uint64_t se
    count, NULL when it has none. A NaN or infinite value is VE_INVALID_ARGUMENT and leaves what an earlier call set.
    Replaces what an earlier call set. */
 VE_API ve_status ve_sim_options_set_regressors(ve_sim_options* o, const ve_panel* mxreg, const ve_panel* vxreg);
+/* Checkpoints of the horizon: the simulation keeps, per path (and per series in a DCC), only the sum of the
+   simulated series over steps 1..k for each k, as the left-to-right sum of the first k steps of the full output with
+   the same seed. ks are strictly increasing, from 1, and the last is the horizon of o; otherwise
+   VE_INVALID_ARGUMENT, with the option unchanged. n = 0 (ks may be NULL) clears it: back to the full output.
+   NULL ks with n > 0 is VE_INVALID_ARGUMENT. Replaces what an earlier call set. Since 1.3.0. */
+VE_API ve_status ve_sim_options_set_checkpoints(ve_sim_options* o, const size_t* ks, size_t n);
 VE_API void ve_sim_options_free(ve_sim_options* o);
 /* VE_INVALID_ARGUMENT for a fit with no finite point (see ve_fit_status) or regressors that do not match its spec;
    a VE_FIT_FAILED fit that has a finite point simulates from it. */
+VE_DEPRECATED("use ve_simulate_fit_with_cancel with a NULL ve_cancel; removed in ABI 2")
 VE_API ve_status ve_simulate_fit(ve_context* ctx, const ve_fit* f, const ve_sim_options* o, ve_sim** out);
+/* ve_simulate_fit, cancellable by c (see ve_cancel_create). Since 1.3.0. */
+VE_API ve_status ve_simulate_fit_with_cancel(ve_context* ctx, const ve_fit* f, const ve_sim_options* o,
+                                             const ve_cancel* c, ve_sim** out);
 /* VE_INVALID_ARGUMENT, with the reason in ve_last_error, for a spec with a free parameter, variance targeting,
    iGARCH or EWMA (no unconditional variance), parameters outside their domain, persistence >= 1, or regressors that do not
    match it. The presample holds the unconditional sigma2 (with the first row of vxreg), the unconditional mean
    and residuals drawn from the paths themselves. */
+VE_DEPRECATED("use ve_simulate_spec_with_cancel with a NULL ve_cancel; removed in ABI 2")
 VE_API ve_status ve_simulate_spec(ve_context* ctx, const ve_spec* s, const ve_sim_options* o, ve_sim** out);
+/* ve_simulate_spec, cancellable by c (see ve_cancel_create). Since 1.3.0. */
+VE_API ve_status ve_simulate_spec_with_cancel(ve_context* ctx, const ve_spec* s, const ve_sim_options* o,
+                                              const ve_cancel* c, ve_sim** out);
 VE_API ve_status ve_sim_paths(const ve_sim* sim, size_t* out);
 VE_API ve_status ve_sim_horizon(const ve_sim* sim, size_t* out);
 /* paths x horizon values, row-major (row p is path p), valid until sim is freed: the simulated series and its
    conditional standard deviation. The simulation copies what it needs: it stays valid after its context, fit,
-   spec and options are freed. */
+   spec and options are freed. With checkpoints they are VE_INVALID_ARGUMENT: read ve_sim_cumulative. */
 VE_API ve_status ve_sim_returns(const ve_sim* sim, const double** data, size_t* len);
 VE_API ve_status ve_sim_sigma(const ve_sim* sim, const double** data, size_t* len);
+/* With checkpoints: paths x K values, row-major (row p is path p), valid until sim is freed. Without them
+   VE_INVALID_ARGUMENT. Since 1.3.0. */
+VE_API ve_status ve_sim_cumulative(const ve_sim* sim, const double** data, size_t* len);
+/* The checkpoints of the simulation (K values, valid until sim is freed), or len = 0 without them. Since 1.3.0. */
+VE_API ve_status ve_sim_checkpoints(const ve_sim* sim, const size_t** data, size_t* len);
 VE_API void ve_sim_free(ve_sim* sim);
 
 /* ---- DCC ----
@@ -425,7 +486,7 @@ VE_API ve_status ve_dcc_spec_set_copula(ve_dcc_spec* s, int32_t transformation);
 VE_API ve_status ve_dcc_spec_set_static_method(ve_dcc_spec* s, int32_t method);
 /* Standard errors are enabled by default; regressors make them VE_UNSUPPORTED. With 0, ve_dcc_fit_std_errors,
    ve_dcc_fit_t_values and ve_dcc_fit_p_values return VE_INVALID_ARGUMENT, as ve_fit_std_errors does; everything else
-   is computed as before, and ve_dcc_standard_errors gives a fit that has them. */
+   is computed as before, and ve_dcc_standard_errors_with_cancel gives a fit that has them. */
 VE_API ve_status ve_dcc_options_create(ve_dcc_options** out);
 VE_API ve_status ve_dcc_options_set_standard_errors(ve_dcc_options* o, int32_t on);
 VE_API void ve_dcc_options_free(ve_dcc_options* o);
@@ -436,7 +497,11 @@ VE_API ve_status ve_dcc_batch_set_options(ve_dcc_batch* b, const ve_dcc_options*
 VE_API ve_status ve_dcc_batch_spec_count(const ve_dcc_batch* b, size_t* out);
 VE_API void ve_dcc_batch_free(ve_dcc_batch* b);
 /* out holds spec_count handles in spec order. Nonconvergence is a per-fit status. */
+VE_DEPRECATED("use ve_dcc_fit_batch_with_cancel with a NULL ve_cancel; removed in ABI 2")
 VE_API ve_status ve_dcc_fit_batch(ve_context* ctx, const ve_dcc_batch* b, ve_dcc_fit** out);
+/* ve_dcc_fit_batch, cancellable by c (see ve_cancel_create). Since 1.3.0. */
+VE_API ve_status ve_dcc_fit_batch_with_cancel(ve_context* ctx, const ve_dcc_batch* b, const ve_cancel* c,
+                                              ve_dcc_fit** out);
 VE_API ve_status ve_dcc_fit_status(const ve_dcc_fit* f, int32_t* out);
 VE_API ve_status ve_dcc_fit_nobs(const ve_dcc_fit* f, size_t* out);
 VE_API ve_status ve_dcc_fit_series(const ve_dcc_fit* f, size_t* out);
@@ -460,8 +525,12 @@ VE_API ve_status ve_dcc_fit_criterion(const ve_dcc_fit* f, int32_t which, int32_
 VE_API ve_status ve_dcc_fit_correlation(const ve_dcc_fit* f, const double** data, size_t* len);
 VE_API ve_status ve_dcc_fit_covariance(const ve_dcc_fit* f, const double** data, size_t* len);
 /* Returns a new immutable fit sharing R; fits must match the original univariate estimates and order. */
+VE_DEPRECATED("use ve_dcc_standard_errors_with_cancel with a NULL ve_cancel; removed in ABI 2")
 VE_API ve_status ve_dcc_standard_errors(ve_context* ctx, const ve_dcc_fit* f, const ve_fit* const* fits, size_t m,
                                         ve_dcc_fit** out);
+/* ve_dcc_standard_errors, cancellable by c (see ve_cancel_create). Since 1.3.0. */
+VE_API ve_status ve_dcc_standard_errors_with_cancel(ve_context* ctx, const ve_dcc_fit* f, const ve_fit* const* fits,
+                                                    size_t m, const ve_cancel* c, ve_dcc_fit** out);
 VE_API void ve_dcc_fit_free(ve_dcc_fit* f);
 
 /* ---- DCC forecast and simulation ----
@@ -471,8 +540,9 @@ VE_API void ve_dcc_fit_free(ve_dcc_fit* f);
    total persistence (the aDCC g does not enter; the FDCC takes k per element; a static copula keeps its R) and
    Rbar the correlation of Qbar. H_h = D R_h D with D = diag(sigma_h). A DCC fit keeps the final state of each series
    and of its recursion: it forecasts and simulates after the univariate fits are freed, but only a fit made by
-   ve_dcc_fit_batch or ve_dcc_standard_errors has it (VE_INVALID_ARGUMENT otherwise, and for a fit with no finite point, whose message says
-   "no finite point"). A VE_FIT_FAILED fit that has a finite point forecasts from it.
+   ve_dcc_fit_batch_with_cancel or ve_dcc_standard_errors_with_cancel has it (VE_INVALID_ARGUMENT otherwise, and for a
+   fit with no finite point, whose message says "no finite point"). A VE_FIT_FAILED fit that has a finite point
+   forecasts from it.
    ve_dcc_future holds the regressors of the horizon of each series: series from 0, panels of `horizon` rows without
    ranges, NULL for none. They are checked against each series' spec when used (the error names the series from 1).
    A NaN or infinite value in a panel is VE_INVALID_ARGUMENT (ve_dcc_future_set). A NULL ve_dcc_future means no series
@@ -493,6 +563,11 @@ VE_API ve_status ve_dcc_forecast_correlation(const ve_dcc_forecast* fc, const do
 VE_API ve_status ve_dcc_forecast_covariance(const ve_dcc_forecast* fc, const double** data, size_t* len);
 VE_API ve_status ve_dcc_forecast_sigma(const ve_dcc_forecast* fc, const double** data, size_t* len);
 VE_API ve_status ve_dcc_forecast_mean(const ve_dcc_forecast* fc, const double** data, size_t* len);
+/* As ve_forecast_cumulative_* for a DCC forecast: horizon x m (mean) and horizon x m x m (covariance,
+   sum_k a_i(h-k) a_j(h-k) H_k with each series' weights, exactly symmetric), row-major, valid until fc is freed. The
+   covariance is computed once, on first access. Since 1.3.0. */
+VE_API ve_status ve_dcc_forecast_cumulative_mean(const ve_dcc_forecast* fc, const double** data, size_t* len);
+VE_API ve_status ve_dcc_forecast_cumulative_covariance(const ve_dcc_forecast* fc, const double** data, size_t* len);
 VE_API void ve_dcc_forecast_free(ve_dcc_forecast* fc);
 /* Paths of a DCC fit, as ve_simulate_fit does for one series (the seed rule included). Each step takes R from the
    exact recursion and draws a shock of covariance R (a Gaussian scale mixture for the mvt and the mvlaplace); the
@@ -505,18 +580,56 @@ VE_API ve_status ve_sim_options_set_correlations(ve_sim_options* o, int32_t on);
 /* o's own regressors must be unset (VE_INVALID_ARGUMENT): a DCC takes them per series in x. VE_INVALID_ARGUMENT
    "too large" when paths x horizon x m x 2 doubles, or with correlations paths x horizon x m^2 x 2, exceed what
    memory addresses. */
+VE_DEPRECATED("use ve_simulate_dcc_with_cancel with a NULL ve_cancel; removed in ABI 2")
 VE_API ve_status ve_simulate_dcc(ve_context* ctx, const ve_dcc_fit* f, const ve_sim_options* o,
                                  const ve_dcc_future* x, ve_dcc_sim** out);
+/* ve_simulate_dcc, cancellable by c (see ve_cancel_create). Since 1.3.0. */
+VE_API ve_status ve_simulate_dcc_with_cancel(ve_context* ctx, const ve_dcc_fit* f, const ve_sim_options* o,
+                                             const ve_dcc_future* x, const ve_cancel* c, ve_dcc_sim** out);
 VE_API ve_status ve_dcc_sim_paths(const ve_dcc_sim* sim, size_t* out);
 VE_API ve_status ve_dcc_sim_horizon(const ve_dcc_sim* sim, size_t* out);
 VE_API ve_status ve_dcc_sim_series(const ve_dcc_sim* sim, size_t* out);
 /* paths x horizon x m (returns, sigma) and paths x horizon x m x m (correlation, covariance), row-major, valid until
-   sim is freed. The correlation and covariance views are VE_INVALID_ARGUMENT unless the options had correlations on. */
+   sim is freed. The correlation and covariance views are VE_INVALID_ARGUMENT unless the options had correlations on;
+   returns and sigma are VE_INVALID_ARGUMENT with checkpoints (read ve_dcc_sim_cumulative). Checkpoints with
+   correlations on are VE_INVALID_ARGUMENT in ve_simulate_dcc. */
 VE_API ve_status ve_dcc_sim_returns(const ve_dcc_sim* sim, const double** data, size_t* len);
 VE_API ve_status ve_dcc_sim_sigma(const ve_dcc_sim* sim, const double** data, size_t* len);
 VE_API ve_status ve_dcc_sim_correlation(const ve_dcc_sim* sim, const double** data, size_t* len);
 VE_API ve_status ve_dcc_sim_covariance(const ve_dcc_sim* sim, const double** data, size_t* len);
+/* With checkpoints: paths x K x m, row-major, valid until sim is freed. Without them VE_INVALID_ARGUMENT.
+   Since 1.3.0. */
+VE_API ve_status ve_dcc_sim_cumulative(const ve_dcc_sim* sim, const double** data, size_t* len);
+/* The checkpoints of the simulation (K values), or len = 0 without them. Since 1.3.0. */
+VE_API ve_status ve_dcc_sim_checkpoints(const ve_dcc_sim* sim, const size_t** data, size_t* len);
 VE_API void ve_dcc_sim_free(ve_dcc_sim* sim);
+
+/* ---- Covariance estimators (ve_cov_*) ----
+   Over a T x N panel of returns (series in columns), with each series' mean removed. `out` holds N * N doubles and
+   receives the matrix row-major, exactly symmetric. The panel must be rectangular (no ve_panel_set_ranges), with
+   t >= 2, n >= 1 and every value finite; otherwise VE_INVALID_ARGUMENT and `out` is left unchanged. Since 1.3.0. */
+/* The sample covariance Z'Z / (t - 1), as numpy.cov(rowvar=False). */
+VE_API ve_status ve_cov_sample(const ve_panel* panel, double* out);
+/* The Ledoit-Wolf (2004) shrinkage of Z'Z / t towards mu * I, mu the mean variance, as
+   sklearn.covariance.ledoit_wolf(assume_centered=False); *shrinkage receives the intensity, in [0, 1]. */
+VE_API ve_status ve_cov_ledoit_wolf(const ve_panel* panel, double* out, double* shrinkage);
+
+/* ---- Risk measures (ve_risk_*) ----
+   VaR and ES at confidence `confidence` in (0, 1) (0.99: the 1% tail), both positive as losses, in units of the
+   return. On an error *var and *es are left unchanged. Since 1.3.0. */
+#define VE_RETURNS_LOG 0
+#define VE_RETURNS_SIMPLE 1
+/* Empirical, over a T x N panel (dates or paths in rows): row t is the portfolio's simple return
+   sum_j weights[j] * s_tj, s = exp(r) - 1 for VE_RETURNS_LOG and s = r for VE_RETURNS_SIMPLE. VaR is minus its
+   linear-interpolated quantile at 1 - confidence (numpy.quantile's default), ES minus the mean of the returns at or
+   below it. The panel must be rectangular with t >= 1 and finite values; weights holds N finite values. */
+VE_API ve_status ve_risk_empirical(const ve_panel* returns, const double* weights, int32_t kind, double confidence,
+                                   double* var, double* es);
+/* Parametric: the return is mean + sigma * z, z the standardized VE_DIST_* density with the fit's skew, shape and
+   ghlambda (ignored where the density has none). VaR = -(mean + sigma q), ES = -(mean + sigma E[z | z <= q]), q the
+   quantile of z at 1 - confidence. mean finite, sigma >= 0 finite, parameters in the density's domain. */
+VE_API ve_status ve_risk_parametric(int32_t dist, double skew, double shape, double ghlambda, double mean, double sigma,
+                                    double confidence, double* var, double* es);
 
 #ifdef __cplusplus
 }

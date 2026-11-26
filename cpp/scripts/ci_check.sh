@@ -9,7 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 # A consumer asks find_package for this version; the install below is made under the matching tag.
-package_version=1.1.0
+package_version=1.3.0
 
 : "${VOLENGINE_NATIVE_LIB:?set VOLENGINE_NATIVE_LIB to the library}"
 if command -v cygpath >/dev/null; then

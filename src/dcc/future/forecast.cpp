@@ -2,6 +2,7 @@
 
 #include "dcc/future/state.hpp"
 #include "dcc/likelihood.hpp"
+#include "forecast/cumulative.hpp"
 #include "model/layout.hpp"
 
 #include <algorithm>
@@ -172,14 +173,19 @@ DccForecast forecast_dcc(const DccFitResult& fit, std::size_t horizon, const Ser
     out.series = m;
     out.sigma.resize(horizon * m);
     out.mean.resize(horizon * m);
+    out.cumulative_mean.resize(horizon * m);
+    out.weights.resize(horizon * m);
     for (std::size_t i = 0; i < m; ++i)
     {
         const SeriesEnd& end = (*fit.series_end)[i];
         const forecast::Forecast own = forecast::forecast(end.spec, end.estimate, end.state, horizon, future[i]);
+        const std::vector<double> a = forecast::cumulative_weights(model::layout_of(end.spec), end.estimate, horizon);
         for (std::size_t h = 0; h < horizon; ++h)
         {
             out.sigma[h * m + i] = own.sigma[h];
             out.mean[h * m + i] = own.mean[h];
+            out.cumulative_mean[h * m + i] = own.cumulative_mean[h];
+            out.weights[h * m + i] = a[h];
         }
     }
     out.r = correlation_forecast(fit, horizon);
@@ -190,6 +196,44 @@ DccForecast forecast_dcc(const DccFitResult& fit, std::size_t horizon, const Ser
         out.h[k] = out.sigma[h * m + (k / m) % m] * out.r[k] * out.sigma[h * m + k % m];
     }
     return out;
+}
+
+namespace
+{
+
+// sum_{k=1..h} a_i(h-k) a_j(h-k) H_k,ij.
+double cumulative_entry(const DccForecast& forecast, std::size_t h, std::size_t i, std::size_t j)
+{
+    const std::size_t m = forecast.series;
+    double sum = 0.0;
+    for (std::size_t k = 1; k <= h; ++k)
+    {
+        const std::size_t lag = (h - k) * m;
+        sum += forecast.weights[lag + i] * forecast.weights[lag + j] * forecast.h[(k - 1) * m * m + i * m + j];
+    }
+    return sum;
+}
+
+}
+
+std::vector<double> cumulative_covariance(const DccForecast& forecast)
+{
+    const std::size_t m = forecast.series;
+    const std::size_t size = m * m;
+    std::vector<double> c(forecast.horizon * size);
+    for (std::size_t h = 1; h <= forecast.horizon; ++h)
+    {
+        for (std::size_t i = 0; i < m; ++i)
+        {
+            for (std::size_t j = i; j < m; ++j)
+            {
+                const double value = cumulative_entry(forecast, h, i, j);
+                c[(h - 1) * size + i * m + j] = value;
+                c[(h - 1) * size + j * m + i] = value;
+            }
+        }
+    }
+    return c;
 }
 
 }

@@ -147,6 +147,7 @@ optim::LbfgsResult minimize(const fit::LikelihoodProblem& problem,
     optim::LbfgsOptions options;
     options.max_iter = config.max_iter;
     options.gtol = config.tol;
+    options.cancel = config.cancel;
     NegativeMeanLoglik<N> objective(problem, standardization);
     return optim::lbfgs_minimize(objective, u, options);
 }
@@ -308,6 +309,7 @@ fit::Nyblom nyblom_at_estimate(std::span<const double> scores, const model::Layo
 void fill_inference(FitResult& result, const fit::LikelihoodProblem& problem,
                     const model::Standardization& standardization, std::span<const double> scores)
 {
+    throw_if_cancelled(result.config.cancel);
     fit::StandardErrors errors = with_dual_width(
         problem.layout.count(),
         [&]<std::size_t N>()
@@ -437,6 +439,7 @@ FitResult fit_one(const model::Data& data, const Spec& spec, const FitConfig& co
     FitResult result = empty_result(spec, config, data.r.size(), FitStatus::Failed);
     result.status = estimate(data, result);
     result.work.seconds = seconds_since(start);
+    result.config.cancel = nullptr;
     return result;
 }
 

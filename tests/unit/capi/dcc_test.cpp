@@ -420,7 +420,8 @@ TEST(CapiDcc, MatchesCore)
     ve::testing::ContextPtr context = ve::testing::make_context(3);
     ASSERT_EQ(spec_count(batch.get()), 3U);
     DccFits fits(3);
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, fits.out()),
+                                           VE_OK) << ve_last_error();
     const std::vector<DccFitResult> expected = core_fits(univariate, true);
     for (std::size_t i = 0; i < fits.size(); ++i)
     {
@@ -455,8 +456,10 @@ TEST(CapiDcc, UnivariatesWithoutStandardErrorsGiveSameDcc)
     DccBatchPtr batch_without = build_dcc_batch({raw_specs(specs), handles_of(without), options.get()});
     DccFits fits_with(3);
     DccFits fits_without(3);
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch_with.get(), fits_with.out()), VE_OK) << ve_last_error();
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch_without.get(), fits_without.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch_with.get(), nullptr, fits_with.out()),
+                                           VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch_without.get(), nullptr, fits_without.out()),
+                                           VE_OK) << ve_last_error();
     for (std::size_t i = 0; i < fits_with.size(); ++i)
     {
         SCOPED_TRACE(i);
@@ -471,7 +474,8 @@ TEST(CapiDcc, TablesAreConsistent)
     DccBatchPtr batch = build_dcc_batch({raw_specs(specs), handles_of(univariate), nullptr});
     ve::testing::ContextPtr context = ve::testing::make_context(1);
     DccFits fits(3);
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, fits.out()),
+                                           VE_OK) << ve_last_error();
     const std::vector<DccFitResult> expected = core_fits(univariate, true);
     for (std::size_t i = 0; i < fits.size(); ++i)
     {
@@ -509,7 +513,8 @@ TEST(CapiDcc, ViewsAreZeroCopyAndStable)
     DccBatchPtr batch = build_dcc_batch({raw_specs(specs), handles_of(univariate), nullptr});
     ve::testing::ContextPtr context = ve::testing::make_context(1);
     DccFits fits(3);
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, fits.out()),
+                                           VE_OK) << ve_last_error();
     const double* r = nullptr;
     const double* h = nullptr;
     const std::vector<double> correlation = read_view(fits[0], ve_dcc_fit_correlation, &r);
@@ -545,7 +550,8 @@ TEST(CapiDcc, OutlivesInputs)
         DccOptionsPtr options = make_dcc_options(true);
         DccBatchPtr batch = build_dcc_batch({raw_specs(specs), handles_of(univariate), options.get()});
         ve::testing::ContextPtr context = ve::testing::make_context(2);
-        ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+        ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, fits.out()),
+                                               VE_OK) << ve_last_error();
         EXPECT_EQ(read_status(fits[1]), VE_FIT_CONVERGED);
         specs.clear();
         options.reset();
@@ -571,8 +577,10 @@ TEST(CapiDcc, StandardErrorsLater)
     ve::testing::ContextPtr context = ve::testing::make_context(2);
     DccFits plain(3);
     DccFits full(3);
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), without.get(), plain.out()), VE_OK) << ve_last_error();
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), with.get(), full.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), without.get(), nullptr, plain.out()),
+                                           VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), with.get(), nullptr, full.out()),
+                                           VE_OK) << ve_last_error();
     const std::vector<const ve_fit*> fits = handles_of(univariate);
     for (std::size_t i = 0; i < plain.size(); ++i)
     {
@@ -580,7 +588,8 @@ TEST(CapiDcc, StandardErrorsLater)
         expect_standard_errors_not_computed(plain[i]);
         EXPECT_TRUE(std::isfinite(read_loglik(plain[i])));
         ve_dcc_fit* later = nullptr;
-        ASSERT_EQ(ve_dcc_standard_errors(context.get(), plain[i], fits.data(), fits.size(), &later), VE_OK)
+        ASSERT_EQ(ve_dcc_standard_errors_with_cancel(context.get(), plain[i], fits.data(), fits.size(),
+                                                     nullptr, &later), VE_OK)
             << ve_last_error();
         DccFitPtr owner(later);
         ASSERT_NE(later, nullptr);
@@ -601,7 +610,8 @@ TEST(CapiDcc, FixedParametersStayInTheTable)
     DccBatchPtr batch = build_dcc_batch({raw_specs(specs), handles_of(univariate), nullptr});
     ve::testing::ContextPtr context = ve::testing::make_context(2);
     DccFits fits(1);
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, fits.out()),
+                                           VE_OK) << ve_last_error();
     ASSERT_EQ(read_status(fits[0]), VE_FIT_CONVERGED);
     std::size_t count = 0;
     ASSERT_EQ(ve_dcc_fit_param_count(fits[0], &count), VE_OK);
@@ -635,7 +645,8 @@ TEST(CapiDcc, ANonConvergedSpecKeepsItsOwnStatus)
     DccBatchPtr batch = build_dcc_batch({raw_specs(specs), handles_of(univariate), nullptr});
     ve::testing::ContextPtr context = ve::testing::make_context(2);
     DccFits fits(2);
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, fits.out()),
+                                           VE_OK) << ve_last_error();
     EXPECT_EQ(read_status(fits[0]), VE_FIT_CONVERGED);
     EXPECT_EQ(read_status(fits[1]), VE_FIT_FAILED);
     const double* data = &kNaN;
@@ -738,7 +749,7 @@ Attempt attempt(const DccInputs& inputs)
     ve::testing::ContextPtr context = ve::testing::make_context(1);
     const std::size_t count = std::max(std::size_t{1}, inputs.specs.size());
     std::vector<ve_dcc_fit*> slots(count, reinterpret_cast<ve_dcc_fit*>(&context));
-    const ve_status status = ve_dcc_fit_batch(context.get(), batch.get(), slots.data());
+    const ve_status status = ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, slots.data());
     return {status, slots.front()};
 }
 
@@ -756,14 +767,16 @@ TEST(CapiDcc, FitBatchRejectsInvalidArguments)
     DccBatchPtr batch = build_dcc_batch(one_dcc(dcc, univariate));
     ve::testing::ContextPtr context = ve::testing::make_context(1);
     ve_dcc_fit* out = nullptr;
-    EXPECT_EQ(ve_dcc_fit_batch(nullptr, batch.get(), &out), VE_INVALID_HANDLE);
-    EXPECT_EQ(ve_dcc_fit_batch(context.get(), nullptr, &out), VE_INVALID_HANDLE);
-    EXPECT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), nullptr), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_fit_batch_with_cancel(nullptr, batch.get(), nullptr, &out), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), nullptr, nullptr, &out), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, nullptr),
+                                           VE_INVALID_ARGUMENT);
     DccBatchPtr empty = build_dcc_batch({});
-    EXPECT_EQ(ve_dcc_fit_batch(context.get(), empty.get(), &out), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), empty.get(), nullptr, &out), VE_INVALID_ARGUMENT);
     EXPECT_EQ(out, nullptr);
     DccBatchPtr no_specs = build_dcc_batch({{}, handles_of(univariate), nullptr});
-    EXPECT_EQ(ve_dcc_fit_batch(context.get(), no_specs.get(), &out), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), no_specs.get(), nullptr, &out),
+                                           VE_INVALID_ARGUMENT);
     EXPECT_TRUE(mentions("spec"));
 }
 
@@ -828,11 +841,13 @@ TEST(CapiDcc, StandardErrorsNeedFitsWithoutRegressors)
     DccBatchPtr batch = build_dcc_batch({{dcc.get()}, handles_of(with_regressors), off.get()});
     ve::testing::ContextPtr context = ve::testing::make_context(1);
     DccFits fits(1);
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, fits.out()),
+                                           VE_OK) << ve_last_error();
     EXPECT_EQ(read_status(fits[0]), VE_FIT_CONVERGED);
     const std::vector<const ve_fit*> handles = handles_of(with_regressors);
     ve_dcc_fit* later = reinterpret_cast<ve_dcc_fit*>(&later);
-    EXPECT_EQ(ve_dcc_standard_errors(context.get(), fits[0], handles.data(), handles.size(), &later),
+    EXPECT_EQ(ve_dcc_standard_errors_with_cancel(context.get(), fits[0], handles.data(), handles.size(),
+                                                 nullptr, &later),
               VE_UNSUPPORTED);
     EXPECT_EQ(later, nullptr);
     EXPECT_TRUE(mentions("regressors"));
@@ -846,24 +861,33 @@ TEST(CapiDcc, StandardErrorsRejectOtherFitsAndBadArguments)
     DccBatchPtr batch = build_dcc_batch({{dcc.get()}, handles_of(univariate), off.get()});
     ve::testing::ContextPtr context = ve::testing::make_context(1);
     DccFits fits(1);
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, fits.out()),
+                                           VE_OK) << ve_last_error();
     const std::vector<const ve_fit*> handles = handles_of(univariate);
     ve_dcc_fit* out = reinterpret_cast<ve_dcc_fit*>(&out);
     const std::vector<const ve_fit*> reordered{handles[1], handles[0], handles[2]};
-    EXPECT_EQ(ve_dcc_standard_errors(context.get(), fits[0], reordered.data(), 3, &out), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_standard_errors_with_cancel(context.get(), fits[0], reordered.data(), 3, nullptr, &out),
+                                                 VE_INVALID_ARGUMENT);
     EXPECT_EQ(out, nullptr);
     EXPECT_TRUE(mentions("estimates differ"));
     out = reinterpret_cast<ve_dcc_fit*>(&out);
-    EXPECT_EQ(ve_dcc_standard_errors(context.get(), fits[0], handles.data(), 2, &out), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_standard_errors_with_cancel(context.get(), fits[0], handles.data(), 2, nullptr, &out),
+                                                 VE_INVALID_ARGUMENT);
     EXPECT_EQ(out, nullptr);
     EXPECT_TRUE(mentions("3 series"));
-    EXPECT_EQ(ve_dcc_standard_errors(nullptr, fits[0], handles.data(), 3, &out), VE_INVALID_HANDLE);
-    EXPECT_EQ(ve_dcc_standard_errors(context.get(), nullptr, handles.data(), 3, &out), VE_INVALID_HANDLE);
-    EXPECT_EQ(ve_dcc_standard_errors(context.get(), fits[0], nullptr, 3, &out), VE_INVALID_ARGUMENT);
-    EXPECT_EQ(ve_dcc_standard_errors(context.get(), fits[0], handles.data(), 0, &out), VE_INVALID_ARGUMENT);
-    EXPECT_EQ(ve_dcc_standard_errors(context.get(), fits[0], handles.data(), 3, nullptr), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_standard_errors_with_cancel(nullptr, fits[0], handles.data(), 3, nullptr, &out),
+                                                 VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_dcc_standard_errors_with_cancel(context.get(), nullptr, handles.data(), 3, nullptr, &out),
+                                                 VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_dcc_standard_errors_with_cancel(context.get(), fits[0], nullptr, 3, nullptr, &out),
+                                                 VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_standard_errors_with_cancel(context.get(), fits[0], handles.data(), 0, nullptr, &out),
+                                                 VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_standard_errors_with_cancel(context.get(), fits[0], handles.data(), 3, nullptr,
+                                                 nullptr), VE_INVALID_ARGUMENT);
     const std::vector<const ve_fit*> with_null{handles[0], nullptr, handles[2]};
-    EXPECT_EQ(ve_dcc_standard_errors(context.get(), fits[0], with_null.data(), 3, &out), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_dcc_standard_errors_with_cancel(context.get(), fits[0], with_null.data(), 3, nullptr, &out),
+                                                 VE_INVALID_HANDLE);
 }
 
 TEST(CapiDcc, AccessorsRejectBadArguments)
@@ -873,7 +897,8 @@ TEST(CapiDcc, AccessorsRejectBadArguments)
     DccBatchPtr batch = build_dcc_batch(one_dcc(dcc, univariate));
     ve::testing::ContextPtr context = ve::testing::make_context(1);
     DccFits fits(1);
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, fits.out()),
+                                           VE_OK) << ve_last_error();
     const ve_dcc_fit* fit = fits[0];
     double value = 0.0;
     double table[2] = {0.0, 0.0};
@@ -917,7 +942,8 @@ TEST(CapiDcc, CovarianceIsComputedOnceAcrossThreads)
     DccBatchPtr batch = build_dcc_batch(one_dcc(dcc, univariate));
     ve::testing::ContextPtr context = ve::testing::make_context(1);
     DccFits fits(1);
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, fits.out()),
+                                           VE_OK) << ve_last_error();
     std::vector<const double*> pointers(4, nullptr);
     std::vector<std::thread> threads;
     for (std::size_t i = 0; i < pointers.size(); ++i)
@@ -955,7 +981,8 @@ TEST(CapiDcc, BatchOwnsCopiesBeforeFitting)
     }
     ve::testing::ContextPtr context = ve::testing::make_context(1);
     DccFits fits(1);
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, fits.out()),
+                                           VE_OK) << ve_last_error();
     expect_same_report(report_of(fits[0]), expected);
 }
 
@@ -1024,7 +1051,8 @@ TEST(CapiDcc, CopulaMatchesCore)
     DccBatchPtr batch = build_dcc_batch({raw_specs(specs), handles_of(univariate), options.get()});
     ve::testing::ContextPtr context = ve::testing::make_context(3);
     DccFits fits(4);
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, fits.out()),
+                                           VE_OK) << ve_last_error();
 
     const std::vector<DccSpec> core{
         core_copula(DccModel::Dcc, DccDist::MvNorm, DccCopula::None, StaticMethod::Default),
@@ -1057,7 +1085,8 @@ TEST(CapiDcc, AFitWithNoParameterTakesNullArrays)
     DccBatchPtr batch = build_dcc_batch({{spec.get()}, handles_of(univariate), options.get()});
     ve::testing::ContextPtr context = ve::testing::make_context(1);
     DccFits fits(1);
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, fits.out()),
+                                           VE_OK) << ve_last_error();
     std::size_t count = 7;
     ASSERT_EQ(ve_dcc_fit_param_count(fits[0], &count), VE_OK);
     ASSERT_EQ(count, 0U);
@@ -1140,7 +1169,8 @@ struct FittedDcc
         DccOptionsPtr options = make_dcc_options(false);
         DccBatchPtr batch = build_dcc_batch({raw_specs(specs), handles_of(univariate), options.get()});
         ve::testing::ContextPtr context = ve::testing::make_context(2);
-        EXPECT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+        EXPECT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, fits.out()),
+                                               VE_OK) << ve_last_error();
     }
 };
 
@@ -1246,13 +1276,15 @@ TEST(CapiDcc, ForecastNeedsAFinitePoint)
     DccBatchPtr batch = build_dcc_batch({{outside.get()}, handles_of(univariate), options.get()});
     ve::testing::ContextPtr context = ve::testing::make_context(1);
     DccFits fits(1);
-    ASSERT_EQ(ve_dcc_fit_batch(context.get(), batch.get(), fits.out()), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), batch.get(), nullptr, fits.out()),
+                                           VE_OK) << ve_last_error();
     ve_dcc_forecast* out = nullptr;
     EXPECT_EQ(ve_dcc_forecast_create(fits[0], 5, nullptr, &out), VE_INVALID_ARGUMENT);
     EXPECT_TRUE(mentions("no finite point"));
     SimOptionsPtr sim_options = make_sim_options(5, 10, 1, false);
     ve_dcc_sim* sim = nullptr;
-    EXPECT_EQ(ve_simulate_dcc(context.get(), fits[0], sim_options.get(), nullptr, &sim), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_simulate_dcc_with_cancel(context.get(), fits[0], sim_options.get(), nullptr, nullptr, &sim),
+                                          VE_INVALID_ARGUMENT);
     EXPECT_TRUE(mentions("no finite point"));
 }
 
@@ -1262,7 +1294,8 @@ TEST(CapiDcc, SimulationMatchesCore)
     ve::testing::ContextPtr context = ve::testing::make_context(3);
     SimOptionsPtr options = make_sim_options(8, 40, 99, true);
     ve_dcc_sim* raw = nullptr;
-    ASSERT_EQ(ve_simulate_dcc(context.get(), fitted.fits[0], options.get(), nullptr, &raw), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_simulate_dcc_with_cancel(context.get(), fitted.fits[0], options.get(), nullptr, nullptr,
+                                          &raw), VE_OK) << ve_last_error();
     DccSimPtr sim(raw);
     ve::Context core_context;
     ve::dcc::future::DccRequest request{8, 40, 99, true, ve::dcc::future::SeriesRegressors(kSeries)};
@@ -1292,7 +1325,8 @@ TEST(CapiDcc, SimulationCorrelationsMustBeZeroOrOne)
     ve::testing::ContextPtr context = ve::testing::make_context(1);
     FittedDcc fitted;
     ve_dcc_sim* sim = nullptr;
-    ASSERT_EQ(ve_simulate_dcc(context.get(), fitted.fits[0], options.get(), nullptr, &sim), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_simulate_dcc_with_cancel(context.get(), fitted.fits[0], options.get(), nullptr, nullptr,
+                                          &sim), VE_OK) << ve_last_error();
     DccSimPtr owner(sim);
     EXPECT_FALSE(sim_view_of(ve_dcc_sim_correlation, sim).empty());
     EXPECT_EQ(ve_sim_options_set_correlations(nullptr, 1), VE_INVALID_HANDLE);
@@ -1304,7 +1338,8 @@ TEST(CapiDcc, SimulationRefusesWhatItCannotDo)
     ve::testing::ContextPtr context = ve::testing::make_context(1);
     ve_dcc_sim* sim = nullptr;
     SimOptionsPtr off = make_sim_options(4, 10, 1, false);
-    ASSERT_EQ(ve_simulate_dcc(context.get(), fitted.fits[0], off.get(), nullptr, &sim), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_simulate_dcc_with_cancel(context.get(), fitted.fits[0], off.get(), nullptr, nullptr, &sim),
+                                          VE_OK) << ve_last_error();
     DccSimPtr kept(sim);
     const double* data = nullptr;
     std::size_t len = 0;
@@ -1318,16 +1353,20 @@ TEST(CapiDcc, SimulationRefusesWhatItCannotDo)
     SimOptionsPtr own = make_sim_options(4, 10, 1, false);
     ASSERT_EQ(ve_sim_options_set_regressors(own.get(), panel.get(), nullptr), VE_OK);
     ve_dcc_sim* refused = nullptr;
-    EXPECT_EQ(ve_simulate_dcc(context.get(), fitted.fits[0], own.get(), nullptr, &refused), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_simulate_dcc_with_cancel(context.get(), fitted.fits[0], own.get(), nullptr, nullptr,
+                                          &refused), VE_INVALID_ARGUMENT);
     EXPECT_EQ(refused, nullptr);
 
     SimOptionsPtr correlations = make_sim_options(4, 10, 1, true);
     ve_sim* univariate = nullptr;
-    EXPECT_EQ(ve_simulate_fit(context.get(), fitted.univariate[0], correlations.get(), &univariate),
+    EXPECT_EQ(ve_simulate_fit_with_cancel(context.get(), fitted.univariate[0], correlations.get(), nullptr,
+                                          &univariate),
               VE_INVALID_ARGUMENT);
     EXPECT_TRUE(mentions("correlations"));
-    EXPECT_EQ(ve_simulate_dcc(context.get(), nullptr, off.get(), nullptr, &refused), VE_INVALID_HANDLE);
-    EXPECT_EQ(ve_simulate_dcc(context.get(), fitted.fits[0], off.get(), nullptr, nullptr), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_simulate_dcc_with_cancel(context.get(), nullptr, off.get(), nullptr, nullptr, &refused),
+                                          VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_simulate_dcc_with_cancel(context.get(), fitted.fits[0], off.get(), nullptr, nullptr,
+                                          nullptr), VE_INVALID_ARGUMENT);
 }
 
 // Review focus 4: paths x horizon x m^2 would overflow size_t; the answer is an error, not bad_alloc or a crash.
@@ -1338,11 +1377,121 @@ TEST(CapiDcc, SimulationRejectsSizesThatOverflow)
     const std::size_t huge = std::numeric_limits<std::size_t>::max();
     ve_dcc_sim* sim = nullptr;
     SimOptionsPtr plain = make_sim_options(1, huge / 20, 1, false);
-    EXPECT_EQ(ve_simulate_dcc(context.get(), fitted.fits[0], plain.get(), nullptr, &sim), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_simulate_dcc_with_cancel(context.get(), fitted.fits[0], plain.get(), nullptr, nullptr,
+                                          &sim), VE_INVALID_ARGUMENT);
     EXPECT_TRUE(mentions("too large"));
     SimOptionsPtr with_correlations = make_sim_options(2, huge / 128, 1, true);
-    EXPECT_EQ(ve_simulate_dcc(context.get(), fitted.fits[0], with_correlations.get(), nullptr, &sim),
+    EXPECT_EQ(ve_simulate_dcc_with_cancel(context.get(), fitted.fits[0], with_correlations.get(), nullptr,
+                                          nullptr, &sim),
               VE_INVALID_ARGUMENT);
     EXPECT_TRUE(mentions("too large"));
     EXPECT_EQ(sim, nullptr);
+}
+
+TEST(CapiDccSimCumulative, MatchesTheFullOutput)
+{
+    FittedDcc fitted;
+    ve::testing::ContextPtr context = ve::testing::make_context(2);
+    SimOptionsPtr full_options = make_sim_options(8, 40, 7, false);
+    SimOptionsPtr options = make_sim_options(8, 40, 7, false);
+    const std::vector<size_t> checkpoints{3, 8};
+    ASSERT_EQ(ve_sim_options_set_checkpoints(options.get(), checkpoints.data(), checkpoints.size()), VE_OK);
+    ve_dcc_sim* raw = nullptr;
+    ASSERT_EQ(ve_simulate_dcc_with_cancel(context.get(), fitted.fits[0], full_options.get(), nullptr, nullptr, &raw),
+              VE_OK)
+        << ve_last_error();
+    DccSimPtr full(raw);
+    ASSERT_EQ(ve_simulate_dcc_with_cancel(context.get(), fitted.fits[0], options.get(), nullptr, nullptr, &raw),
+              VE_OK)
+        << ve_last_error();
+    DccSimPtr cumulative(raw);
+    const std::vector<double> returns = sim_view_of(ve_dcc_sim_returns, full.get());
+    const std::vector<double> sums = sim_view_of(ve_dcc_sim_cumulative, cumulative.get());
+    ASSERT_EQ(sums.size(), 40 * 2 * kSeries);
+    for (std::size_t p = 0; p < 40; ++p)
+    {
+        for (std::size_t i = 0; i < kSeries; ++i)
+        {
+            double sum = 0.0;
+            std::size_t h = 0;
+            for (std::size_t j = 0; j < 2; ++j)
+            {
+                for (; h < checkpoints[j]; ++h)
+                {
+                    sum += returns[(p * 8 + h) * kSeries + i];
+                }
+                EXPECT_EQ(std::bit_cast<std::uint64_t>(sums[(p * 2 + j) * kSeries + i]),
+                          std::bit_cast<std::uint64_t>(sum));
+            }
+        }
+    }
+    const size_t* listed = nullptr;
+    size_t count = 0;
+    ASSERT_EQ(ve_dcc_sim_checkpoints(cumulative.get(), &listed, &count), VE_OK);
+    EXPECT_EQ(std::vector<size_t>(listed, listed + count), checkpoints);
+    const double* data = nullptr;
+    size_t len = 0;
+    EXPECT_EQ(ve_dcc_sim_returns(cumulative.get(), &data, &len), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(mentions("ve_dcc_sim_cumulative")) << ve_last_error();
+    EXPECT_EQ(ve_dcc_sim_sigma(cumulative.get(), &data, &len), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_sim_cumulative(full.get(), &data, &len), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_sim_checkpoints(full.get(), &listed, &count), VE_OK);
+    EXPECT_EQ(count, 0U);
+}
+
+TEST(CapiDccSimCumulative, RefusesCorrelations)
+{
+    FittedDcc fitted;
+    ve::testing::ContextPtr context = ve::testing::make_context(1);
+    SimOptionsPtr options = make_sim_options(8, 10, 7, true);
+    const size_t checkpoints[] = {8};
+    ASSERT_EQ(ve_sim_options_set_checkpoints(options.get(), checkpoints, 1), VE_OK);
+    ve_dcc_sim* raw = nullptr;
+    EXPECT_EQ(ve_simulate_dcc_with_cancel(context.get(), fitted.fits[0], options.get(), nullptr, nullptr, &raw),
+              VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(mentions("checkpoints and correlations")) << ve_last_error();
+    EXPECT_EQ(raw, nullptr);
+}
+
+TEST(CapiDccForecastCumulative, MatchesCore)
+{
+    FittedDcc fitted;
+    ve_dcc_forecast* raw = nullptr;
+    ASSERT_EQ(ve_dcc_forecast_create(fitted.fits[0], 12, nullptr, &raw), VE_OK) << ve_last_error();
+    DccForecastPtr forecast(raw);
+    const ve::dcc::future::DccForecast core =
+        ve::dcc::future::forecast_dcc(fitted.fits[0]->result, 12, ve::dcc::future::SeriesRegressors(kSeries));
+    EXPECT_EQ(view_of(ve_dcc_forecast_cumulative_mean, raw), core.cumulative_mean);
+    EXPECT_EQ(view_of(ve_dcc_forecast_cumulative_covariance, raw), ve::dcc::future::cumulative_covariance(core));
+    EXPECT_EQ(core.cumulative_mean.size(), 12 * kSeries);
+    const double* data = nullptr;
+    size_t len = 0;
+    EXPECT_EQ(ve_dcc_forecast_cumulative_covariance(nullptr, &data, &len), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_dcc_forecast_cumulative_mean(raw, nullptr, &len), VE_INVALID_ARGUMENT);
+}
+
+// Review Focus 5.
+TEST(CapiDccForecastCumulative, ConcurrentFirstAccess)
+{
+    FittedDcc fitted;
+    ve_dcc_forecast* raw = nullptr;
+    ASSERT_EQ(ve_dcc_forecast_create(fitted.fits[0], 30, nullptr, &raw), VE_OK) << ve_last_error();
+    DccForecastPtr forecast(raw);
+    const double* first = nullptr;
+    const double* second = nullptr;
+    size_t first_len = 0;
+    size_t second_len = 0;
+    ve_status first_status = VE_INTERNAL_ERROR;
+    ve_status second_status = VE_INTERNAL_ERROR;
+    {
+        std::jthread a([&] { first_status = ve_dcc_forecast_cumulative_covariance(raw, &first, &first_len); });
+        std::jthread b([&] { second_status = ve_dcc_forecast_cumulative_covariance(raw, &second, &second_len); });
+    }
+    ASSERT_EQ(first_status, VE_OK);
+    ASSERT_EQ(second_status, VE_OK);
+    EXPECT_EQ(first, second);
+    EXPECT_EQ(first_len, second_len);
+    const ve::dcc::future::DccForecast core =
+        ve::dcc::future::forecast_dcc(fitted.fits[0]->result, 30, ve::dcc::future::SeriesRegressors(kSeries));
+    EXPECT_EQ(std::vector<double>(first, first + first_len), ve::dcc::future::cumulative_covariance(core));
 }

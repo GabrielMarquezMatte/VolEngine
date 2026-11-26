@@ -1,6 +1,9 @@
 """VolEngine: GARCH estimation over the VolEngine C API."""
 
+from . import cov, risk
 from .api import (
+    Cancel,
+    Cancelled,
     CoefTable,
     Context,
     DccFit,
@@ -19,6 +22,8 @@ from .api import (
 )
 
 __all__ = [
+    "Cancel",
+    "Cancelled",
     "CoefTable",
     "Context",
     "DccFit",
@@ -34,4 +39,6 @@ __all__ = [
     "Simulation",
     "Spec",
     "VolEngineError",
+    "cov",
+    "risk",
 ]

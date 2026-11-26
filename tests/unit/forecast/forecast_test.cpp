@@ -1,13 +1,20 @@
+#include "core/context.hpp"
 #include "fit/fit.hpp"
+#include "forecast/cumulative.hpp"
 #include "forecast/forecast.hpp"
 #include "forecast/step.hpp"
 #include "forecast/variance_forecast.hpp"
 #include "model/layout.hpp"
 #include "model/likelihood.hpp"
 #include "model/parameter_map.hpp"
+#include "sim/simulate.hpp"
+#include "sim/start.hpp"
 #include "simulated_garch.hpp"
 
+#include <bit>
+#include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <numbers>
@@ -561,6 +568,155 @@ TEST(Forecast, FromKeptState)
         EXPECT_EQ(whole.sigma, kept.sigma);
         EXPECT_EQ(whole.mean, kept.mean);
     }
+}
+
+std::vector<double> weights_of(const ve::Spec& spec, const std::vector<double>& estimate, std::size_t horizon)
+{
+    return ve::forecast::cumulative_weights(ve::model::layout_of(spec), estimate, horizon);
+}
+
+TEST(CumulativeWeights, ArOneIsGeometric)
+{
+    const std::vector<double> a = weights_of(ve::Spec{.ar = 1}, {0.05, 0.6, 0.02, 0.08, 0.9}, 30);
+    double expected = 0.0;
+    for (std::size_t n = 0; n < 30; ++n)
+    {
+        expected += std::pow(0.6, static_cast<double>(n));
+        EXPECT_NEAR(a[n], expected, 1e-15 * expected) << n;
+    }
+}
+
+TEST(CumulativeWeights, MaOne)
+{
+    const std::vector<double> a = weights_of(ve::Spec{.ma = 1}, {0.05, 0.4, 0.02, 0.08, 0.9}, 5);
+    EXPECT_EQ(a, (std::vector<double>{1.0, 1.4, 1.4, 1.4, 1.4}));
+}
+
+TEST(CumulativeWeights, FractionalIntegration)
+{
+    const double d = 0.3;
+    const std::vector<double> a = weights_of(ve::Spec{.arfima = true}, {0.05, d, 0.02, 0.08, 0.9}, 20);
+    double g = 1.0;
+    double expected = 1.0;
+    EXPECT_DOUBLE_EQ(a[0], 1.0);
+    for (std::size_t j = 1; j < 20; ++j)
+    {
+        g *= (static_cast<double>(j) - 1.0 + d) / static_cast<double>(j);
+        expected += g;
+        EXPECT_NEAR(a[j], expected, 1e-14 * expected) << j;
+    }
+}
+
+TEST(CumulativeWeights, WithoutArmaAreOne)
+{
+    EXPECT_EQ(weights_of(ve::Spec{}, {0.05, 0.02, 0.08, 0.9}, 4), (std::vector<double>{1.0, 1.0, 1.0, 1.0}));
+}
+
+// Review Focus 2.
+TEST(CumulativeWeights, NearUnitRoot)
+{
+    const std::vector<double> a = weights_of(ve::Spec{.ar = 1}, {0.05, 0.99, 0.02, 0.08, 0.9}, 500);
+    for (std::size_t n = 1; n < a.size(); ++n)
+    {
+        ASSERT_TRUE(std::isfinite(a[n]));
+        EXPECT_GT(a[n], a[n - 1]);
+    }
+}
+
+void expect_plain_sums(const Forecast& forecast)
+{
+    double mean = 0.0;
+    double variance = 0.0;
+    for (std::size_t h = 0; h < forecast.mean.size(); ++h)
+    {
+        mean += forecast.mean[h];
+        variance += forecast.sigma[h] * forecast.sigma[h];
+        EXPECT_EQ(std::bit_cast<std::uint64_t>(forecast.cumulative_mean[h]), std::bit_cast<std::uint64_t>(mean)) << h;
+        const double sigma = forecast.cumulative_sigma[h];
+        EXPECT_NEAR(sigma * sigma, variance, 1e-14 * variance) << h;
+    }
+}
+
+TEST(CumulativeForecast, WithoutArmaIsThePlainSum)
+{
+    const ve::FitResult fit = at_point(ve::Spec{}, {0.05, 0.02, 0.08, 0.9}, {{0.3}, {1.1}, {}, {0.3}});
+    expect_plain_sums(ve::forecast::forecast(fit, 25));
+}
+
+// Review Focus 1.
+TEST(CumulativeForecast, HorizonOne)
+{
+    const ve::FitResult fit =
+        at_point(ve::Spec{.ar = 1, .ma = 1}, {0.05, 0.4, 0.3, 0.02, 0.08, 0.9}, {{0.2}, {1.2}, {}, {0.6}});
+    const Forecast forecast = ve::forecast::forecast(fit, 1);
+    EXPECT_EQ(forecast.cumulative_mean[0], forecast.mean[0]);
+    EXPECT_EQ(forecast.cumulative_sigma[0], forecast.sigma[0]);
+}
+
+// Review Focus 4.
+TEST(CumulativeForecast, InMeanAndRegressors)
+{
+    constexpr std::size_t horizon = 12;
+    const ve::Spec spec{.mxreg = 1, .archm = 1};
+    std::vector<double> r = ve::testing::simulate_garch_series(11, kObservations);
+    std::vector<double> x = columns(kObservations + horizon, 1, -0.25);
+    ve::model::Data sample{r, {std::span<const double>(x.data(), kObservations), 1}, {}};
+    const ve::FitResult fit = ve::fit_one(sample, spec, ve::FitConfig{});
+    ASSERT_FALSE(fit.sigma.empty());
+    const ve::forecast::FutureRegressors future{{std::span<const double>(x).last(horizon), 1}, {}};
+    expect_plain_sums(ve::forecast::forecast(fit, horizon, future));
+}
+
+// The mean and variance of the cumulative returns over paths against the forecast, within 5 standard errors.
+void expect_matches_simulation(const ve::FitResult& fit)
+{
+    constexpr std::size_t paths = 200000;
+    const std::vector<std::size_t> checkpoints{1, 5, 20};
+    const Forecast forecast = ve::forecast::forecast(fit, 20);
+    ve::Context context;
+    ve::sim::Request request{20, paths, 3};
+    request.checkpoints = checkpoints;
+    const ve::sim::Simulation sim = ve::sim::simulate(context, ve::sim::start_of_fit(fit), request);
+    for (std::size_t j = 0; j < checkpoints.size(); ++j)
+    {
+        double mean = 0.0;
+        for (std::size_t p = 0; p < paths; ++p)
+        {
+            mean += sim.cumulative[p * checkpoints.size() + j] / static_cast<double>(paths);
+        }
+        double second = 0.0;
+        double fourth = 0.0;
+        for (std::size_t p = 0; p < paths; ++p)
+        {
+            const double deviation = sim.cumulative[p * checkpoints.size() + j] - mean;
+            second += deviation * deviation / static_cast<double>(paths);
+            fourth += deviation * deviation * deviation * deviation / static_cast<double>(paths);
+        }
+        const std::size_t h = checkpoints[j] - 1;
+        const double variance = forecast.cumulative_sigma[h] * forecast.cumulative_sigma[h];
+        const double variance_error = std::sqrt((fourth - second * second) / static_cast<double>(paths));
+        EXPECT_NEAR(second, variance, 5.0 * variance_error) << "checkpoint " << checkpoints[j];
+        EXPECT_NEAR(mean, forecast.cumulative_mean[h], 5.0 * std::sqrt(second / static_cast<double>(paths)))
+            << "checkpoint " << checkpoints[j];
+    }
+}
+
+TEST(CumulativeForecast, MatchesTheSimulation)
+{
+    expect_matches_simulation(
+        at_point(ve::Spec{.ar = 1, .ma = 1}, {0.05, 0.6, 0.3, 0.02, 0.08, 0.9}, {{0.2}, {1.2}, {}, {0.6}}));
+    expect_matches_simulation(at_point(ve::Spec{.ar = 1, .arfima = true}, {0.05, 0.3, 0.25, 0.02, 0.08, 0.9},
+                                       {{0.2}, {1.2}, {}, {0.6, -0.3, 0.2, 0.5, -0.1}}));
+}
+
+// Without ARMA the cumulative variance is a running sum: a long horizon stays linear in time.
+TEST(CumulativeForecast, LongHorizonWithoutArmaIsLinear)
+{
+    const ve::FitResult fit = at_point(ve::Spec{}, {0.05, 0.02, 0.08, 0.9}, {{0.3}, {1.1}, {}, {0.3}});
+    const auto start = std::chrono::steady_clock::now();
+    const Forecast forecast = ve::forecast::forecast(fit, 100000);
+    EXPECT_LT(std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count(), 0.5);
+    expect_plain_sums(forecast);
 }
 
 }

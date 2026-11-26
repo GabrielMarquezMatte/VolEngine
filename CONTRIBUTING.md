@@ -79,14 +79,14 @@ guide in step). A new public member fails the build (RS0016) until it is listed 
 To check a package as a user gets it, copy the library to a folder as `volengine-native-<rid>.<ext>` and run
 
 ```
-dotnet pack csharp/src/VolEngine -c Release -p:Version=1.1.0-local -p:VolEngineNativeAssets=<folder> -p:VolEngineNativeRids=win-x64 -o <packages>
-bash csharp/scripts/check_package.sh <packages> 1.1.0-local
+dotnet pack csharp/src/VolEngine -c Release -p:Version=1.3.0-local -p:VolEngineNativeAssets=<folder> -p:VolEngineNativeRids=win-x64 -o <packages>
+bash csharp/scripts/check_package.sh <packages> 1.3.0-local
 ```
 
 which runs the clean consumer without `VOLENGINE_LIB` and again published with Native AOT (on Windows that needs the
 Visual Studio C++ tools). A release packs all seven libraries; after a release, move `PublicAPI.Unshipped.txt` into
-`PublicAPI.Shipped.txt`, and after 1.1.0 is on nuget.org set `PackageValidationBaselineVersion` to 1.1.0 in
-`VolEngine.csproj` so package validation compares each new package with it.
+`PublicAPI.Shipped.txt`. `PackageValidationBaselineVersion` in `VolEngine.csproj` names the last package on nuget.org,
+which package validation compares each new package with: move it to each release once that release is published.
 
 ## Python tests
 

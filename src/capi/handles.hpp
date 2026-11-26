@@ -2,6 +2,7 @@
 
 #include "capi/dcc/table.hpp"
 #include "capi/results/regressor_rows.hpp"
+#include "core/cancel.hpp"
 #include "core/context.hpp"
 #include "dcc/fit.hpp"
 #include "dcc/future/forecast.hpp"
@@ -16,12 +17,30 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <span>
+#include <vector>
 #include <volengine/volengine.h>
 
 struct ve_context
 {
     ve::Context context;
 };
+
+struct ve_cancel
+{
+    ve::CancelFlag flag;
+};
+
+namespace ve::capi
+{
+
+// Null for a null handle, which never cancels.
+inline const CancelFlag* flag_of(const ve_cancel* c)
+{
+    return c == nullptr ? nullptr : &c->flag;
+}
+
+}
 
 struct ve_spec
 {
@@ -61,7 +80,37 @@ struct ve_sim_options
     ve::capi::StoredRows mxreg{};
     ve::capi::StoredRows vxreg{};
     bool correlations = false;
+    // Empty, or strictly increasing from 1 and ending at horizon (see checkpoints_problem).
+    std::vector<std::size_t> checkpoints{};
 };
+
+namespace ve::capi
+{
+
+// Why ks cannot be the checkpoints of a horizon, or null when they can (an empty list always can).
+inline const char* checkpoints_problem(std::span<const std::size_t> ks, std::size_t horizon)
+{
+    if (ks.empty())
+    {
+        return nullptr;
+    }
+    std::size_t previous = 0;
+    for (std::size_t k : ks)
+    {
+        if (k <= previous)
+        {
+            return "checkpoints must be strictly increasing, from 1, and end at the horizon";
+        }
+        previous = k;
+    }
+    if (previous != horizon)
+    {
+        return "checkpoints must be strictly increasing, from 1, and end at the horizon";
+    }
+    return nullptr;
+}
+
+}
 
 struct ve_sim
 {
@@ -106,6 +155,8 @@ struct ve_dcc_future
 struct ve_dcc_forecast
 {
     ve::dcc::future::DccForecast forecast;
+    mutable std::once_flag cumulative_once;
+    mutable std::vector<double> cumulative_covariance;
 };
 
 struct ve_dcc_sim

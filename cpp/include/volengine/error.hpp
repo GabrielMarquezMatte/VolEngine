@@ -21,6 +21,7 @@ enum class Status : std::int32_t
     unsupported = VE_UNSUPPORTED,
     out_of_memory = VE_OUT_OF_MEMORY,
     internal_error = VE_INTERNAL_ERROR,
+    cancelled = VE_CANCELLED,
 };
 
 // A failed call: its status and the message of ve_last_error, copied when the call returned.

@@ -431,18 +431,78 @@ void group_to_unconstrained(std::span<const double> theta, std::span<double> u, 
     }
 }
 
+bool group_valid(double a, double b)
+{
+    return a > 0.0 && b > 0.0 && a * a + b * b < kPersistenceCeiling * kPersistenceCeiling;
+}
+
 bool groups_valid(std::span<const double> theta, const DccLayout& layout)
 {
     for (std::size_t group = 0; group < layout.a_count; ++group)
     {
-        const double a = theta[group];
-        const double b = theta[layout.b_begin() + group];
-        if (!(a > 0.0 && b > 0.0 && a * a + b * b < kPersistenceCeiling * kPersistenceCeiling))
+        if (!group_valid(theta[group], theta[layout.b_begin() + group]))
         {
             return false;
         }
     }
     return true;
+}
+
+// --- feasible start ---
+
+// A weight the caller left to start_values: estimated and not started.
+bool is_default(const DccLayout& layout, std::size_t index)
+{
+    return layout.is_estimated(index) && !layout.started[index];
+}
+
+// The default weights from first on shrink, in proportion, until their terms take half of what the ceiling leaves
+// beside the other terms; nothing moves when that is not positive.
+void shrink_defaults(std::span<double> theta, const DccLayout& layout, double delta, std::size_t first)
+{
+    double room = kPersistenceCeiling;
+    double shrinking = 0.0;
+    for (std::size_t index = 0; index < layout.shape(); ++index)
+    {
+        const double term = term_scale(layout, index, delta) * theta[index];
+        if (index >= first && is_default(layout, index))
+        {
+            shrinking += term;
+            continue;
+        }
+        room -= term;
+    }
+    if (!(room > 0.0) || !(shrinking > 0.0))
+    {
+        return;
+    }
+    const double factor = 0.5 * room / shrinking;
+    for (std::size_t index = first; index < layout.shape(); ++index)
+    {
+        if (is_default(layout, index))
+        {
+            theta[index] *= factor;
+        }
+    }
+}
+
+// A group outside the circle with one default weight: it takes half of the room beside the other.
+void shrink_default_groups(std::span<double> theta, const DccLayout& layout)
+{
+    for (std::size_t ia = 0; ia < layout.a_count; ++ia)
+    {
+        const std::size_t ib = layout.b_begin() + ia;
+        if (group_valid(theta[ia], theta[ib]) || is_default(layout, ia) == is_default(layout, ib))
+        {
+            continue;
+        }
+        if (is_default(layout, ia))
+        {
+            theta[ia] = 0.5 * room_beside(theta[ib]);
+            continue;
+        }
+        theta[ib] = 0.5 * room_beside(theta[ia]);
+    }
 }
 
 template <class T>
@@ -576,6 +636,26 @@ std::vector<double> start_values(const DccLayout& layout)
         {
             theta[index] = layout.given[index];
         }
+    }
+    return theta;
+}
+
+std::vector<double> feasible_start(const DccLayout& layout, double delta)
+{
+    std::vector<double> theta = start_values(layout);
+    if (is_valid(theta, layout, delta) || layout.model == DccModel::Static)
+    {
+        return theta;
+    }
+    if (layout.model == DccModel::FDcc)
+    {
+        shrink_default_groups(theta, layout);
+        return theta;
+    }
+    shrink_defaults(theta, layout, delta, layout.g_begin());
+    if (!is_valid(theta, layout, delta))
+    {
+        shrink_defaults(theta, layout, delta, 0);
     }
     return theta;
 }

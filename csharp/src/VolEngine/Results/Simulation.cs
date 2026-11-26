@@ -3,6 +3,8 @@ using VolEngine.Interop;
 namespace VolEngine;
 
 /// <summary>Simulated paths, path by path. It is a copy: it does not depend on its source or context.</summary>
+/// <remarks>With <see cref="SimulationOptions.Checkpoints"/> the paths are kept only as their sums at those steps:
+/// <see cref="Cumulative"/> is set, and <see cref="Returns"/> and <see cref="Sigma"/> are empty.</remarks>
 public sealed class Simulation
 {
     private Simulation(int paths, int horizon, double[][] returns, double[][] sigma)
@@ -13,7 +15,7 @@ public sealed class Simulation
         Sigma = sigma;
     }
 
-    internal delegate int Simulator(SimOptionsHandle options, out SimHandle simulation);
+    internal delegate int Simulator(SimOptionsHandle options, CancelHandle cancel, out SimHandle simulation);
 
     /// <summary>The number of paths.</summary>
     public int Paths { get; }
@@ -21,23 +23,31 @@ public sealed class Simulation
     /// <summary>The number of steps of each path.</summary>
     public int Horizon { get; }
 
-    /// <summary>The simulated returns, Paths x Horizon.</summary>
+    /// <summary>The simulated returns, Paths x Horizon; empty with checkpoints.</summary>
     public double[][] Returns { get; }
 
-    /// <summary>The conditional standard deviation of each step, Paths x Horizon.</summary>
+    /// <summary>The conditional standard deviation of each step, Paths x Horizon; empty with checkpoints.</summary>
     public double[][] Sigma { get; }
 
-    internal static unsafe Simulation Run(SimulationOptions options, int mxreg, int vxreg, Simulator simulate)
+    /// <summary>The sum of the returns of each path up to each checkpoint, Paths x K, as the left-to-right sum of the
+    /// first k steps of the full output with the same seed; null without checkpoints.</summary>
+    public double[][]? Cumulative { get; private init; }
+
+    /// <summary>The checkpoints, in increasing order; empty without them.</summary>
+    public IReadOnlyList<int> Checkpoints { get; private init; } = [];
+
+    internal static unsafe Simulation Run(SimulationOptions options, int mxreg, int vxreg, Simulator simulate,
+                                          CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(options);
         if (options.Horizon < 1 || options.Paths < 1)
         {
             throw new ArgumentOutOfRangeException(nameof(options), options, "Horizon and Paths must be at least 1");
         }
-        if ((long)options.Horizon * options.Paths > Array.MaxLength)
+        if (Interop.Checkpoints.Values(options.Horizon, options.Paths, 1, options.Checkpoints) > Array.MaxLength)
         {
             throw new ArgumentOutOfRangeException(nameof(options), options,
-                                                  $"Horizon x Paths must be at most {Array.MaxLength} values");
+                                                  $"Paths x steps (the horizon, or the checkpoints) must be at most {Array.MaxLength} values");
         }
         Futures.Check(options.Mxreg, nameof(options.Mxreg), mxreg, options.Horizon);
         Futures.Check(options.Vxreg, nameof(options.Vxreg), vxreg, options.Horizon);
@@ -52,10 +62,12 @@ public sealed class Simulation
                 using var variancePanel = Futures.Panel(variance, options.Vxreg);
                 Calls.Check(NativeMethods.ve_sim_options_set_regressors(handle, meanPanel, variancePanel));
             }
-            Calls.Check(simulate(handle, out var simulation));
+            Interop.Checkpoints.Apply(handle, options.Checkpoints);
+            SimHandle? simulation = null;
+            Calls.Check(Calls.WithCancel(cancel => simulate(handle, cancel, out simulation), token));
             using (simulation)
             {
-                return Read(simulation);
+                return Read(simulation!);
             }
         }
     }
@@ -66,6 +78,16 @@ public sealed class Simulation
         Calls.Check(NativeMethods.ve_sim_horizon(simulation, out var steps));
         var paths = checked((int)pathCount);
         var horizon = checked((int)steps);
+        var checkpoints = NativeReads.Sizes(simulation, NativeMethods.ve_sim_checkpoints);
+        if (checkpoints.Length > 0)
+        {
+            var sums = NativeReads.View(simulation, NativeMethods.ve_sim_cumulative);
+            return new Simulation(paths, horizon, [], [])
+            {
+                Cumulative = sums.Chunk(checkpoints.Length).ToArray(),
+                Checkpoints = checkpoints,
+            };
+        }
         double* data;
         nuint length;
         var returns = Futures.Copy(NativeMethods.ve_sim_returns(simulation, out data, out length), data, length);

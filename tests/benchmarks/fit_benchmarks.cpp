@@ -506,7 +506,8 @@ public:
     std::vector<int32_t> run_statuses()
     {
         std::vector<ve_fit*> fits(jobs_, nullptr);
-        require_ok(ve_fit_batch(context_.get(), batch_.get(), fits.data()), "ve_fit_batch");
+        require_ok(ve_fit_batch_with_cancel(context_.get(), batch_.get(), nullptr, fits.data()),
+                                            "ve_fit_batch");
         std::vector<int32_t> statuses;
         for (ve_fit* fit : fits)
         {

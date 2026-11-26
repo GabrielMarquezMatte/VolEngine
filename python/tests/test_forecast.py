@@ -92,3 +92,56 @@ def test_forecast_horizon_beyond_size_t_raises(ctx, series):
     fit = ctx.fit(ve.Spec(), series[:, 0])
     with pytest.raises(ValueError, match="horizon"):
         fit.forecast(2**64 + 3)
+
+
+def left_to_right_sum(values):
+    total = 0.0
+    sums = []
+    for value in values:
+        total += float(value)
+        sums.append(total)
+    return np.array(sums)
+
+
+def ar1_series(phi, length=1500):
+    rng = np.random.default_rng(21)
+    shocks = rng.standard_normal(length)
+    values = np.zeros(length)
+    for t in range(1, length):
+        values[t] = phi * values[t - 1] + shocks[t]
+    return 0.01 * values
+
+
+@pytest.mark.parametrize("arma", [(0, 0), (1, 1)])
+def test_cumulative_mean_is_the_left_to_right_sum_of_the_means(ctx, series, arma):
+    forecast = ctx.fit(ve.Spec(arma=arma), series[:, 0]).forecast(12)
+    expected = left_to_right_sum(forecast.mean)
+    assert forecast.cumulative_mean.shape == (12,)
+    assert not forecast.cumulative_mean.flags.writeable
+    assert np.array_equal(forecast.cumulative_mean.view(np.uint64), expected.view(np.uint64))
+    assert forecast.cumulative_mean[0] == forecast.mean[0]
+    assert forecast.cumulative_sigma[0] == pytest.approx(forecast.sigma[0], rel=1e-14)
+
+
+def test_cumulative_sigma_without_arma_is_the_root_of_the_summed_variances(ctx, series):
+    forecast = ctx.fit(ve.Spec(), series[:, 0]).forecast(12)
+    assert forecast.cumulative_sigma.shape == (12,)
+    assert not forecast.cumulative_sigma.flags.writeable
+    np.testing.assert_allclose(forecast.cumulative_sigma**2, np.cumsum(forecast.sigma**2), rtol=1e-14)
+
+
+def test_cumulative_sigma_with_positive_ar_exceeds_the_plain_root_sum(ctx):
+    forecast = ctx.fit(ve.Spec(arma=(1, 0)), ar1_series(0.6)).forecast(10)
+    plain = np.sqrt(np.cumsum(forecast.sigma**2))
+    assert forecast.cumulative_sigma[0] == pytest.approx(plain[0], rel=1e-14)
+    assert (forecast.cumulative_sigma[1:] > plain[1:]).all()
+
+
+def test_cumulative_views_outlive_the_fit(ctx, series):
+    fit = ctx.fit(ve.Spec(), series[:, 0])
+    forecast = fit.forecast(6)
+    mean, sigma = forecast.cumulative_mean.copy(), forecast.cumulative_sigma.copy()
+    del fit
+    gc.collect()
+    np.testing.assert_array_equal(forecast.cumulative_mean, mean)
+    np.testing.assert_array_equal(forecast.cumulative_sigma, sigma)

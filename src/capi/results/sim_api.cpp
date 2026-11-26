@@ -13,6 +13,8 @@
 #include <vector>
 
 using ve::capi::check_stored;
+using ve::capi::checkpoints_problem;
+using ve::capi::flag_of;
 using ve::capi::guard;
 using ve::capi::set_error;
 using ve::capi::store_rows;
@@ -52,10 +54,15 @@ ve_status request_of(const ve_sim_options* o, const ve::Spec& spec, ve::sim::Req
     {
         return status;
     }
+    if (const char* problem = checkpoints_problem(o->checkpoints, o->horizon); problem != nullptr)
+    {
+        return set_error(VE_INVALID_ARGUMENT, problem);
+    }
     request = {o->horizon,
                o->paths,
                o->seed,
                {{o->mxreg.values, o->mxreg.columns}, {o->vxreg.values, o->vxreg.columns}}};
+    request.checkpoints = o->checkpoints;
     return VE_OK;
 }
 
@@ -69,7 +76,8 @@ ve_status publish(ve_context* ctx, const ve::sim::Start& start, const ve::sim::R
 
 using SimValues = std::vector<double> ve::sim::Simulation::*;
 
-ve_status read_view(const ve_sim* sim, SimValues member, const double** data, size_t* len)
+// cumulative says whether the view exists only with checkpoints (ve_sim_cumulative) or only without them.
+ve_status read_view(const ve_sim* sim, SimValues member, bool cumulative, const double** data, size_t* len)
 {
     return guard(
         [&]
@@ -81,6 +89,15 @@ ve_status read_view(const ve_sim* sim, SimValues member, const double** data, si
             if (data == nullptr || len == nullptr)
             {
                 return set_error(VE_INVALID_ARGUMENT, "data and len must not be null");
+            }
+            const bool has_checkpoints = !sim->simulation.checkpoints.empty();
+            if (cumulative && !has_checkpoints)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "the simulation has no checkpoints: set them in its options");
+            }
+            if (!cumulative && has_checkpoints)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "the simulation has checkpoints: read ve_sim_cumulative");
             }
             const std::vector<double>& values = sim->simulation.*member;
             *data = values.data();
@@ -185,12 +202,45 @@ extern "C" ve_status ve_sim_options_set_correlations(ve_sim_options* o, int32_t 
         });
 }
 
+extern "C" ve_status ve_sim_options_set_checkpoints(ve_sim_options* o, const size_t* ks, size_t n)
+{
+    return guard(
+        [&]
+        {
+            if (o == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "o must not be null");
+            }
+            if (ks == nullptr && n > 0)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "ks must not be null");
+            }
+            std::vector<std::size_t> checkpoints;
+            if (n > 0)
+            {
+                checkpoints.assign(ks, ks + n);
+            }
+            if (const char* problem = checkpoints_problem(checkpoints, o->horizon); problem != nullptr)
+            {
+                return set_error(VE_INVALID_ARGUMENT, problem);
+            }
+            o->checkpoints = std::move(checkpoints);
+            return VE_OK;
+        });
+}
+
 extern "C" void ve_sim_options_free(ve_sim_options* o)
 {
     std::unique_ptr<ve_sim_options> owner(o);
 }
 
 extern "C" ve_status ve_simulate_fit(ve_context* ctx, const ve_fit* f, const ve_sim_options* o, ve_sim** out)
+{
+    return ve_simulate_fit_with_cancel(ctx, f, o, nullptr, out);
+}
+
+extern "C" ve_status ve_simulate_fit_with_cancel(ve_context* ctx, const ve_fit* f, const ve_sim_options* o,
+                                                 const ve_cancel* c, ve_sim** out)
 {
     return guard(
         [&]
@@ -211,11 +261,18 @@ extern "C" ve_status ve_simulate_fit(ve_context* ctx, const ve_fit* f, const ve_
             {
                 return status;
             }
+            request.cancel = flag_of(c);
             return publish(ctx, ve::sim::start_of_fit(f->result), request, out);
         });
 }
 
 extern "C" ve_status ve_simulate_spec(ve_context* ctx, const ve_spec* s, const ve_sim_options* o, ve_sim** out)
+{
+    return ve_simulate_spec_with_cancel(ctx, s, o, nullptr, out);
+}
+
+extern "C" ve_status ve_simulate_spec_with_cancel(ve_context* ctx, const ve_spec* s, const ve_sim_options* o,
+                                                  const ve_cancel* c, ve_sim** out)
 {
     return guard(
         [&]
@@ -231,6 +288,7 @@ extern "C" ve_status ve_simulate_spec(ve_context* ctx, const ve_spec* s, const v
             {
                 return status;
             }
+            request.cancel = flag_of(c);
             auto start = ve::sim::start_of_spec(s->spec, request.future);
             if (!start.has_value())
             {
@@ -252,12 +310,36 @@ extern "C" ve_status ve_sim_horizon(const ve_sim* sim, size_t* out)
 
 extern "C" ve_status ve_sim_returns(const ve_sim* sim, const double** data, size_t* len)
 {
-    return read_view(sim, &ve::sim::Simulation::returns, data, len);
+    return read_view(sim, &ve::sim::Simulation::returns, false, data, len);
 }
 
 extern "C" ve_status ve_sim_sigma(const ve_sim* sim, const double** data, size_t* len)
 {
-    return read_view(sim, &ve::sim::Simulation::sigma, data, len);
+    return read_view(sim, &ve::sim::Simulation::sigma, false, data, len);
+}
+
+extern "C" ve_status ve_sim_cumulative(const ve_sim* sim, const double** data, size_t* len)
+{
+    return read_view(sim, &ve::sim::Simulation::cumulative, true, data, len);
+}
+
+extern "C" ve_status ve_sim_checkpoints(const ve_sim* sim, const size_t** data, size_t* len)
+{
+    return guard(
+        [&]
+        {
+            if (sim == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "sim must not be null");
+            }
+            if (data == nullptr || len == nullptr)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "data and len must not be null");
+            }
+            *data = sim->simulation.checkpoints.data();
+            *len = sim->simulation.checkpoints.size();
+            return VE_OK;
+        });
 }
 
 extern "C" void ve_sim_free(ve_sim* sim)

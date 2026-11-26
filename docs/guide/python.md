@@ -58,6 +58,44 @@ The forecast follows `rugarch`, so it is not the mean of the simulated paths for
 (P(z < 0) stands in for E[1{z < 0} z²]) and for a csGARCH from h = 2 (the closed form leaves out the last shock); see
 [validation](validation.md).
 
+## Cumulative forecast
+
+For the return over the next h days, `cumulative_mean` and `cumulative_sigma` give the mean and standard deviation of
+R_h = r_{T+1} + ... + r_{T+h} for every h = 1..horizon (a DCC forecast has `cumulative_mean` and `cumulative_covariance`,
+of shape (horizon, N) and (horizon, N, N), the covariance exactly symmetric). The mean is the left-to-right sum of
+`mean`. The variance is sum_k a(h - k)^2 sigma[k]^2, with a(n) = psi_0 + ... + psi_n the sums of the MA(inf) weights
+of the ARMA/ARFIMA mean (psi_j = theta_j + sum_i phi_i psi_(j-i), convolved with the coefficients of (1 - L)^(-d) for
+an ARFIMA); without one a(n) = 1 and it is the plain sum of sigma^2. A DCC covariance is sum_k a_i(h - k) a_j(h - k)
+H[k] with the weights of each series.
+
+```python
+ar = ctx.fit(ve.Spec(arma=(1, 0)), returns).forecast(10)
+print(ar.cumulative_mean)
+print(ar.cumulative_sigma)              # above sqrt(cumsum(sigma^2)) for h > 1 when phi > 0
+```
+
+The approximations: sigma[k] is the sigma the forecast returns, so models whose sigma is not the root of E[sigma^2]
+(eGARCH, apARCH, fGARCH with a free power) carry that approximation; with GARCH-in-mean the randomness of the future
+sigma inside the mean is ignored, as the forecast mean does; and in a DCC H[k] for k >= 2 is the forecast of H.
+
+## Cumulative simulation
+
+For a risk number over several horizons, `checkpoints=` keeps only the sum of the returns up to each checkpoint instead
+of every step, so memory is paths x checkpoints and not paths x horizon. The last checkpoint must be the horizon.
+
+```python
+risk = ctx.simulate(fit, horizon=10, paths=2000, seed=7, checkpoints=[1, 5, 10])
+print(risk.checkpoints)                                    # (1, 5, 10)
+var = -np.percentile(risk.cumulative, 1, axis=0)           # 99% VaR at 1, 5 and 10 days, from the same paths
+print(var)
+```
+
+`risk.cumulative` has shape (paths, K) (paths, K, N for a `DccFit`), and each value is the left-to-right sum of the
+`returns` of the full simulation with the same seed. In this mode `returns` and `sigma` raise `VolEngineError`, and a
+simulation with `correlations=True` cannot have checkpoints.
+
+The engine is scale invariant, so returns can be passed as fractions (0.01 for 1%) without multiplying by 100.
+
 ## DCC and Copula-DCC
 
 A DCC takes univariate fits, one per series, and fits the correlation model on their standardized residuals:
@@ -87,6 +125,66 @@ print(copula.status)
 The `mvlaplace` density is singular where every standardized residual of a date is exactly 0 (a common holiday with `mu`
 fixed at 0): the log-likelihood is then not finite and the fit ends `failed`, with no message besides the status.
 Drop such dates before the univariate fits.
+
+## Covariance estimators
+
+`ve.cov` holds the estimators that need no model, over a (T, N) array with the series in columns: `sample` is
+`numpy.cov(returns, rowvar=False)` and `ledoit_wolf` is `sklearn.covariance.ledoit_wolf(returns)`, the shrinkage of
+Z'Z / T towards mu * I (mu the mean variance), with its intensity in [0, 1]. Both remove each series' mean, return an
+exactly symmetric (N, N) array and raise `VolEngineError` for fewer than 2 rows or a value that is not finite.
+
+```python
+rng = np.random.default_rng(4)
+returns = 0.01 * rng.standard_normal((60, 40))   # 40 series, 60 dates: the sample covariance is singular
+shrunk, intensity = ve.cov.ledoit_wolf(returns)
+print(np.linalg.eigvalsh(ve.cov.sample(returns))[0], np.linalg.eigvalsh(shrunk)[0], intensity)
+```
+
+## Risk measures
+
+`ve.risk` gives the VaR and ES at a confidence in (0, 1) (0.99 is the 1% tail), both positive as losses, in units of
+the return. `empirical(returns, weights, kind="log", confidence=...)` takes a (T, N) array with dates or simulated paths
+in rows: each row becomes the portfolio's simple return sum_j w_j (exp(r_j) - 1) (`kind="simple"` takes simple
+returns), the VaR is minus its `numpy.quantile` at 1 - confidence and the ES minus the mean of the returns at or below
+it; the weights are not normalized. `parametric(mean, sigma, confidence=..., dist=..., skew=..., shape=...,
+ghlambda=...)` takes the return mean + sigma * z with z any of the eight standardized densities, so the VaR can use the
+distribution a fit estimated; the ES has a closed form for norm, std and jsu and is a quadrature for the others.
+
+```python
+# One day ahead from the gjrGARCH-std fit: its own Student-t, at the forecast's mean and sigma.
+shape = dict(zip(fit.names, fit.estimate))["shape"]
+print(ve.risk.parametric(forecast.mean[0], forecast.sigma[0], confidence=0.99, dist="std", shape=shape))
+# Ten days ahead from DCC paths: the cumulative log returns at the last checkpoint, read in place.
+paths = ctx.simulate(dcc, horizon=10, paths=2000, seed=5, checkpoints=[1, 10])
+print(ve.risk.empirical(paths.cumulative[:, 1, :], [0.5, 0.3, 0.2], confidence=0.99))
+```
+
+## Cancellation
+
+`fit`, `fit_dcc`, `standard_errors` and `simulate` take a keyword-only `cancel=`, a `Cancel`. Its `cancel()` can be
+called from any thread, also while the call runs, and the call raises `Cancelled` (a `VolEngineError` with status 6)
+within one optimizer iteration, one block of the standard errors or one step of a simulated path; no result is
+returned. On a `Context` that other calls keep busy, a cancelled call waits for its turn in the context's queue before
+it stops, so give each caller that needs a deadline its own `Context`. The call releases the GIL, so a
+`threading.Timer` gives a deadline:
+
+```python
+import threading
+
+models = [ve.Spec(model=model, dist="std") for model in ("sgarch", "egarch", "gjrgarch", "aparch")]
+c = ve.Cancel()
+timer = threading.Timer(0.05, c.cancel)   # the deadline, in seconds
+timer.start()
+try:
+    ctx.fit(models * 10, np.tile(panel, (1, 20)), cancel=c)
+except ve.Cancelled:
+    print("stopped at the deadline")
+finally:
+    timer.cancel()
+```
+
+A `Cancel` stays requested: make a new one for the next call. One `Cancel` can go to several calls and a request stops
+all of them. A request that arrives after the call's last check does not stop it, so the call returns its result.
 
 The README has the long examples: ARMA means, every distribution, fixed parameters, regressors, ARFIMA and variance
 targeting.

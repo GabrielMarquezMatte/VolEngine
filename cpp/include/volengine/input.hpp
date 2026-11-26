@@ -252,9 +252,11 @@ private:
         {
             return std::unexpected(Error{Status::invalid_argument, "negative strides are not supported"});
         }
-        const auto last = (rows - 1) * static_cast<std::size_t>(stride_rows) +
-                          (cols - 1) * static_cast<std::size_t>(stride_cols);
-        if (last >= size)
+        // Each term below size keeps the sum from wrapping, so a huge stride cannot pass the check.
+        const auto row_span = static_cast<std::size_t>(stride_rows);
+        const auto col_span = static_cast<std::size_t>(stride_cols);
+        if ((rows > 1 && row_span > (size - 1) / (rows - 1)) || (cols > 1 && col_span > (size - 1) / (cols - 1)) ||
+            (rows - 1) * row_span + (cols - 1) * col_span >= size)
         {
             return std::unexpected(Error{Status::invalid_argument, "the data is smaller than the shape of the panel"});
         }

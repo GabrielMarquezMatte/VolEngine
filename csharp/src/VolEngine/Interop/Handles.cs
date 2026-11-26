@@ -324,3 +324,18 @@ internal sealed class DccSimHandle : SafeHandleZeroOrMinusOneIsInvalid
         return true;
     }
 }
+
+// The default instance is the NULL handle of a call that cannot be cancelled.
+internal sealed class CancelHandle : SafeHandleZeroOrMinusOneIsInvalid
+{
+    public CancelHandle()
+        : base(true)
+    {
+    }
+
+    protected override bool ReleaseHandle()
+    {
+        NativeMethods.ve_cancel_free(handle);
+        return true;
+    }
+}

@@ -5,6 +5,7 @@
 #include "sim/start.hpp"
 #include "simulated_garch.hpp"
 
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -129,7 +130,8 @@ TEST(CapiSim, FitMatchesCore)
     ContextPtr context = ve::testing::make_context(4);
     OptionsPtr options = make_options(kHorizon, kPaths, 7);
     ve_sim* raw = nullptr;
-    ASSERT_EQ(ve_simulate_fit(context.get(), one.fit(), options.get(), &raw), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_simulate_fit_with_cancel(context.get(), one.fit(), options.get(), nullptr, &raw),
+                                          VE_OK) << ve_last_error();
     SimPtr sim(raw);
     ve::sim::Simulation expected = core(ve::sim::start_of_fit(one.fit()->result), kPaths, 7);
     EXPECT_EQ(view(ve_sim_returns, sim.get()), expected.returns);
@@ -155,7 +157,8 @@ TEST(CapiSim, RegressorsMatchCore)
     OptionsPtr options = make_options(kHorizon, kPaths, 3);
     ASSERT_EQ(ve_sim_options_set_regressors(options.get(), panel.get(), nullptr), VE_OK) << ve_last_error();
     ve_sim* raw = nullptr;
-    ASSERT_EQ(ve_simulate_fit(context.get(), one.fit(), options.get(), &raw), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_simulate_fit_with_cancel(context.get(), one.fit(), options.get(), nullptr, &raw),
+                                          VE_OK) << ve_last_error();
     SimPtr sim(raw);
     ve::sim::Simulation expected = core(ve::sim::start_of_fit(one.fit()->result), kPaths, 3, {{future, 2}, {}});
     EXPECT_EQ(view(ve_sim_returns, sim.get()), expected.returns);
@@ -167,7 +170,8 @@ TEST(CapiSim, SpecMatchesCore)
     ContextPtr context = ve::testing::make_context(3);
     OptionsPtr options = make_options(kHorizon, kPaths, 11);
     ve_sim* raw = nullptr;
-    ASSERT_EQ(ve_simulate_spec(context.get(), spec.get(), options.get(), &raw), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_simulate_spec_with_cancel(context.get(), spec.get(), options.get(), nullptr, &raw),
+                                           VE_OK) << ve_last_error();
     SimPtr sim(raw);
     auto start = ve::sim::start_of_spec(spec->spec, {});
     ASSERT_TRUE(start.has_value());
@@ -185,8 +189,10 @@ TEST(CapiSim, OutlivesSources)
     OptionsPtr options = make_options(kHorizon, kPaths, 5);
     ve_sim* from_fit = nullptr;
     ve_sim* from_spec = nullptr;
-    ASSERT_EQ(ve_simulate_fit(context.get(), one->fit(), options.get(), &from_fit), VE_OK);
-    ASSERT_EQ(ve_simulate_spec(context.get(), spec.get(), options.get(), &from_spec), VE_OK);
+    ASSERT_EQ(ve_simulate_fit_with_cancel(context.get(), one->fit(), options.get(), nullptr, &from_fit),
+                                          VE_OK);
+    ASSERT_EQ(ve_simulate_spec_with_cancel(context.get(), spec.get(), options.get(), nullptr, &from_spec),
+                                           VE_OK);
     SimPtr fit_sim(from_fit);
     SimPtr spec_sim(from_spec);
     std::vector<double> fit_returns = view(ve_sim_returns, fit_sim.get());
@@ -210,7 +216,7 @@ ve_status try_options(std::size_t horizon, std::size_t paths)
 ve_status try_fit(ve_context* context, const ve_fit* fit, const ve_sim_options* options)
 {
     ve_sim* raw = reinterpret_cast<ve_sim*>(0x1);
-    ve_status status = ve_simulate_fit(context, fit, options, &raw);
+    ve_status status = ve_simulate_fit_with_cancel(context, fit, options, nullptr, &raw);
     EXPECT_EQ(raw, nullptr);
     return status;
 }
@@ -218,7 +224,7 @@ ve_status try_fit(ve_context* context, const ve_fit* fit, const ve_sim_options* 
 ve_status try_spec(ve_context* context, const ve_spec* spec, const ve_sim_options* options)
 {
     ve_sim* raw = reinterpret_cast<ve_sim*>(0x1);
-    ve_status status = ve_simulate_spec(context, spec, options, &raw);
+    ve_status status = ve_simulate_spec_with_cancel(context, spec, options, nullptr, &raw);
     EXPECT_EQ(raw, nullptr);
     return status;
 }
@@ -279,7 +285,8 @@ TEST(CapiSim, InvalidArguments)
     EXPECT_EQ(ve_sim_options_set_regressors(options.get(), good.get(), nullptr), VE_OK);
     EXPECT_EQ(ve_sim_options_set_regressors(options.get(), good.get(), not_finite.get()), VE_INVALID_ARGUMENT);
     ve_sim* kept = nullptr;
-    EXPECT_EQ(ve_simulate_fit(context.get(), regressed.fit(), options.get(), &kept), VE_OK) << ve_last_error();
+    EXPECT_EQ(ve_simulate_fit_with_cancel(context.get(), regressed.fit(), options.get(), nullptr, &kept),
+                                          VE_OK) << ve_last_error();
     SimPtr owner(kept);
 
     EXPECT_EQ(ve_sim_options_set_regressors(nullptr, nullptr, nullptr), VE_INVALID_HANDLE);
@@ -287,7 +294,8 @@ TEST(CapiSim, InvalidArguments)
     EXPECT_EQ(try_fit(context.get(), nullptr, options.get()), VE_INVALID_HANDLE);
     EXPECT_EQ(try_fit(context.get(), plain.fit(), nullptr), VE_INVALID_HANDLE);
     EXPECT_EQ(try_spec(context.get(), nullptr, options.get()), VE_INVALID_HANDLE);
-    EXPECT_EQ(ve_simulate_fit(context.get(), plain.fit(), options.get(), nullptr), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_simulate_fit_with_cancel(context.get(), plain.fit(), options.get(), nullptr, nullptr),
+                                          VE_INVALID_ARGUMENT);
     size_t out = 0;
     EXPECT_EQ(ve_sim_paths(nullptr, &out), VE_INVALID_HANDLE);
     const double* data = nullptr;
@@ -304,11 +312,120 @@ TEST(CapiSim, SeedEdges)
     {
         OptionsPtr options = make_options(kHorizon, 4, seed);
         ve_sim* raw = nullptr;
-        ASSERT_EQ(ve_simulate_spec(context.get(), spec.get(), options.get(), &raw), VE_OK) << ve_last_error();
+        ASSERT_EQ(ve_simulate_spec_with_cancel(context.get(), spec.get(), options.get(), nullptr, &raw),
+                                               VE_OK) << ve_last_error();
         SimPtr sim(raw);
         returns.push_back(view(ve_sim_returns, sim.get()));
     }
     EXPECT_NE(returns[0], returns[1]);
+}
+
+// call(options, &out) simulates; the cumulative of `checkpoints` against the left sums of the full returns.
+template <class Simulate>
+void expect_cumulative_matches(const std::vector<size_t>& checkpoints, Simulate&& simulate,
+                               const ve_panel* mxreg = nullptr)
+{
+    OptionsPtr full_options = make_options(kHorizon, kPaths, 3);
+    OptionsPtr options = make_options(kHorizon, kPaths, 3);
+    ASSERT_EQ(ve_sim_options_set_regressors(full_options.get(), mxreg, nullptr), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_sim_options_set_regressors(options.get(), mxreg, nullptr), VE_OK) << ve_last_error();
+    ASSERT_EQ(ve_sim_options_set_checkpoints(options.get(), checkpoints.data(), checkpoints.size()), VE_OK)
+        << ve_last_error();
+    ve_sim* raw = nullptr;
+    ASSERT_EQ(simulate(full_options.get(), &raw), VE_OK) << ve_last_error();
+    SimPtr full(raw);
+    ASSERT_EQ(simulate(options.get(), &raw), VE_OK) << ve_last_error();
+    SimPtr cumulative(raw);
+    const std::vector<double> returns = view(ve_sim_returns, full.get());
+    const std::vector<double> sums = view(ve_sim_cumulative, cumulative.get());
+    const std::size_t k = checkpoints.size();
+    ASSERT_EQ(sums.size(), kPaths * k);
+    for (std::size_t p = 0; p < kPaths; ++p)
+    {
+        double sum = 0.0;
+        std::size_t h = 0;
+        for (std::size_t j = 0; j < k; ++j)
+        {
+            for (; h < checkpoints[j]; ++h)
+            {
+                sum += returns[p * kHorizon + h];
+            }
+            EXPECT_EQ(std::bit_cast<std::uint64_t>(sums[p * k + j]), std::bit_cast<std::uint64_t>(sum)) << p << " " << j;
+        }
+    }
+    const size_t* listed = nullptr;
+    size_t count = 0;
+    ASSERT_EQ(ve_sim_checkpoints(cumulative.get(), &listed, &count), VE_OK);
+    EXPECT_EQ(std::vector<size_t>(listed, listed + count), checkpoints);
+    const double* data = nullptr;
+    size_t len = 0;
+    EXPECT_EQ(ve_sim_returns(cumulative.get(), &data, &len), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(mentions("ve_sim_cumulative")) << ve_last_error();
+    EXPECT_EQ(ve_sim_sigma(cumulative.get(), &data, &len), VE_INVALID_ARGUMENT);
+}
+
+TEST(CapiSimCumulative, MatchesTheFullOutput)
+{
+    OneFit one(ve::testing::simulate_garch_series(5, kT), 0);
+    SpecPtr spec = fixed_spec();
+    ContextPtr context = ve::testing::make_context(2);
+    expect_cumulative_matches({1, 5, kHorizon}, [&](const ve_sim_options* o, ve_sim** out)
+                              { return ve_simulate_fit_with_cancel(context.get(), one.fit(), o, nullptr, out); });
+    expect_cumulative_matches({kHorizon}, [&](const ve_sim_options* o, ve_sim** out)
+                              { return ve_simulate_spec_with_cancel(context.get(), spec.get(), o, nullptr, out); });
+}
+
+// Review Focus 2.
+TEST(CapiSimCumulative, WithRegressors)
+{
+    OneFit one(ve::testing::simulate_garch_series(5, kT), 2);
+    std::vector<double> future(kHorizon * 2);
+    for (std::size_t i = 0; i < future.size(); ++i)
+    {
+        future[i] = 0.1 * static_cast<double>(i);
+    }
+    PanelPtr panel = ve::testing::make_panel(future.data(), kHorizon, 2);
+    ContextPtr context = ve::testing::make_context(2);
+    expect_cumulative_matches(
+        {2, kHorizon},
+        [&](const ve_sim_options* o, ve_sim** out)
+        { return ve_simulate_fit_with_cancel(context.get(), one.fit(), o, nullptr, out); },
+        panel.get());
+}
+
+// Review Focus 3.
+TEST(CapiSimCumulative, InvalidListsLeaveTheOption)
+{
+    SpecPtr spec = fixed_spec();
+    ContextPtr context = ve::testing::make_context(1);
+    OptionsPtr options = make_options(kHorizon, 4, 1);
+    const size_t good[] = {5, kHorizon};
+    ASSERT_EQ(ve_sim_options_set_checkpoints(options.get(), good, 2), VE_OK);
+    const size_t from_zero[] = {0, kHorizon};
+    const size_t repeated[] = {5, 5, kHorizon};
+    const size_t short_of_horizon[] = {5, kHorizon - 1};
+    EXPECT_EQ(ve_sim_options_set_checkpoints(options.get(), from_zero, 2), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_sim_options_set_checkpoints(options.get(), repeated, 3), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_sim_options_set_checkpoints(options.get(), short_of_horizon, 2), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_sim_options_set_checkpoints(options.get(), nullptr, 2), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_sim_options_set_checkpoints(nullptr, good, 2), VE_INVALID_HANDLE);
+    ve_sim* raw = nullptr;
+    ASSERT_EQ(ve_simulate_spec_with_cancel(context.get(), spec.get(), options.get(), nullptr, &raw), VE_OK);
+    SimPtr kept(raw);
+    const size_t* listed = nullptr;
+    size_t count = 0;
+    ASSERT_EQ(ve_sim_checkpoints(kept.get(), &listed, &count), VE_OK);
+    EXPECT_EQ(std::vector<size_t>(listed, listed + count), (std::vector<size_t>{5, kHorizon}));
+
+    ASSERT_EQ(ve_sim_options_set_checkpoints(options.get(), nullptr, 0), VE_OK);
+    ASSERT_EQ(ve_simulate_spec_with_cancel(context.get(), spec.get(), options.get(), nullptr, &raw), VE_OK);
+    SimPtr full(raw);
+    EXPECT_EQ(ve_sim_checkpoints(full.get(), &listed, &count), VE_OK);
+    EXPECT_EQ(count, 0U);
+    const double* data = nullptr;
+    size_t len = 0;
+    EXPECT_EQ(ve_sim_cumulative(full.get(), &data, &len), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(view(ve_sim_returns, full.get()).size(), 4 * kHorizon);
 }
 
 }

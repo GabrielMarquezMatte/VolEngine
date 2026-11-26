@@ -45,7 +45,8 @@ struct Standardization
 // archm = u (p = 1) or u / s (p = 2); mxreg_k = u s / s_x,k; vxreg_k = u S / s_v,k, with S = s^2 (sGARCH, iGARCH,
 // gjrGARCH, csGARCH), 1 (eGARCH) or s^delta (apARCH, fGARCH; the natural delta); see regressor_map.hpp.
 // eta1 and the apARCH gamma: 2 logistic(x) - 1; eta2 unchanged; free delta or lambda: exp(x).
-// omega = s^2 exp(u), or s^power exp(u) in apARCH and fGARCH, or u + (1 - sum beta) log(s^2) in eGARCH.
+// omega = s^2 exp(u), or s^power exp(u) in apARCH and fGARCH, at least the smallest normal double (where its
+// derivative is 0), or u + (1 - sum beta) log(s^2) in eGARCH.
 // csGARCH: rho = P + (1 - 1e-8 - P) logistic(x_rho), phi = sum(beta) logistic(x_phi).
 // Fixed entries hold layout.given, and every other map writes only estimated entries (theta[omega] is not
 // written under variance targeting). With a fixed weight, or a fixed csGARCH rho, the weights are the terms of
@@ -70,7 +71,7 @@ double natural_scale(const Layout& layout, const Standardization& standardizatio
 
 // All entries finite; 1e-8 <= arfima d <= 0.5; skew, shape and ghlambda in their domain; |eta1|, |apARCH gamma| <= 1;
 // delta, lambda > 0; omega > 0 (but in eGARCH); weights >= 0 with P < 1 (iGARCH: alpha, beta_{<q} >= 0
-// summing to at most 1), so kappa is finite; gjrGARCH: 0 < pi < 1; csGARCH: P <= rho < 1 and
+// summing to at most 1), so kappa is a finite normal double; gjrGARCH: 0 < pi < 1; csGARCH: P <= rho < 1 and
 // 0 <= phi <= sum(beta). The closure of what to_natural reaches, rounding included (its P stays at most
 // 1 - 1e-8 but for rounding, its d and eta1 reach their ends), so that every estimate passes. The derived entries (the iGARCH beta_q, omega under variance targeting) are not read.
 bool is_valid(std::span<const double> theta, const Layout& layout);
@@ -79,7 +80,9 @@ bool is_valid(std::span<const double> theta, const Layout& layout);
 // of 1e-8 or of 0.5; a weight below 1e-8
 // (gjrGARCH: alpha_i below 1e-8 marks alpha_i, alpha_i + gamma_i below 1e-8 marks gamma_i, and with gamma_i
 // fixed and alpha_i free, alpha_i - max(0, -gamma_i) below 1e-8 marks alpha_i); |eta1_i| or
-// |apARCH gamma_i| above 1 - 1e-8; csGARCH phi below 1e-8, or rho - P below 1e-8; the iGARCH derived beta_q;
+// |apARCH gamma_i| above 1 - 1e-8; csGARCH phi below 1e-8, sum(beta) - phi below 1e-8, which marks phi and every
+// beta, or rho - P below 1e-8, which marks rho and every weight; the iGARCH derived beta_q; an omega (but in eGARCH)
+// estimated at or below the smallest normal double, the floor of to_natural;
 // a std, sstd, nig, ghyp or jsu shape whose 1/shape is below 1e-8, which marks the ghyp ghlambda as well;
 // a nig or ghyp |rho| above 1 - 1e-8.
 bool on_boundary(const Layout& layout, std::span<const double> theta, std::size_t index);

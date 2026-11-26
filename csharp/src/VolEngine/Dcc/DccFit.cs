@@ -13,7 +13,7 @@ namespace VolEngine;
 /// </para>
 /// <para>
 /// The fit keeps the final state of each series and of its correlation recursion, so it forecasts and simulates
-/// after the univariate <see cref="Fit"/> objects are disposed. <see cref="Context.StandardErrors"/> does need them,
+/// after the univariate <see cref="Fit"/> objects are disposed. <see cref="Context.StandardErrors(DccFit, IReadOnlyList{Fit}, CancellationToken)"/> does need them,
 /// because it refilters the whole sample.
 /// </para>
 /// </remarks>
@@ -71,7 +71,7 @@ public sealed unsafe class DccFit : IDisposable
     /// <param name="kind">The covariance behind the standard errors.</param>
     /// <returns>Names, estimates, standard errors, t values and p values.</returns>
     /// <exception cref="VolEngineException">The fit was made without standard errors: call
-    /// <see cref="Context.StandardErrors"/>.</exception>
+    /// <see cref="Context.StandardErrors(DccFit, IReadOnlyList{Fit}, CancellationToken)"/>.</exception>
     public CoefTable Coef(StandardErrorKind kind = StandardErrorKind.Hessian)
     {
         var code = (int)kind;

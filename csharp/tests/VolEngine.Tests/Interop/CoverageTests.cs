@@ -7,6 +7,13 @@ namespace VolEngine.Tests;
 // by the library itself, outside the declarations.
 public sealed partial class CoverageTests
 {
+    // Deprecated in 1.3.0 for their _with_cancel variants, which the binding calls instead; they stay declared because
+    // the contract keeps them until ABI 2.
+    private static readonly HashSet<string> Deprecated = new(StringComparer.Ordinal)
+    {
+        "ve_fit_batch", "ve_dcc_fit_batch", "ve_dcc_standard_errors", "ve_simulate_fit", "ve_simulate_spec", "ve_simulate_dcc",
+    };
+
     [GeneratedRegex(@"^function .+? (?<name>ve_\w+)\(", RegexOptions.None, 1000)]
     private static partial Regex FunctionName();
 
@@ -23,6 +30,7 @@ public sealed partial class CoverageTests
             .Select(line => FunctionName().Match(line))
             .Where(match => match.Success)
             .Select(match => match.Groups["name"].Value)
+            .Where(name => !Deprecated.Contains(name))
             .Where(name => !Regex.IsMatch(code, $@"NativeMethods\.{name}[(,)]", RegexOptions.None, TimeSpan.FromSeconds(1)))
             .ToList();
         Assert.Empty(missing);

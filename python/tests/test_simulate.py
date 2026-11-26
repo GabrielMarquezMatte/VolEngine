@@ -81,3 +81,65 @@ def test_simulate_outlives_sources(series):
     del fit, context
     gc.collect()
     np.testing.assert_array_equal(sims.returns, before)
+
+
+CHECKPOINTS = [1, 5, 20]
+
+
+def left_sum(values, k):
+    """Sum of the first k values, added left to right (np.cumsum may group differently)."""
+    total = 0.0
+    for value in values[:k]:
+        total += value
+    return total
+
+
+def left_sums(returns, checkpoints):
+    return np.array([[left_sum(row, k) for k in checkpoints] for row in returns])
+
+
+@pytest.mark.parametrize("source", ["fit", "spec"])
+def test_cumulative_matches_the_left_sum(ctx, series, source):
+    model = ve.Spec(fixed=FIXED_SGARCH)
+    if source == "fit":
+        model = ctx.fit(ve.Spec(), series[:, 0])
+    full = ctx.simulate(model, horizon=20, paths=50, seed=5)
+    cumulative = ctx.simulate(model, horizon=20, paths=50, seed=5, checkpoints=CHECKPOINTS)
+    assert cumulative.checkpoints == (1, 5, 20)
+    assert cumulative.cumulative.shape == (50, 3)
+    assert not cumulative.cumulative.flags.writeable
+    assert np.array_equal(cumulative.cumulative, left_sums(full.returns, CHECKPOINTS))
+    assert full.checkpoints == ()
+    with pytest.raises(ve.VolEngineError):
+        full.cumulative
+
+
+@pytest.mark.parametrize("checkpoints", [[0, 20], [5, 5, 20], [5, 10]])
+def test_checkpoints_are_validated(ctx, checkpoints):
+    with pytest.raises(ve.VolEngineError):
+        ctx.simulate(ve.Spec(fixed=FIXED_SGARCH), horizon=20, paths=10, seed=0, checkpoints=checkpoints)
+
+
+@pytest.mark.parametrize("checkpoints", [[True, 20], [-1, 20], [1.5, 20]])
+def test_checkpoints_reject_non_integers(ctx, checkpoints):
+    with pytest.raises((TypeError, ValueError)):
+        ctx.simulate(ve.Spec(fixed=FIXED_SGARCH), horizon=20, paths=10, seed=0, checkpoints=checkpoints)
+
+
+def test_cumulative_mode_has_no_full_returns(ctx):
+    sims = ctx.simulate(ve.Spec(fixed=FIXED_SGARCH), horizon=20, paths=10, seed=0, checkpoints=[20])
+    with pytest.raises(ve.VolEngineError):
+        sims.returns
+    with pytest.raises(ve.VolEngineError):
+        sims.sigma
+
+
+def test_fit_rejects_checkpoints(ctx, series):
+    with pytest.raises(TypeError, match="checkpoints"):
+        ctx.fit(ve.Spec(), series, checkpoints=[1, 5])
+
+
+def test_checkpoints_from_an_iterator(ctx):
+    sims = ctx.simulate(ve.Spec(fixed=FIXED_SGARCH), horizon=20, paths=3, seed=0, checkpoints=(k for k in [1, 20]))
+    assert sims.checkpoints == (1, 20)
+    assert sims.cumulative.shape == (3, 2)

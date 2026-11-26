@@ -105,13 +105,14 @@ T below_zero_of(std::span<const T> theta, const Layout& layout)
     return probability_below_zero_of<T>(theta, layout);
 }
 
-// kappa_i when it is a positive finite double, NaN otherwise: alpha_i is read back as t / kappa_i.
+// kappa_i when it is a finite normal double, NaN otherwise: alpha_i is read back as t / kappa_i, which overflows
+// for a subnormal kappa_i.
 template <class T>
 T computable_moment(std::span<const T> theta, const Layout& layout, std::size_t i)
 {
     T moment = shock_moment<T>(theta, layout, i);
     double value = ad::value_of(moment);
-    if (!(value > 0.0 && value < std::numeric_limits<double>::infinity()))
+    if (!(value >= std::numeric_limits<double>::min() && value < std::numeric_limits<double>::infinity()))
     {
         moment = T{std::numeric_limits<double>::quiet_NaN()};
     }

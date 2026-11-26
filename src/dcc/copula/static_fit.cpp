@@ -395,6 +395,7 @@ StaticCorrelation static_ml(const StandardizedPanel& scores, const DccLayout& la
     optim::LbfgsOptions options;
     options.max_iter = config.max_iter;
     options.gtol = config.tol;
+    options.cancel = config.cancel;
     optim::Stop stop = optim::Stop::Converged;
     if (!free.empty())
     {

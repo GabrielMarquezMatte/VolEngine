@@ -16,6 +16,12 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(LibraryName)]
     internal static partial int ve_forecast_mean(ForecastHandle forecast, out double* data, out nuint length);
 
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_forecast_cumulative_mean(ForecastHandle forecast, out double* data, out nuint length);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_forecast_cumulative_sigma(ForecastHandle forecast, out double* data, out nuint length);
+
     [LibraryImport(LibraryName)] internal static partial void ve_forecast_free(nint forecast);
 
     [LibraryImport(LibraryName)]
@@ -23,6 +29,9 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(LibraryName)]
     internal static partial int ve_sim_options_set_regressors(SimOptionsHandle options, PanelHandle mxreg, PanelHandle vxreg);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_sim_options_set_checkpoints(SimOptionsHandle options, nuint* ks, nuint count);
 
     [LibraryImport(LibraryName)] internal static partial void ve_sim_options_free(nint options);
 
@@ -34,6 +43,14 @@ internal static unsafe partial class NativeMethods
     internal static partial int ve_simulate_spec(ContextHandle context, SpecHandle spec, SimOptionsHandle options,
                                                  out SimHandle simulation);
 
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_simulate_fit_with_cancel(ContextHandle context, FitHandle fit, SimOptionsHandle options,
+                                                            CancelHandle cancel, out SimHandle simulation);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_simulate_spec_with_cancel(ContextHandle context, SpecHandle spec, SimOptionsHandle options,
+                                                             CancelHandle cancel, out SimHandle simulation);
+
     [LibraryImport(LibraryName)] internal static partial int ve_sim_paths(SimHandle simulation, out nuint paths);
     [LibraryImport(LibraryName)] internal static partial int ve_sim_horizon(SimHandle simulation, out nuint horizon);
 
@@ -42,6 +59,12 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(LibraryName)]
     internal static partial int ve_sim_sigma(SimHandle simulation, out double* data, out nuint length);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_sim_cumulative(SimHandle simulation, out double* data, out nuint length);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_sim_checkpoints(SimHandle simulation, out nuint* data, out nuint length);
 
     [LibraryImport(LibraryName)] internal static partial void ve_sim_free(nint simulation);
 }

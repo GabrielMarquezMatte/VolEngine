@@ -192,6 +192,14 @@ TEST(Panel, StridedPanelEqualsContiguous)
     EXPECT_EQ(a[1].loglik().value(), b[1].loglik().value());
 }
 
+TEST(Panel, StrideThatWrapsTheExtentIsRefused)
+{
+    const std::vector<double> one{1.0};
+    const auto wrapped = ve::Panel::create_strided(one, 5, 1, std::ptrdiff_t{1} << 62, 1);
+    ASSERT_FALSE(wrapped.has_value());
+    EXPECT_EQ(wrapped.error().status, ve::Status::invalid_argument);
+}
+
 // The remaining oracle numbers of t5000/sgarch11_norm: Hessian and QML robust standard errors (5e-2 relative) and the
 // per-observation criteria (1e-6 absolute), as in python/tests/oracles/test_oracles.py.
 constexpr double kOracleSe[] = {0.008663366651859546, 0.002228460618358319, 0.00810505000455375, 0.010657614107829137};

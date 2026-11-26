@@ -44,7 +44,7 @@ public sealed class DccFitBatch : IDisposable
 
     // One ve_dcc_fit_batch of every spec over the same univariate fits.
     internal static unsafe DccFit[] Run(ContextHandle context, IReadOnlyList<DccSpec> specs, IReadOnlyList<Fit> univariate,
-                                        bool standardErrors)
+                                        bool standardErrors, CancellationToken token)
     {
         Check(specs, univariate);
         var owned = new List<SafeHandle>();
@@ -59,7 +59,7 @@ public sealed class DccFitBatch : IDisposable
             Calls.Check(NativeMethods.ve_dcc_batch_set_options(batch, options));
             Calls.Check(NativeMethods.ve_dcc_batch_spec_count(batch, out var count));
             var results = new nint[checked((int)count)];
-            Calls.Check(WithFits(univariate, (fits, fitCount) =>
+            Calls.Check(Calls.WithCancel(cancel => WithFits(univariate, (fits, fitCount) =>
             {
                 var status = NativeMethods.ve_dcc_batch_set_fits(batch, fits, fitCount);
                 if (status != 0)
@@ -68,9 +68,9 @@ public sealed class DccFitBatch : IDisposable
                 }
                 fixed (nint* output = results)
                 {
-                    return NativeMethods.ve_dcc_fit_batch(context, batch, output);
+                    return NativeMethods.ve_dcc_fit_batch_with_cancel(context, batch, cancel, output);
                 }
-            }));
+            }), token));
             return Wrap(results);
         }
         finally

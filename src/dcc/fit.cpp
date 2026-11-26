@@ -55,7 +55,9 @@ struct DccProblem
 // objective / T over the free unconstrained parameters, so that the tolerances do not depend on the sample size.
 // The fixed positions of u stay 0: to_natural does not read them. The specs ObjectiveGradient covers take the
 // gradient over the natural parameters from it and the chain rule through to_natural (its Dual lanes are the
-// Jacobian); the others run the whole objective in ad::Dual.
+// Jacobian); the others run the whole objective in ad::Dual. ObjectiveGradient differentiates every weight, the fixed
+// ones too, so a spec whose weights outnumber the widest ad::Dual takes the Dual objective even when it estimates few
+// enough.
 template <std::size_t N>
 class MeanObjective
 {
@@ -65,7 +67,7 @@ public:
     explicit MeanObjective(const DccProblem& problem)
         : problem_(problem), u_(problem.layout.count()), theta_(problem.layout.count())
     {
-        if (has_fast_gradient(problem.spec))
+        if (has_fast_gradient(problem.spec) && problem.layout.shape() <= kMaxParameterCount)
         {
             fast_.emplace();
             natural_.resize(problem.layout.count());
@@ -143,6 +145,7 @@ optim::LbfgsResult minimize(const DccProblem& problem, const FitConfig& config, 
     optim::LbfgsOptions options;
     options.max_iter = config.max_iter;
     options.gtol = config.tol;
+    options.cancel = config.cancel;
     MeanObjective<N> objective(problem);
     return optim::lbfgs_minimize(objective, x, options);
 }
@@ -189,48 +192,11 @@ DccFitResult empty_result(std::shared_ptr<const StandardizedPanel> panel, const 
     return result;
 }
 
-// Uncentred downside moments can give delta >= 1; then the nominal default g exceeds the remaining budget.
-// Reduce only unspecified g starts, leaving every fixed and user-started parameter untouched.
-std::vector<double> panel_start(const DccProblem& problem)
-{
-    const DccLayout& layout = problem.layout;
-    std::vector<double> theta = start_values(layout);
-    if (is_valid(theta, layout, problem.delta) || layout.g_count == 0 || !(problem.delta > 0.0))
-    {
-        return theta;
-    }
-    double room = kPersistenceCeiling;
-    std::size_t defaults = 0;
-    for (std::size_t i = 0; i < layout.shape(); ++i)
-    {
-        if (i >= layout.g_begin() && layout.is_estimated(i) && !layout.started[i])
-        {
-            ++defaults;
-            continue;
-        }
-        const double scale = i >= layout.g_begin() ? problem.delta : 1.0;
-        room -= scale * theta[i];
-    }
-    if (!(room > 0.0) || defaults == 0)
-    {
-        return theta;
-    }
-    const double g = 0.5 * room / (problem.delta * static_cast<double>(defaults));
-    for (std::size_t i = layout.g_begin(); i < layout.shape(); ++i)
-    {
-        if (layout.is_estimated(i) && !layout.started[i])
-        {
-            theta[i] = g;
-        }
-    }
-    return theta;
-}
-
 // Fills result, which arrives as empty_result, and returns its status. Unless the reported loglik at the estimate
 // is finite, the estimate stays NaN.
 FitStatus estimate(const DccProblem& problem, const FitConfig& config, DccFitResult& result)
 {
-    std::vector<double> theta = panel_start(problem);
+    std::vector<double> theta = feasible_start(problem.layout, problem.delta);
     if (!is_valid(theta, problem.layout, problem.delta))
     {
         return FitStatus::Failed;
@@ -323,6 +289,7 @@ future::DccEnd end_of(const SpecBatch& batch, const DccFitResult& result)
 
 DccFitResult fit_in_batch(const SpecBatch& batch, std::size_t index)
 {
+    throw_if_cancelled(batch.options.config.cancel);
     DccFitResult result = fit_one_spec(batch, batch.specs[index]);
     result.univariate_parameters = batch.stage.parameters;
     result.univariate_estimates = batch.stage.estimates;
@@ -351,7 +318,7 @@ void add_standard_errors(BS::light_thread_pool& pool, int threads, const SpecBat
         }
     }
     std::vector<std::expected<DccStandardErrors, std::string>> errors =
-        dcc_standard_errors(pool, threads, converged, batch.fits);
+        dcc_standard_errors(pool, threads, converged, batch.fits, batch.options.config.cancel);
     for (std::size_t k = 0; k < slots.size(); ++k)
     {
         assert(errors[k].has_value());
@@ -429,9 +396,13 @@ std::optional<std::string> check_dcc_batch(std::span<const FitResult* const> fit
 }
 
 std::vector<DccFitResult> fit_dcc_batch(Context& context, std::span<const FitResult* const> fits,
-                                        std::span<const DccSpec> specs, const DccOptions& options)
+                                        std::span<const DccSpec> specs, const DccOptions& options,
+                                        const CancelFlag* cancel)
 {
     assert(!check_dcc_batch(fits, specs, options));
+    throw_if_cancelled(cancel);
+    DccOptions run_options = options;
+    run_options.config.cancel = cancel;
     const auto panel = std::make_shared<const StandardizedPanel>(standardize(fits));
     const UnivariateStage stage = univariate_stage(fits);
     std::vector<DccFitResult> results(specs.size());
@@ -442,7 +413,7 @@ std::vector<DccFitResult> fit_dcc_batch(Context& context, std::span<const FitRes
         ends.push_back({fit->spec, fit->estimate, fit->state});
     }
     const auto series_end = std::make_shared<const std::vector<future::SeriesEnd>>(std::move(ends));
-    const SpecBatch batch{panel, specs, options, fits, stage, copula, series_end};
+    const SpecBatch batch{panel, specs, run_options, fits, stage, copula, series_end};
     context.with_pool(
         [&](BS::light_thread_pool& pool, int threads)
         {

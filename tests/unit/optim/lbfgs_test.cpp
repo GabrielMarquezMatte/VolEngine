@@ -1,8 +1,11 @@
 #include "optim/lbfgs.hpp"
 
+#include "core/cancel.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstring>
 #include <gtest/gtest.h>
 #include <limits>
 #include <span>
@@ -264,6 +267,65 @@ TEST(Lbfgs, ReportsLineSearchFailedWhenNoOtherPointIsFinite)
     EXPECT_EQ(result.stop, Stop::LineSearchFailed);
     EXPECT_EQ(x[0], 0.0);
     EXPECT_EQ(result.f, 0.0);
+}
+
+TEST(Lbfgs, RequestedFlagThrowsCancelled)
+{
+    ve::CancelFlag flag;
+    flag.request();
+    LbfgsOptions options;
+    options.cancel = &flag;
+    std::vector<double> x(10, 1.0);
+    EXPECT_THROW(ve::optim::lbfgs_minimize(weighted_quadratic, x, options), ve::Cancelled);
+}
+
+TEST(Lbfgs, UnrequestedFlagChangesNothing)
+{
+    ve::CancelFlag flag;
+    LbfgsOptions with;
+    with.cancel = &flag;
+    std::vector<double> x(10, 1.0);
+    std::vector<double> y(10, 1.0);
+    LbfgsResult plain = ve::optim::lbfgs_minimize(weighted_quadratic, x, {});
+    LbfgsResult flagged = ve::optim::lbfgs_minimize(weighted_quadratic, y, with);
+    EXPECT_EQ(flagged.stop, plain.stop);
+    EXPECT_EQ(flagged.iterations, plain.iterations);
+    EXPECT_EQ(flagged.evaluations, plain.evaluations);
+    EXPECT_EQ(flagged.f, plain.f);
+    EXPECT_EQ(std::memcmp(x.data(), y.data(), x.size() * sizeof(double)), 0);
+}
+
+TEST(Lbfgs, RequestDuringRunStops)
+{
+    std::vector<double> x(10, 1.0);
+    int full = ve::optim::lbfgs_minimize(weighted_quadratic, x, {}).evaluations;
+    ve::CancelFlag flag;
+    int calls = 0;
+    auto objective = [&](std::span<const double> v, std::span<double> g)
+    {
+        if (++calls == 3)
+        {
+            flag.request();
+        }
+        return weighted_quadratic(v, g);
+    };
+    LbfgsOptions options;
+    options.cancel = &flag;
+    std::vector<double> y(10, 1.0);
+    EXPECT_THROW(ve::optim::lbfgs_minimize(objective, y, options), ve::Cancelled);
+    EXPECT_LT(calls, full);
+}
+
+// The checkpoint comes after the convergence tests: a start at the minimum returns normally.
+TEST(Lbfgs, ConvergedStartReturnsNormally)
+{
+    ve::CancelFlag flag;
+    flag.request();
+    LbfgsOptions options;
+    options.cancel = &flag;
+    std::vector<double> x(10, 0.0);
+    LbfgsResult result = ve::optim::lbfgs_minimize(weighted_quadratic, x, options);
+    EXPECT_EQ(result.stop, Stop::Converged);
 }
 
 }

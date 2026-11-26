@@ -20,7 +20,8 @@ internal readonly unsafe struct PinnedPanel
 // One ve_fit_batch over every spec and series: job i * N + j fits spec i on series j.
 internal static unsafe class Batch
 {
-    public static Fit[] Run(ContextHandle context, IReadOnlyList<Spec> specs, FitOptions? options, in PinnedPanel panel)
+    public static Fit[] Run(ContextHandle context, IReadOnlyList<Spec> specs, FitOptions? options, in PinnedPanel panel,
+                            CancellationToken token)
     {
         var owned = new List<SafeHandle>();
         try
@@ -28,7 +29,7 @@ internal static unsafe class Batch
             using var batch = CreateBatch(owned, specs, options, panel);
             SetJobs(batch, specs.Count, panel.Series);
             SetRegressors(owned, batch, specs, panel);
-            return Execute(context, batch);
+            return Execute(context, batch, token);
         }
         finally
         {
@@ -143,14 +144,17 @@ internal static unsafe class Batch
         return [.. jobs];
     }
 
-    private static Fit[] Execute(ContextHandle context, BatchHandle batch)
+    private static Fit[] Execute(ContextHandle context, BatchHandle batch, CancellationToken token)
     {
         Calls.Check(NativeMethods.ve_batch_job_count(batch, out var jobs));
         var pointers = new nint[checked((int)jobs)];
-        fixed (nint* fits = pointers)
+        Calls.Check(Calls.WithCancel(cancel =>
         {
-            Calls.Check(NativeMethods.ve_fit_batch(context, batch, fits));
-        }
+            fixed (nint* fits = pointers)
+            {
+                return NativeMethods.ve_fit_batch_with_cancel(context, batch, cancel, fits);
+            }
+        }, token));
         var handles = pointers.Select(pointer => new FitHandle(pointer)).ToArray();
         try
         {

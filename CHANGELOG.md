@@ -8,7 +8,98 @@ From 1.0 the C ABI only grows: a signature or an enum value is never changed or 
 semver major (the Python package and the C++ wrapper refuse a library whose ABI version differs). Before 1.0 it could
 break between 0.x releases.
 
-## [Unreleased]
+## [1.3.0] - 2026-11-26
+
+### Added
+
+- Cooperative cancellation. `ve_cancel_create`, `ve_cancel_request` and `ve_cancel_free` manage a signal that can be
+  requested from any thread. `ve_fit_batch_with_cancel`, `ve_dcc_fit_batch_with_cancel`,
+  `ve_dcc_standard_errors_with_cancel`, `ve_simulate_fit_with_cancel`, `ve_simulate_spec_with_cancel` and
+  `ve_simulate_dcc_with_cancel` take it and return the new status `VE_CANCELLED` soon after it is requested, with every
+  output set to NULL. A NULL signal does what the call without `_with_cancel` does.
+- Cumulative simulations. `ve_sim_options_set_checkpoints` gives a simulation a list of checkpoints of its horizon;
+  `ve_simulate_fit`, `ve_simulate_spec` and `ve_simulate_dcc` then keep only, per path (and series), the sum of the
+  simulated series up to each checkpoint, read with `ve_sim_cumulative` / `ve_dcc_sim_cumulative` (and the list with
+  `ve_sim_checkpoints` / `ve_dcc_sim_checkpoints`). Memory is paths x checkpoints x series instead of
+  paths x horizon x series, and each sum equals the left-to-right sum of the full output with the same seed.
+- Cumulative forecasts. `ve_forecast_cumulative_mean` and `ve_forecast_cumulative_sigma` give, for h = 1..horizon,
+  the mean and standard deviation of the forecast sum of the next h returns; `ve_dcc_forecast_cumulative_mean` and
+  `ve_dcc_forecast_cumulative_covariance` give the mean and covariance for a DCC. The variance weights each step by
+  the MA(inf) weights of an ARMA/ARFIMA mean, so it is the plain sum of sigma^2 (or of H) only without one.
+- Covariance estimators, the first module outside GARCH (`ve_cov_*`). `ve_cov_sample` gives the sample covariance of
+  a panel (divisor t - 1, as `numpy.cov`) and `ve_cov_ledoit_wolf` its Ledoit-Wolf shrinkage towards mu * I with the
+  intensity, as `sklearn.covariance.ledoit_wolf`. Both write an exactly symmetric N x N matrix into the caller's
+  buffer and refuse panels with ranges, fewer than 2 rows or a value that is not finite.
+- Risk measures (`ve_risk_*`). `ve_risk_empirical` gives the VaR and ES of a weighted portfolio over a panel of log
+  (`VE_RETURNS_LOG`) or simple (`VE_RETURNS_SIMPLE`) returns, dates or simulated paths in rows, with
+  `numpy.quantile`'s linear interpolation; `ve_risk_parametric` gives them for mean + sigma * z with z any of the eight
+  standardized densities and its skew, shape and ghlambda (closed-form ES for norm, std and jsu, quadrature for the others).
+  Both are positive as losses.
+- C++: `ve::risk::empirical` and `ve::risk::parametric` (`volengine/risk/measures.hpp`).
+- C++: `ve::cov::sample` and `ve::cov::ledoit_wolf` (`volengine/risk/covariance.hpp`), over a `Panel`.
+- C++: `cumulative_mean()` and `cumulative_sigma()` on `Forecast`, `cumulative_mean()` and `cumulative_covariance()` on
+  `DccForecast`.
+- C#: `Risk.Empirical` and `Risk.Parametric`, returning `RiskMeasure`, with `ShockDistribution` and `ReturnKind`.
+- C#: `Covariances.Sample` and `Covariances.LedoitWolf` (with `LedoitWolfResult`), over a T x N `double[,]`.
+- C#: `CumulativeMean` and `CumulativeSigma` on `Forecast`, `CumulativeMean` and `CumulativeCovariance` on
+  `DccForecast`.
+- Python: the `ve.risk` module, with `empirical(returns, weights, kind=, confidence=)` and
+  `parametric(mean, sigma, confidence=, dist=, skew=, shape=, ghlambda=)`, both returning `(var, es)`.
+- Python: the `ve.cov` module, with `sample(returns)` and `ledoit_wolf(returns)` (the matrix and the intensity).
+- Python: `cumulative_mean` and `cumulative_sigma` on `Forecast`, `cumulative_mean` and `cumulative_covariance` on
+  `DccForecast`.
+- C++: `SimOptions::checkpoints`, and `cumulative()` and `checkpoints()` on `Simulation` and `DccSimulation`.
+- C#: `Checkpoints` on the simulation options, and `Cumulative` and `Checkpoints` on the results; `Returns` and `Sigma`
+  are empty in that mode.
+- Python: the `checkpoints=` keyword of `Context.simulate`, and `cumulative` and `checkpoints` on `Simulation` and
+  `DccSimulation`; `returns` and `sigma` raise `VolEngineError` in that mode.
+- C++: `fit`, `fit_dcc`, `standard_errors` and `simulate` take an optional `std::stop_token` as their last argument;
+  a requested stop fails the call with `ve::Status::cancelled`.
+- C#: overloads of `Fit`, `FitDcc`, `StandardErrors` and `Simulate` with a `CancellationToken` as their last parameter;
+  a cancelled token throws `OperationCanceledException`. `Status.Cancelled` is the new status.
+- Python: `ve.Cancel`, whose `cancel()` may be called from any thread, and the `cancel=` keyword of `Context.fit`,
+  `fit_dcc`, `standard_errors`, `simulate` and `DccFit.standard_errors`; a cancelled call raises `ve.Cancelled`, a
+  `VolEngineError` with status 6.
+
+### Deprecated
+
+- `ve_fit_batch`, `ve_dcc_fit_batch`, `ve_dcc_standard_errors`, `ve_simulate_fit`, `ve_simulate_spec` and
+  `ve_simulate_dcc`: call the `_with_cancel` variant with a NULL `ve_cancel`. They warn at compile time (define
+  `VE_NO_DEPRECATED_WARNINGS` to silence it) and are removed in ABI 2.
+
+### Fixed
+
+- C++ wrapper: `ve::Panel::create_strided` with a stride so large that `(rows - 1) * stride_rows + (cols - 1) *
+  stride_cols` wrapped around in `size_t` passed the extent check, and the panel then read past the data. Such a stride
+  is now refused with `invalid_argument` ("the data is smaller than the shape of the panel").
+- DCC: a fit with a fixed weight beside default starts failed or did not start when the default start (`dcca1`,
+  `dccb1`, `dccg1`, `fdcca1`, ...) left no room under the persistence ceiling, for example `dcca1 = 0.15` fixed in
+  DCC or aDCC, or `fdcca1 = 0.5` fixed in FDCC. The weights left to their default now shrink to fit beside the fixed
+  and started ones, so the fit converges. A start the caller gave is still taken exactly.
+- DCC: an FDCC fit (30 or more groups) with one weight fixed estimated as many parameters as the widest AD lane but
+  the objective differentiated one more, so the fit failed. It now takes the dual-number objective and runs.
+- DCC: simulation with the empirical copula from a correlation matrix without a Cholesky factor read a quantile from
+  no rank of the sample. Every shock is now NaN, and so is the return.
+- A csGARCH fit with `rho` at `P`, or `phi` at the sum of `beta`, had every standard error NaN, where only the
+  parameters at the edge can have none: a step up in any weight takes `P` above `rho`, a step down in any `beta` takes
+  the sum of `beta` below `phi`. Only `rho`, `phi` and the weights beside them lose their standard errors now.
+- A fit whose `omega` underflowed (very short series, `exp(u)` below 1e-308) had `omega = 0`, which failed the validity
+  check, every standard error NaN and an infinite unconstrained value that broke it as a warm start or as fixed values.
+  `omega` now stops at the smallest normal double, where it has no standard error but the others keep theirs.
+- A shape that makes a shock-moment `kappa` subnormal (`alpha` is read back as `t / kappa`, which overflowed) is
+  refused as invalid instead of giving an infinite `alpha`.
+- Distributions: the standardization moments (the `kappa` of the weights, the probability below zero) of std and sstd
+  with the shape near the power (ν near 2), of ged and sged with a small shape (ν = 0.1), and of nig and ghyp
+  with a small zeta were NaN or off, up to 7e-2 in `E(z - c)^2`, because the quadrature of the tails overflowed or
+  ended before the mass did. They are finite, standardized and differentiable now.
+- Johnson SU: the standardization overflowed for `tau` below about 0.053 or `|nu| / tau` above about 354, giving NaN
+  or infinite density, constant and scale. It is taken in logs there and stays finite; where the scale itself is
+  below the smallest normal double (`tau` below about 0.038) the density, moments and quantiles are NaN, never a scale
+  of 0 that made every quantile the center.
+- The std (Student t) cdf lost its digits near the center (z near 0, or a large shape), because it was computed through
+  a quantity that rounds to 1. It is accurate there, and matches the normal expansion for a large shape.
+
+## [1.2.0] - 2026-11-19
 
 ### Added
 
