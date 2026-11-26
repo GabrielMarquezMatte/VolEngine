@@ -30,6 +30,7 @@ break between 0.x releases.
   a panel (divisor t - 1, as `numpy.cov`) and `ve_cov_ledoit_wolf` its Ledoit-Wolf shrinkage towards mu * I with the
   intensity, as `sklearn.covariance.ledoit_wolf`. Both write an exactly symmetric N x N matrix into the caller's
   buffer and refuse panels with ranges, fewer than 2 rows or a value that is not finite.
+- C++: `ve::cov::sample` and `ve::cov::ledoit_wolf` (`volengine/cov.hpp`), over a `Panel`.
 - C++: `cumulative_mean()` and `cumulative_sigma()` on `Forecast`, `cumulative_mean()` and `cumulative_covariance()` on
   `DccForecast`.
 - C#: `CumulativeMean` and `CumulativeSigma` on `Forecast`, `CumulativeMean` and `CumulativeCovariance` on

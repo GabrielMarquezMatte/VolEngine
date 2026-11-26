@@ -106,6 +106,20 @@ const auto forecast = fit->forecast(10).value();
 const double ten_day_sigma = forecast.cumulative_sigma().value()[9];   // of r_{T+1} + ... + r_{T+10}
 ```
 
+## Covariance estimators
+
+`ve::cov` holds the estimators that need no model, over a `Panel` with the series in columns: `sample` is
+`numpy.cov(rowvar=False)` and `ledoit_wolf` is `sklearn.covariance.ledoit_wolf`, the shrinkage of Z'Z / T towards
+mu * I (mu the mean variance), with its intensity in [0, 1]. Both remove each series' mean and return an exactly
+symmetric N x N matrix, row-major; a panel with ranges, fewer than 2 rows or a value that is not finite is an error.
+
+```cpp
+// `returns` is a row-major T x N std::vector<double>.
+const auto panel = ve::Panel::create(returns, t, n).value();
+const auto shrunk = ve::cov::ledoit_wolf(panel).value();
+std::printf("intensity %.3f, first variance %.6f\n", shrunk.shrinkage, shrunk.covariance[0]);
+```
+
 ## DCC
 
 ```cpp
