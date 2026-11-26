@@ -17,6 +17,13 @@ break between 0.x releases.
   `ve_dcc_standard_errors_with_cancel`, `ve_simulate_fit_with_cancel`, `ve_simulate_spec_with_cancel` and
   `ve_simulate_dcc_with_cancel` take it and return the new status `VE_CANCELLED` soon after it is requested, with every
   output set to NULL. A NULL signal does what the call without `_with_cancel` does.
+- C++: `fit`, `fit_dcc`, `standard_errors` and `simulate` take an optional `std::stop_token` as their last argument;
+  a requested stop fails the call with `ve::Status::cancelled`.
+- C#: overloads of `Fit`, `FitDcc`, `StandardErrors` and `Simulate` with a `CancellationToken` as their last parameter;
+  a cancelled token throws `OperationCanceledException`. `Status.Cancelled` is the new status.
+- Python: `ve.Cancel`, whose `cancel()` may be called from any thread, and the `cancel=` keyword of `Context.fit`,
+  `fit_dcc`, `standard_errors`, `simulate` and `DccFit.standard_errors`; a cancelled call raises `ve.Cancelled`, a
+  `VolEngineError` with status 6.
 
 ### Deprecated
 
