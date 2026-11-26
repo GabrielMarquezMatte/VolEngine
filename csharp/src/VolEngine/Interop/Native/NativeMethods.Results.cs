@@ -34,6 +34,14 @@ internal static unsafe partial class NativeMethods
     internal static partial int ve_simulate_spec(ContextHandle context, SpecHandle spec, SimOptionsHandle options,
                                                  out SimHandle simulation);
 
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_simulate_fit_with_cancel(ContextHandle context, FitHandle fit, SimOptionsHandle options,
+                                                            CancelHandle cancel, out SimHandle simulation);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_simulate_spec_with_cancel(ContextHandle context, SpecHandle spec, SimOptionsHandle options,
+                                                             CancelHandle cancel, out SimHandle simulation);
+
     [LibraryImport(LibraryName)] internal static partial int ve_sim_paths(SimHandle simulation, out nuint paths);
     [LibraryImport(LibraryName)] internal static partial int ve_sim_horizon(SimHandle simulation, out nuint horizon);
 

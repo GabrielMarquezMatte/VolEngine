@@ -15,6 +15,9 @@ public enum Status
     OutOfMemory,
     /// <summary>An unexpected failure inside the native library.</summary>
     InternalError,
+    /// <summary>The call stopped on a cancellation request; the binding throws it as an
+    /// <see cref="OperationCanceledException"/>, not a <see cref="VolEngineException"/>.</summary>
+    Cancelled,
 }
 
 /// <summary>

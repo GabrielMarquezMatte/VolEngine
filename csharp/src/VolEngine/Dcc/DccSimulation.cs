@@ -44,7 +44,8 @@ public sealed class DccSimulation
     /// <see cref="DccSimulationOptions.Correlations"/> was set.</summary>
     public double[][][][]? Covariance { get; private init; }
 
-    internal static DccSimulation Run(ContextHandle context, DccFit source, DccSimulationOptions options)
+    internal static DccSimulation Run(ContextHandle context, DccFit source, DccSimulationOptions options,
+                                      CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(options);
         CheckSize(options, source.Series);
@@ -54,10 +55,13 @@ public sealed class DccSimulation
         {
             Calls.Check(NativeMethods.ve_sim_options_set_correlations(handle, options.Correlations ? 1 : 0));
             using var future = DccFutures.Create(source.Series, options.Horizon, options.Mxreg, options.Vxreg);
-            Calls.Check(NativeMethods.ve_simulate_dcc(context, source.Handle, handle, future, out var simulation));
+            DccSimHandle? simulation = null;
+            Calls.Check(Calls.WithCancel(cancel =>
+                NativeMethods.ve_simulate_dcc_with_cancel(context, source.Handle, handle, future, cancel, out simulation),
+                token));
             using (simulation)
             {
-                return Read(simulation, options.Correlations);
+                return Read(simulation!, options.Correlations);
             }
         }
     }

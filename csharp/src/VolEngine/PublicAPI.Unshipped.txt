@@ -1,1 +1,18 @@
 #nullable enable
+*REMOVED*VolEngine.Context.Fit(System.Collections.Generic.IReadOnlyList<VolEngine.Spec!>! specs, VolEngine.Panel! data, VolEngine.FitOptions? options = null) -> VolEngine.FitGrid!
+*REMOVED*VolEngine.Context.Fit(VolEngine.Spec! spec, System.ReadOnlySpan<double> series, VolEngine.FitOptions? options = null, double[,]? mxreg = null, double[,]? vxreg = null) -> VolEngine.Fit!
+*REMOVED*VolEngine.Context.FitDcc(System.Collections.Generic.IReadOnlyList<VolEngine.DccSpec!>! specs, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, bool standardErrors = true) -> VolEngine.DccFitBatch!
+*REMOVED*VolEngine.Context.FitDcc(VolEngine.DccSpec! spec, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, bool standardErrors = true) -> VolEngine.DccFit!
+VolEngine.Context.Fit(System.Collections.Generic.IReadOnlyList<VolEngine.Spec!>! specs, VolEngine.Panel! data, VolEngine.FitOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.FitGrid!
+VolEngine.Context.Fit(System.Collections.Generic.IReadOnlyList<VolEngine.Spec!>! specs, VolEngine.Panel! data, VolEngine.FitOptions? options) -> VolEngine.FitGrid!
+VolEngine.Context.Fit(VolEngine.Spec! spec, System.ReadOnlySpan<double> series, VolEngine.FitOptions? options = null, double[,]? mxreg = null, double[,]? vxreg = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.Fit!
+VolEngine.Context.Fit(VolEngine.Spec! spec, System.ReadOnlySpan<double> series, VolEngine.FitOptions? options, double[,]? mxreg, double[,]? vxreg) -> VolEngine.Fit!
+VolEngine.Context.FitDcc(System.Collections.Generic.IReadOnlyList<VolEngine.DccSpec!>! specs, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, bool standardErrors = true, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.DccFitBatch!
+VolEngine.Context.FitDcc(System.Collections.Generic.IReadOnlyList<VolEngine.DccSpec!>! specs, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, bool standardErrors) -> VolEngine.DccFitBatch!
+VolEngine.Context.FitDcc(VolEngine.DccSpec! spec, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, bool standardErrors = true, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.DccFit!
+VolEngine.Context.FitDcc(VolEngine.DccSpec! spec, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, bool standardErrors) -> VolEngine.DccFit!
+VolEngine.Context.Simulate(VolEngine.DccFit! source, VolEngine.DccSimulationOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.DccSimulation!
+VolEngine.Context.Simulate(VolEngine.Fit! source, VolEngine.SimulationOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.Simulation!
+VolEngine.Context.Simulate(VolEngine.Spec! source, VolEngine.SimulationOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.Simulation!
+VolEngine.Context.StandardErrors(VolEngine.DccFit! fit, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.DccFit!
+VolEngine.Status.Cancelled = 6 -> VolEngine.Status

@@ -113,6 +113,29 @@ The `MvLaplace` density is singular where every standardized residual of a date 
 `mu` fixed at 0): the log-likelihood is then not finite and the fit ends `Failed`, with no message besides the status.
 Drop such dates before the univariate fits.
 
+## Cancellation
+
+`Fit`, `FitDcc`, `StandardErrors` and `Simulate` take an optional `CancellationToken` as their last argument. A token
+cancelled before or during the call makes it throw `OperationCanceledException` soon after (within one optimizer
+iteration, one stage of the standard errors or one simulated path) and no result is made; a call that finishes first
+returns its result. Without a token, or with one that can never be cancelled, nothing changes.
+
+```csharp
+// `specs` and `data` as in "Many series and specs": stop the grid if it takes more than two seconds.
+using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+try
+{
+    using FitGrid grid = context.Fit(specs, data, cancellationToken: deadline.Token);
+    Console.WriteLine($"{grid.SpecCount} specs on {grid.SeriesCount} series");
+}
+catch (OperationCanceledException error) when (deadline.IsCancellationRequested)
+{
+    throw new TimeoutException("the grid took more than two seconds", error);
+}
+```
+
+One token may go to several calls at once, on any threads, and cancelling it stops all of them.
+
 ## Threads and Dispose
 
 A `Context` is a native thread pool; `new Context(threads)` sizes it (0 means the hardware concurrency). Results do
