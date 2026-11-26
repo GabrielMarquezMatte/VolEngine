@@ -41,6 +41,8 @@ break between 0.x releases.
 - C#: `Covariances.Sample` and `Covariances.LedoitWolf` (with `LedoitWolfResult`), over a T x N `double[,]`.
 - C#: `CumulativeMean` and `CumulativeSigma` on `Forecast`, `CumulativeMean` and `CumulativeCovariance` on
   `DccForecast`.
+- Python: the `ve.risk` module, with `empirical(returns, weights, kind=, confidence=)` and
+  `parametric(mean, sigma, confidence=, dist=, skew=, shape=, ghlambda=)`, both returning `(var, es)`.
 - Python: the `ve.cov` module, with `sample(returns)` and `ledoit_wolf(returns)` (the matrix and the intensity).
 - Python: `cumulative_mean` and `cumulative_sigma` on `Forecast`, `cumulative_mean` and `cumulative_covariance` on
   `DccForecast`.

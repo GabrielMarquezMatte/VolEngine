@@ -1,6 +1,6 @@
 """VolEngine: GARCH estimation over the VolEngine C API."""
 
-from . import cov
+from . import cov, risk
 from .api import (
     Cancel,
     Cancelled,
@@ -40,4 +40,5 @@ __all__ = [
     "Spec",
     "VolEngineError",
     "cov",
+    "risk",
 ]

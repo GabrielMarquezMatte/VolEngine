@@ -140,6 +140,25 @@ shrunk, intensity = ve.cov.ledoit_wolf(returns)
 print(np.linalg.eigvalsh(ve.cov.sample(returns))[0], np.linalg.eigvalsh(shrunk)[0], intensity)
 ```
 
+## Risk measures
+
+`ve.risk` gives the VaR and ES at a confidence in (0, 1) (0.99 is the 1% tail), both positive as losses, in units of
+the return. `empirical(returns, weights, kind="log", confidence=...)` takes a (T, N) array with dates or simulated paths
+in rows: each row becomes the portfolio's simple return sum_j w_j (exp(r_j) - 1) (`kind="simple"` takes simple
+returns), the VaR is minus its `numpy.quantile` at 1 - confidence and the ES minus the mean of the returns at or below
+it; the weights are not normalized. `parametric(mean, sigma, confidence=..., dist=..., skew=..., shape=...,
+ghlambda=...)` takes the return mean + sigma * z with z any of the eight standardized densities, so the VaR can use the
+distribution a fit estimated; the ES has a closed form for norm and std and is a quadrature for the others.
+
+```python
+# One day ahead from the gjrGARCH-std fit: its own Student-t, at the forecast's mean and sigma.
+shape = dict(zip(fit.names, fit.estimate))["shape"]
+print(ve.risk.parametric(forecast.mean[0], forecast.sigma[0], confidence=0.99, dist="std", shape=shape))
+# Ten days ahead from DCC paths: the cumulative log returns at the last checkpoint, read in place.
+paths = ctx.simulate(dcc, horizon=10, paths=2000, seed=5, checkpoints=[1, 10])
+print(ve.risk.empirical(paths.cumulative[:, 1, :], [0.5, 0.3, 0.2], confidence=0.99))
+```
+
 ## Cancellation
 
 `fit`, `fit_dcc`, `standard_errors` and `simulate` take a keyword-only `cancel=`, a `Cancel`. Its `cancel()` can be
