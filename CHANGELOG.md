@@ -22,6 +22,11 @@ break between 0.x releases.
   simulated series up to each checkpoint, read with `ve_sim_cumulative` / `ve_dcc_sim_cumulative` (and the list with
   `ve_sim_checkpoints` / `ve_dcc_sim_checkpoints`). Memory is paths x checkpoints x series instead of
   paths x horizon x series, and each sum equals the left-to-right sum of the full output with the same seed.
+- C++: `SimOptions::checkpoints`, and `cumulative()` and `checkpoints()` on `Simulation` and `DccSimulation`.
+- C#: `Checkpoints` on the simulation options, and `Cumulative` and `Checkpoints` on the results; `Returns` and `Sigma`
+  are empty in that mode.
+- Python: the `checkpoints=` keyword of `Context.simulate`, and `cumulative` and `checkpoints` on `Simulation` and
+  `DccSimulation`; `returns` and `sigma` raise `VolEngineError` in that mode.
 - C++: `fit`, `fit_dcc`, `standard_errors` and `simulate` take an optional `std::stop_token` as their last argument;
   a requested stop fails the call with `ve::Status::cancelled`.
 - C#: overloads of `Fit`, `FitDcc`, `StandardErrors` and `Simulate` with a `CancellationToken` as their last parameter;

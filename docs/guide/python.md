@@ -58,6 +58,24 @@ The forecast follows `rugarch`, so it is not the mean of the simulated paths for
 (P(z < 0) stands in for E[1{z < 0} z²]) and for a csGARCH from h = 2 (the closed form leaves out the last shock); see
 [validation](validation.md).
 
+## Cumulative simulation
+
+For a risk number over several horizons, `checkpoints=` keeps only the sum of the returns up to each checkpoint instead
+of every step, so memory is paths x checkpoints and not paths x horizon. The last checkpoint must be the horizon.
+
+```python
+risk = ctx.simulate(fit, horizon=10, paths=2000, seed=7, checkpoints=[1, 5, 10])
+print(risk.checkpoints)                                    # (1, 5, 10)
+var = -np.percentile(risk.cumulative, 1, axis=0)           # 99% VaR at 1, 5 and 10 days, from the same paths
+print(var)
+```
+
+`risk.cumulative` has shape (paths, K) (paths, K, N for a `DccFit`), and each value is the left-to-right sum of the
+`returns` of the full simulation with the same seed. In this mode `returns` and `sigma` raise `VolEngineError`, and a
+simulation with `correlations=True` cannot have checkpoints.
+
+The engine is scale invariant, so returns can be passed as fractions (0.01 for 1%) without multiplying by 100.
+
 ## DCC and Copula-DCC
 
 A DCC takes univariate fits, one per series, and fits the correlation model on their standardized residuals:

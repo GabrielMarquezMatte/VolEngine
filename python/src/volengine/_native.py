@@ -146,6 +146,7 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_forecast_free": (None, [_HANDLE]),
     "ve_sim_options_create": (_STATUS, [_SIZE, _SIZE, ctypes.c_uint64, _OUT_HANDLE]),
     "ve_sim_options_set_regressors": (_STATUS, [_HANDLE, _HANDLE, _HANDLE]),
+    "ve_sim_options_set_checkpoints": (_STATUS, [_HANDLE, ctypes.POINTER(_SIZE), _SIZE]),
     "ve_sim_options_free": (None, [_HANDLE]),
     "ve_simulate_fit_with_cancel": (_STATUS, [_HANDLE, _HANDLE, _HANDLE, _CANCEL, _OUT_HANDLE]),
     "ve_simulate_spec_with_cancel": (_STATUS, [_HANDLE, _HANDLE, _HANDLE, _CANCEL, _OUT_HANDLE]),
@@ -153,6 +154,8 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_sim_horizon": (_STATUS, [_HANDLE, _OUT_SIZE]),
     "ve_sim_returns": (_STATUS, _VIEW),
     "ve_sim_sigma": (_STATUS, _VIEW),
+    "ve_sim_cumulative": (_STATUS, _VIEW),
+    "ve_sim_checkpoints": (_STATUS, [_HANDLE, ctypes.POINTER(ctypes.POINTER(_SIZE)), _OUT_SIZE]),
     "ve_sim_free": (None, [_HANDLE]),
     "ve_dcc_future_create": (_STATUS, [_SIZE, _SIZE, _OUT_HANDLE]),
     "ve_dcc_future_set": (_STATUS, [_HANDLE, _SIZE, _HANDLE, _HANDLE]),
@@ -172,6 +175,8 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_dcc_sim_series": (_STATUS, [_HANDLE, _OUT_SIZE]),
     "ve_dcc_sim_returns": (_STATUS, _VIEW),
     "ve_dcc_sim_sigma": (_STATUS, _VIEW),
+    "ve_dcc_sim_cumulative": (_STATUS, _VIEW),
+    "ve_dcc_sim_checkpoints": (_STATUS, [_HANDLE, ctypes.POINTER(ctypes.POINTER(_SIZE)), _OUT_SIZE]),
     "ve_dcc_sim_correlation": (_STATUS, _VIEW),
     "ve_dcc_sim_covariance": (_STATUS, _VIEW),
     "ve_dcc_sim_free": (None, [_HANDLE]),
@@ -363,6 +368,14 @@ def native_view(owner: object, function: Callable[..., int], pointer: int) -> ND
     buffer = (ctypes.c_double * length.value).from_address(address)
     setattr(buffer, "_owner", owner)
     return read_only(np.frombuffer(buffer, dtype=np.float64))
+
+
+def read_checkpoints(function: Callable[..., int], pointer: int) -> tuple[int, ...]:
+    """The checkpoint list a ve_*_checkpoints function returns for `pointer`, copied (empty without checkpoints)."""
+    data = ctypes.POINTER(ctypes.c_size_t)()
+    length = ctypes.c_size_t()
+    check(function(pointer, ctypes.byref(data), ctypes.byref(length)))
+    return tuple(data[i] for i in range(length.value))
 
 
 class Cancel:
