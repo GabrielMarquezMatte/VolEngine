@@ -105,9 +105,9 @@ def set_checkpoints(options: Handle, checkpoints: Sequence[int] | None) -> None:
 def panel_array(data: ArrayLike) -> tuple[NDArray[np.float64], bool]:
     array = np.asarray(data, dtype=np.float64)
     if array.ndim == 1:
-        return array.reshape(-1, 1), True
+        return native_layout(array.reshape(-1, 1)), True
     if array.ndim == 2:
-        return array, False
+        return native_layout(array), False
     raise ValueError(f"data must be 1D (T,) or 2D (T, N), got {array.ndim} dimensions")
 
 

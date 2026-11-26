@@ -25,6 +25,20 @@ def test_column_slice_equals_its_copy(returns: NDArray[np.float64]) -> None:
     assert shrinkage == expected_shrinkage
 
 
+@pytest.mark.parametrize("step", [1, -1])
+def test_strides_off_the_element_size_are_copied(returns: NDArray[np.float64], step: int) -> None:
+    record = np.zeros(returns.shape[0], dtype=[("a", np.float64), ("b", np.float32)])
+    record["a"] = returns[:, 0]
+    field = record["a"][::step]
+    np.testing.assert_array_equal(ve.cov.sample(field), ve.cov.sample(field.copy()))
+    assert ve.risk.empirical(field, [1.0], confidence=0.99) == ve.risk.empirical(field.copy(), [1.0], confidence=0.99)
+
+
+def test_broadcast_input_is_accepted() -> None:
+    broadcast = np.broadcast_to(np.arange(10.0)[:, None], (10, 2))
+    np.testing.assert_array_equal(ve.cov.sample(broadcast), ve.cov.sample(broadcast.copy()))
+
+
 def test_results_are_exactly_symmetric(returns: NDArray[np.float64]) -> None:
     sample = ve.cov.sample(returns)
     shrunk, _ = ve.cov.ledoit_wolf(returns)
