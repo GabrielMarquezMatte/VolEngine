@@ -20,7 +20,8 @@ internal static partial class ContractCheck
     };
 
     private static readonly string[] StatusNames =
-        ["VE_OK", "VE_INVALID_ARGUMENT", "VE_INVALID_HANDLE", "VE_UNSUPPORTED", "VE_OUT_OF_MEMORY", "VE_INTERNAL_ERROR"];
+        ["VE_OK", "VE_INVALID_ARGUMENT", "VE_INVALID_HANDLE", "VE_UNSUPPORTED", "VE_OUT_OF_MEMORY", "VE_INTERNAL_ERROR",
+         "VE_CANCELLED"];
 
     private static readonly Dictionary<string, string> Constants = new(StringComparer.Ordinal)
     {
@@ -46,7 +47,10 @@ internal static partial class ContractCheck
     ];
 
     // The batch fits write one handle per job into a caller array; every other ve_x** is one created handle.
-    private static readonly HashSet<string> HandleArrayOutputs = new(StringComparer.Ordinal) { "ve_fit_batch", "ve_dcc_fit_batch" };
+    private static readonly HashSet<string> HandleArrayOutputs = new(StringComparer.Ordinal)
+    {
+        "ve_fit_batch", "ve_fit_batch_with_cancel", "ve_dcc_fit_batch", "ve_dcc_fit_batch_with_cancel",
+    };
 
     [GeneratedRegex(@"^function (?<ret>.+?) (?<name>ve_\w+)\((?<params>.*)\)$", RegexOptions.None, 1000)]
     private static partial Regex FunctionLine();

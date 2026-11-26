@@ -62,6 +62,11 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(LibraryName)] internal static partial void ve_batch_free(nint batch);
 
     [LibraryImport(LibraryName)] internal static partial int ve_fit_batch(ContextHandle context, BatchHandle batch, nint* fits);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_fit_batch_with_cancel(ContextHandle context, BatchHandle batch, CancelHandle cancel,
+                                                         nint* fits);
+
     [LibraryImport(LibraryName)] internal static partial int ve_fit_status(FitHandle fit, out int status);
     [LibraryImport(LibraryName)] internal static partial int ve_fit_nobs(FitHandle fit, out nuint nobs);
     [LibraryImport(LibraryName)] internal static partial int ve_fit_param_count(FitHandle fit, out nuint count);

@@ -13,7 +13,7 @@ public sealed class Simulation
         Sigma = sigma;
     }
 
-    internal delegate int Simulator(SimOptionsHandle options, out SimHandle simulation);
+    internal delegate int Simulator(SimOptionsHandle options, CancelHandle cancel, out SimHandle simulation);
 
     /// <summary>The number of paths.</summary>
     public int Paths { get; }
@@ -27,7 +27,8 @@ public sealed class Simulation
     /// <summary>The conditional standard deviation of each step, Paths x Horizon.</summary>
     public double[][] Sigma { get; }
 
-    internal static unsafe Simulation Run(SimulationOptions options, int mxreg, int vxreg, Simulator simulate)
+    internal static unsafe Simulation Run(SimulationOptions options, int mxreg, int vxreg, Simulator simulate,
+                                          CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(options);
         if (options.Horizon < 1 || options.Paths < 1)
@@ -52,10 +53,11 @@ public sealed class Simulation
                 using var variancePanel = Futures.Panel(variance, options.Vxreg);
                 Calls.Check(NativeMethods.ve_sim_options_set_regressors(handle, meanPanel, variancePanel));
             }
-            Calls.Check(simulate(handle, out var simulation));
+            SimHandle? simulation = null;
+            Calls.Check(Calls.WithCancel(cancel => simulate(handle, cancel, out simulation), token));
             using (simulation)
             {
-                return Read(simulation);
+                return Read(simulation!);
             }
         }
     }

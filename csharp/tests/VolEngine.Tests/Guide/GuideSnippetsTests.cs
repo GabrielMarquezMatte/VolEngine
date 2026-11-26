@@ -105,4 +105,26 @@ public sealed class GuideSnippetsTests
         Assert.Equal(1500, correlation.Length);
         Assert.Equal(100, paths.Paths);
     }
+
+    [Fact]
+    public void Cancellation()
+    {
+        using var context = new Context();
+        var data = Panel.FromSeries(ReferenceData.Columns("dcc3.csv"));
+        Spec[] specs = [new Spec(), new Spec { Model = Model.GjrGarch }];
+        // BEGIN guide: Cancellation
+        // `specs` and `data` as in "Many series and specs": stop the grid if it takes more than two seconds.
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        try
+        {
+            using FitGrid grid = context.Fit(specs, data, cancellationToken: deadline.Token);
+            Console.WriteLine($"{grid.SpecCount} specs on {grid.SeriesCount} series");
+        }
+        catch (OperationCanceledException error) when (deadline.IsCancellationRequested)
+        {
+            throw new TimeoutException("the grid took more than two seconds", error);
+        }
+        // END guide
+        Assert.False(deadline.IsCancellationRequested);
+    }
 }

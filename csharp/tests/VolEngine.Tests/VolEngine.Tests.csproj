@@ -6,8 +6,9 @@
     <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
     <!-- As in ExcelReader's tests: CA1707 (test names use underscores), CA2007 (no synchronization context),
-         CA1515/CA1034/CA1812 (xUnit classes), MA0004. -->
-    <NoWarn>$(NoWarn);CA2007;CA1707;MA0004;CA1034;CA1812</NoWarn>
+         CA1515/CA1034/CA1812 (xUnit classes), MA0004. xUnit1051: the fits and simulations accept a token, and a test
+         passes one only when it tests cancellation. -->
+    <NoWarn>$(NoWarn);CA2007;CA1707;MA0004;CA1034;CA1812;xUnit1051</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3.mtp-v2" Version="4.0.3" />
