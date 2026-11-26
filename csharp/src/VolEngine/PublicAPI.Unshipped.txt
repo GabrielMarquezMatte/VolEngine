@@ -45,3 +45,41 @@ static VolEngine.Covariances.LedoitWolf(double[,]! returns) -> VolEngine.LedoitW
 static VolEngine.Covariances.Sample(double[,]! returns) -> double[]![]!
 static VolEngine.LedoitWolfResult.operator !=(VolEngine.LedoitWolfResult? left, VolEngine.LedoitWolfResult? right) -> bool
 static VolEngine.LedoitWolfResult.operator ==(VolEngine.LedoitWolfResult? left, VolEngine.LedoitWolfResult? right) -> bool
+VolEngine.ReturnKind
+VolEngine.ReturnKind.Log = 0 -> VolEngine.ReturnKind
+VolEngine.ReturnKind.Simple = 1 -> VolEngine.ReturnKind
+VolEngine.Risk
+VolEngine.RiskMeasure
+VolEngine.RiskMeasure.<Clone>$() -> VolEngine.RiskMeasure!
+VolEngine.RiskMeasure.Deconstruct(out double Var, out double Es) -> void
+VolEngine.RiskMeasure.Equals(VolEngine.RiskMeasure? other) -> bool
+VolEngine.RiskMeasure.Es.get -> double
+VolEngine.RiskMeasure.Es.init -> void
+VolEngine.RiskMeasure.RiskMeasure(double Var, double Es) -> void
+VolEngine.RiskMeasure.Var.get -> double
+VolEngine.RiskMeasure.Var.init -> void
+VolEngine.ShockDistribution
+VolEngine.ShockDistribution.<Clone>$() -> VolEngine.ShockDistribution!
+VolEngine.ShockDistribution.Deconstruct(out VolEngine.Distribution Distribution, out double Skew, out double Shape, out double GhLambda) -> void
+VolEngine.ShockDistribution.Distribution.get -> VolEngine.Distribution
+VolEngine.ShockDistribution.Distribution.init -> void
+VolEngine.ShockDistribution.Equals(VolEngine.ShockDistribution? other) -> bool
+VolEngine.ShockDistribution.GhLambda.get -> double
+VolEngine.ShockDistribution.GhLambda.init -> void
+VolEngine.ShockDistribution.Shape.get -> double
+VolEngine.ShockDistribution.Shape.init -> void
+VolEngine.ShockDistribution.ShockDistribution(VolEngine.Distribution Distribution, double Skew = NaN, double Shape = NaN, double GhLambda = NaN) -> void
+VolEngine.ShockDistribution.Skew.get -> double
+VolEngine.ShockDistribution.Skew.init -> void
+override VolEngine.RiskMeasure.Equals(object? obj) -> bool
+override VolEngine.RiskMeasure.GetHashCode() -> int
+override VolEngine.RiskMeasure.ToString() -> string!
+override VolEngine.ShockDistribution.Equals(object? obj) -> bool
+override VolEngine.ShockDistribution.GetHashCode() -> int
+override VolEngine.ShockDistribution.ToString() -> string!
+static VolEngine.Risk.Empirical(double[,]! returns, double[]! weights, VolEngine.ReturnKind kind, double confidence) -> VolEngine.RiskMeasure!
+static VolEngine.Risk.Parametric(VolEngine.ShockDistribution! distribution, double mean, double sigma, double confidence) -> VolEngine.RiskMeasure!
+static VolEngine.RiskMeasure.operator !=(VolEngine.RiskMeasure? left, VolEngine.RiskMeasure? right) -> bool
+static VolEngine.RiskMeasure.operator ==(VolEngine.RiskMeasure? left, VolEngine.RiskMeasure? right) -> bool
+static VolEngine.ShockDistribution.operator !=(VolEngine.ShockDistribution? left, VolEngine.ShockDistribution? right) -> bool
+static VolEngine.ShockDistribution.operator ==(VolEngine.ShockDistribution? left, VolEngine.ShockDistribution? right) -> bool

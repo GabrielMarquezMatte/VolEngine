@@ -119,6 +119,29 @@ public sealed class GuideSnippetsTests
     }
 
     [Fact]
+    public void Risk_measures()
+    {
+        var columns = ReferenceData.Columns("copula3.csv");
+        var returns = new double[columns[0].Length, columns.Length];
+        for (var row = 0; row < columns[0].Length; row++)
+        {
+            for (var column = 0; column < columns.Length; column++)
+            {
+                returns[row, column] = 0.01 * columns[column][row];
+            }
+        }
+        // BEGIN guide: Risk measures
+        // `returns` as above, log returns; equal weights, the 1% tail.
+        double[] weights = Enumerable.Repeat(1.0 / returns.GetLength(1), returns.GetLength(1)).ToArray();
+        RiskMeasure historical = Risk.Empirical(returns, weights, ReturnKind.Log, 0.99);
+        RiskMeasure studentT = Risk.Parametric(new ShockDistribution(Distribution.Std, Shape: 6.0), 0.0, 0.012, 0.99);
+        Console.WriteLine($"historical VaR {historical.Var:F4} ES {historical.Es:F4}, Student t VaR {studentT.Var:F4}");
+        // END guide
+        Assert.True(historical.Es > historical.Var);
+        Assert.True(studentT.Es > studentT.Var);
+    }
+
+    [Fact]
     public void Diagnostics()
     {
         using var context = new Context();

@@ -39,6 +39,7 @@ break between 0.x releases.
 - C++: `ve::cov::sample` and `ve::cov::ledoit_wolf` (`volengine/risk/covariance.hpp`), over a `Panel`.
 - C++: `cumulative_mean()` and `cumulative_sigma()` on `Forecast`, `cumulative_mean()` and `cumulative_covariance()` on
   `DccForecast`.
+- C#: `Risk.Empirical` and `Risk.Parametric`, returning `RiskMeasure`, with `ShockDistribution` and `ReturnKind`.
 - C#: `Covariances.Sample` and `Covariances.LedoitWolf` (with `LedoitWolfResult`), over a T x N `double[,]`.
 - C#: `CumulativeMean` and `CumulativeSigma` on `Forecast`, `CumulativeMean` and `CumulativeCovariance` on
   `DccForecast`.

@@ -104,6 +104,24 @@ Console.WriteLine($"intensity {shrunk.Shrinkage:F3}, first variance {shrunk.Cova
 intensity in [0, 1]. Both remove each series' mean and return N rows of N, exactly symmetric; fewer than 2 rows or a
 value that is not finite throws a `VolEngineException` with `Status.InvalidArgument`.
 
+## Risk measures
+
+```csharp
+// `returns` as above, log returns; equal weights, the 1% tail.
+double[] weights = Enumerable.Repeat(1.0 / returns.GetLength(1), returns.GetLength(1)).ToArray();
+RiskMeasure historical = Risk.Empirical(returns, weights, ReturnKind.Log, 0.99);
+RiskMeasure studentT = Risk.Parametric(new ShockDistribution(Distribution.Std, Shape: 6.0), 0.0, 0.012, 0.99);
+Console.WriteLine($"historical VaR {historical.Var:F4} ES {historical.Es:F4}, Student t VaR {studentT.Var:F4}");
+```
+
+`Risk.Empirical` takes a T x N array with dates or simulated paths in rows (copy a checkpoint of
+`DccSimulation.Cumulative` into one) and one weight per column, not normalized: each row becomes the portfolio's simple
+return sum_j w_j (exp(r_j) - 1) (`ReturnKind.Simple` takes simple returns), the VaR is minus its `numpy.quantile` at
+1 - confidence and the ES minus the mean at or below it. `Risk.Parametric` takes the return mean + sigma * z with z any
+of the eight standardized densities and the fit's skew, shape and ghlambda in a `ShockDistribution`; the ES is a
+closed form for the normal and the Student t and a quadrature for the others. Both are positive as losses, at a
+confidence in (0, 1); anything out of range throws a `VolEngineException` with `Status.InvalidArgument`.
+
 ## Diagnostics
 
 ```csharp

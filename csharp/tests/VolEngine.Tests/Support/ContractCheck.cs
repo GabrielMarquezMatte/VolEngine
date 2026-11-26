@@ -44,6 +44,7 @@ internal static partial class ContractCheck
         ("VE_SE_", typeof(StandardErrorKind)),
         ("VE_CRITERION_", typeof(Criterion)),
         ("VE_IC_", typeof(CriterionScale)),
+        ("VE_RETURNS_", typeof(ReturnKind)),
     ];
 
     // The batch fits write one handle per job into a caller array; every other ve_x** is one created handle.
