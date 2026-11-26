@@ -7,7 +7,7 @@ import ctypes
 import numpy as np
 from numpy.typing import NDArray
 
-from ._native import Handle, lib, native_view, read_scalar
+from ._native import Handle, lib, native_view, read_checkpoints, read_scalar
 
 
 class DccSimulation:
@@ -19,6 +19,11 @@ class DccSimulation:
     mvlaplace), and turns it into the standardized shock of each series: itself in a DCC, or through the copula and
     the margin of the series in a Copula-DCC. Path p reads only the stream (seed, p): the same seed gives the same
     paths for any number of threads, within one version of the library. The simulation does not depend on its fit.
+
+    A simulation run with `checkpoints=` keeps only `cumulative`, shaped (paths, K, N): the sum of the returns of each
+    series up to each checkpoint, added in step order. `returns` and `sigma` then raise VolEngineError, and
+    `cumulative` raises it for a simulation without checkpoints. `checkpoints` is the tuple of the K checkpoints
+    (empty without them).
     """
 
     def __init__(self, handle: Handle) -> None:
@@ -38,6 +43,15 @@ class DccSimulation:
         return native_view(self, lib.ve_dcc_sim_sigma, self._handle.pointer).reshape(self._shape)
 
     @property
+    def cumulative(self) -> NDArray[np.float64]:
+        view = native_view(self, lib.ve_dcc_sim_cumulative, self._handle.pointer)
+        return view.reshape(self._shape[0], -1, self._shape[2])
+
+    @property
+    def checkpoints(self) -> tuple[int, ...]:
+        return read_checkpoints(lib.ve_dcc_sim_checkpoints, self._handle.pointer)
+
+    @property
     def R(self) -> NDArray[np.float64]:
         return native_view(self, lib.ve_dcc_sim_correlation, self._handle.pointer).reshape(*self._shape, self._shape[2])
 
@@ -52,6 +66,10 @@ class Simulation:
     `returns` and `sigma` are read-only arrays of shape (paths, horizon): row p is path p, `returns` the simulated
     series and `sigma` its conditional standard deviation. The same seed gives the same paths for any number of
     threads, but only within one version of the library. The simulation does not depend on its source.
+
+    A simulation run with `checkpoints=` keeps only `cumulative`, shaped (paths, K): the sum of the returns up to each
+    checkpoint, added in step order. `returns` and `sigma` then raise VolEngineError, and `cumulative` raises it for a
+    simulation without checkpoints. `checkpoints` is the tuple of the K checkpoints (empty without them).
     """
 
     def __init__(self, handle: Handle) -> None:
@@ -68,3 +86,11 @@ class Simulation:
     @property
     def sigma(self) -> NDArray[np.float64]:
         return native_view(self, lib.ve_sim_sigma, self._handle.pointer).reshape(self._shape)
+
+    @property
+    def cumulative(self) -> NDArray[np.float64]:
+        return native_view(self, lib.ve_sim_cumulative, self._handle.pointer).reshape(self._shape[0], -1)
+
+    @property
+    def checkpoints(self) -> tuple[int, ...]:
+        return read_checkpoints(lib.ve_sim_checkpoints, self._handle.pointer)

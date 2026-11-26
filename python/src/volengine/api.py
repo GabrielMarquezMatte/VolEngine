@@ -25,6 +25,7 @@ from ._native import (
     check,
     create_handle,
     int32,
+    is_integer,
     lib,
     native_layout,
     open_panel,
@@ -66,25 +67,39 @@ class FitKeywords(TypedDict, total=False):
     lengths: ArrayLike | None
     mxreg: ArrayLike | None
     vxreg: ArrayLike | None
+    checkpoints: Sequence[int] | None
     cancel: Cancel | None
 
 
 class FutureKeywords(TypedDict, total=False):
-    """The optional keywords of `Context.simulate`: the regressors of the horizon and `cancel`."""
+    """The optional keywords of `Context.simulate`: the regressors of the horizon, `checkpoints` and `cancel`."""
 
     mxreg: ArrayLike | None
     vxreg: ArrayLike | None
+    checkpoints: Sequence[int] | None
     cancel: Cancel | None
 
 
 class DccSimulateKeywords(TypedDict, total=False):
     """The optional keywords of `Context.simulate` from a DccFit: `correlations`, one entry per series of each
-    regressor kind, as in `DccFit.forecast`, and `cancel`."""
+    regressor kind, as in `DccFit.forecast`, `checkpoints` and `cancel`."""
 
     correlations: bool
     mxreg: Sequence[ArrayLike | None] | None
     vxreg: Sequence[ArrayLike | None] | None
+    checkpoints: Sequence[int] | None
     cancel: Cancel | None
+
+
+def set_checkpoints(options: Handle, checkpoints: Sequence[int] | None) -> None:
+    """Pass `checkpoints` (None keeps the full output) to the simulation options; the native call checks the order."""
+    if checkpoints is None:
+        return
+    if not all(is_integer(k) for k in checkpoints):
+        raise TypeError("checkpoints must be a sequence of integers")
+    values = [bounded(k, "checkpoints", 0) for k in checkpoints]
+    array = (ctypes.c_size_t * len(values))(*values)
+    check(lib.ve_sim_options_set_checkpoints(options.pointer, array, len(values)))
 
 
 def panel_array(data: ArrayLike) -> tuple[NDArray[np.float64], bool]:
@@ -352,6 +367,10 @@ class Context:
         `Fit`) the paths are multivariate and give a DccSimulation: `mxreg` and `vxreg` are sequences with one entry
         per series, as in `DccFit.forecast`, and `correlations=True` keeps R and H of every path and step (memory:
         paths x horizon x N^2 x 2 doubles). Path p reads only the stream (seed, p), with the same version rule.
+
+        `checkpoints=[1, 5, 10]` (strictly increasing, the first at least 1, the last equal to `horizon`) switches to
+        the cumulative simulation: the result keeps only the sum of the returns up to each checkpoint
+        (`cumulative`), and `returns` and `sigma` raise VolEngineError. It cannot be combined with `correlations`.
         """
         horizon = bounded(horizon, "horizon", 1)
         paths = bounded(paths, "paths", 1)
@@ -372,6 +391,7 @@ class Context:
                 create_handle(lib.ve_sim_options_create, lib.ve_sim_options_free, horizon, paths, seed)
             )
             check(lib.ve_sim_options_set_regressors(options.pointer, mean, variance))
+            set_checkpoints(options, regressors.get("checkpoints"))
             if isinstance(source, Spec):
                 spec = stack.enter_context(source.native_handle())
                 return Simulation(
@@ -407,6 +427,7 @@ class Context:
                 create_handle(lib.ve_sim_options_create, lib.ve_sim_options_free, horizon, paths, seed)
             )
             check(lib.ve_sim_options_set_correlations(handle.pointer, int(bool(options.get("correlations", False)))))
+            set_checkpoints(handle, options.get("checkpoints"))
             return DccSimulation(
                 create_handle(
                     lib.ve_simulate_dcc_with_cancel,
