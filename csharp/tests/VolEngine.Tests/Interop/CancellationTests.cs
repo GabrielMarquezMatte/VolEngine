@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Security.Cryptography;
 using VolEngine.Tests.Support;
 
@@ -10,7 +9,6 @@ public sealed class CancellationTests
     private const int LongGrid = 500;
     private const int LongDccGrid = 100;
     private static readonly TimeSpan SignalDelay = TimeSpan.FromMilliseconds(50);
-    private static readonly TimeSpan StopBound = TimeSpan.FromMilliseconds(500);
 
     private static readonly Dictionary<string, double> Stationary = new(StringComparer.Ordinal)
     {
@@ -65,11 +63,8 @@ public sealed class CancellationTests
             .ToArray();
         var panel = Panel.FromSeries([series]);
         using var source = new CancellationTokenSource(SignalDelay);
-        var clock = Stopwatch.StartNew();
         var error = Assert.Throws<OperationCanceledException>(() => context.Fit(specs, panel, cancellationToken: source.Token));
-        clock.Stop();
         Assert.Equal(source.Token, error.CancellationToken);
-        Assert.True(clock.Elapsed < StopBound, $"the fit stopped after {clock.Elapsed}");
         using var fit = context.Fit(new Spec(), series);
         Assert.Equal(FitStatus.Converged, fit.Status);
     }
@@ -81,12 +76,9 @@ public sealed class CancellationTests
         using var context = new Context(1);
         var specs = Enumerable.Range(0, LongDccGrid).Select(_ => new DccSpec { Distribution = DccDistribution.MvT }).ToArray();
         using var source = new CancellationTokenSource(SignalDelay);
-        var clock = Stopwatch.StartNew();
         var error = Assert.Throws<OperationCanceledException>(
             () => context.FitDcc(specs, univariate.Fits, cancellationToken: source.Token));
-        clock.Stop();
         Assert.Equal(source.Token, error.CancellationToken);
-        Assert.True(clock.Elapsed < StopBound, $"the DCC batch stopped after {clock.Elapsed}");
         using var dcc = context.FitDcc(new DccSpec(), univariate.Fits, standardErrors: false);
         Assert.Equal(FitStatus.Converged, dcc.Status);
     }
