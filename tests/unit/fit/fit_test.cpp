@@ -144,7 +144,8 @@ std::vector<double> short_garch_series(std::size_t count)
 
 // These short series drive the u of omega below -745, where s^2 exp(u) underflowed to omega = 0: the estimate failed
 // is_valid, every standard error was NaN and its u was -inf. omega stops at the smallest normal double instead, where
-// it leaves the Hessian.
+// it leaves the Hessian. The tGARCH fit's path depends on the libm: MSVC's stops at omega ~ 6e-275, above the floor,
+// so it only checks omega never goes below it (ParameterMap.OmegaStopsAtTheSmallestNormal pins the floor itself).
 TEST(Fit, OmegaUnderflowKeepsTheEstimateValid)
 {
     std::vector<double> r = short_garch_series(14);
@@ -177,7 +178,7 @@ TEST(Fit, OmegaUnderflowKeepsTheEstimateValid)
     FitResult converged = ve::fit_one(r20, tgarch, config);
     ASSERT_EQ(converged.status, FitStatus::Converged);
     ve::model::Layout tgarch_layout = ve::model::layout_of(tgarch);
-    EXPECT_EQ(converged.estimate[tgarch_layout.omega()], std::numeric_limits<double>::min());
+    EXPECT_GE(converged.estimate[tgarch_layout.omega()], std::numeric_limits<double>::min());
     EXPECT_TRUE(ve::model::is_valid(converged.estimate, tgarch_layout));
     std::vector<double> u(converged.estimate.size());
     ve::model::to_unconstrained(converged.estimate, u, tgarch_layout, ve::model::standardization_of(r20));

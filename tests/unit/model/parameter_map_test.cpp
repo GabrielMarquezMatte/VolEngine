@@ -697,6 +697,9 @@ TEST(ParameterMap, OmegaStopsAtTheSmallestNormal)
             EXPECT_EQ(theta[omega], std::numeric_limits<double>::min());
             EXPECT_TRUE(is_valid(theta, layout));
             EXPECT_TRUE(on_boundary(layout, theta, omega));
+            std::vector<double> back(layout.count());
+            to_unconstrained(theta, back, layout, standardization);
+            EXPECT_TRUE(std::ranges::all_of(back, [](double value) { return std::isfinite(value); }));
             std::vector<Dual32> seeds;
             for (std::size_t i = 0; i < u.size(); ++i)
             {
