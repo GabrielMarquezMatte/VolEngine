@@ -670,10 +670,25 @@ TEST(Moments, HyperbolicEdgeIsStandardized)
     }
 }
 
-// Below tau ~ 0.053 the jsu constant c overflows to 0, and the moments are NaN rather than 0.
+// Between tau ~ 0.038 and ~ 0.053 the jsu variance factor overflows a double but its constant c does not; the
+// moments of the standardized density are still 1 and Phi(r(0)).
+TEST(Moments, JohnsonPastTheVarianceFactorOverflow)
+{
+    for (double tau : {0.05, 0.045})
+    {
+        SCOPED_TRACE(::testing::Message() << "tau " << tau);
+        ve::dist::ShapeParameters<double> parameters{0.5, tau, 0.0};
+        auto density = ve::dist::johnson_log_density(0.5, tau);
+        EXPECT_NEAR(abs_moment(Dist::Jsu, parameters, 2.0), 1.0, 1e-6);
+        EXPECT_NEAR(probability_below_zero(Dist::Jsu, parameters),
+                    normal_cdf(ve::dist::detail::johnson_normal_of(density, 0.0)), 1e-12);
+    }
+}
+
+// Below tau ~ 0.038 the jsu constant c is below the smallest normal double, and the moments are NaN rather than 0.
 TEST(Moments, JohnsonPastOverflowIsNaN)
 {
-    for (double tau : {0.05, 0.03, 0.02})
+    for (double tau : {0.03, 0.02})
     {
         SCOPED_TRACE(::testing::Message() << "tau " << tau);
         ve::dist::ShapeParameters<double> parameters{0.5, tau, 0.0};
@@ -693,6 +708,108 @@ TEST(Moments, JohnsonDerivativesMatchFiniteDifferences)
             SCOPED_TRACE(::testing::Message() << "nu " << nu << ", tau " << tau);
             expect_skewed_gradients_match(Dist::Jsu, {nu, tau, 0.0, 0.3, 0.4, 1.5});
             expect_skewed_gradients_match(Dist::Jsu, {nu, tau, 0.0, -0.2, -0.3, 0.8});
+        }
+    }
+}
+
+// As nu nears the power, the std and sstd moments take a share that grows to 1 from |z| past any double: E z^2 = 1
+// and E(z - c)^2 = 1 + c^2 for any nu > 2, and with eta2 = 0 the std has the closed form.
+TEST(Moments, StudentShapeNearThePowerStaysStandardized)
+{
+    for (double nu : {2.07, 2.05, 2.04, 2.02, 2.01, 2.001, 2.0001})
+    {
+        SCOPED_TRACE(::testing::Message() << "nu " << nu);
+        EXPECT_NEAR(shifted_moment(Dist::Std, {.shape = nu}, 0.0, 0.0, 2.0), 1.0, 1e-12);
+        EXPECT_NEAR(shifted_moment(Dist::Std, {.shape = nu}, 0.0, 0.3, 2.0), 1.09, 1e-12);
+        EXPECT_NEAR(shifted_moment(Dist::Std, {.shape = nu}, 0.0, -0.7, 2.0), 1.49, 1e-12);
+        EXPECT_NEAR(asymmetric_moment(Dist::Sstd, {1.0, nu, 0.0}, 0.0, 2.0), 1.0, 1e-12);
+        EXPECT_NEAR(abs_moment(Dist::Sstd, {1.2, nu, 0.0}, 2.0), 1.0, 1e-12);
+        EXPECT_NEAR(shifted_moment(Dist::Sstd, {0.7, nu, 0.0}, 0.0, 0.3, 2.0), 1.09, 1e-12);
+    }
+    for (std::array<double, 2> nu_power : {std::array{2.06, 2.0}, std::array{2.5, 2.45}, std::array{4.02, 4.0},
+                                           std::array{3.001, 3.0}, std::array{20.03, 20.0}, std::array{3.081, 3.0},
+                                           std::array{6.15, 6.0}})
+    {
+        auto [nu, power] = nu_power;
+        for (double eta1 : {0.0, 0.3})
+        {
+            SCOPED_TRACE(::testing::Message() << "nu " << nu << ", power " << power << ", eta1 " << eta1);
+            double expected = asymmetric_moment(Dist::Std, {.shape = nu}, eta1, power);
+            expect_relative(shifted_moment(Dist::Std, {.shape = nu}, eta1, 0.0, power), expected, 1e-12);
+        }
+    }
+}
+
+// d/dnu E(z - c)^2 = 0 and d/dc E(z - c)^2 = 2 c, also where the tail goes past the double range.
+TEST(Moments, StudentShapeNearThePowerDerivatives)
+{
+    using Number = ve::ad::Dual<2>;
+    for (double nu : {2.05, 2.01, 2.0001})
+    {
+        SCOPED_TRACE(::testing::Message() << "nu " << nu);
+        for (Dist dist : {Dist::Std, Dist::Sstd})
+        {
+            Number moment = shifted_moment(dist, {Number{1.0}, ve::ad::variable<2>(nu, 0), Number{0.0}}, Number{0.0},
+                                           ve::ad::variable<2>(0.3, 1), Number{2.0});
+            EXPECT_NEAR(moment.value, 1.09, 1e-12);
+            EXPECT_NEAR(moment.grad[0], 0.0, 1e-9);
+            EXPECT_NEAR(moment.grad[1], 0.6, 1e-12);
+        }
+    }
+}
+
+// A ged with a small shape has the core of its kernel within lambda << 1 of 0 and a tail exp(-|z / lambda|^nu / 2)
+// that reaches far, as the sged with skew 1, which is the same density and has the same quadrature. What is left is
+// the cusp |z|^nu of the density at 0, which costs E(z - c)^2 up to 1.1e-7 at nu = 0.1 and the eta2 = 0 moments
+// up to 1.7e-10 at nu = 0.5 (it cost 7e-2 and 9e-3 with the tail and split points of a unit-scale density).
+TEST(Moments, GedSmallShapeMatchesKnownForms)
+{
+    for (double nu : {0.1, 0.12, 0.15, 0.2, 0.3, 0.5})
+    {
+        SCOPED_TRACE(::testing::Message() << "nu " << nu);
+        for (double shift : {0.3, -0.7})
+        {
+            expect_relative(shifted_moment(Dist::Ged, {.shape = nu}, 0.0, shift, 2.0), 1.0 + shift * shift, 2e-7);
+            double sged = shifted_moment(Dist::Sged, {1.0, nu, 0.0}, 0.2, shift, 1.0);
+            expect_relative(shifted_moment(Dist::Ged, {.shape = nu}, 0.2, shift, 1.0), sged, 1e-13);
+        }
+        for (double power : {0.8, 1.0, 2.0, 3.0})
+        {
+            for (double eta1 : {0.0, 0.3})
+            {
+                double expected = asymmetric_moment(Dist::Ged, {.shape = nu}, eta1, power);
+                expect_relative(shifted_moment(Dist::Ged, {.shape = nu}, eta1, 0.0, power), expected, 1e-9);
+            }
+        }
+    }
+}
+
+// A small zeta makes alpha small: the tails ~|x|^(lambda - 1) exp(-alpha (1 -+ rho) |x|) reach out to many times
+// 1 / alpha, past the unit decay length of the tail map. The density has mass 1, mean 0 and variance 1, so
+// E z = E|z| - E(|z| - z) = 0 and E(z - c)^2 = 1 + c^2.
+void expect_hyperbolic_standardized(Dist dist, const ve::dist::ShapeParameters<double>& parameters)
+{
+    ASSERT_TRUE(ve::dist::in_domain(dist, parameters));
+    EXPECT_NEAR(abs_moment(dist, parameters, 0.0), 1.0, 1e-12);
+    double mean = abs_moment(dist, parameters, 1.0) - asymmetric_moment(dist, parameters, 1.0, 1.0);
+    EXPECT_NEAR(mean, 0.0, 1e-12);
+    EXPECT_NEAR(abs_moment(dist, parameters, 2.0), 1.0, 1e-11);
+    EXPECT_NEAR(shifted_moment(dist, parameters, 0.0, 0.3, 2.0), 1.09, 1e-11);
+}
+
+TEST(Moments, HyperbolicSmallShapeStaysStandardized)
+{
+    for (double zeta : {1e-4, 1e-3, 0.01, 0.1, 0.25, 0.5})
+    {
+        for (double rho : {0.0, 0.5, -0.5, 0.9})
+        {
+            SCOPED_TRACE(::testing::Message() << "zeta " << zeta << ", rho " << rho);
+            expect_hyperbolic_standardized(Dist::Nig, {rho, zeta, 0.0});
+            for (double lambda : {-1.0, -1.2, -1.5, -2.0, -3.0, 1.5})
+            {
+                SCOPED_TRACE(::testing::Message() << "lambda " << lambda);
+                expect_hyperbolic_standardized(Dist::Ghyp, {rho, zeta, lambda});
+            }
         }
     }
 }

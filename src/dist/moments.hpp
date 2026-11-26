@@ -56,19 +56,24 @@ bool infinite_moment(Dist dist, const ShapeParameters<T>& parameters, const T& p
     return has_student_tail(dist) && ad::value_of(parameters.shape) <= ad::value_of(power);
 }
 
-// f(z), exactly 0 with no derivative where the log density is -inf: a ged with a large shape has 0.5 (|z| / scale)^shape
-// overflow in the far tails the quadrature visits, and exp(-inf) times the infinite slope of that power in the shape
-// is NaN, not the 0 that is the derivative of a density that is 0 there.
+// exp(log_value), exactly 0 with no derivative where log_value is -inf: a ged with a large shape has 0.5 (|z| /
+// scale)^shape overflow in the far tails the quadrature visits, and exp(-inf) times the infinite slope of that power in
+// the shape is NaN, not the 0 that is the derivative of a density that is 0 there.
 template <class T>
-T density_at(const Density<T>& density, const T& z)
+T exp_or_zero(const T& log_value)
 {
     using std::exp;
-    T log_value = log_density(density, z);
     if (ad::value_of(log_value) == -std::numeric_limits<double>::infinity())
     {
         return T{0.0};
     }
     return exp(log_value);
+}
+
+template <class T>
+T density_at(const Density<T>& density, const T& z)
+{
+    return exp_or_zero(log_density(density, z));
 }
 
 // (|z - eta2| - eta1 (z - eta2))^power f(z).
@@ -83,10 +88,23 @@ struct ShockPowerIntegrand
     T operator()(const T& z) const
     {
         using std::abs;
-        using std::exp;
         using std::pow;
         T shift = z - eta2;
         return pow(abs(shift) - eta1 * shift, power) * density_at(density, z);
+    }
+
+    // The log of the integrand, -inf where it is 0 (on the side that |eta1| = 1 cancels).
+    T log_value(const T& z) const
+    {
+        using std::abs;
+        using std::log;
+        T shift = z - eta2;
+        T base = abs(shift) - eta1 * shift;
+        if (!(ad::value_of(base) > 0.0))
+        {
+            return T{-std::numeric_limits<double>::infinity()};
+        }
+        return power * log(base) + log_density(density, z);
     }
 };
 
@@ -100,12 +118,35 @@ struct DensityIntegrand
     {
         return density_at(density, z);
     }
+
+    T log_value(const T& z) const
+    {
+        return log_density(density, z);
+    }
 };
+
+// weight times the integrand at z, taken from logs where the integrand itself is lost but the product is not: where it
+// is not finite (|z - eta2|^power overflowed to inf against an f(z) that underflowed to 0), and where it is 0 on a map
+// that reaches far (exponent above 1), whose far nodes of a std or sstd tail have an f(z) that underflows while
+// |z - eta2|^power and the weight are as large as its inverse. Under the other maps the density falls exponentially,
+// and a node where it underflows holds nothing.
+template <class T, class Integrand>
+T weighted_value(const Integrand& integrand, const T& z, double weight, bool reaches_far)
+{
+    T value = integrand(z);
+    double plain = ad::value_of(value);
+    bool lost = !std::isfinite(plain) || (plain == 0.0 && reaches_far);
+    if (!lost)
+    {
+        return weight * value;
+    }
+    return exp_or_zero(integrand.log_value(z) + std::log(weight));
+}
 
 // int over [edge + 1, inf) (direction 1) or (-inf, edge - 1] (direction -1), through
 // z = edge + direction (1 - t)^-exponent.
 template <class T, class Integrand>
-T tail_integral(const Integrand& integrand, const T& edge, double direction, double exponent)
+T power_tail_integral(const Integrand& integrand, const T& edge, double direction, double exponent)
 {
     T sum{0.0};
     for (const QuadratureNode& node : gauss_legendre())
@@ -113,9 +154,82 @@ T tail_integral(const Integrand& integrand, const T& edge, double direction, dou
         double complement = 1.0 - node.t;
         double distance = std::pow(complement, -exponent);
         double jacobian = exponent * distance / complement;
-        sum = sum + (node.weight * jacobian) * integrand(edge + direction * distance);
+        sum = sum + weighted_value(integrand, edge + direction * distance, node.weight * jacobian, exponent > 1.0);
     }
     return sum;
+}
+
+// int over the distances [e^lower, e^upper] from edge (direction 1, or their mirror), through
+// z = edge + direction e^w, w in [lower, upper]. The terms are summed from logs, so that a power that overflows, or a
+// density that underflows, far out keeps its node.
+template <class T, class Integrand>
+T logarithmic_segment(const Integrand& integrand, const T& edge, double direction, double lower, double upper)
+{
+    double width = upper - lower;
+    T sum{0.0};
+    for (const QuadratureNode& node : gauss_legendre())
+    {
+        double log_distance = lower + width * node.t;
+        double log_weight = std::log(node.weight * width) + log_distance;
+        sum = sum + exp_or_zero(integrand.log_value(edge + direction * std::exp(log_distance)) + log_weight);
+    }
+    return sum;
+}
+
+// int beyond z of an integrand g that is |z|^-(1 + decay) times a constant, to a relative O(1 / |z|):
+// |z| g(z) / decay.
+template <class T, class Integrand>
+T power_law_beyond(const Integrand& integrand, const T& z, const T& decay)
+{
+    using std::abs;
+    using std::log;
+    return exp_or_zero(log(abs(z)) + integrand.log_value(z)) / decay;
+}
+
+// How tail_integral integrates one tail: through z = edge + direction (1 - t)^-exponent while reach is 0, else
+// through z = edge + direction e^w out to reach; with a decay above 0 (a std or sstd tail), in pieces of w and with
+// the power law |z|^-(1 + decay) beyond reach.
+template <class T>
+struct TailMap
+{
+    double exponent = 1.0;
+    double reach = 0.0;
+    T decay{0.0};
+};
+
+template <class T>
+struct TailMaps
+{
+    TailMap<T> below;
+    TailMap<T> above;
+};
+
+// The pieces of w are [0, 1], [1, 2], [2, 4], ...: |z|^power f(z) turns from the core to the power law at
+// |z| ~ sqrt((nu - 2) power), within ~1 / sqrt(power) in w, which one piece out to w ~ 46 would leave to a few nodes.
+template <class T, class Integrand>
+T student_reach_integral(const Integrand& integrand, const T& edge, double direction, const TailMap<T>& map)
+{
+    double end = std::log(map.reach);
+    T sum = logarithmic_segment(integrand, edge, direction, 0.0, 1.0);
+    for (double lower = 1.0; lower < end; lower *= 2.0)
+    {
+        sum = sum + logarithmic_segment(integrand, edge, direction, lower, std::min(2.0 * lower, end));
+    }
+    return sum + power_law_beyond(integrand, edge + direction * map.reach, map.decay);
+}
+
+template <class T, class Integrand>
+T tail_integral(const Integrand& integrand, const T& edge, double direction, const TailMap<T>& map)
+{
+    if (!(map.reach > 0.0))
+    {
+        return power_tail_integral(integrand, edge, direction, map.exponent);
+    }
+    if (!(ad::value_of(map.decay) > 0.0))
+    {
+        return logarithmic_segment(integrand, edge, direction, 0.0, std::log(map.reach));
+    }
+    return student_reach_integral(integrand, edge, direction, map);
 }
 
 // A zero-width segment is skipped: its nodes would all sit on the cusp, where the slope of a power below 1 is
@@ -137,24 +251,68 @@ T segment_integral(const Integrand& integrand, const T& lower, const T& upper)
 }
 
 // A std or sstd integrand decays as |z|^(power - nu - 1), which z = edge + (1 - t)^-k turns into
-// (1 - t)^(k (nu - power) - 1): smooth enough at t = 1 once k (nu - power) >= 2. An sged one decays as
-// exp(-a |z|^nu), which k = 1 / nu turns into exp(-a (1 - t)^-1), flat at t = 1, where a nu below 1 would
-// leave mass beyond the last node. k stops at kMaxSgedTailExponent, where the last node (1 - t ~ 3.5e-4)
-// sits at z ~ 1e34 and its powers stay finite.
+// (1 - t)^(k (nu - power) - 1): smooth enough at t = 1 once k (nu - power) >= 2. The last node (1 - t ~ 3.5e-4) sits
+// at z ~ e^(8 k), and past k (power + 1) = kMaxStudentTailSpan its |z|^(power + 1) nears the top of the double range
+// (e^709), while as nu nears power a growing share of the moment lies beyond any double. Such a tail goes on the
+// logarithmic map out to kStudentReach, and beyond it is the integral of the power law, which holds there to a
+// relative 1 / kStudentReach.
+constexpr double kMaxStudentTailSpan = 80.0;
+constexpr double kStudentReach = 1e20;
+
+// An sged or ged integrand decays as exp(-a |z|^nu), which k = 1 / nu turns into exp(-a (1 - t)^-1), flat at
+// t = 1, where a nu below 1 would leave mass beyond the last node. k stops at kMaxSgedTailExponent, where the
+// last node (1 - t ~ 3.5e-4) sits at z ~ 1e34 and its powers stay finite.
 constexpr double kMaxSgedTailExponent = 10.0;
 
+// A nig or ghyp tail is ~|x|^(lambda - 1) exp(-|x| / L), with the decay length L = 1 / (alpha (1 - rho)) above and
+// 1 / (alpha (1 + rho)) below, and z = edge + (1 - t)^-1 resolves an L up to 1. A longer one (a small zeta) goes on
+// the logarithmic map, out to kHyperbolicDecays + 2 max(0, lambda - 1 + power) decay lengths, beyond which
+// |x|^(lambda - 1 + power) exp(-|x| / L) has a share of its integral below 1e-17.
+constexpr double kHyperbolicDecays = 50.0;
+
 template <class T>
-double tail_exponent(Dist dist, const ShapeParameters<T>& parameters, const T& power)
+TailMap<T> student_tail(const T& shape, const T& power)
 {
-    if (dist == Dist::Sged)
+    T decay = shape - power;
+    double exponent = std::max(1.0, 2.0 / ad::value_of(decay));
+    if (exponent * (ad::value_of(power) + 1.0) > kMaxStudentTailSpan)
     {
-        return std::clamp(1.0 / ad::value_of(parameters.shape), 1.0, kMaxSgedTailExponent);
+        return {1.0, kStudentReach, decay};
     }
-    if (!has_student_tail(dist))
+    return {exponent};
+}
+
+template <class T>
+TailMap<T> hyperbolic_tail(const HyperbolicLogDensity<T>& density, double direction, const T& power)
+{
+    double decay_length = 1.0 / (ad::value_of(density.alpha) * (1.0 - direction * ad::value_of(density.rho)));
+    if (!(decay_length > 1.0))
     {
-        return 1.0;
+        return {};
     }
-    return std::max(1.0, 2.0 / (ad::value_of(parameters.shape) - ad::value_of(power)));
+    double polynomial = std::max(0.0, ad::value_of(density.order) - 1.0 + ad::value_of(power));
+    return {1.0, decay_length * (kHyperbolicDecays + 2.0 * polynomial)};
+}
+
+template <class T>
+TailMaps<T> tail_maps(Dist dist, const ShapeParameters<T>& parameters, const Density<T>& density, const T& power)
+{
+    if (has_student_tail(dist))
+    {
+        TailMap<T> tail = student_tail(parameters.shape, power);
+        return {tail, tail};
+    }
+    if (dist == Dist::Sged || dist == Dist::Ged)
+    {
+        TailMap<T> tail{std::clamp(1.0 / ad::value_of(parameters.shape), 1.0, kMaxSgedTailExponent)};
+        return {tail, tail};
+    }
+    const HyperbolicLogDensity<T>* hyperbolic = std::get_if<HyperbolicLogDensity<T>>(&density);
+    if (hyperbolic == nullptr)
+    {
+        return {};
+    }
+    return {hyperbolic_tail(*hyperbolic, -1.0, power), hyperbolic_tail(*hyperbolic, 1.0, power)};
 }
 
 // The narrow side of a Fernandez-Steel density holds its mass within a few z-scales of the kink, and that
@@ -174,8 +332,8 @@ constexpr double kEdgeShapeFrom = 6.0;
 constexpr std::array<double, 9> kEdgeOffsets{-8.0, -4.0, -2.0, -1.0, 0.0, 1.0, 2.0, 4.0, 8.0};
 
 // The z-scale of the density on each side of its kink: 1 / (xi sigma) below and xi / sigma above for sstd and
-// sged, 1 for the others. The sged ones are scaled by the kernel's lambda when below 1: a small nu puts the
-// kernel's core within lambda << 1 of the kink.
+// sged, 1 for the others. They are scaled by the width of the kernel's core when below 1: lambda for ged and sged,
+// where a small nu puts the core within lambda << 1 of the kink, and sqrt(nu - 2) for std and sstd.
 struct SideScales
 {
     double below;
@@ -183,8 +341,28 @@ struct SideScales
 };
 
 template <class T>
+double kernel_core(const LogDensity<T>& kernel)
+{
+    if (kernel.dist == Dist::Ged)
+    {
+        return std::min(1.0, ad::value_of(kernel.scale));
+    }
+    if (kernel.dist == Dist::Std)
+    {
+        return std::min(1.0, std::sqrt(ad::value_of(kernel.scale)));
+    }
+    return 1.0;
+}
+
+template <class T>
 SideScales side_scales(const Density<T>& density)
 {
+    const LogDensity<T>* symmetric = std::get_if<LogDensity<T>>(&density);
+    if (symmetric != nullptr)
+    {
+        double core = kernel_core(*symmetric);
+        return {core, core};
+    }
     const SkewedLogDensity<T>* skewed = std::get_if<SkewedLogDensity<T>>(&density);
     if (skewed == nullptr)
     {
@@ -192,11 +370,7 @@ SideScales side_scales(const Density<T>& density)
     }
     double skew = ad::value_of(skewed->skew);
     double stretch = ad::value_of(skewed->stretch);
-    double core = 1.0;
-    if (skewed->kernel.dist == Dist::Ged)
-    {
-        core = std::min(1.0, ad::value_of(skewed->kernel.scale));
-    }
+    double core = kernel_core(skewed->kernel);
     return {core / (skew * stretch), core * skew / stretch};
 }
 
@@ -349,14 +523,14 @@ Breakpoints<T> shock_breakpoints(const ShockPowerIntegrand<T>& integrand)
 }
 
 template <class T>
-T shock_power_quadrature(const ShockPowerIntegrand<T>& integrand, double exponent)
+T shock_power_quadrature(const ShockPowerIntegrand<T>& integrand, const TailMaps<T>& tails)
 {
     Breakpoints<T> breakpoints = shock_breakpoints(integrand);
     std::span<const T> points = breakpoints.view();
     T last = points.back();
     T near = breakpoint_sum(integrand, points) + segment_integral(integrand, last, last + 1.0);
-    return tail_integral(integrand, points.front(), -1.0, exponent) + near +
-           tail_integral(integrand, last, 1.0, exponent);
+    return tail_integral(integrand, points.front(), -1.0, tails.below) + near +
+           tail_integral(integrand, last, 1.0, tails.above);
 }
 
 // The kink when it lies below 0, 0, and the refinements below 0.
@@ -383,11 +557,11 @@ Breakpoints<T> below_zero_breakpoints(const Density<T>& density)
 
 // int over (-inf, 0).
 template <class T>
-T below_zero_quadrature(const DensityIntegrand<T>& integrand, double exponent)
+T below_zero_quadrature(const DensityIntegrand<T>& integrand, const TailMaps<T>& tails)
 {
     Breakpoints<T> breakpoints = below_zero_breakpoints(integrand.density);
     std::span<const T> points = breakpoints.view();
-    return tail_integral(integrand, points.front(), -1.0, exponent) + breakpoint_sum(integrand, points);
+    return tail_integral(integrand, points.front(), -1.0, tails.below) + breakpoint_sum(integrand, points);
 }
 
 // A jsu is z = center + scale sinh((r + skew) / shape) of a standard normal r, and a small shape puts its
@@ -520,7 +694,7 @@ T shifted_moment(Dist dist, const ShapeParameters<T>& parameters, const T& eta1,
         return detail::johnson_shock_moment(detail::JohnsonShockIntegrand<T>{density, eta1, eta2, power});
     }
     detail::ShockPowerIntegrand<T> integrand{make_density(dist, parameters), eta1, eta2, power};
-    return detail::shock_power_quadrature(integrand, detail::tail_exponent(dist, parameters, power));
+    return detail::shock_power_quadrature(integrand, detail::tail_maps(dist, parameters, integrand.density, power));
 }
 
 // E|z|^power: the closed form for norm, std and ged, the quadrature for the others; +inf for std and sstd
@@ -579,7 +753,7 @@ T probability_below_zero(Dist dist, const ShapeParameters<T>& parameters)
         return detail::johnson_probability_below_zero(johnson_log_density(parameters.skew, parameters.shape));
     }
     detail::DensityIntegrand<T> integrand{make_density(dist, parameters)};
-    return detail::below_zero_quadrature(integrand, detail::tail_exponent(dist, parameters, T{0.0}));
+    return detail::below_zero_quadrature(integrand, detail::tail_maps(dist, parameters, integrand.density, T{0.0}));
 }
 
 }

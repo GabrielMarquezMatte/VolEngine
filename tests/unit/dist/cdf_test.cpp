@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <numbers>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -446,6 +447,36 @@ TEST(QuantileTable, SameBitsOnAnyThread)
         });
         worker.join();
         EXPECT_EQ(built_here, built_there) << static_cast<int>(sample.dist);
+    }
+}
+
+// Near 0 the std cdf is 1/2 + f(0) z (1 + O(z^2)), which a cdf rounded through scale / (scale + z^2) ~ 1 loses.
+TEST(Cdf, StdKeepsItsDigitsNearTheCenter)
+{
+    for (double nu : {2.5, 5.0, 30.0})
+    {
+        ve::dist::LogDensity<double> density = ve::dist::student_log_density(nu);
+        double peak = std::exp(ve::dist::log_density(density, 0.0));
+        for (double z : {1e-12, 1e-8, -1e-8, 1e-6, -1e-6})
+        {
+            double cdf = ve::dist::cdf(Dist::Std, {.shape = nu}, z);
+            EXPECT_NEAR(cdf - 0.5, peak * z, 2.5e-16) << "nu " << nu << ", z " << z;
+        }
+    }
+}
+
+// For a large nu the t cdf is Phi(t) - phi(t) (t^3 + t) / (4 nu) + O(1 / nu^2), at t = z sqrt(nu / (nu - 2)).
+TEST(Cdf, StdLargeShapeMatchesTheNormalExpansion)
+{
+    for (double nu : {1e8, 1e10, 1e12})
+    {
+        for (double z : {0.1, 0.5, 2.0, -3.0})
+        {
+            double t = z * std::sqrt(nu / (nu - 2.0));
+            double normal_density = std::exp(-0.5 * t * t) / std::sqrt(2.0 * std::numbers::pi);
+            double expected = 0.5 * std::erfc(-t / std::numbers::sqrt2) - normal_density * (t * t * t + t) / (4.0 * nu);
+            EXPECT_NEAR(ve::dist::cdf(Dist::Std, {.shape = nu}, z), expected, 1e-15) << "nu " << nu << ", z " << z;
+        }
     }
 }
 }

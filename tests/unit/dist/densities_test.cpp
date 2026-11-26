@@ -11,6 +11,7 @@
 #include <limits>
 #include <numbers>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -291,6 +292,87 @@ TEST(SkewedDensities, Domains)
     EXPECT_FALSE(in_domain(Dist::Jsu, Parameters{0.5, -1.0, 0.0}));
     EXPECT_TRUE(in_domain(Dist::Jsu, Parameters{-3.0, 0.5, 0.0}));
     EXPECT_FALSE(in_domain(Dist::Jsu, Parameters{std::nan(""), 0.5, 0.0}));
+}
+
+// Where the variance factor V = sinh(h) e^h (e^(2h) cosh(2 omega) + 1) is finite, the standardisation is this
+// formula, digit for digit.
+TEST(JohnsonStandardisation, OrdinaryParametersUseTheDirectFormula)
+{
+    for (double tau : {0.1, 0.3, 1.0, 1.5, 4.0, 50.0})
+    {
+        for (double nu : {-3.0, -0.4, 0.0, 0.8, 5.0})
+        {
+            double half_inverse = 0.5 / (tau * tau);
+            double root_w = std::exp(half_inverse);
+            double omega = -nu / tau;
+            double variance_factor =
+                std::sinh(half_inverse) * root_w * (root_w * root_w * std::cosh(2.0 * omega) + 1.0);
+            double scale = 1.0 / std::sqrt(variance_factor);
+            double log_constant =
+                std::log(tau) + 0.5 * std::log(variance_factor) - 0.5 * std::log(2.0 * std::numbers::pi);
+            auto density = ve::dist::johnson_log_density(nu, tau);
+            EXPECT_EQ(density.scale, scale) << "nu " << nu << " tau " << tau;
+            EXPECT_EQ(density.center, scale * root_w * std::sinh(omega)) << "nu " << nu << " tau " << tau;
+            EXPECT_EQ(density.log_constant, log_constant) << "nu " << nu << " tau " << tau;
+        }
+    }
+}
+
+// Past |nu| / tau ~ 354 cosh(2 omega) overflows V although the density is the standardized lognormal of log-sd
+// 1 / tau to rounding: with h = 1 / (2 tau^2), z = (e^(Z / tau) - e^h) / (e^h sqrt(e^(2h) - 1)), so
+// center -> -1 / sqrt(e^(2h) - 1) and scale e^(|nu| / tau) / 2 -> 1 / (e^h sqrt(e^(2h) - 1)).
+TEST(JohnsonStandardisation, LargeSkewIsTheLognormalLimit)
+{
+    for (double nu : {-700.0, -400.0, 400.0, 700.0})
+    {
+        constexpr double tau = 1.0;
+        constexpr double h = 0.5;
+        auto density = ve::dist::johnson_log_density(nu, tau);
+        double limit_center = 1.0 / std::sqrt(std::expm1(2.0 * h));
+        double limit_log_scale = -h - 0.5 * std::log(std::expm1(2.0 * h)) + std::numbers::ln2 - std::abs(nu) / tau;
+        double sign = nu > 0.0 ? -1.0 : 1.0;
+        EXPECT_NEAR(density.center, sign * limit_center, 1e-12) << "nu " << nu;
+        EXPECT_NEAR(std::log(density.scale), limit_log_scale, 1e-12 * std::abs(limit_log_scale)) << "nu " << nu;
+        EXPECT_NEAR(density.log_constant, std::log(tau) - limit_log_scale - 0.5 * std::log(2.0 * std::numbers::pi),
+                    1e-12 * std::abs(limit_log_scale))
+            << "nu " << nu;
+    }
+}
+
+// Below tau ~ 0.053 V overflows; for h = 1 / (2 tau^2) >= 200, log sinh(h) = h - log 2 and
+// log(e^(2h) cosh(2 omega) + 1) = 2h + log cosh(2 omega) to rounding, so log V = 4h - log 2 + log cosh(2 omega).
+TEST(JohnsonStandardisation, SmallTauStaysFinite)
+{
+    for (double tau : {0.05, 0.045, 0.04})
+    {
+        for (double nu : {-0.5, 0.0, 0.5})
+        {
+            double h = 0.5 / (tau * tau);
+            double omega = -nu / tau;
+            double log_variance_factor = 4.0 * h - std::numbers::ln2 + std::log(std::cosh(2.0 * omega));
+            double log_scale = -0.5 * log_variance_factor;
+            double center = std::exp(log_scale + h) * std::sinh(omega);
+            auto density = ve::dist::johnson_log_density(nu, tau);
+            EXPECT_NEAR(std::log(density.scale), log_scale, 1e-13 * std::abs(log_scale)) << nu << " " << tau;
+            EXPECT_NEAR(density.center, center, 1e-12 * std::abs(center)) << nu << " " << tau;
+            double log_constant = std::log(tau) + 0.5 * log_variance_factor - 0.5 * std::log(2.0 * std::numbers::pi);
+            EXPECT_NEAR(density.log_constant, log_constant, 1e-13 * log_constant) << nu << " " << tau;
+        }
+    }
+}
+
+// Where the scale c falls below the smallest normal double the standardisation is not representable: NaN, never
+// a scale of 0 that would make every quantile the center.
+TEST(JohnsonStandardisation, UnrepresentableScaleIsNan)
+{
+    for (const auto& [nu, tau] : {std::pair{0.5, 0.03}, std::pair{0.0, 0.02}, std::pair{1000.0, 1.0},
+                                  std::pair{-1000.0, 1.0}, std::pair{0.5, 0.001}})
+    {
+        auto density = ve::dist::johnson_log_density(nu, tau);
+        EXPECT_TRUE(std::isnan(density.scale)) << nu << " " << tau;
+        EXPECT_TRUE(std::isnan(density.center)) << nu << " " << tau;
+        EXPECT_TRUE(std::isnan(ve::dist::log_density(density, 0.0))) << nu << " " << tau;
+    }
 }
 
 // Review Focus 1: near-normal data drives zeta up, and the Bessel arguments past 700, onto the asymptotic
