@@ -228,6 +228,19 @@ TEST(CovLedoitWolf, MatchesFormula)
     }
 }
 
+// With two rows the centered rows are +z and -z, so beta is 0 up to rounding, which must not take the intensity below 0.
+TEST(CovLedoitWolf, TwoRowsIntensityInRange)
+{
+    for (unsigned seed = 0; seed < 400; ++seed)
+    {
+        const std::size_t n = 2 + seed % 6;
+        const auto data = correlated(2, n, 1000 + seed);
+        const double shrinkage = ve::cov::ledoit_wolf(row_major(data, 2, n)).shrinkage;
+        EXPECT_GE(shrinkage, 0.0) << seed;
+        EXPECT_LE(shrinkage, 1.0) << seed;
+    }
+}
+
 TEST(CovLedoitWolf, ExactlySymmetric)
 {
     const auto data = correlated(80, 9, 7);

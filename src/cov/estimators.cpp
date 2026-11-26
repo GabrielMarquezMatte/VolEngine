@@ -91,7 +91,8 @@ double intensity(std::span<const double> columns, std::span<const double> empiri
     const double beta_prime = std::accumulate(fourth.begin(), fourth.end(), 0.0);
     const double delta_prime = std::inner_product(empirical.begin(), empirical.end(), empirical.begin(), 0.0);
     const double beta = (beta_prime / static_cast<double>(t) - delta_prime) / static_cast<double>(n * t);
-    return std::min(beta, delta) / delta;
+    // beta >= 0 in exact arithmetic (with two rows it is 0); rounding must not take the intensity below 0.
+    return std::clamp(beta, 0.0, delta) / delta;
 }
 
 }
