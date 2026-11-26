@@ -26,7 +26,8 @@ bool has_fast_gradient(const DccSpec& spec);
 class ObjectiveGradient
 {
 public:
-    // theta has the layout of DccParameters (a, b, g, then the mvt shape); grad has its size. The value is the one of
+    // theta has the layout of DccParameters (a, b, g, then the mvt shape), at most kMaxParameterCount entries before
+    // the shape: each is an ad::Dual lane; grad has its size. The value is the one of
     // objective<double>, to the bit; outside its domain, or wherever it is not finite, it is +infinity and grad is 0.
     double evaluate(const StandardizedPanel& panel, const DccSpec& spec, std::span<const double> theta,
                     std::span<double> grad);

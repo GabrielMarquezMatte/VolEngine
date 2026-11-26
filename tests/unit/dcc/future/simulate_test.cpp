@@ -313,6 +313,23 @@ TEST(DccSimulate, ArfimaAndComponentSeries)
     }
 }
 
+// A correlation matrix without a Cholesky factor makes every shock NaN; its empirical quantile is NaN, read from no
+// rank of the sample.
+TEST(DccSimulate, EmpiricalMarginOfANanShockIsNan)
+{
+    std::vector<DccFitResult> fits =
+        run_batch(copula3_fits(), {dcc_spec(DccModel::Static, DccDist::MvNorm, DccCopula::Empirical)});
+    DccFitResult& fit = fits[0];
+    ASSERT_EQ(fit.end.static_r.size(), kSeries * kSeries);
+    for (std::size_t k = 0; k < fit.end.static_r.size(); ++k)
+    {
+        fit.end.static_r[k] = k % (kSeries + 1) == 0 ? 1.0 : 2.0;
+    }
+    const DccSimulation sim = simulate(fit, 3, 8, 1);
+    ASSERT_EQ(sim.returns.size(), 3U * 8U * kSeries);
+    EXPECT_TRUE(std::ranges::all_of(sim.returns, [](double v) { return std::isnan(v); }));
+}
+
 DccSimulation simulate_cumulative(const DccFitResult& fit, std::size_t horizon, std::size_t paths,
                                   std::vector<std::size_t> checkpoints, int threads = 4)
 {

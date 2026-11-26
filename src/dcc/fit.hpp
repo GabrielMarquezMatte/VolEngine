@@ -53,7 +53,7 @@ struct DccFitResult
 };
 
 // Maximises the DCC likelihood of spec on the panel: L-BFGS on the unconstrained parameters of parameter_map.hpp,
-// from start_values, minimising objective / T. As in the univariate fit, the status is the optimiser's: Converged,
+// from feasible_start, minimising objective / T. As in the univariate fit, the status is the optimiser's: Converged,
 // MaxIter, or Failed when the line search fails (with a finite estimate). It is Failed with a NaN estimate when the
 // start is not valid, the objective is not finite there, or the reported loglik at the estimate is not finite.
 // With nothing to estimate the spec is evaluated at its fixed values. The caller checked

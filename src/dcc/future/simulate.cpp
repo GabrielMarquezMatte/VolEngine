@@ -35,8 +35,13 @@ struct Margin
     std::vector<double> sorted{};
 };
 
+// A NaN u (the shock of an R without a Cholesky factor) has the NaN quantile.
 double margin_quantile(const Margin& margin, double u)
 {
+    if (std::isnan(u))
+    {
+        return kNaN;
+    }
     if (margin.sorted.empty())
     {
         return margin.table(u);
