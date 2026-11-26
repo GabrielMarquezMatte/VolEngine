@@ -24,3 +24,7 @@ VolEngine.Simulation.Checkpoints.get -> System.Collections.Generic.IReadOnlyList
 VolEngine.Simulation.Cumulative.get -> double[]![]?
 VolEngine.SimulationOptions.Checkpoints.get -> System.Collections.Generic.IReadOnlyList<int>?
 VolEngine.SimulationOptions.Checkpoints.init -> void
+VolEngine.DccForecast.CumulativeCovariance.get -> double[]![]![]!
+VolEngine.DccForecast.CumulativeMean.get -> double[]![]!
+VolEngine.Forecast.CumulativeMean.get -> double[]!
+VolEngine.Forecast.CumulativeSigma.get -> double[]!

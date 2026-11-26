@@ -74,6 +74,23 @@ for (var j = 0; j < grid.SeriesCount; j++)
 `grid[i, j]` is spec i on series j; the grid owns its fits, so dispose the grid, not them. `Panel.FromSeries` takes
 series of different lengths (one range per series), `Panel.FromColumns` takes T x N x k regressors and `Panel.FromSeries` one length x k array per series.
 
+## Cumulative forecast
+
+```csharp
+// `fit` as in "Fit, forecast, simulate": the mean and the standard deviation of the 1..10 step return.
+Forecast ahead = fit.Forecast(10);
+Console.WriteLine($"10-step return: mean {ahead.CumulativeMean[^1]:F5}, sigma {ahead.CumulativeSigma[^1]:F5}");
+```
+
+`Forecast.CumulativeMean` and `CumulativeSigma` (and `DccForecast.CumulativeMean`, Horizon x m, and
+`CumulativeCovariance`, Horizon x m x m, exactly symmetric) describe the return R_h = r(T+1) + ... + r(T+h) for
+h = 1..Horizon. The mean is the left-to-right sum of `Mean`. The variance is the sum over k of a(h - k)^2 sigma(T+k)^2
+(a_i(h - k) a_j(h - k) H(T+k) in the DCC), with a(n) = psi_0 + ... + psi_n and psi the MA(inf) weights of the ARMA/ARFIMA
+mean (psi_0 = 1; ARFIMA convolves them with those of (1 - L)^(-d)). Without ARMA and ARFIMA, a = 1 and it is the plain
+sum of the variances. Approximations: sigma(T+k) is the `Sigma` the forecast already returns, so eGARCH, apARCH and
+fGARCH with a free power inherit its approximation; with GARCH-in-mean the randomness of the future sigma in the mean
+is ignored; in the DCC, H(T+k) for k >= 2 is the forecast of H.
+
 ## Diagnostics
 
 ```csharp
