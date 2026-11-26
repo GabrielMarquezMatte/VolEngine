@@ -114,6 +114,8 @@ add_library(volengine_core STATIC
     src/model/likelihood/adjoint.cpp
     src/model/parameter_map.cpp
     src/model/start_values.cpp
+    src/risk/empirical.cpp
+    src/risk/parametric.cpp
     src/sim/path.cpp
     src/sim/samplers.cpp
     src/sim/simulate.cpp
@@ -248,6 +250,7 @@ if(VE_BUILD_TESTS)
         tests/unit/model/parameter_map_test.cpp
         tests/unit/model/start_values_test.cpp
         tests/unit/optim/lbfgs_test.cpp
+        tests/unit/risk/measures_test.cpp
         tests/unit/sim/philox_test.cpp
         tests/unit/sim/samplers_test.cpp
         tests/unit/sim/simulate_test.cpp
