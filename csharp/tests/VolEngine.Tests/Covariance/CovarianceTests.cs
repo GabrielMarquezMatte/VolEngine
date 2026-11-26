@@ -79,6 +79,15 @@ public sealed class CovarianceTests
         Assert.Throws<ArgumentNullException>(() => Covariances.LedoitWolf(null!));
     }
 
+    // 65536 series: 65536 * 65536 wraps to 0 in int, which must not reach the native call as a too small buffer.
+    [Fact]
+    public void Too_many_series_throws_overflow()
+    {
+        var returns = new double[2, 65536];
+        Assert.Throws<OverflowException>(() => Covariances.Sample(returns));
+        Assert.Throws<OverflowException>(() => Covariances.LedoitWolf(returns));
+    }
+
     [Fact]
     public void Result_is_symmetric()
     {

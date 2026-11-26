@@ -14,7 +14,7 @@ public static class Covariances
     {
         ArgumentNullException.ThrowIfNull(returns);
         var series = returns.GetLength(1);
-        var covariance = new double[series * series];
+        var covariance = new double[checked(series * series)];
         fixed (double* data = returns)
         fixed (double* output = covariance)
         {
@@ -32,7 +32,7 @@ public static class Covariances
     {
         ArgumentNullException.ThrowIfNull(returns);
         var series = returns.GetLength(1);
-        var covariance = new double[series * series];
+        var covariance = new double[checked(series * series)];
         double shrinkage;
         fixed (double* data = returns)
         fixed (double* output = covariance)
