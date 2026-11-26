@@ -120,6 +120,25 @@ const auto shrunk = ve::cov::ledoit_wolf(panel).value();
 std::printf("intensity %.3f, first variance %.6f\n", shrunk.shrinkage, shrunk.covariance[0]);
 ```
 
+## Risk measures
+
+`ve::risk` gives the VaR and ES at a confidence in (0, 1) (0.99 is the 1% tail), both positive as losses, in units of
+the return. `empirical` takes a `Panel` with dates or simulated paths in rows and one weight per column (not
+normalized): each row becomes the portfolio's simple return sum_j w_j (exp(r_j) - 1) (`ReturnKind::simple` takes
+simple returns), the VaR is minus its `numpy.quantile` at 1 - confidence and the ES minus the mean at or below it.
+`parametric` takes the return mean + sigma * z with z any of the eight standardized densities and the fit's skew,
+shape and ghlambda.
+
+```cpp
+// The cumulative log returns of DCC paths at checkpoint k (paths x K x m), read in place.
+const auto sums = paths.cumulative().value();
+const auto at_k = ve::Panel::create_strided(sums.subspan(k * m), n_paths, m, static_cast<std::ptrdiff_t>(K * m), 1).value();
+const auto ten_day = ve::risk::empirical(at_k, weights, ve::risk::ReturnKind::log, 0.99).value();
+// One day ahead with the fit's own Student-t (`shape` read from its estimates).
+const auto one_day = ve::risk::parametric({.dist = ve::Dist::student, .shape = shape}, mean, sigma, 0.99).value();
+std::printf("VaR %.4f, ES %.4f\n", ten_day.var, ten_day.es);
+```
+
 ## DCC
 
 ```cpp

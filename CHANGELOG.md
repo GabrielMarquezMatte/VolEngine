@@ -35,7 +35,8 @@ break between 0.x releases.
   `numpy.quantile`'s linear interpolation; `ve_risk_parametric` gives them for mean + sigma * z with z any of the eight
   standardized densities and its skew, shape and ghlambda (closed-form ES for norm and std, quadrature for the others).
   Both are positive as losses.
-- C++: `ve::cov::sample` and `ve::cov::ledoit_wolf` (`volengine/cov.hpp`), over a `Panel`.
+- C++: `ve::risk::empirical` and `ve::risk::parametric` (`volengine/risk/measures.hpp`).
+- C++: `ve::cov::sample` and `ve::cov::ledoit_wolf` (`volengine/risk/covariance.hpp`), over a `Panel`.
 - C++: `cumulative_mean()` and `cumulative_sigma()` on `Forecast`, `cumulative_mean()` and `cumulative_covariance()` on
   `DccForecast`.
 - C#: `Covariances.Sample` and `Covariances.LedoitWolf` (with `LedoitWolfResult`), over a T x N `double[,]`.

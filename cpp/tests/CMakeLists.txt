@@ -15,6 +15,7 @@ endif()
 add_executable(volengine_cpp_tests
     cancel_test.cpp
     cov/cov_test.cpp
+    risk/measures_test.cpp
     dcc_future_test.cpp
     dcc_test.cpp
     diagnostics_test.cpp

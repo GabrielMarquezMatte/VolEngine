@@ -49,7 +49,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--wrapper", type=Path, default=ROOT / "cpp" / "include" / "volengine")
     args = parser.parse_args(argv)
     api = declared(args.header.read_text(encoding="utf-8"))
-    text = "\n".join(path.read_text(encoding="utf-8") for path in sorted(args.wrapper.glob("*.hpp")))
+    text = "\n".join(path.read_text(encoding="utf-8") for path in sorted(args.wrapper.rglob("*.hpp")))
     missing = sorted(api - used(text) - UNUSED_ALLOWED)
     for name in missing:
         print(f"error: {name} is declared with VE_API and not used by the wrapper")

@@ -1,5 +1,5 @@
-#ifndef VOLENGINE_CPP_COV_HPP
-#define VOLENGINE_CPP_COV_HPP
+#ifndef VOLENGINE_CPP_RISK_COVARIANCE_HPP
+#define VOLENGINE_CPP_RISK_COVARIANCE_HPP
 
 #include <cstddef>
 #include <vector>
