@@ -119,7 +119,7 @@ Console.WriteLine($"historical VaR {historical.Var:F4} ES {historical.Es:F4}, St
 return sum_j w_j (exp(r_j) - 1) (`ReturnKind.Simple` takes simple returns), the VaR is minus its `numpy.quantile` at
 1 - confidence and the ES minus the mean at or below it. `Risk.Parametric` takes the return mean + sigma * z with z any
 of the eight standardized densities and the fit's skew, shape and ghlambda in a `ShockDistribution`; the ES is a
-closed form for the normal and the Student t and a quadrature for the others. Both are positive as losses, at a
+closed form for the normal, the Student t and the Johnson SU and a quadrature for the others. Both are positive as losses, at a
 confidence in (0, 1); anything out of range throws a `VolEngineException` with `Status.InvalidArgument`.
 
 ## Diagnostics

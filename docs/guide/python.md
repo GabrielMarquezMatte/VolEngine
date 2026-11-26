@@ -148,7 +148,7 @@ in rows: each row becomes the portfolio's simple return sum_j w_j (exp(r_j) - 1)
 returns), the VaR is minus its `numpy.quantile` at 1 - confidence and the ES minus the mean of the returns at or below
 it; the weights are not normalized. `parametric(mean, sigma, confidence=..., dist=..., skew=..., shape=...,
 ghlambda=...)` takes the return mean + sigma * z with z any of the eight standardized densities, so the VaR can use the
-distribution a fit estimated; the ES has a closed form for norm and std and is a quadrature for the others.
+distribution a fit estimated; the ES has a closed form for norm, std and jsu and is a quadrature for the others.
 
 ```python
 # One day ahead from the gjrGARCH-std fit: its own Student-t, at the forecast's mean and sigma.

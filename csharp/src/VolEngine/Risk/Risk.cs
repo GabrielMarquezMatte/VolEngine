@@ -40,7 +40,7 @@ public static class Risk
 
     /// <summary>
     /// The return mean + sigma z, z the standardized density: VaR = -(mean + sigma q), ES = -(mean + sigma E[z | z &lt;= q]),
-    /// q its quantile at 1 - confidence. The ES is a closed form for the normal and the Student t, a quadrature otherwise.
+    /// q its quantile at 1 - confidence. The ES is a closed form for the normal, the Student t and the Johnson SU, a quadrature otherwise.
     /// </summary>
     public static unsafe RiskMeasure Parametric(ShockDistribution distribution, double mean, double sigma, double confidence)
     {

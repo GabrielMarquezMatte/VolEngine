@@ -33,7 +33,7 @@ break between 0.x releases.
 - Risk measures (`ve_risk_*`). `ve_risk_empirical` gives the VaR and ES of a weighted portfolio over a panel of log
   (`VE_RETURNS_LOG`) or simple (`VE_RETURNS_SIMPLE`) returns, dates or simulated paths in rows, with
   `numpy.quantile`'s linear interpolation; `ve_risk_parametric` gives them for mean + sigma * z with z any of the eight
-  standardized densities and its skew, shape and ghlambda (closed-form ES for norm and std, quadrature for the others).
+  standardized densities and its skew, shape and ghlambda (closed-form ES for norm, std and jsu, quadrature for the others).
   Both are positive as losses.
 - C++: `ve::risk::empirical` and `ve::risk::parametric` (`volengine/risk/measures.hpp`).
 - C++: `ve::cov::sample` and `ve::cov::ledoit_wolf` (`volengine/risk/covariance.hpp`), over a `Panel`.
