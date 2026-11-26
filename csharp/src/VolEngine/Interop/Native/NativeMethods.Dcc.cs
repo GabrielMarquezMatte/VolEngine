@@ -99,6 +99,13 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(LibraryName)]
     internal static partial int ve_dcc_forecast_mean(DccForecastHandle forecast, out double* data, out nuint length);
 
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_dcc_forecast_cumulative_mean(DccForecastHandle forecast, out double* data, out nuint length);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_dcc_forecast_cumulative_covariance(DccForecastHandle forecast, out double* data,
+                                                                      out nuint length);
+
     [LibraryImport(LibraryName)] internal static partial void ve_dcc_forecast_free(nint forecast);
 
     [LibraryImport(LibraryName)] internal static partial int ve_sim_options_set_correlations(SimOptionsHandle options, int on);

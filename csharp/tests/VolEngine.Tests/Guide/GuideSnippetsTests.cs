@@ -86,6 +86,19 @@ public sealed class GuideSnippetsTests
     }
 
     [Fact]
+    public void Cumulative_forecast()
+    {
+        using var context = new Context();
+        using var fit = context.Fit(new Spec(), ReferenceData.Series("sgarch11_norm.csv", "t1500"));
+        // BEGIN guide: Cumulative forecast
+        // `fit` as in "Fit, forecast, simulate": the mean and the standard deviation of the 1..10 step return.
+        Forecast ahead = fit.Forecast(10);
+        Console.WriteLine($"10-step return: mean {ahead.CumulativeMean[^1]:F5}, sigma {ahead.CumulativeSigma[^1]:F5}");
+        // END guide
+        Assert.Equal(10, ahead.CumulativeSigma.Length);
+    }
+
+    [Fact]
     public void Diagnostics()
     {
         using var context = new Context();

@@ -16,6 +16,12 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(LibraryName)]
     internal static partial int ve_forecast_mean(ForecastHandle forecast, out double* data, out nuint length);
 
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_forecast_cumulative_mean(ForecastHandle forecast, out double* data, out nuint length);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_forecast_cumulative_sigma(ForecastHandle forecast, out double* data, out nuint length);
+
     [LibraryImport(LibraryName)] internal static partial void ve_forecast_free(nint forecast);
 
     [LibraryImport(LibraryName)]

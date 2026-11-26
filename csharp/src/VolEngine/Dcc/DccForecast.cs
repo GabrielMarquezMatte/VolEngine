@@ -13,15 +13,17 @@ namespace VolEngine;
 /// </remarks>
 public sealed class DccForecast
 {
-    private DccForecast(int horizon, int series, double[][][] correlation, double[][][] covariance, double[][] sigma,
-                        double[][] mean)
+    private unsafe DccForecast(DccForecastHandle forecast, int horizon, int series)
     {
         Horizon = horizon;
         Series = series;
-        Correlation = correlation;
-        Covariance = covariance;
-        Sigma = sigma;
-        Mean = mean;
+        Correlation = NativeReads.Matrices(NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_correlation), series);
+        Covariance = NativeReads.Matrices(NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_covariance), series);
+        Sigma = NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_sigma).Chunk(series).ToArray();
+        Mean = NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_mean).Chunk(series).ToArray();
+        CumulativeMean = NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_cumulative_mean).Chunk(series).ToArray();
+        CumulativeCovariance = NativeReads.Matrices(
+            NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_cumulative_covariance), series);
     }
 
     /// <summary>The number of steps.</summary>
@@ -42,17 +44,19 @@ public sealed class DccForecast
     /// <summary>The conditional mean of each step and series, Horizon x m.</summary>
     public double[][] Mean { get; }
 
+    /// <summary>The mean of the cumulative return R_h = r_(T+1) + ... + r_(T+h) of each series, Horizon x m: the
+    /// left-to-right sum of <see cref="Mean"/>.</summary>
+    public double[][] CumulativeMean { get; }
+
+    /// <summary>The covariance of R_h, Horizon x m x m, exactly symmetric: sum_k a_i(h-k) a_j(h-k) H_(T+k)[i, j], with
+    /// a(n) = psi_0 + ... + psi_n the MA(inf) weights of each series' ARMA/ARFIMA mean, so it is the plain sum of
+    /// <see cref="Covariance"/> only without one.</summary>
+    public double[][][] CumulativeCovariance { get; }
+
     internal static unsafe DccForecast Read(DccForecastHandle forecast)
     {
         Calls.Check(NativeMethods.ve_dcc_forecast_horizon(forecast, out var horizon));
         Calls.Check(NativeMethods.ve_dcc_forecast_series(forecast, out var series));
-        var m = checked((int)series);
-        return new DccForecast(
-            checked((int)horizon),
-            m,
-            NativeReads.Matrices(NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_correlation), m),
-            NativeReads.Matrices(NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_covariance), m),
-            NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_sigma).Chunk(m).ToArray(),
-            NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_mean).Chunk(m).ToArray());
+        return new DccForecast(forecast, checked((int)horizon), checked((int)series));
     }
 }
