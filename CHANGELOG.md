@@ -8,6 +8,15 @@ From 1.0 the C ABI only grows: a signature or an enum value is never changed or 
 semver major (the Python package and the C++ wrapper refuse a library whose ABI version differs). Before 1.0 it could
 break between 0.x releases.
 
+## [Unreleased]
+
+### Fixed
+
+- Python: the regressors of a horizon given to `Fit.forecast`, `DccFit.forecast` or `Context.simulate` as a list, a
+  1D array or any input that had to be copied were freed before the library read them, so the forecast or the
+  simulation could silently use other values (for example `vxreg`'s in place of `mxreg`'s) or read freed memory. The
+  copies now live until the native call is done.
+
 ## [1.3.0] - 2026-11-26
 
 ### Added

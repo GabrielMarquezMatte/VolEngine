@@ -1,9 +1,12 @@
 import gc
+import weakref
+from contextlib import ExitStack
 
 import numpy as np
 import pytest
 
 import volengine as ve
+from volengine._native import open_panel
 
 
 def test_forecast_shapes_and_read_only(ctx, series):
@@ -37,6 +40,19 @@ def test_forecast_with_regressors(ctx, series):
     np.testing.assert_array_equal(two_columns.mean, one_dimensional.mean)
     mu, delta1, delta2 = fit.coef().estimate[:3]
     assert two_columns.mean[0] == pytest.approx(mu + delta1 + delta2, rel=1e-14)
+
+
+def test_open_panel_keeps_a_temporary_array_alive_until_the_stack_closes():
+    # The regressors of a horizon reach the panel as copies nobody else holds, and the panel only borrows them.
+    array = np.ones((5, 1))
+    alive = weakref.ref(array)
+    with ExitStack() as stack:
+        open_panel(stack, array)
+        del array
+        gc.collect()
+        assert alive() is not None
+    gc.collect()
+    assert alive() is None
 
 
 @pytest.mark.parametrize(
