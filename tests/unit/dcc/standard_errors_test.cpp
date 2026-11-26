@@ -516,7 +516,7 @@ TEST(DccStandardErrors, PoolReportsTheProblemOfEachFit)
 
 // A signal stops the pool within a block (each stage is cut into kBlocksPerThread blocks per thread), even when the
 // signal lands in the cross-column stage, the bulk of the work.
-TEST(DccStandardErrors, PoolStopsSoonAfterTheSignal)
+TEST(DccStandardErrors, PoolStopsAfterTheSignal)
 {
     using namespace std::chrono_literals;
     const std::vector<FitResult> fits = default_fits();
