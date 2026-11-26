@@ -8,10 +8,14 @@
 #include "dcc/spec.hpp"
 #include "fit/fit.hpp"
 #include "fit/fit_result.hpp"
+#include "forecast/cumulative.hpp"
 #include "forecast/forecast.hpp"
 #include "model/data.hpp"
+#include "model/layout.hpp"
 
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <memory>
@@ -293,6 +297,92 @@ TEST(DccForecast, Problems)
                                                     ve::testing::dcc3_panel()),
                                                 dcc_spec(DccModel::Dcc), FitConfig{});
     EXPECT_TRUE(ve::dcc::future::forecast_problem(alone, kHorizon, none).has_value());
+}
+
+void expect_cumulative_against(const DccForecast& forecast, const std::vector<std::vector<double>>& weights)
+{
+    const std::size_t m = forecast.series;
+    const std::vector<double> c = ve::dcc::future::cumulative_covariance(forecast);
+    ASSERT_EQ(c.size(), forecast.horizon * m * m);
+    for (std::size_t h = 1; h <= forecast.horizon; ++h)
+    {
+        for (std::size_t i = 0; i < m; ++i)
+        {
+            for (std::size_t j = 0; j < m; ++j)
+            {
+                double expected = 0.0;
+                for (std::size_t k = 1; k <= h; ++k)
+                {
+                    expected += weights[i][h - k] * weights[j][h - k] * forecast.h[(k - 1) * m * m + i * m + j];
+                }
+                EXPECT_NEAR(c[(h - 1) * m * m + i * m + j], expected, 1e-14 * std::abs(expected))
+                    << h << " " << i << " " << j;
+            }
+        }
+    }
+}
+
+TEST(DccCumulative, WithoutArmaIsThePlainSum)
+{
+    const std::vector<DccFitResult> fits = run_batch(dcc3_fits(), {dcc_spec(DccModel::Dcc)});
+    const DccForecast forecast = ve::dcc::future::forecast_dcc(fits[0], kHorizon, SeriesRegressors(kSeries));
+    expect_cumulative_against(forecast, std::vector<std::vector<double>>(kSeries, std::vector<double>(kHorizon, 1.0)));
+    for (std::size_t i = 0; i < kSeries; ++i)
+    {
+        double sum = 0.0;
+        for (std::size_t h = 0; h < kHorizon; ++h)
+        {
+            sum += forecast.mean[h * kSeries + i];
+            EXPECT_EQ(std::bit_cast<std::uint64_t>(forecast.cumulative_mean[h * kSeries + i]),
+                      std::bit_cast<std::uint64_t>(sum));
+        }
+    }
+}
+
+// Review Focus 3 and 1.
+TEST(DccCumulative, MixedMeans)
+{
+    const std::vector<std::vector<double>> columns = ve::testing::read_dcc3();
+    const std::vector<ve::Spec> specs{ve::Spec{.ar = 1}, ve::Spec{}, ve::Spec{.ma = 1}};
+    std::vector<FitResult> univariate;
+    std::vector<std::vector<double>> weights;
+    for (std::size_t i = 0; i < kSeries; ++i)
+    {
+        univariate.push_back(ve::fit_one(columns[i], specs[i], FitConfig{}));
+        weights.push_back(
+            ve::forecast::cumulative_weights(ve::model::layout_of(specs[i]), univariate.back().estimate, kHorizon));
+    }
+    const std::vector<DccFitResult> fits = run_batch(univariate, {dcc_spec(DccModel::Dcc)});
+    const DccForecast forecast = ve::dcc::future::forecast_dcc(fits[0], kHorizon, SeriesRegressors(kSeries));
+    expect_cumulative_against(forecast, weights);
+    // C_1 = H_1 on the upper triangle, which is mirrored (H itself is symmetric only to rounding).
+    const std::vector<double> c = ve::dcc::future::cumulative_covariance(forecast);
+    for (std::size_t i = 0; i < kSeries; ++i)
+    {
+        for (std::size_t j = i; j < kSeries; ++j)
+        {
+            EXPECT_EQ(c[i * kSeries + j], forecast.h[i * kSeries + j]) << i << " " << j;
+        }
+    }
+}
+
+TEST(DccCumulative, ExactlySymmetric)
+{
+    const std::vector<DccFitResult> fits = run_batch(dcc3_fits(), {dcc_spec(DccModel::ADcc)});
+    const DccForecast forecast = ve::dcc::future::forecast_dcc(fits[0], kHorizon, SeriesRegressors(kSeries));
+    const std::vector<double> c = ve::dcc::future::cumulative_covariance(forecast);
+    for (std::size_t h = 0; h < kHorizon; ++h)
+    {
+        for (std::size_t i = 0; i < kSeries; ++i)
+        {
+            for (std::size_t j = 0; j < kSeries; ++j)
+            {
+                const std::size_t base = h * kSeries * kSeries;
+                EXPECT_EQ(std::bit_cast<std::uint64_t>(c[base + i * kSeries + j]),
+                          std::bit_cast<std::uint64_t>(c[base + j * kSeries + i]));
+            }
+        }
+    }
 }
 
 }
