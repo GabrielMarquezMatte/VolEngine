@@ -32,6 +32,8 @@ break between 0.x releases.
 - DCC forecast: `ve_dcc_forecast_create` at m = 21, h = 60 takes 0.18 of its time (one `pow` per step outside FDCC
   instead of one per entry of R), and `ve_dcc_forecast_cumulative_covariance` without an ARMA mean is a running sum,
   linear in the horizon. The results have the same bits.
+- Student Copula-DCC: the fits of `dcc`, `adcc` and static ML Student copulas take about 0.64 of their time (21
+  series, 5000 rows), with the same bits: each point of the shape profile reuses the scores its inner fit ran on.
 
 ## [1.3.0] - 2026-11-26
 
