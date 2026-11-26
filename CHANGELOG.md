@@ -27,6 +27,12 @@ break between 0.x releases.
 - C#: `Context.Fit` with more than `int.MaxValue` jobs (specs x series) wrapped the job count around and fitted only
   part of the grid. It now throws `OverflowException` before calling the library.
 
+### Performance
+
+- DCC forecast: `ve_dcc_forecast_create` at m = 21, h = 60 takes 0.18 of its time (one `pow` per step outside FDCC
+  instead of one per entry of R), and `ve_dcc_forecast_cumulative_covariance` without an ARMA mean is a running sum,
+  linear in the horizon. The results have the same bits.
+
 ## [1.3.0] - 2026-11-26
 
 ### Added

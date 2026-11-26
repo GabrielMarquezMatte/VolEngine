@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <span>
 
 namespace ve::dcc::future
@@ -120,9 +121,16 @@ std::vector<double> correlation_forecast(const DccFitResult& fit, std::size_t ho
     const std::vector<double> k = persistence(fit);
     for (std::size_t h = 1; h < horizon; ++h)
     {
+        // k is one value outside FDCC and a few per group pair in it: pow only where it changes.
+        double base = std::numeric_limits<double>::quiet_NaN();
+        double weight = 0.0;
         for (std::size_t e = 0; e < size; ++e)
         {
-            const double weight = std::pow(k[e], static_cast<double>(h));
+            if (k[e] != base)
+            {
+                base = k[e];
+                weight = std::pow(base, static_cast<double>(h));
+            }
             r[h * size + e] = (1.0 - weight) * bar[e] + weight * first[e];
         }
         for (std::size_t i = 0; i < m; ++i)
@@ -190,10 +198,17 @@ DccForecast forecast_dcc(const DccFitResult& fit, std::size_t horizon, const Ser
     }
     out.r = correlation_forecast(fit, horizon);
     out.h.resize(out.r.size());
-    for (std::size_t k = 0; k < out.h.size(); ++k)
+    for (std::size_t h = 0; h < horizon; ++h)
     {
-        const std::size_t h = k / (m * m);
-        out.h[k] = out.sigma[h * m + (k / m) % m] * out.r[k] * out.sigma[h * m + k % m];
+        const double* sigma = out.sigma.data() + h * m;
+        for (std::size_t i = 0; i < m; ++i)
+        {
+            for (std::size_t j = 0; j < m; ++j)
+            {
+                const std::size_t k = (h * m + i) * m + j;
+                out.h[k] = sigma[i] * out.r[k] * sigma[j];
+            }
+        }
     }
     return out;
 }
@@ -221,13 +236,19 @@ std::vector<double> cumulative_covariance(const DccForecast& forecast)
     const std::size_t m = forecast.series;
     const std::size_t size = m * m;
     std::vector<double> c(forecast.horizon * size);
+    // ponytail: O(h^2 m^2) with an ARMA/ARFIMA mean; without one every weight is 1 and each entry is a running
+    // sum of H, the same additions in the same order as cumulative_entry.
+    const bool plain = std::ranges::all_of(forecast.weights, [](double a) { return a == 1.0; });
     for (std::size_t h = 1; h <= forecast.horizon; ++h)
     {
         for (std::size_t i = 0; i < m; ++i)
         {
             for (std::size_t j = i; j < m; ++j)
             {
-                const double value = cumulative_entry(forecast, h, i, j);
+                const std::size_t entry = i * m + j;
+                const double previous = h == 1 ? 0.0 : c[(h - 2) * size + entry];
+                const double value = plain ? previous + forecast.h[(h - 1) * size + entry]
+                                           : cumulative_entry(forecast, h, i, j);
                 c[(h - 1) * size + i * m + j] = value;
                 c[(h - 1) * size + j * m + i] = value;
             }
