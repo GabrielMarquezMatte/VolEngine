@@ -169,4 +169,24 @@ TEST(Simulation, CumulativeMatchesTheFullOutput)
     EXPECT_EQ(refused.error().status, ve::Status::invalid_argument);
     EXPECT_TRUE(full.checkpoints().value().empty());
 }
+
+TEST(Forecast, CumulativeIsTheSumWithoutArma)
+{
+    const auto context = ve::Context::create(1).value();
+    const auto forecast = fixed_fit(context).forecast(kHorizon).value();
+    const auto mean = forecast.mean().value();
+    const auto sigma = forecast.sigma().value();
+    const auto cumulative_mean = forecast.cumulative_mean().value();
+    const auto cumulative_sigma = forecast.cumulative_sigma().value();
+    ASSERT_EQ(cumulative_mean.size(), kHorizon);
+    double sum = 0.0;
+    double variance = 0.0;
+    for (std::size_t h = 0; h < kHorizon; ++h)
+    {
+        sum += mean[h];
+        variance += sigma[h] * sigma[h];
+        EXPECT_EQ(std::bit_cast<std::uint64_t>(cumulative_mean[h]), std::bit_cast<std::uint64_t>(sum));
+        EXPECT_NEAR(cumulative_sigma[h] * cumulative_sigma[h], variance, 1e-14 * variance);
+    }
+}
 } // namespace

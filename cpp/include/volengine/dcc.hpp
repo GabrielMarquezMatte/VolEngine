@@ -204,6 +204,18 @@ public:
         return detail::view(handle_.get(), ve_dcc_forecast_mean);
     }
 
+    // The forecast of the sums of the next h returns, h = 1..horizon: horizon x m (mean) and horizon x m x m
+    // (covariance, each pair weighted by the MA(inf) weights of its two series' means; exactly symmetric).
+    Result<std::span<const double>> cumulative_mean() const
+    {
+        return detail::view(handle_.get(), ve_dcc_forecast_cumulative_mean);
+    }
+
+    Result<std::span<const double>> cumulative_covariance() const
+    {
+        return detail::view(handle_.get(), ve_dcc_forecast_cumulative_covariance);
+    }
+
 private:
     detail::Owned<ve_dcc_forecast, ve_dcc_forecast_free> handle_;
 };

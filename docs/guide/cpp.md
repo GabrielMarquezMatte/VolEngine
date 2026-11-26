@@ -91,6 +91,21 @@ for (std::size_t j = 0; j < 3; ++j)
 }
 ```
 
+## Cumulative forecast
+
+`Forecast::cumulative_mean()` and `cumulative_sigma()` give, for h = 1..horizon, the mean and standard deviation of
+the forecast sum of the next h returns; `DccForecast::cumulative_mean()` and `cumulative_covariance()` (horizon x m x m,
+exactly symmetric) do the same for a DCC. The mean is the sum of the mean forecasts. The variance is
+sum_k a(h - k)^2 sigma_k^2, where a(n) = psi_0 + ... + psi_n adds up the MA(inf) weights of an ARMA or ARFIMA mean, so
+a shock today keeps entering the next returns; without ARMA every a(n) is 1 and it is the plain sum of sigma^2 (of H
+for a DCC). sigma_k is the forecast's own sigma, with its approximation in eGARCH, apARCH and fGARCH, and with
+GARCH-in-mean the randomness of the future sigma in the mean is left out.
+
+```cpp
+const auto forecast = fit->forecast(10).value();
+const double ten_day_sigma = forecast.cumulative_sigma().value()[9];   // of r_{T+1} + ... + r_{T+10}
+```
+
 ## DCC
 
 ```cpp

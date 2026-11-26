@@ -178,4 +178,20 @@ TEST(DccSimulation, CumulativeMatchesTheFullOutput)
     ASSERT_FALSE(refused.has_value());
     EXPECT_EQ(refused.error().status, ve::Status::invalid_argument);
 }
+
+TEST(DccForecast, CumulativeCovarianceShape)
+{
+    const auto context = ve::Context::create(1).value();
+    const auto fits = ve::testing::dcc3_univariate_fits(context);
+    const auto dcc = fixed_dcc(context, fits);
+    const auto forecast = dcc.forecast(5).value();
+    const auto covariance = forecast.covariance().value();
+    const auto cumulative = forecast.cumulative_covariance().value();
+    ASSERT_EQ(cumulative.size(), 5U * 3U * 3U);
+    EXPECT_EQ(forecast.cumulative_mean().value().size(), 5U * 3U);
+    for (std::size_t i = 0; i < 3; ++i)
+    {
+        EXPECT_EQ(cumulative[i * 3 + i], covariance[i * 3 + i]);
+    }
+}
 } // namespace
