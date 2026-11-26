@@ -33,6 +33,7 @@ break between 0.x releases.
 - C++: `ve::cov::sample` and `ve::cov::ledoit_wolf` (`volengine/cov.hpp`), over a `Panel`.
 - C++: `cumulative_mean()` and `cumulative_sigma()` on `Forecast`, `cumulative_mean()` and `cumulative_covariance()` on
   `DccForecast`.
+- C#: `Covariances.Sample` and `Covariances.LedoitWolf` (with `LedoitWolfResult`), over a T x N `double[,]`.
 - C#: `CumulativeMean` and `CumulativeSigma` on `Forecast`, `CumulativeMean` and `CumulativeCovariance` on
   `DccForecast`.
 - Python: the `ve.cov` module, with `sample(returns)` and `ledoit_wolf(returns)` (the matrix and the intensity).

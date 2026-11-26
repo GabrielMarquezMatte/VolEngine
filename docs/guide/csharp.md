@@ -91,6 +91,19 @@ sum of the variances. Approximations: sigma(T+k) is the `Sigma` the forecast alr
 fGARCH with a free power inherit its approximation; with GARCH-in-mean the randomness of the future sigma in the mean
 is ignored; in the DCC, H(T+k) for k >= 2 is the forecast of H.
 
+## Covariance estimators
+
+```csharp
+// `returns` is a T x N double[,]: dates in rows, series in columns.
+LedoitWolfResult shrunk = Covariances.LedoitWolf(returns);
+Console.WriteLine($"intensity {shrunk.Shrinkage:F3}, first variance {shrunk.Covariance[0][0]:E3}");
+```
+
+`Covariances.Sample` is `numpy.cov(returns, rowvar=False)` and `Covariances.LedoitWolf` is
+`sklearn.covariance.ledoit_wolf(returns)`, the shrinkage of Z'Z / T towards mu * I (mu the mean variance), with its
+intensity in [0, 1]. Both remove each series' mean and return N rows of N, exactly symmetric; fewer than 2 rows or a
+value that is not finite throws a `VolEngineException` with `Status.InvalidArgument`.
+
 ## Diagnostics
 
 ```csharp

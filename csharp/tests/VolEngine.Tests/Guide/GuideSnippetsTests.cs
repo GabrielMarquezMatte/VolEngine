@@ -99,6 +99,26 @@ public sealed class GuideSnippetsTests
     }
 
     [Fact]
+    public void Covariance_estimators()
+    {
+        var columns = ReferenceData.Columns("copula3.csv");
+        var returns = new double[columns[0].Length, columns.Length];
+        for (var row = 0; row < columns[0].Length; row++)
+        {
+            for (var column = 0; column < columns.Length; column++)
+            {
+                returns[row, column] = columns[column][row];
+            }
+        }
+        // BEGIN guide: Covariance estimators
+        // `returns` is a T x N double[,]: dates in rows, series in columns.
+        LedoitWolfResult shrunk = Covariances.LedoitWolf(returns);
+        Console.WriteLine($"intensity {shrunk.Shrinkage:F3}, first variance {shrunk.Covariance[0][0]:E3}");
+        // END guide
+        Assert.InRange(shrunk.Shrinkage, 0.0, 1.0);
+    }
+
+    [Fact]
     public void Diagnostics()
     {
         using var context = new Context();

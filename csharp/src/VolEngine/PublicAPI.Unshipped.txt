@@ -28,3 +28,20 @@ VolEngine.DccForecast.CumulativeCovariance.get -> double[]![]![]!
 VolEngine.DccForecast.CumulativeMean.get -> double[]![]!
 VolEngine.Forecast.CumulativeMean.get -> double[]!
 VolEngine.Forecast.CumulativeSigma.get -> double[]!
+VolEngine.Covariances
+VolEngine.LedoitWolfResult
+VolEngine.LedoitWolfResult.<Clone>$() -> VolEngine.LedoitWolfResult!
+VolEngine.LedoitWolfResult.Covariance.get -> double[]![]!
+VolEngine.LedoitWolfResult.Covariance.init -> void
+VolEngine.LedoitWolfResult.Deconstruct(out double[]![]! Covariance, out double Shrinkage) -> void
+VolEngine.LedoitWolfResult.Equals(VolEngine.LedoitWolfResult? other) -> bool
+VolEngine.LedoitWolfResult.LedoitWolfResult(double[]![]! Covariance, double Shrinkage) -> void
+VolEngine.LedoitWolfResult.Shrinkage.get -> double
+VolEngine.LedoitWolfResult.Shrinkage.init -> void
+override VolEngine.LedoitWolfResult.Equals(object? obj) -> bool
+override VolEngine.LedoitWolfResult.GetHashCode() -> int
+override VolEngine.LedoitWolfResult.ToString() -> string!
+static VolEngine.Covariances.LedoitWolf(double[,]! returns) -> VolEngine.LedoitWolfResult!
+static VolEngine.Covariances.Sample(double[,]! returns) -> double[]![]!
+static VolEngine.LedoitWolfResult.operator !=(VolEngine.LedoitWolfResult? left, VolEngine.LedoitWolfResult? right) -> bool
+static VolEngine.LedoitWolfResult.operator ==(VolEngine.LedoitWolfResult? left, VolEngine.LedoitWolfResult? right) -> bool
