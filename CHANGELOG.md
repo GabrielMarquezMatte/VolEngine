@@ -34,6 +34,7 @@ break between 0.x releases.
   `DccForecast`.
 - C#: `CumulativeMean` and `CumulativeSigma` on `Forecast`, `CumulativeMean` and `CumulativeCovariance` on
   `DccForecast`.
+- Python: the `ve.cov` module, with `sample(returns)` and `ledoit_wolf(returns)` (the matrix and the intensity).
 - Python: `cumulative_mean` and `cumulative_sigma` on `Forecast`, `cumulative_mean` and `cumulative_covariance` on
   `DccForecast`.
 - C++: `SimOptions::checkpoints`, and `cumulative()` and `checkpoints()` on `Simulation` and `DccSimulation`.

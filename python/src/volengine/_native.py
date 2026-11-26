@@ -184,6 +184,8 @@ PROTOTYPES: dict[str, tuple[Any, list[Any]]] = {
     "ve_dcc_sim_correlation": (_STATUS, _VIEW),
     "ve_dcc_sim_covariance": (_STATUS, _VIEW),
     "ve_dcc_sim_free": (None, [_HANDLE]),
+    "ve_cov_sample": (_STATUS, [_HANDLE, _HANDLE]),
+    "ve_cov_ledoit_wolf": (_STATUS, [_HANDLE, _HANDLE, _OUT_DOUBLE]),
 }
 
 

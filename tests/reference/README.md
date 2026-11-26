@@ -37,6 +37,8 @@ that `python/tests/oracles/test_oracles.py` compares VolEngine against. Conventi
 | `fixtures/arch.json` | `arch` results |
 | `fixtures/arch_forecast.json` | `arch` forecasts, in the format of `rugarch_forecast.json` |
 | `fixtures/rugarch_forecast.json` | `rugarch` forecasts: per case `n`, `horizon`, the `fixed` point and the 25 values of `sigma` and `mean` |
+| `oracle_sklearn_cov.py` | Runs `numpy.cov` and `sklearn.covariance.ledoit_wolf` on four panels and writes `fixtures/sklearn_cov.json`; run with `uv run --no-project --with numpy --with scikit-learn python tests/reference/oracle_sklearn_cov.py` |
+| `fixtures/sklearn_cov.json` | Per case `id`, the panel `returns` (T rows of N), `sample`, `ledoit_wolf` and `shrinkage`; the `wide` and `wider` panels are drawn with seed 20261126 |
 
 The files under `data/` and `fixtures/` are generated and committed. The tests read only these files: running
 them needs neither R nor `arch`. Series names are unique across the data files.

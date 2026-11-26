@@ -126,6 +126,20 @@ The `mvlaplace` density is singular where every standardized residual of a date 
 fixed at 0): the log-likelihood is then not finite and the fit ends `failed`, with no message besides the status.
 Drop such dates before the univariate fits.
 
+## Covariance estimators
+
+`ve.cov` holds the estimators that need no model, over a (T, N) array with the series in columns: `sample` is
+`numpy.cov(returns, rowvar=False)` and `ledoit_wolf` is `sklearn.covariance.ledoit_wolf(returns)`, the shrinkage of
+Z'Z / T towards mu * I (mu the mean variance), with its intensity in [0, 1]. Both remove each series' mean, return an
+exactly symmetric (N, N) array and raise `VolEngineError` for fewer than 2 rows or a value that is not finite.
+
+```python
+rng = np.random.default_rng(4)
+returns = 0.01 * rng.standard_normal((60, 40))   # 40 series, 60 dates: the sample covariance is singular
+shrunk, intensity = ve.cov.ledoit_wolf(returns)
+print(np.linalg.eigvalsh(ve.cov.sample(returns))[0], np.linalg.eigvalsh(shrunk)[0], intensity)
+```
+
 ## Cancellation
 
 `fit`, `fit_dcc`, `standard_errors` and `simulate` take a keyword-only `cancel=`, a `Cancel`. Its `cancel()` can be

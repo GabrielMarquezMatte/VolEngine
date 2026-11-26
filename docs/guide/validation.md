@@ -346,6 +346,7 @@ between 0.25 and 0.31. Two planned cases moved, and one is kept as a known diver
 |--------|---------|-------------|
 | `rugarch` | 1.5-6 (`packageVersion` 1.5.6) | R 4.6.2 (ucrt, Windows), `jsonlite` 2.0.0, `numDeriv` 2016.8-1.1, `Rsolnp` 2.0.1 |
 | `arch` | 8.0.0 | Python 3.14.7 (Windows), NumPy 2.5.4, SciPy 1.18.1 |
+| `numpy` and `scikit-learn` | NumPy 2.5.4, scikit-learn 1.9.1 | Python 3.14.7 (Windows) |
 
 The variant cases were produced with the same versions, `rugarch` 1.5-6 installed from CRAN on the plan-2b
 machine (Intel Core i7-1365U). There, regenerating the plan-1/2a cases gives bit-identical estimates, ℓ, σ and
@@ -933,6 +934,15 @@ so a Copula-DCC simulation with such margins is two orders of magnitude slower t
   empirical z is a z of the sample.
 - `DccSimulate.ArfimaAndComponentSeries`: a panel with an ARFIMA series, a csGARCH series and a series with a mean
   regressor simulates finite paths.
+
+## Covariance estimators
+
+`ve_cov_sample` and `ve_cov_ledoit_wolf` are compared with `numpy.cov(x, rowvar=False)` and
+`sklearn.covariance.ledoit_wolf(x, assume_centered=False)` in `python/tests/cov/test_cov_oracles.py`, on four panels
+of `fixtures/sklearn_cov.json`: `copula3` (all of `data/copula3.csv`, T = 2000, N = 3), `single` (its column A, where
+the intensity is 0), `wide` (T = 60, N = 40) and `wider` (T = 30, N = 50, more series than dates). Every entry is
+within 1e-12 times the largest |entry| of the oracle's matrix, and the intensity within 1e-12 relative. The C# suite
+compares `copula3` and `wide` with the same fixture.
 
 ## Numerical settings
 
