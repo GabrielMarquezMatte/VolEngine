@@ -171,7 +171,7 @@ inline FitSet fit_all(ve_context* context, const ve_batch* batch)
     std::size_t count = 0;
     EXPECT_EQ(ve_batch_job_count(batch, &count), VE_OK);
     FitSet fits(count);
-    EXPECT_EQ(ve_fit_batch(context, batch, fits.out()), VE_OK);
+    EXPECT_EQ(ve_fit_batch_with_cancel(context, batch, nullptr, fits.out()), VE_OK);
     return fits;
 }
 

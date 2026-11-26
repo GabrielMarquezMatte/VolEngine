@@ -64,7 +64,8 @@ public:
         std::vector<ve_fit*> raw(*jobs, nullptr);
         std::vector<Fit> fits;
         fits.reserve(raw.size()); // before the native call: nothing may throw while raw holds handles
-        if (auto fitted = detail::check(ve_fit_batch(handle_.get(), batch.native(), raw.data())); !fitted)
+        if (auto fitted = detail::check(ve_fit_batch_with_cancel(handle_.get(), batch.native(), nullptr,
+                                                                 raw.data())); !fitted)
         {
             return detail::failure(fitted);
         }
@@ -123,7 +124,7 @@ public:
     Result<Simulation> simulate(const Fit& fit, const SimOptions& options) const
     {
         return simulate_with(options, [&](const ve_sim_options* native, ve_sim** out)
-            { return ve_simulate_fit(handle_.get(), fit.native(), native, out); });
+            { return ve_simulate_fit_with_cancel(handle_.get(), fit.native(), native, nullptr, out); });
     }
 
     // Paths of a spec with every parameter fixed, from its unconditional state.
@@ -135,7 +136,8 @@ public:
             return detail::failure(native);
         }
         return simulate_with(options, [&](const ve_sim_options* sim_options, ve_sim** out)
-            { return ve_simulate_spec(handle_.get(), native->get(), sim_options, out); });
+            { return ve_simulate_spec_with_cancel(handle_.get(), native->get(), sim_options, nullptr,
+                                                  out); });
     }
 
     // Every DCC spec over the same univariate fits (at least two, finite, of one length >= 100), in spec order.
@@ -155,7 +157,8 @@ public:
         std::vector<ve_dcc_fit*> raw(*count, nullptr);
         std::vector<DccFit> fits;
         fits.reserve(raw.size()); // before the native call: nothing may throw while raw holds handles
-        if (auto fitted = detail::check(ve_dcc_fit_batch(handle_.get(), batch->get(), raw.data())); !fitted)
+        if (auto fitted = detail::check(ve_dcc_fit_batch_with_cancel(handle_.get(), batch->get(), nullptr,
+                                                                     raw.data())); !fitted)
         {
             return detail::failure(fitted);
         }
@@ -183,7 +186,8 @@ public:
         const auto pointers = fit_pointers(univariate);
         ve_dcc_fit* raw = nullptr;
         if (auto computed = detail::check(
-                ve_dcc_standard_errors(handle_.get(), fit.native(), pointers.data(), pointers.size(), &raw));
+                ve_dcc_standard_errors_with_cancel(handle_.get(), fit.native(), pointers.data(),
+                                                   pointers.size(), nullptr, &raw));
             !computed)
         {
             return detail::failure(computed);
@@ -207,7 +211,8 @@ public:
         }
         ve_dcc_sim* raw = nullptr;
         if (auto simulated = detail::check(
-                ve_simulate_dcc(handle_.get(), fit.native(), native->get(), native_future, &raw));
+                ve_simulate_dcc_with_cancel(handle_.get(), fit.native(), native->get(), native_future,
+                                            nullptr, &raw));
             !simulated)
         {
             return detail::failure(simulated);

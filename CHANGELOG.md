@@ -8,6 +8,22 @@ From 1.0 the C ABI only grows: a signature or an enum value is never changed or 
 semver major (the Python package and the C++ wrapper refuse a library whose ABI version differs). Before 1.0 it could
 break between 0.x releases.
 
+## [Unreleased]
+
+### Added
+
+- Cooperative cancellation. `ve_cancel_create`, `ve_cancel_request` and `ve_cancel_free` manage a signal that can be
+  requested from any thread. `ve_fit_batch_with_cancel`, `ve_dcc_fit_batch_with_cancel`,
+  `ve_dcc_standard_errors_with_cancel`, `ve_simulate_fit_with_cancel`, `ve_simulate_spec_with_cancel` and
+  `ve_simulate_dcc_with_cancel` take it and return the new status `VE_CANCELLED` soon after it is requested, with every
+  output set to NULL. A NULL signal does what the call without `_with_cancel` does.
+
+### Deprecated
+
+- `ve_fit_batch`, `ve_dcc_fit_batch`, `ve_dcc_standard_errors`, `ve_simulate_fit`, `ve_simulate_spec` and
+  `ve_simulate_dcc`: call the `_with_cancel` variant with a NULL `ve_cancel`. They warn at compile time (define
+  `VE_NO_DEPRECATED_WARNINGS` to silence it) and are removed in ABI 2.
+
 ## [1.2.0] - 2026-11-19
 
 ### Added

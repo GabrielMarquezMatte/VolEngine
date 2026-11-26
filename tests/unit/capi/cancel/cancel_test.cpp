@@ -533,7 +533,7 @@ struct DccWork
         DccSpecPtr spec = dcc_spec(VE_DCC_MODEL_DCC, VE_DCC_DIST_MVNORM);
         DccBatchPtr one = batch({spec.get()}, 1, false);
         ve_dcc_fit* raw = nullptr;
-        EXPECT_EQ(ve_dcc_fit_batch(context.get(), one.get(), &raw), VE_OK) << ve_last_error();
+        EXPECT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), one.get(), nullptr, &raw), VE_OK) << ve_last_error();
         return DccFitPtr(raw);
     }
 };

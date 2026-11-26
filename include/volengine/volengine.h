@@ -14,6 +14,15 @@
 #define VE_API __attribute__((visibility("default")))
 #endif
 
+/* Marks a call that a later ABI removes. Define VE_NO_DEPRECATED_WARNINGS to silence the warnings. */
+#if defined(VE_NO_DEPRECATED_WARNINGS)
+#define VE_DEPRECATED(message)
+#elif defined(_MSC_VER)
+#define VE_DEPRECATED(message) __declspec(deprecated(message))
+#else
+#define VE_DEPRECATED(message) __attribute__((deprecated(message)))
+#endif
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -289,6 +298,7 @@ VE_API void ve_batch_free(ve_batch* b);
    or infinite value in a used series is VE_INVALID_ARGUMENT. A fit that
    does not converge is not an error: see ve_fit_status. The fits own their data: they stay valid after
    the batch, panel, specs and ctx are freed. */
+VE_DEPRECATED("use ve_fit_batch_with_cancel with a NULL ve_cancel; removed in ABI 2")
 VE_API ve_status ve_fit_batch(ve_context* ctx, const ve_batch* batch, ve_fit** fits_out);
 /* ve_fit_batch, cancellable by c (see ve_cancel_create). Since 1.3.0. */
 VE_API ve_status ve_fit_batch_with_cancel(ve_context* ctx, const ve_batch* batch, const ve_cancel* c,
@@ -390,6 +400,7 @@ VE_API ve_status ve_sim_options_set_regressors(ve_sim_options* o, const ve_panel
 VE_API void ve_sim_options_free(ve_sim_options* o);
 /* VE_INVALID_ARGUMENT for a fit with no finite point (see ve_fit_status) or regressors that do not match its spec;
    a VE_FIT_FAILED fit that has a finite point simulates from it. */
+VE_DEPRECATED("use ve_simulate_fit_with_cancel with a NULL ve_cancel; removed in ABI 2")
 VE_API ve_status ve_simulate_fit(ve_context* ctx, const ve_fit* f, const ve_sim_options* o, ve_sim** out);
 /* ve_simulate_fit, cancellable by c (see ve_cancel_create). Since 1.3.0. */
 VE_API ve_status ve_simulate_fit_with_cancel(ve_context* ctx, const ve_fit* f, const ve_sim_options* o,
@@ -398,6 +409,7 @@ VE_API ve_status ve_simulate_fit_with_cancel(ve_context* ctx, const ve_fit* f, c
    iGARCH or EWMA (no unconditional variance), parameters outside their domain, persistence >= 1, or regressors that do not
    match it. The presample holds the unconditional sigma2 (with the first row of vxreg), the unconditional mean
    and residuals drawn from the paths themselves. */
+VE_DEPRECATED("use ve_simulate_spec_with_cancel with a NULL ve_cancel; removed in ABI 2")
 VE_API ve_status ve_simulate_spec(ve_context* ctx, const ve_spec* s, const ve_sim_options* o, ve_sim** out);
 /* ve_simulate_spec, cancellable by c (see ve_cancel_create). Since 1.3.0. */
 VE_API ve_status ve_simulate_spec_with_cancel(ve_context* ctx, const ve_spec* s, const ve_sim_options* o,
@@ -465,6 +477,7 @@ VE_API ve_status ve_dcc_batch_set_options(ve_dcc_batch* b, const ve_dcc_options*
 VE_API ve_status ve_dcc_batch_spec_count(const ve_dcc_batch* b, size_t* out);
 VE_API void ve_dcc_batch_free(ve_dcc_batch* b);
 /* out holds spec_count handles in spec order. Nonconvergence is a per-fit status. */
+VE_DEPRECATED("use ve_dcc_fit_batch_with_cancel with a NULL ve_cancel; removed in ABI 2")
 VE_API ve_status ve_dcc_fit_batch(ve_context* ctx, const ve_dcc_batch* b, ve_dcc_fit** out);
 /* ve_dcc_fit_batch, cancellable by c (see ve_cancel_create). Since 1.3.0. */
 VE_API ve_status ve_dcc_fit_batch_with_cancel(ve_context* ctx, const ve_dcc_batch* b, const ve_cancel* c,
@@ -492,6 +505,7 @@ VE_API ve_status ve_dcc_fit_criterion(const ve_dcc_fit* f, int32_t which, int32_
 VE_API ve_status ve_dcc_fit_correlation(const ve_dcc_fit* f, const double** data, size_t* len);
 VE_API ve_status ve_dcc_fit_covariance(const ve_dcc_fit* f, const double** data, size_t* len);
 /* Returns a new immutable fit sharing R; fits must match the original univariate estimates and order. */
+VE_DEPRECATED("use ve_dcc_standard_errors_with_cancel with a NULL ve_cancel; removed in ABI 2")
 VE_API ve_status ve_dcc_standard_errors(ve_context* ctx, const ve_dcc_fit* f, const ve_fit* const* fits, size_t m,
                                         ve_dcc_fit** out);
 /* ve_dcc_standard_errors, cancellable by c (see ve_cancel_create). Since 1.3.0. */
@@ -540,6 +554,7 @@ VE_API ve_status ve_sim_options_set_correlations(ve_sim_options* o, int32_t on);
 /* o's own regressors must be unset (VE_INVALID_ARGUMENT): a DCC takes them per series in x. VE_INVALID_ARGUMENT
    "too large" when paths x horizon x m x 2 doubles, or with correlations paths x horizon x m^2 x 2, exceed what
    memory addresses. */
+VE_DEPRECATED("use ve_simulate_dcc_with_cancel with a NULL ve_cancel; removed in ABI 2")
 VE_API ve_status ve_simulate_dcc(ve_context* ctx, const ve_dcc_fit* f, const ve_sim_options* o,
                                  const ve_dcc_future* x, ve_dcc_sim** out);
 /* ve_simulate_dcc, cancellable by c (see ve_cancel_create). Since 1.3.0. */

@@ -15,7 +15,17 @@ DECLARATION = re.compile(r"\bVE_API\b[^;{]*?\b(ve_\w+)\s*\(")
 IDENTIFIER = re.compile(r"\bve_\w+\b")
 
 # Functions the wrapper chooses not to call, each with the reason.
-UNUSED_ALLOWED: frozenset[str] = frozenset()
+# Deprecated: the wrapper calls their _with_cancel variants instead.
+UNUSED_ALLOWED: frozenset[str] = frozenset(
+    {
+        "ve_fit_batch",
+        "ve_dcc_fit_batch",
+        "ve_dcc_standard_errors",
+        "ve_simulate_fit",
+        "ve_simulate_spec",
+        "ve_simulate_dcc",
+    }
+)
 
 
 def strip_non_code(text: str) -> str:

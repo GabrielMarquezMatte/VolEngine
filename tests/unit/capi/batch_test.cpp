@@ -396,7 +396,7 @@ TEST(CapiFit, RejectsInvalidSpecInBatch)
     inputs.job_series = {0, 1};
     BatchPtr batch = ve::testing::build_batch(inputs);
     ve_fit* outputs[2] = {reinterpret_cast<ve_fit*>(0x1), reinterpret_cast<ve_fit*>(0x1)};
-    EXPECT_EQ(ve_fit_batch(context.get(), batch.get(), outputs), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_batch_with_cancel(context.get(), batch.get(), nullptr, outputs), VE_INVALID_ARGUMENT);
     EXPECT_EQ(outputs[0], nullptr);
     EXPECT_EQ(outputs[1], nullptr);
     EXPECT_TRUE(contains(last_error(), "spec 1: ")) << last_error();
@@ -641,7 +641,8 @@ TEST(CapiFit, JobIndexOutOfRange)
     inputs.job_series = {0, 1};
     BatchPtr bad_spec = ve::testing::build_batch(inputs);
     ve_fit* outputs[2] = {reinterpret_cast<ve_fit*>(0x1), reinterpret_cast<ve_fit*>(0x1)};
-    EXPECT_EQ(ve_fit_batch(scenario.context.get(), bad_spec.get(), outputs), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_batch_with_cancel(scenario.context.get(), bad_spec.get(), nullptr, outputs),
+                                       VE_INVALID_ARGUMENT);
     EXPECT_EQ(outputs[0], nullptr);
     EXPECT_EQ(outputs[1], nullptr);
     EXPECT_TRUE(contains(last_error(), "job 1")) << last_error();
@@ -650,7 +651,8 @@ TEST(CapiFit, JobIndexOutOfRange)
     inputs.job_series = {0, 3};
     BatchPtr bad_series = ve::testing::build_batch(inputs);
     outputs[0] = outputs[1] = reinterpret_cast<ve_fit*>(0x1);
-    EXPECT_EQ(ve_fit_batch(scenario.context.get(), bad_series.get(), outputs), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_batch_with_cancel(scenario.context.get(), bad_series.get(), nullptr, outputs),
+                                       VE_INVALID_ARGUMENT);
     EXPECT_EQ(outputs[0], nullptr);
     EXPECT_EQ(outputs[1], nullptr);
     EXPECT_TRUE(contains(last_error(), "job 1")) << last_error();
@@ -666,20 +668,23 @@ TEST(CapiFit, IncompleteBatchRejected)
     no_panel.job_spec = {0};
     no_panel.job_series = {0};
     BatchPtr missing_panel = ve::testing::build_batch(no_panel);
-    EXPECT_EQ(ve_fit_batch(scenario.context.get(), missing_panel.get(), outputs), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_batch_with_cancel(scenario.context.get(), missing_panel.get(), nullptr, outputs),
+                                       VE_INVALID_ARGUMENT);
     EXPECT_TRUE(contains(last_error(), "panel")) << last_error();
     BatchInputs no_jobs;
     no_jobs.specs = {scenario.spec.get()};
     no_jobs.panel = scenario.panel.get();
     BatchPtr missing_jobs = ve::testing::build_batch(no_jobs);
-    EXPECT_EQ(ve_fit_batch(scenario.context.get(), missing_jobs.get(), outputs), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_batch_with_cancel(scenario.context.get(), missing_jobs.get(), nullptr, outputs),
+                                       VE_INVALID_ARGUMENT);
     EXPECT_TRUE(contains(last_error(), "jobs")) << last_error();
     BatchInputs no_specs;
     no_specs.panel = scenario.panel.get();
     no_specs.job_spec = {0};
     no_specs.job_series = {0};
     BatchPtr missing_specs = ve::testing::build_batch(no_specs);
-    EXPECT_EQ(ve_fit_batch(scenario.context.get(), missing_specs.get(), outputs), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_batch_with_cancel(scenario.context.get(), missing_specs.get(), nullptr, outputs),
+                                       VE_INVALID_ARGUMENT);
     EXPECT_TRUE(contains(last_error(), "specs")) << last_error();
 }
 
@@ -687,9 +692,10 @@ TEST(CapiFit, FitBatchRejectsBadHandlesAndOutput)
 {
     Rectangular scenario(matrix());
     ve_fit* outputs[kSeries] = {};
-    EXPECT_EQ(ve_fit_batch(nullptr, scenario.batch.get(), outputs), VE_INVALID_HANDLE);
-    EXPECT_EQ(ve_fit_batch(scenario.context.get(), nullptr, outputs), VE_INVALID_HANDLE);
-    EXPECT_EQ(ve_fit_batch(scenario.context.get(), scenario.batch.get(), nullptr), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_batch_with_cancel(nullptr, scenario.batch.get(), nullptr, outputs), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_fit_batch_with_cancel(scenario.context.get(), nullptr, nullptr, outputs), VE_INVALID_HANDLE);
+    EXPECT_EQ(ve_fit_batch_with_cancel(scenario.context.get(), scenario.batch.get(), nullptr, nullptr),
+                                       VE_INVALID_ARGUMENT);
     EXPECT_TRUE(contains(last_error(), "fits_out")) << last_error();
 }
 
@@ -725,14 +731,16 @@ TEST(CapiFit, NaNInsideUsedRangeRejected)
     data[100 * kSeries + 1] = kNaN;
     Rectangular scenario(data);
     FitSet fits(kSeries);
-    EXPECT_EQ(ve_fit_batch(scenario.context.get(), scenario.batch.get(), fits.out()), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_batch_with_cancel(scenario.context.get(), scenario.batch.get(), nullptr, fits.out()),
+                                       VE_INVALID_ARGUMENT);
     EXPECT_TRUE(contains(last_error(), "NaN or infinite value")) << last_error();
     EXPECT_TRUE(contains(last_error(), "series 1")) << last_error();
     EXPECT_TRUE(contains(last_error(), "row 100")) << last_error();
     EXPECT_EQ(fits[0], nullptr);
     data[100 * kSeries + 1] = std::numeric_limits<double>::infinity();
     Rectangular infinite(data);
-    EXPECT_EQ(ve_fit_batch(infinite.context.get(), infinite.batch.get(), fits.out()), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_batch_with_cancel(infinite.context.get(), infinite.batch.get(), nullptr, fits.out()),
+                                       VE_INVALID_ARGUMENT);
     EXPECT_TRUE(contains(last_error(), "row 100")) << last_error();
 }
 
@@ -894,7 +902,8 @@ struct RegressorChecks
     {
         BatchPtr batch = ve::testing::build_batch(batch_inputs);
         ve_fit* outputs[2] = {reinterpret_cast<ve_fit*>(0x1), reinterpret_cast<ve_fit*>(0x1)};
-        EXPECT_EQ(ve_fit_batch(context.get(), batch.get(), outputs), VE_INVALID_ARGUMENT);
+        EXPECT_EQ(ve_fit_batch_with_cancel(context.get(), batch.get(), nullptr, outputs),
+                                           VE_INVALID_ARGUMENT);
         EXPECT_EQ(outputs[0], nullptr);
         EXPECT_EQ(outputs[1], nullptr);
         EXPECT_TRUE(contains(last_error(), job)) << last_error();
@@ -946,7 +955,8 @@ TEST(CapiFit, RegressorCountMustMatchJobs)
     const ve_panel* mxreg[] = {scenario.good.get()};
     ASSERT_EQ(ve_batch_set_regressors(batch.get(), mxreg, nullptr, 1), VE_OK);
     ve_fit* outputs[2] = {reinterpret_cast<ve_fit*>(0x1), reinterpret_cast<ve_fit*>(0x1)};
-    EXPECT_EQ(ve_fit_batch(scenario.context.get(), batch.get(), outputs), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_batch_with_cancel(scenario.context.get(), batch.get(), nullptr, outputs),
+                                       VE_INVALID_ARGUMENT);
     EXPECT_EQ(outputs[0], nullptr);
     EXPECT_TRUE(contains(last_error(), "2 jobs")) << last_error();
     EXPECT_EQ(ve_batch_set_regressors(batch.get(), mxreg, nullptr, 0), VE_INVALID_ARGUMENT);
@@ -1086,7 +1096,7 @@ TEST(CapiFit, ArfimaWithArchmRejectedInBatch)
     inputs.job_series = {0, 1};
     BatchPtr batch = ve::testing::build_batch(inputs);
     ve_fit* outputs[2] = {reinterpret_cast<ve_fit*>(0x1), reinterpret_cast<ve_fit*>(0x1)};
-    EXPECT_EQ(ve_fit_batch(context.get(), batch.get(), outputs), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_fit_batch_with_cancel(context.get(), batch.get(), nullptr, outputs), VE_INVALID_ARGUMENT);
     EXPECT_EQ(outputs[0], nullptr);
     EXPECT_EQ(outputs[1], nullptr);
     EXPECT_TRUE(contains(last_error(), "spec 1: ")) << last_error();

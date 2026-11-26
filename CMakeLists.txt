@@ -184,7 +184,8 @@ if(VE_BUILD_TESTS)
         tests/unit/ad/special_test.cpp
         tests/unit/capi/abi_test.cpp
         tests/unit/capi/batch_test.cpp
-        tests/unit/capi/cancel_test.cpp
+        tests/unit/capi/cancel/cancel_test.cpp
+        tests/unit/capi/cancel/deprecated_test.cpp
         tests/unit/capi/context_test.cpp
         tests/unit/capi/dcc_test.cpp
         tests/unit/capi/results/fit_accessors_test.cpp
