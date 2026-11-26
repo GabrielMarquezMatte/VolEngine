@@ -100,9 +100,10 @@ Regras:
 ## C#
 
 - `SimulationOptions` e `DccSimulationOptions` ganham `IReadOnlyList<int>? Checkpoints { get; init; }`.
-- `Simulation.Cumulative` (`double[][]`, Paths × K) e `DccSimulation.Cumulative` (`double[][][]`,
-  Paths × K × séries), e `Checkpoints` nos dois. Com checkpoints, `Returns` e `Sigma` seguem o padrão que
-  `DccSimulation.Correlation` já usa quando não foi pedida.
+- `Simulation.Cumulative` (`double[][]?`, Paths × K) e `DccSimulation.Cumulative` (`double[][][]?`,
+  Paths × K × séries), nulos sem checkpoints, como `DccSimulation.Correlation` sem correlações; e
+  `IReadOnlyList<int> Checkpoints` nos dois (vazio sem eles). Com checkpoints, `Returns` e `Sigma` são arrays vazios
+  (comprimento 0): torná-los anuláveis mudaria o tipo público que já foi publicado.
 - O limite de `Array.MaxLength` que hoje vale para Horizon × Paths passa a valer para Paths × K no modo acumulado,
   porque é isso que vira array gerenciado.
 - `PublicAPI.Unshipped.txt` com as linhas novas.
