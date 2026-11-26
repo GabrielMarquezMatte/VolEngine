@@ -118,4 +118,72 @@ public sealed class DccSimulationTests : IDisposable
         var correlations = new DccSimulationOptions(int.MaxValue / 16, 2, 1) { Correlations = true };
         Assert.Throws<ArgumentOutOfRangeException>(() => Context.Simulate(_dcc, correlations));
     }
+
+    private static void AssertCumulativeMatches(DccSimulation full, DccSimulation cumulative, int[] checkpoints)
+    {
+        Assert.Equal(checkpoints, cumulative.Checkpoints);
+        Assert.Empty(cumulative.Returns);
+        Assert.Empty(cumulative.Sigma);
+        Assert.NotNull(cumulative.Cumulative);
+        Assert.Equal(full.Paths, cumulative.Cumulative.Length);
+        for (var path = 0; path < full.Paths; path++)
+        {
+            Assert.Equal(checkpoints.Length, cumulative.Cumulative[path].Length);
+            for (var series = 0; series < full.Series; series++)
+            {
+                var column = LeftSum.At(full.Returns[path].Select(step => step[series]), checkpoints);
+                LeftSum.AssertSameBits(column, cumulative.Cumulative[path].Select(row => row[series]).ToArray());
+            }
+        }
+    }
+
+    [Fact]
+    public void Cumulative_matches_the_left_sum_of_the_full_returns()
+    {
+        int[] checkpoints = [1, 5, 20];
+        var options = new DccSimulationOptions(20, 6, 7);
+        var full = Context.Simulate(_dcc, options);
+        Assert.Null(full.Cumulative);
+        Assert.Empty(full.Checkpoints);
+        AssertCumulativeMatches(full, Context.Simulate(_dcc, options with { Checkpoints = checkpoints }), checkpoints);
+    }
+
+    [Fact]
+    public void A_copula_dcc_cumulates()
+    {
+        int[] checkpoints = [2, 10];
+        using var copula = Univariate.Copula3();
+        using var dcc = copula.Context.FitDcc(new DccSpec { Copula = Copula.Parametric }, copula.Fits, standardErrors: false);
+        var options = new DccSimulationOptions(10, 4, 2);
+        var full = copula.Context.Simulate(dcc, options);
+        AssertCumulativeMatches(full, copula.Context.Simulate(dcc, options with { Checkpoints = checkpoints }), checkpoints);
+    }
+
+    [Fact]
+    public void Checkpoints_are_validated()
+    {
+        int[][] invalid = [[0, 20], [5, 5, 20], [5, 10]];
+        foreach (var checkpoints in invalid)
+        {
+            var options = new DccSimulationOptions(20, 2, 1) { Checkpoints = checkpoints };
+            var error = Assert.Throws<VolEngineException>(() => Context.Simulate(_dcc, options));
+            Assert.Equal(Status.InvalidArgument, error.Status);
+        }
+        var withCorrelations = new DccSimulationOptions(20, 2, 1) { Checkpoints = [20], Correlations = true };
+        var refused = Assert.Throws<VolEngineException>(() => Context.Simulate(_dcc, withCorrelations));
+        Assert.Equal(Status.InvalidArgument, refused.Status);
+    }
+
+    [Fact]
+    public void Cumulative_size_counts_checkpoints_and_series()
+    {
+        using var source = new CancellationTokenSource();
+        source.Cancel();
+        // Paths x Horizon x m holds more than Array.MaxLength values, Paths x K x m does not.
+        var paths = Array.MaxLength / 6;
+        var small = new DccSimulationOptions(4, paths, 1) { Checkpoints = [4] };
+        Assert.Throws<OperationCanceledException>(() => Context.Simulate(_dcc, small, source.Token));
+        var large = small with { Checkpoints = [1, 2, 3, 4] };
+        Assert.Throws<ArgumentOutOfRangeException>(() => Context.Simulate(_dcc, large, source.Token));
+    }
 }

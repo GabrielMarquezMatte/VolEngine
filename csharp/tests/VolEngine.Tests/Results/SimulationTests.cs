@@ -115,4 +115,87 @@ public sealed class SimulationTests
         using var fit = SeriesFit(context);
         Assert.Throws<ArgumentOutOfRangeException>(() => context.Simulate(fit, new SimulationOptions(int.MaxValue, 2, 1)));
     }
+
+    private static void AssertCumulativeMatches(Simulation full, Simulation cumulative, int[] checkpoints)
+    {
+        Assert.Equal(checkpoints, cumulative.Checkpoints);
+        Assert.Empty(cumulative.Returns);
+        Assert.Empty(cumulative.Sigma);
+        Assert.NotNull(cumulative.Cumulative);
+        Assert.Equal(full.Paths, cumulative.Cumulative.Length);
+        for (var path = 0; path < full.Paths; path++)
+        {
+            LeftSum.AssertSameBits(LeftSum.At(full.Returns[path], checkpoints), cumulative.Cumulative[path]);
+        }
+    }
+
+    [Fact]
+    public void Cumulative_matches_the_left_sum_of_the_full_returns()
+    {
+        int[] checkpoints = [1, 5, 20];
+        using var context = new Context();
+        using var fit = SeriesFit(context);
+        var spec = new Spec { Fixed = Stationary };
+        var options = new SimulationOptions(20, 6, 7);
+        var cumulative = options with { Checkpoints = checkpoints };
+        AssertCumulativeMatches(context.Simulate(fit, options), context.Simulate(fit, cumulative), checkpoints);
+        AssertCumulativeMatches(context.Simulate(spec, options), context.Simulate(spec, cumulative), checkpoints);
+    }
+
+    [Fact]
+    public void Without_checkpoints_there_is_no_cumulative()
+    {
+        using var context = new Context();
+        using var fit = SeriesFit(context);
+        var full = context.Simulate(fit, new SimulationOptions(5, 2, 1));
+        Assert.Null(full.Cumulative);
+        Assert.Empty(full.Checkpoints);
+        Assert.Equal(2, full.Returns.Length);
+        var cleared = context.Simulate(fit, new SimulationOptions(5, 2, 1) { Checkpoints = [] });
+        Assert.Null(cleared.Cumulative);
+        Assert.Equal(full.Returns, cleared.Returns);
+    }
+
+    [Fact]
+    public void A_single_checkpoint_at_the_horizon_sums_every_step()
+    {
+        using var context = new Context();
+        using var fit = SeriesFit(context);
+        var full = context.Simulate(fit, new SimulationOptions(8, 3, 4));
+        var total = context.Simulate(fit, new SimulationOptions(8, 3, 4) { Checkpoints = [8] });
+        AssertCumulativeMatches(full, total, [8]);
+        var one = context.Simulate(fit, new SimulationOptions(1, 3, 4) { Checkpoints = [1] });
+        Assert.Equal(context.Simulate(fit, new SimulationOptions(1, 3, 4)).Returns.Select(path => path[0]),
+                     one.Cumulative!.Select(path => path[0]));
+    }
+
+    [Fact]
+    public void Checkpoints_are_validated()
+    {
+        using var context = new Context();
+        using var fit = SeriesFit(context);
+        int[][] invalid = [[0, 20], [5, 5, 20], [5, 10], [-1, 20], [20, 5]];
+        foreach (var checkpoints in invalid)
+        {
+            var options = new SimulationOptions(20, 2, 1) { Checkpoints = checkpoints };
+            var error = Assert.Throws<VolEngineException>(() => context.Simulate(fit, options));
+            Assert.Equal(Status.InvalidArgument, error.Status);
+        }
+    }
+
+    [Fact]
+    public void Cumulative_size_counts_checkpoints()
+    {
+        using var context = new Context();
+        using var fit = SeriesFit(context);
+        using var source = new CancellationTokenSource();
+        source.Cancel();
+        // Paths x Horizon holds more than Array.MaxLength values, Paths x K does not: the native call is reached, and
+        // the cancelled token stops it right after the managed checks.
+        var paths = Array.MaxLength / 2;
+        var small = new SimulationOptions(4, paths, 1) { Checkpoints = [4] };
+        Assert.Throws<OperationCanceledException>(() => context.Simulate(fit, small, source.Token));
+        var large = small with { Checkpoints = [1, 2, 3, 4] };
+        Assert.Throws<ArgumentOutOfRangeException>(() => context.Simulate(fit, large, source.Token));
+    }
 }

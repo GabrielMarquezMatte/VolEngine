@@ -68,6 +68,24 @@ public sealed class GuideSnippetsTests
     }
 
     [Fact]
+    public void Cumulative_simulation()
+    {
+        using var context = new Context();
+        using var fit = context.Fit(new Spec(), ReferenceData.Series("sgarch11_norm.csv", "t1500"));
+        // BEGIN guide: Cumulative simulation
+        // `fit` as in "Fit, forecast, simulate". The paths keep only their sum at 1, 5 and 10 steps.
+        var options = new SimulationOptions(Horizon: 10, Paths: 10_000, Seed: 1) { Checkpoints = [1, 5, 10] };
+        Simulation sums = context.Simulate(fit, options);
+        for (var k = 0; k < sums.Checkpoints.Count; k++)
+        {
+            double[] sorted = sums.Cumulative!.Select(path => path[k]).Order().ToArray();
+            Console.WriteLine($"1% VaR at {sums.Checkpoints[k]} steps: {-sorted[sorted.Length / 100]:F4}");
+        }
+        // END guide
+        Assert.Equal(3, sums.Checkpoints.Count);
+    }
+
+    [Fact]
     public void Diagnostics()
     {
         using var context = new Context();

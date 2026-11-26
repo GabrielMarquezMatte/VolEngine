@@ -16,3 +16,11 @@ VolEngine.Context.Simulate(VolEngine.Fit! source, VolEngine.SimulationOptions! o
 VolEngine.Context.Simulate(VolEngine.Spec! source, VolEngine.SimulationOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.Simulation!
 VolEngine.Context.StandardErrors(VolEngine.DccFit! fit, System.Collections.Generic.IReadOnlyList<VolEngine.Fit!>! univariate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> VolEngine.DccFit!
 VolEngine.Status.Cancelled = 6 -> VolEngine.Status
+VolEngine.DccSimulation.Checkpoints.get -> System.Collections.Generic.IReadOnlyList<int>!
+VolEngine.DccSimulation.Cumulative.get -> double[]![]![]?
+VolEngine.DccSimulationOptions.Checkpoints.get -> System.Collections.Generic.IReadOnlyList<int>?
+VolEngine.DccSimulationOptions.Checkpoints.init -> void
+VolEngine.Simulation.Checkpoints.get -> System.Collections.Generic.IReadOnlyList<int>!
+VolEngine.Simulation.Cumulative.get -> double[]![]?
+VolEngine.SimulationOptions.Checkpoints.get -> System.Collections.Generic.IReadOnlyList<int>?
+VolEngine.SimulationOptions.Checkpoints.init -> void

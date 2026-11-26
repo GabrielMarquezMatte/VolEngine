@@ -44,14 +44,14 @@ Console.WriteLine($"loglik {fit.Loglik:F3}, BIC {fit.Bic():F4}, sigma in 10 step
 Console.WriteLine($"{table.Names[1]} = {table.Estimate[1]:F6} ({table.StdError[1]:F6})");
 ```
 
-A fit that does not converge is a status, not an exception. The information criteria are per observation by default,
-as in rugarch (`Bic(perObs: false)` gives arch's total). `Spec` has the orders (`P`, `Q`, `Arma`), the mean
-(`IncludeMean`, `Archm`, `Arfima`), `Fixed` and `Start` values, `VarianceTargeting`, and the regressor counts `Mxreg`
-and `Vxreg`; the regressors themselves are T x k arrays given to `Fit`, and their horizon values to `Forecast` and
-`SimulationOptions`. `Context.Simulate` also takes a spec with every parameter fixed. The forecast follows `rugarch`, so it
-is not the mean of the simulated paths for a gjrGARCH with a skewed distribution (P(z < 0) stands in for
-E[1{z < 0} z²]) and for a csGARCH from h = 2 (the closed form leaves out the last shock); see
-[validation](validation.md).
+The engine is scale invariant, so returns can be passed as fractions (0.01 for 1%), with no x100 needed. A fit that
+does not converge is a status, not an exception. The information criteria are per observation by default, as in
+rugarch (`Bic(perObs: false)` gives arch's total). `Spec` has the orders (`P`, `Q`, `Arma`), the mean (`IncludeMean`,
+`Archm`, `Arfima`), `Fixed` and `Start` values, `VarianceTargeting`, and the regressor counts `Mxreg` and `Vxreg`; the
+regressors themselves are T x k arrays given to `Fit`, and their horizon values to `Forecast` and `SimulationOptions`.
+`Context.Simulate` also takes a spec with every parameter fixed. The forecast follows `rugarch`, so it is not the mean
+of the simulated paths for a gjrGARCH with a skewed distribution (P(z < 0) stands in for E[1{z < 0} z²]) and for a
+csGARCH from h = 2 (the closed form leaves out the last shock); see [validation](validation.md).
 
 ## Many series and specs
 
@@ -112,6 +112,26 @@ and step, and `Mxreg`/`Vxreg` take one entry per series (null for a series witho
 The `MvLaplace` density is singular where every standardized residual of a date is exactly 0 (a common holiday with
 `mu` fixed at 0): the log-likelihood is then not finite and the fit ends `Failed`, with no message besides the status.
 Drop such dates before the univariate fits.
+
+## Cumulative simulation
+
+```csharp
+// `fit` as in "Fit, forecast, simulate". The paths keep only their sum at 1, 5 and 10 steps.
+var options = new SimulationOptions(Horizon: 10, Paths: 10_000, Seed: 1) { Checkpoints = [1, 5, 10] };
+Simulation sums = context.Simulate(fit, options);
+for (var k = 0; k < sums.Checkpoints.Count; k++)
+{
+    double[] sorted = sums.Cumulative!.Select(path => path[k]).Order().ToArray();
+    Console.WriteLine($"1% VaR at {sums.Checkpoints[k]} steps: {-sorted[sorted.Length / 100]:F4}");
+}
+```
+
+`Checkpoints` (also on `DccSimulationOptions`) lists the steps at which to keep the running sum of each path: strictly
+increasing from 1, the last one equal to `Horizon`. `Cumulative` is then Paths x K (Paths x K x m for a DCC), and each
+value is exactly the left-to-right sum of the first k steps of the full simulation with the same seed. The memory is
+Paths x K whatever the horizon, so `Returns` and `Sigma` are empty arrays. The sums are in the scale of the series: for
+log-returns, `Math.Exp(sum) - 1` is the simple return. A DCC simulation with checkpoints cannot keep `Correlations`.
+Without `Checkpoints`, `Cumulative` is null and `Checkpoints` is empty.
 
 ## Cancellation
 

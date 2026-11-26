@@ -24,6 +24,9 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(LibraryName)]
     internal static partial int ve_sim_options_set_regressors(SimOptionsHandle options, PanelHandle mxreg, PanelHandle vxreg);
 
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_sim_options_set_checkpoints(SimOptionsHandle options, nuint* ks, nuint count);
+
     [LibraryImport(LibraryName)] internal static partial void ve_sim_options_free(nint options);
 
     [LibraryImport(LibraryName)]
@@ -50,6 +53,12 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(LibraryName)]
     internal static partial int ve_sim_sigma(SimHandle simulation, out double* data, out nuint length);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_sim_cumulative(SimHandle simulation, out double* data, out nuint length);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int ve_sim_checkpoints(SimHandle simulation, out nuint* data, out nuint length);
 
     [LibraryImport(LibraryName)] internal static partial void ve_sim_free(nint simulation);
 }
