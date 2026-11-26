@@ -1,9 +1,12 @@
 #include "fixture_data.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <gtest/gtest.h>
+#include <span>
 #include <vector>
 #include <volengine/volengine.hpp>
 
@@ -123,4 +126,47 @@ TEST(Simulation, RegressorsMustMatchTheSpec)
     EXPECT_EQ(simulation.error().status, ve::Status::invalid_argument);
 }
 
+// The left-to-right sum of the first checkpoints[j] steps of every path of a full simulation, as bits.
+std::vector<std::uint64_t> left_sums(std::span<const double> returns, std::size_t paths, std::size_t horizon,
+                                     std::span<const std::size_t> checkpoints)
+{
+    std::vector<std::uint64_t> sums;
+    for (std::size_t p = 0; p < paths; ++p)
+    {
+        double sum = 0.0;
+        std::size_t h = 0;
+        for (const std::size_t k : checkpoints)
+        {
+            for (; h < k; ++h)
+            {
+                sum += returns[p * horizon + h];
+            }
+            sums.push_back(std::bit_cast<std::uint64_t>(sum));
+        }
+    }
+    return sums;
+}
+
+TEST(Simulation, CumulativeMatchesTheFullOutput)
+{
+    const auto context = ve::Context::create(2).value();
+    const auto fit = fixed_fit(context);
+    const std::vector<std::size_t> checkpoints{1, 5, 20};
+    const auto full = context.simulate(fit, ve::SimOptions{.horizon = 20, .paths = 30, .seed = 7}).value();
+    const auto cumulative =
+        context.simulate(fit, ve::SimOptions{.horizon = 20, .paths = 30, .seed = 7, .checkpoints = checkpoints}).value();
+    const auto sums = cumulative.cumulative().value();
+    std::vector<std::uint64_t> bits;
+    for (const double sum : sums)
+    {
+        bits.push_back(std::bit_cast<std::uint64_t>(sum));
+    }
+    EXPECT_EQ(bits, left_sums(full.returns().value(), 30, 20, checkpoints));
+    const auto listed = cumulative.checkpoints().value();
+    EXPECT_TRUE(std::ranges::equal(listed, checkpoints));
+    const auto refused = cumulative.returns();
+    ASSERT_FALSE(refused.has_value());
+    EXPECT_EQ(refused.error().status, ve::Status::invalid_argument);
+    EXPECT_TRUE(full.checkpoints().value().empty());
+}
 } // namespace

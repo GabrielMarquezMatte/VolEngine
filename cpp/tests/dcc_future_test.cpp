@@ -1,9 +1,12 @@
 #include "fixture_data.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cstddef>
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <memory>
+#include <span>
 #include <vector>
 #include <volengine/volengine.hpp>
 
@@ -142,4 +145,37 @@ TEST(DccSimulation, RefusesRegressorsInTheOptions)
     EXPECT_EQ(simulation.error().status, ve::Status::invalid_argument);
 }
 
+TEST(DccSimulation, CumulativeMatchesTheFullOutput)
+{
+    const auto context = ve::Context::create(2).value();
+    const auto fits = ve::testing::dcc3_univariate_fits(context);
+    const auto dcc = fixed_dcc(context, fits);
+    const std::vector<std::size_t> checkpoints{2, 6};
+    const auto full = context.simulate(dcc, ve::SimOptions{.horizon = 6, .paths = 20, .seed = 3}).value();
+    const auto cumulative =
+        context.simulate(dcc, ve::SimOptions{.horizon = 6, .paths = 20, .seed = 3, .checkpoints = checkpoints}).value();
+    const auto returns = full.returns().value();
+    const auto sums = cumulative.cumulative().value();
+    ASSERT_EQ(sums.size(), 20U * 2U * 3U);
+    for (std::size_t p = 0; p < 20; ++p)
+    {
+        for (std::size_t i = 0; i < 3; ++i)
+        {
+            double sum = 0.0;
+            std::size_t h = 0;
+            for (std::size_t j = 0; j < 2; ++j)
+            {
+                for (; h < checkpoints[j]; ++h)
+                {
+                    sum += returns[(p * 6 + h) * 3 + i];
+                }
+                EXPECT_EQ(std::bit_cast<std::uint64_t>(sums[(p * 2 + j) * 3 + i]), std::bit_cast<std::uint64_t>(sum));
+            }
+        }
+    }
+    EXPECT_TRUE(std::ranges::equal(cumulative.checkpoints().value(), checkpoints));
+    const auto refused = cumulative.returns();
+    ASSERT_FALSE(refused.has_value());
+    EXPECT_EQ(refused.error().status, ve::Status::invalid_argument);
+}
 } // namespace

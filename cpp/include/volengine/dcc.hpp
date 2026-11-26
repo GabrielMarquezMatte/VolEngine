@@ -209,7 +209,8 @@ private:
 };
 
 // Paths of a DccFit: returns and sigma are paths x horizon x m, correlation and covariance paths x horizon x m x m
-// (only with SimOptions::correlations; otherwise they fail). Row-major, valid until it is destroyed.
+// (only with SimOptions::correlations; otherwise they fail). With SimOptions::checkpoints only cumulative(),
+// paths x K x m, and the others fail. Row-major, valid until it is destroyed.
 class DccSimulation
 {
 public:
@@ -250,6 +251,17 @@ public:
     Result<std::span<const double>> covariance() const
     {
         return detail::view(handle_.get(), ve_dcc_sim_covariance);
+    }
+
+    Result<std::span<const double>> cumulative() const
+    {
+        return detail::view(handle_.get(), ve_dcc_sim_cumulative);
+    }
+
+    // Empty without checkpoints.
+    Result<std::span<const std::size_t>> checkpoints() const
+    {
+        return detail::view(handle_.get(), ve_dcc_sim_checkpoints);
     }
 
 private:

@@ -83,17 +83,16 @@ namespace detail
 {
 
 // A read-only view `(data, length)` of a C handle; the pointer lives as long as the handle.
-template <class Handle>
-Result<std::span<const double>> view(
-    const Handle* handle, ve_status (*function)(const Handle*, const double**, std::size_t*))
+template <class T, class Handle>
+Result<std::span<const T>> view(const Handle* handle, ve_status (*function)(const Handle*, const T**, std::size_t*))
 {
-    const double* data = nullptr;
+    const T* data = nullptr;
     std::size_t length = 0;
     if (auto read = check(function(handle, &data, &length)); !read)
     {
         return failure(read);
     }
-    return std::span<const double>(data, length);
+    return std::span<const T>(data, length);
 }
 
 } // namespace detail

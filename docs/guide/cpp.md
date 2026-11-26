@@ -63,6 +63,34 @@ int main()
 A fit that does not converge is a status, not an error; an invalid argument (a bad spec, a NaN in the data, a wrong
 shape) is an `ve::Error` with `status == ve::Status::invalid_argument` and the reason in `message`.
 
+The fits are scale invariant: returns in fractions (0.012) or in percent (1.2) give the same model, with the
+parameters, sigma and forecasts in the scale of the data, so there is no need to multiply by 100.
+
+## Cumulative simulation
+
+`SimOptions::checkpoints` keeps, per path, only the sum of the simulated series up to each checkpoint (strictly
+increasing, from 1, the last equal to the horizon), read with `cumulative()`: paths x K values instead of
+paths x horizon, and each sum is the left-to-right sum of the steps of the full simulation with the same seed. For a
+DCC it is paths x K x m. `returns()` and `sigma()` fail in that mode, and correlations cannot be kept with it.
+
+```cpp
+// The 1, 5 and 10 day 1% quantile of the log return, from the same 100000 paths.
+const auto paths = context.simulate(*fit, ve::SimOptions{.horizon = 10, .paths = 100000, .seed = 1,
+                                                          .checkpoints = {1, 5, 10}}).value();
+const auto sums = paths.cumulative().value();   // row p: the sums of path p at 1, 5 and 10 days
+const std::size_t days[] = {1, 5, 10};
+for (std::size_t j = 0; j < 3; ++j)
+{
+    std::vector<double> horizon_sums;
+    for (std::size_t p = 0; p < 100000; ++p)
+    {
+        horizon_sums.push_back(sums[p * 3 + j]);
+    }
+    std::ranges::nth_element(horizon_sums, horizon_sums.begin() + 1000);
+    std::printf("%zu days: %.4f\n", days[j], horizon_sums[1000]);
+}
+```
+
 ## DCC
 
 ```cpp

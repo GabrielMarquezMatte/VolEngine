@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <vector>
 #include <volengine/error.hpp>
 #include <volengine/fit.hpp>
 #include <volengine/input.hpp>
@@ -24,6 +25,9 @@ struct SimOptions
     // The regressors of the horizon, the same for every path: panels of `horizon` rows. Null for none.
     const Panel* mxreg = nullptr;
     const Panel* vxreg = nullptr;
+    // Checkpoints of the horizon (strictly increasing, from 1, the last = horizon): the simulation keeps only the sum
+    // of each path (and series) up to each of them, read with cumulative(). Empty for the full output.
+    std::vector<std::size_t> checkpoints{};
 
     Result<detail::Owned<ve_sim_options, ve_sim_options_free>> make_handle() const
     {
@@ -36,7 +40,9 @@ struct SimOptions
         auto applied =
             detail::check(
                 ve_sim_options_set_regressors(raw, detail::native_or_null(mxreg), detail::native_or_null(vxreg)))
-                .and_then([&] { return detail::check(ve_sim_options_set_correlations(raw, correlations ? 1 : 0)); });
+                .and_then([&] { return detail::check(ve_sim_options_set_correlations(raw, correlations ? 1 : 0)); })
+                .and_then([&]
+                          { return detail::check(ve_sim_options_set_checkpoints(raw, checkpoints.data(), checkpoints.size())); });
         if (!applied)
         {
             return detail::failure(applied);
@@ -45,8 +51,9 @@ struct SimOptions
     }
 };
 
-// Simulated returns and conditional standard deviations, paths x horizon values each, row-major (row p is path p). It
-// copies what it needs: it stays valid after the context, fit, spec and options are destroyed.
+// Simulated returns and conditional standard deviations, paths x horizon values each, row-major (row p is path p); with
+// checkpoints only cumulative(), paths x K, and returns() and sigma() fail. It copies what it needs: it stays valid
+// after the context, fit, spec and options are destroyed.
 class Simulation
 {
 public:
@@ -72,6 +79,17 @@ public:
     Result<std::span<const double>> sigma() const
     {
         return detail::view(handle_.get(), ve_sim_sigma);
+    }
+
+    Result<std::span<const double>> cumulative() const
+    {
+        return detail::view(handle_.get(), ve_sim_cumulative);
+    }
+
+    // Empty without checkpoints.
+    Result<std::span<const std::size_t>> checkpoints() const
+    {
+        return detail::view(handle_.get(), ve_sim_checkpoints);
     }
 
 private:
