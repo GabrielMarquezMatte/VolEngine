@@ -8,7 +8,7 @@ From 1.0 the C ABI only grows: a signature or an enum value is never changed or 
 semver major (the Python package and the C++ wrapper refuse a library whose ABI version differs). Before 1.0 it could
 break between 0.x releases.
 
-## [Unreleased]
+## [1.3.1] - 2026-11-26
 
 ### Fixed
 

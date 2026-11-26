@@ -48,7 +48,7 @@ From C++23, the header-only wrapper in [cpp/](cpp/README.md) is used through `Fe
 ```cmake
 include(FetchContent)
 FetchContent_Declare(volengine GIT_REPOSITORY https://github.com/GabrielMarquezMatte/VolEngine
-                     GIT_TAG v1.3.0 SOURCE_SUBDIR cpp)
+                     GIT_TAG v1.3.1 SOURCE_SUBDIR cpp)
 FetchContent_MakeAvailable(volengine)
 target_link_libraries(app PRIVATE volengine::volengine)
 volengine_copy_native_library(app)
