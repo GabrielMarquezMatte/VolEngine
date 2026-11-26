@@ -13,17 +13,17 @@ namespace VolEngine;
 /// </remarks>
 public sealed class DccForecast
 {
-    private DccForecast(int horizon, int series, double[][][] correlation, double[][][] covariance, double[][] sigma,
-                        double[][] mean, double[][] cumulativeMean, double[][][] cumulativeCovariance)
+    private unsafe DccForecast(DccForecastHandle forecast, int horizon, int series)
     {
         Horizon = horizon;
         Series = series;
-        Correlation = correlation;
-        Covariance = covariance;
-        Sigma = sigma;
-        Mean = mean;
-        CumulativeMean = cumulativeMean;
-        CumulativeCovariance = cumulativeCovariance;
+        Correlation = NativeReads.Matrices(NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_correlation), series);
+        Covariance = NativeReads.Matrices(NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_covariance), series);
+        Sigma = NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_sigma).Chunk(series).ToArray();
+        Mean = NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_mean).Chunk(series).ToArray();
+        CumulativeMean = NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_cumulative_mean).Chunk(series).ToArray();
+        CumulativeCovariance = NativeReads.Matrices(
+            NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_cumulative_covariance), series);
     }
 
     /// <summary>The number of steps.</summary>
@@ -57,15 +57,6 @@ public sealed class DccForecast
     {
         Calls.Check(NativeMethods.ve_dcc_forecast_horizon(forecast, out var horizon));
         Calls.Check(NativeMethods.ve_dcc_forecast_series(forecast, out var series));
-        var m = checked((int)series);
-        return new DccForecast(
-            checked((int)horizon),
-            m,
-            NativeReads.Matrices(NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_correlation), m),
-            NativeReads.Matrices(NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_covariance), m),
-            NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_sigma).Chunk(m).ToArray(),
-            NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_mean).Chunk(m).ToArray(),
-            NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_cumulative_mean).Chunk(m).ToArray(),
-            NativeReads.Matrices(NativeReads.View(forecast, NativeMethods.ve_dcc_forecast_cumulative_covariance), m));
+        return new DccForecast(forecast, checked((int)horizon), checked((int)series));
     }
 }
