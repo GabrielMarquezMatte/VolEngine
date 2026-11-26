@@ -38,6 +38,9 @@ break between 0.x releases.
   flat array that was then split. A DCC simulation of 10 series with R and H (1000 paths, 60 steps) allocates 145 MB
   instead of 246 MB and takes 0.70 of its time, a univariate one (10000 paths) half the memory and 0.78 of the
   time, and `DccFit.Correlation()` 0.35 of the time.
+- nig: the Dual log-likelihood and the fit take about 0.78 of their time, with the same bits: the Bessel K of each
+  observation and its slope cost two Boost calls instead of four kernels (K_2 from the K_0 and K_1 of Boost's own
+  recurrence, and the value computed once).
 
 ## [1.3.0] - 2026-11-26
 

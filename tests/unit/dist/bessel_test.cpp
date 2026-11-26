@@ -287,6 +287,23 @@ TEST(Bessel, FreeOrderDualNeverThrows)
     }
 }
 
+// The fixed-order Dual (the nig density) takes K_2 from K_0 and K_1 instead of asking Boost: value and slope keep
+// the bits of log_bessel_k_scaled and its slope, including the rescaled K_2 of a tiny x and Boost's overflow.
+TEST(Bessel, FixedOrderDualKeepsTheBitsOfTheSeparateCalls)
+{
+    for (double order : {-1.0, -0.5, 0.3, 1.0, -2.0})
+    {
+        for (double x : {1e-310, 1e-300, 1e-150, 1e-8, 0.03, 0.7, 1.0, 2.5, 17.0, 300.0, 699.9, 700.0, 900.0})
+        {
+            const auto k = ve::dist::log_bessel_k_scaled(order, ve::ad::variable<1>(x, 0));
+            const double value = ve::dist::log_bessel_k_scaled(order, x);
+            const double slope = ve::dist::detail::log_bessel_k_scaled_slope(order, x);
+            EXPECT_TRUE(k.value == value || (std::isnan(k.value) && std::isnan(value))) << order << ", " << x;
+            EXPECT_TRUE(k.grad[0] == slope || (std::isnan(k.grad[0]) && std::isnan(slope))) << order << ", " << x;
+        }
+    }
+}
+
 // Boost computes in long double by default, and on MinGW a pool thread runs the x87 unit at another precision
 // than the Python main thread, so a fit could change with the thread it runs on.
 TEST(Bessel, SameBitsAtAnyX87Precision)
