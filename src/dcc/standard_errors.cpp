@@ -289,11 +289,12 @@ struct DccDifferences
     std::vector<double> shifted;
 };
 
-DccDifferences dcc_differences(const TwoStage& stage)
+DccDifferences dcc_differences(const TwoStage& stage, const CancelFlag* cancel)
 {
     DccDifferences differences{reported_total(stage.base, stage.spec, stage.theta), {}, {}};
     for (const std::size_t position : stage.free)
     {
+        throw_if_cancelled(cancel);
         const double step = rmgarch_step(stage.theta[position]);
         differences.steps.push_back(step);
         differences.shifted.push_back(reported_total(stage.base, stage.spec, moved(stage.theta, position, step)));
@@ -302,12 +303,13 @@ DccDifferences dcc_differences(const TwoStage& stage)
 }
 
 // H_jk = [f(theta + h_j e_j + h_k e_k) - f(theta + h_j e_j) - f(theta + h_k e_k) + f(theta)] / (h_j h_k).
-void dcc_block(const TwoStage& stage, const DccDifferences& differences, Matrix& a)
+void dcc_block(const TwoStage& stage, const DccDifferences& differences, Matrix& a, const CancelFlag* cancel)
 {
     const std::size_t n = stage.parameters();
     const std::size_t u = stage.univariate.size();
     for (std::size_t j = 0; j < stage.free.size(); ++j)
     {
+        throw_if_cancelled(cancel);
         for (std::size_t k = 0; k <= j; ++k)
         {
             const double h_j = differences.steps[j];
@@ -364,12 +366,13 @@ void cross_column(const TwoStage& stage, const DccDifferences& differences, std:
 }
 
 // The DCC columns of the scores: central differences of l_t, whose - sum_i log sigma_it does not move.
-void dcc_scores(const TwoStage& stage, Matrix& scores)
+void dcc_scores(const TwoStage& stage, Matrix& scores, const CancelFlag* cancel)
 {
     const std::size_t n = stage.parameters();
     const std::size_t u = stage.univariate.size();
     for (std::size_t j = 0; j < stage.free.size(); ++j)
     {
+        throw_if_cancelled(cancel);
         const std::size_t position = stage.free[j];
         const double step = score_step(stage.theta[position]);
         const std::vector<double> up = reported_terms(stage.base, stage.spec, moved(stage.theta, position, step));
@@ -550,8 +553,9 @@ struct Job
     TwoStagePieces pieces;
 };
 
-// Everything of the pieces but the cross columns.
-void prepare(Job& job, const DccFitResult& fit, std::span<const FitResult* const> fits)
+// Everything of the pieces but the cross columns. A static ML copula has d = m (m - 1) / 2 DCC parameters and its
+// dcc_block d (d + 1) / 2 loglik evaluations, so cancel is polled per series and per DCC parameter.
+void prepare(Job& job, const DccFitResult& fit, std::span<const FitResult* const> fits, const CancelFlag* cancel)
 {
     job.problem = pieces_problem(fit, fits);
     if (job.problem)
@@ -565,19 +569,21 @@ void prepare(Job& job, const DccFitResult& fit, std::span<const FitResult* const
     std::size_t offset = 0;
     for (const Series& one : stage.series)
     {
+        throw_if_cancelled(cancel);
         univariate_block(one, offset, n, job.pieces.a, job.pieces.scores);
         offset += one.free.size();
     }
-    job.differences = dcc_differences(stage);
-    dcc_block(stage, job.differences, job.pieces.a);
-    dcc_scores(stage, job.pieces.scores);
+    job.differences = dcc_differences(stage, cancel);
+    dcc_block(stage, job.differences, job.pieces.a, cancel);
+    dcc_scores(stage, job.pieces.scores, cancel);
 }
 
 // The pieces of every fit, each phase run by run(count, work), which calls work(first, last) on blocks of 0 .. count
-// and returns when all have run. No result depends on how the blocks are spread.
+// and returns when all have run. No result depends on how the blocks are spread. cancel is polled inside prepare;
+// null never cancels.
 template <class Run>
 std::vector<Job> build_jobs(std::span<const DccFitResult* const> dcc_fits, std::span<const FitResult* const> fits,
-                            Run&& run)
+                            Run&& run, const CancelFlag* cancel = nullptr)
 {
     std::vector<Job> jobs(dcc_fits.size());
     run(jobs.size(),
@@ -585,7 +591,7 @@ std::vector<Job> build_jobs(std::span<const DccFitResult* const> dcc_fits, std::
         {
             for (std::size_t i = first; i < last; ++i)
             {
-                prepare(jobs[i], *dcc_fits[i], fits);
+                prepare(jobs[i], *dcc_fits[i], fits, cancel);
             }
         });
     std::vector<std::pair<std::size_t, std::size_t>> columns;
@@ -675,7 +681,7 @@ dcc_standard_errors(BS::light_thread_pool& pool, int threads, std::span<const Dc
                           });
         }
     };
-    const std::vector<Job> jobs = build_jobs(dcc_fits, fits, run);
+    const std::vector<Job> jobs = build_jobs(dcc_fits, fits, run, cancel);
     std::vector<std::expected<DccStandardErrors, std::string>> errors(jobs.size());
     run(jobs.size(),
         [&](std::size_t first, std::size_t last)

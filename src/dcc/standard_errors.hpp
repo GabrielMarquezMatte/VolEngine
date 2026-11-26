@@ -59,7 +59,7 @@ std::expected<DccStandardErrors, std::string> dcc_standard_errors(const DccFitRe
 // terms (one series refiltered per column, the bulk of the work) is spread over the pool, and entry i is the result of
 // the function above for dcc_fits[i], bit for bit, whatever the number of threads. Call it from outside the pool's own
 // tasks, with the pool and threads that Context::with_pool hands over. cancel is borrowed and polled at the start of
-// each block of work; null never cancels.
+// each block of work and, inside the preparation, per series and per DCC parameter; null never cancels.
 std::vector<std::expected<DccStandardErrors, std::string>>
 dcc_standard_errors(BS::light_thread_pool& pool, int threads, std::span<const DccFitResult* const> dcc_fits,
                     std::span<const FitResult* const> fits, const CancelFlag* cancel = nullptr);

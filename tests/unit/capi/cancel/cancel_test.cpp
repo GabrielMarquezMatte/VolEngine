@@ -792,3 +792,98 @@ TEST(SimulateDccWithCancel, RequestFromAnotherThreadStops)
               VE_CANCELLED);
     EXPECT_EQ(out, nullptr);
 }
+
+namespace
+{
+
+// A static ML copula of this many series has 136 DCC parameters, so the preparation of its standard errors, a single
+// block of work, makes about 9 000 evaluations of the loglik: many times the work that fits in kSignalDelay.
+constexpr std::size_t kWideSeries = 17;
+constexpr std::size_t kWideT = 500;
+
+// kWideSeries simulated sGARCH(1,1) series, T x m in C order, kept alive for the borrowed panel.
+const std::vector<double>& wide_rows()
+{
+    static const std::vector<double> rows = []
+    {
+        std::vector<double> flat(kWideT * kWideSeries);
+        for (std::size_t i = 0; i < kWideSeries; ++i)
+        {
+            const std::vector<double> one = ve::testing::simulate_garch_series(100 + i, kWideT);
+            for (std::size_t t = 0; t < kWideT; ++t)
+            {
+                flat[t * kWideSeries + i] = one[t];
+            }
+        }
+        return flat;
+    }();
+    return rows;
+}
+
+// The univariate fits of wide_rows and their static ML copula, without standard errors, on a context of one thread.
+struct WideCopula
+{
+    ContextPtr context = ve::testing::make_context(1);
+    FitSet univariate{0};
+    std::vector<const ve_fit*> fits;
+    DccFitPtr copula;
+
+    WideCopula()
+    {
+        SpecPtr spec = ve::testing::make_spec(1);
+        PanelPtr panel = ve::testing::make_panel(wide_rows().data(), kWideT, kWideSeries);
+        BatchInputs inputs;
+        inputs.specs = {spec.get()};
+        inputs.panel = panel.get();
+        for (std::size_t i = 0; i < kWideSeries; ++i)
+        {
+            inputs.job_spec.push_back(0);
+            inputs.job_series.push_back(i);
+        }
+        BatchPtr batch = ve::testing::build_batch(inputs);
+        univariate = ve::testing::fit_all(context.get(), batch.get());
+        for (std::size_t i = 0; i < univariate.size(); ++i)
+        {
+            fits.push_back(univariate[i]);
+        }
+        copula = fit_copula();
+    }
+
+    DccFitPtr fit_copula() const
+    {
+        DccSpecPtr spec = dcc_spec(VE_DCC_MODEL_STATIC, VE_DCC_DIST_MVNORM);
+        EXPECT_EQ(ve_dcc_spec_set_copula(spec.get(), VE_DCC_COPULA_PARAMETRIC), VE_OK);
+        EXPECT_EQ(ve_dcc_spec_set_static_method(spec.get(), VE_DCC_STATIC_ML), VE_OK);
+        const ve_dcc_spec* specs[] = {spec.get()};
+        ve_dcc_batch* raw = nullptr;
+        EXPECT_EQ(ve_dcc_batch_create(&raw), VE_OK);
+        DccBatchPtr batch(raw);
+        EXPECT_EQ(ve_dcc_batch_set_specs(raw, specs, 1), VE_OK) << ve_last_error();
+        EXPECT_EQ(ve_dcc_batch_set_fits(raw, fits.data(), fits.size()), VE_OK) << ve_last_error();
+        DccOptionsPtr options = dcc_options(false);
+        EXPECT_EQ(ve_dcc_batch_set_options(raw, options.get()), VE_OK);
+        ve_dcc_fit* fit = nullptr;
+        EXPECT_EQ(ve_dcc_fit_batch_with_cancel(context.get(), raw, nullptr, &fit), VE_OK) << ve_last_error();
+        return DccFitPtr(fit);
+    }
+};
+
+}
+
+// One fit is one block of the preparation, so only the checks inside it can stop the call while it prepares.
+TEST(DccStandardErrorsWithCancel, RequestDuringPreparationStops)
+{
+    const WideCopula work;
+    ASSERT_NE(work.copula, nullptr);
+    CancelPtr cancel = make_cancel();
+    ve_dcc_fit* out = sentinel<ve_dcc_fit>();
+    EXPECT_EQ(cancelled_during(cancel.get(),
+                               [&]
+                               {
+                                   return ve_dcc_standard_errors_with_cancel(work.context.get(), work.copula.get(),
+                                                                             work.fits.data(), work.fits.size(),
+                                                                             cancel.get(), &out);
+                               }),
+              VE_CANCELLED);
+    EXPECT_EQ(out, nullptr);
+}
