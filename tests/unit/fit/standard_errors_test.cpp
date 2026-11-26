@@ -7,6 +7,7 @@
 #include "model/parameter_map.hpp"
 #include "simulated_garch.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <string>
@@ -86,15 +87,20 @@ TEST(StandardErrors, StdShapeNearTheNormalLimitGetsNaNOthersFinite)
     }
 }
 
-// Each standard error is sqrt(v_i) = 0.1 (i + 1): the log-likelihood is -sum (theta_i - center_i)^2 / (2 v_i), and
-// every observation's score is +-1 in each entry.
+// Each standard error is sqrt(v_i) = 0.1 (i + 1): the log-likelihood is -sum (theta_i - center_i)^2 / (2 v_i) on
+// the domain of the layout, and every observation's score is +-1 in each entry.
 void expect_exact_quadratic_errors(const ve::model::Layout& layout, std::span<const double> center,
-                                   std::size_t boundary)
+                                   const std::vector<std::size_t>& boundary)
 {
+    ASSERT_TRUE(ve::model::is_valid(center, layout));
     std::size_t k = center.size();
     std::vector<double> center_copy(center.begin(), center.end());
-    ve::fit::GradientFn gradient = [center_copy](std::span<const double> theta, std::span<double> grad)
+    ve::fit::GradientFn gradient = [center_copy, layout](std::span<const double> theta, std::span<double> grad)
     {
+        if (!ve::model::is_valid(theta, layout))
+        {
+            return false;
+        }
         for (std::size_t i = 0; i < theta.size(); ++i)
         {
             double sd = 0.1 * static_cast<double>(i + 1);
@@ -113,7 +119,7 @@ void expect_exact_quadratic_errors(const ve::model::Layout& layout, std::span<co
     for (std::size_t i = 0; i < k; ++i)
     {
         double sd = 0.1 * static_cast<double>(i + 1);
-        if (i == boundary)
+        if (std::ranges::find(boundary, i) != boundary.end())
         {
             EXPECT_TRUE(std::isnan(errors.hessian[i]));
             EXPECT_TRUE(std::isnan(errors.robust[i]));
@@ -131,15 +137,21 @@ TEST(StandardErrors, ModelBoundaries)
     ve::Spec cs;
     cs.model = ve::Model::CsGarch;
     cs.dist = ve::Dist::Std;
+    // (mu, omega, alpha1, beta1, rho, phi, shape)
     ve::model::Layout cs_layout = ve::model::layout_of(cs);
     std::vector<double> cs_theta{0.05, 0.01, 0.06, 0.85, 0.99, 0.0, 7.0};
-    expect_exact_quadratic_errors(cs_layout, cs_theta, cs_layout.eta2_begin());
+    expect_exact_quadratic_errors(cs_layout, cs_theta, {5});
+    // phi = sum(beta): a step down in beta1 leaves the domain at every size.
+    expect_exact_quadratic_errors(cs_layout, std::vector<double>{0.05, 0.01, 0.06, 0.85, 0.99, 0.85, 7.0}, {3, 5});
+    // rho = P: so does a step up in alpha1 or beta1.
+    expect_exact_quadratic_errors(cs_layout, std::vector<double>{0.05, 0.01, 0.06, 0.85, 0.91, 0.03, 7.0},
+                                  {2, 3, 4});
 
     ve::Spec all;
     all.model = ve::Model::FGarchAllGarch;
     ve::model::Layout all_layout = ve::model::layout_of(all);
-    std::vector<double> all_theta{0.05, 0.02, 0.08, 0.88, 1.0 - 1e-9, 0.2, 1.5};
-    expect_exact_quadratic_errors(all_layout, all_theta, all_layout.eta1_begin());
+    std::vector<double> all_theta{0.05, 0.02, 0.08, 0.8, 1.0 - 1e-9, 0.2, 1.5};
+    expect_exact_quadratic_errors(all_layout, all_theta, {all_layout.eta1_begin()});
 }
 
 TEST(StandardErrors, InvalidEverywhereGivesNaN)

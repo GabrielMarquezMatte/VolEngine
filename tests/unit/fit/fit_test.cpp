@@ -127,6 +127,63 @@ TEST(Fit, EstimateAtThePersistenceCeilingIsUsable)
     EXPECT_EQ(ve::fit_one(r, fixed, ve::FitConfig{}).status, FitStatus::Converged);
 }
 
+std::vector<double> short_garch_series(std::size_t count)
+{
+    std::mt19937_64 engine(5);
+    ve::testing::PortableNormal shock{1.0};
+    double sigma2 = 1.0;
+    std::vector<double> r(count);
+    for (double& value : r)
+    {
+        double residual = std::sqrt(sigma2) * shock(engine);
+        value = 0.05 + residual;
+        sigma2 = 0.05 + 0.1 * residual * residual + 0.85 * sigma2;
+    }
+    return r;
+}
+
+// These short series drive the u of omega below -745, where s^2 exp(u) underflowed to omega = 0: the estimate failed
+// is_valid, every standard error was NaN and its u was -inf. omega stops at the smallest normal double instead, where
+// it leaves the Hessian.
+TEST(Fit, OmegaUnderflowKeepsTheEstimateValid)
+{
+    std::vector<double> r = short_garch_series(14);
+    std::vector<double> x(r.size());
+    for (std::size_t t = 0; t < x.size(); ++t)
+    {
+        x[t] = std::cos(0.3 * static_cast<double>(t));
+    }
+    Spec spec{.model = ve::Model::IGarch, .p = 2, .q = 2, .ar = 1, .mxreg = 1, .archm = 2};
+    ve::model::Data data{r, {x, 1}, {}};
+    ve::FitConfig config;
+    config.var_init = ve::VarInit::Backcast;
+    config.max_iter = 200;
+    FitResult result = ve::fit_one(data, spec, config);
+    ASSERT_EQ(result.status, FitStatus::MaxIter);
+    ve::model::Layout layout = ve::model::layout_of(spec);
+    EXPECT_EQ(result.estimate[layout.omega()], std::numeric_limits<double>::min());
+    EXPECT_TRUE(ve::model::is_valid(result.estimate, layout));
+    EXPECT_TRUE(std::isnan(result.se_hessian[layout.omega()]));
+    for (const char* name : {"mu", "ar1", "archm", "mxreg1", "alpha2"})
+    {
+        std::size_t index = static_cast<std::size_t>(std::ranges::find(result.names, name) - result.names.begin());
+        ASSERT_LT(index, result.names.size()) << name;
+        EXPECT_TRUE(std::isfinite(result.se_hessian[index]) && result.se_hessian[index] > 0.0) << name;
+        EXPECT_TRUE(std::isfinite(result.se_robust[index]) && result.se_robust[index] > 0.0) << name;
+    }
+
+    std::vector<double> r20 = short_garch_series(20);
+    Spec tgarch{.model = ve::Model::FGarchTGarch, .p = 2, .q = 2, .dist = ve::Dist::Ghyp};
+    FitResult converged = ve::fit_one(r20, tgarch, config);
+    ASSERT_EQ(converged.status, FitStatus::Converged);
+    ve::model::Layout tgarch_layout = ve::model::layout_of(tgarch);
+    EXPECT_EQ(converged.estimate[tgarch_layout.omega()], std::numeric_limits<double>::min());
+    EXPECT_TRUE(ve::model::is_valid(converged.estimate, tgarch_layout));
+    std::vector<double> u(converged.estimate.size());
+    ve::model::to_unconstrained(converged.estimate, u, tgarch_layout, ve::model::standardization_of(r20));
+    EXPECT_TRUE(std::ranges::all_of(u, [](double value) { return std::isfinite(value); }));
+}
+
 // The eGARCH |z| kinks the likelihood in the mean parameters wherever a residual is 0, and the optimum lands on such
 // a kink. The central difference of the gradient across it left the Hessian indefinite on about a quarter of these
 // ARMA(1,1) fits, every standard error NaN.
