@@ -4,6 +4,7 @@
 #include <boost/math/distributions/normal.hpp>
 #include <boost/math/distributions/students_t.hpp>
 #include <boost/math/quadrature/exp_sinh.hpp>
+#include <boost/math/quadrature/tanh_sinh.hpp>
 #include <cmath>
 #include <cstddef>
 #include <gtest/gtest.h>
@@ -198,6 +199,67 @@ TEST(RiskParametric, QuadratureAcrossTheKink)
                 << static_cast<int>(sample.dist) << " shape " << sample.parameters.shape << " p " << p;
         }
     }
+}
+
+// Strong skew puts the Fernandez-Steel kink, which is not at 0, below the quantile at usual confidences: p m_p must
+// still equal minus the integral above q (which does not cross the kink here).
+TEST(RiskParametric, QuadratureAcrossAStrongSkewKink)
+{
+    struct KinkCase
+    {
+        DistCase sample;
+        double p;
+    };
+    for (const KinkCase& item : {KinkCase{{Dist::Sstd, {.skew = 10.0, .shape = 3.0}}, 0.05},
+                                 KinkCase{{Dist::Sstd, {.skew = 10.0, .shape = 3.0}}, 0.1},
+                                 KinkCase{{Dist::Sstd, {.skew = 5.0, .shape = 5.0}}, 0.1},
+                                 KinkCase{{Dist::Sged, {.skew = 4.0, .shape = 0.2}}, 0.1},
+                                 KinkCase{{Dist::Sged, {.skew = 4.0, .shape = 0.2}}, 0.3},
+                                 KinkCase{{Dist::Sged, {.skew = 1.5, .shape = 0.6}}, 0.5}})
+    {
+        const auto& [dist, parameters] = item.sample;
+        const ve::dist::Density<double> density = ve::dist::make_density(dist, parameters);
+        const auto integrand = [&density](double z) { return z * std::exp(ve::dist::log_density(density, z)); };
+        const double q = ve::dist::quantile(dist, parameters, item.p);
+        ASSERT_LT(ve::dist::density_kink(density), q);
+        const double upper = boost::math::quadrature::exp_sinh<double>().integrate(
+            integrand, q, std::numeric_limits<double>::infinity(), 1e-13);
+        EXPECT_NEAR(item.p * ve::risk::tail_mean(dist, parameters, item.p), -upper, 1e-11)
+            << static_cast<int>(dist) << " skew " << parameters.skew << " p " << item.p;
+    }
+}
+
+// The Johnson SU's tail mean equals (1 / p) times the integral of its quantile over (0, p), which tanh-sinh resolves
+// even where the density is a narrow spike (large |skew|, small tau).
+TEST(RiskParametric, JsuMatchesTheQuantileIntegral)
+{
+    struct JsuCase
+    {
+        double skew;
+        double shape;
+        double p;
+    };
+    for (const JsuCase& item : {JsuCase{5.0, 0.3, 0.05}, JsuCase{3.0, 0.5, 0.01}, JsuCase{0.8, 1.5, 0.01},
+                                JsuCase{-2.0, 0.6, 0.05}, JsuCase{0.0, 4.0, 0.001}})
+    {
+        const ve::dist::ShapeParameters<double> parameters{.skew = item.skew, .shape = item.shape};
+        const auto quantile = [&parameters](double u) { return ve::dist::quantile(Dist::Jsu, parameters, u); };
+        const double expected =
+            boost::math::quadrature::tanh_sinh<double>().integrate(quantile, 0.0, item.p, 1e-14) / item.p;
+        const double tail = ve::risk::tail_mean(Dist::Jsu, parameters, item.p);
+        EXPECT_NEAR(tail, expected, 1e-9 * std::abs(expected)) << item.skew << " " << item.shape << " " << item.p;
+        EXPECT_LT(tail, quantile(item.p)) << item.skew << " " << item.shape << " " << item.p;
+    }
+}
+
+// exp(710) - 1 overflows, and 0 * inf is NaN: the core reports a NaN measure instead of sorting NaN.
+TEST(RiskEmpirical, NonFinitePortfolioIsNan)
+{
+    const std::vector<double> returns{710.0, 0.0, 0.0, 0.0, 0.01, 0.0};
+    const std::vector<double> weights{0.0, 1.0};
+    const Measure measure = ve::risk::empirical(row_major(returns, 3, 2), weights, ReturnKind::log, 0.9);
+    EXPECT_TRUE(std::isnan(measure.var));
+    EXPECT_TRUE(std::isnan(measure.es));
 }
 
 TEST(RiskParametric, EsAtLeastVar)

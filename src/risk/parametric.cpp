@@ -1,7 +1,9 @@
 #include "dist/cdf.hpp"
+#include "dist/johnson.hpp"
 #include "risk/measures.hpp"
 
 #include <algorithm>
+#include <array>
 #include <boost/math/distributions/students_t.hpp>
 #include <boost/math/quadrature/exp_sinh.hpp>
 #include <boost/math/quadrature/tanh_sinh.hpp>
@@ -34,34 +36,86 @@ double student_tail_mean(double nu, double q, double p)
 
 }
 
+namespace
+{
+
+// log Phi(x); below -37 erfc underflows and the asymptotic series takes over (its next term is below 1e-11 there).
+double log_normal_cdf(double x)
+{
+    if (x > -37.0)
+    {
+        return std::log(0.5 * std::erfc(-x / std::numbers::sqrt2));
+    }
+    const double inverse_square = 1.0 / (x * x);
+    return -0.5 * x * x - std::log(-x) - 0.5 * std::log(2.0 * std::numbers::pi)
+        + std::log1p(-inverse_square + 3.0 * inverse_square * inverse_square);
+}
+
+// The Johnson SU is z = center + scale sinh((Z + skew) / shape), Z standard normal, so with a = Phi^-1(p) and
+// E[e^(bZ); Z <= a] = e^(b^2 / 2) Phi(a - b):
+//   m_p = center + scale / (2p) [e^(skew/shape + h) Phi(a - 1/shape) - e^(-skew/shape + h) Phi(a + 1/shape)],
+// h = 1 / (2 shape^2), each term taken in logs so that a small shape does not overflow.
+double johnson_tail_mean(const dist::ShapeParameters<double>& parameters, double p)
+{
+    const auto density = dist::johnson_log_density(parameters.skew, parameters.shape);
+    const double a = dist::quantile(Dist::Norm, {}, p);
+    const double inverse = 1.0 / density.shape;
+    const double base = std::log(density.scale) + 0.5 * inverse * inverse - std::log(2.0 * p);
+    const double rising = std::exp(base + density.skew * inverse + log_normal_cdf(a - inverse));
+    const double falling = std::exp(base - density.skew * inverse + log_normal_cdf(a + inverse));
+    return density.center + rising - falling;
+}
+
+// The integral of z f(z) over (-inf, q], cut at 0 and at the density's kink (ged and the Fernandez-Steel densities)
+// where they lie below q: exp-sinh on the half line, tanh-sinh on each finite piece, so no rule straddles a kink.
+double tail_integral(const dist::Density<double>& density, double q)
+{
+    const auto integrand = [&density](double z) { return z * std::exp(dist::log_density(density, z)); };
+    std::array<double, 3> cuts{std::min(0.0, dist::density_kink(density)), std::max(0.0, dist::density_kink(density)), q};
+    for (double& cut : cuts)
+    {
+        cut = std::min(cut, q);
+    }
+    double integral = boost::math::quadrature::exp_sinh<double>().integrate(
+        integrand, -std::numeric_limits<double>::infinity(), cuts[0], kTolerance);
+    for (std::size_t k = 1; k < cuts.size(); ++k)
+    {
+        if (cuts[k] > cuts[k - 1])
+        {
+            integral += boost::math::quadrature::tanh_sinh<double>().integrate(integrand, cuts[k - 1], cuts[k], kTolerance);
+        }
+    }
+    return integral;
+}
+
+// The tail mean at a quantile q already solved: nig and ghyp solve it by root finding, so it is solved once.
+double tail_mean_at(Dist dist, const dist::ShapeParameters<double>& parameters, double p, double q)
+{
+    if (dist == Dist::Norm)
+    {
+        return normal_tail_mean(q, p);
+    }
+    if (dist == Dist::Std)
+    {
+        return student_tail_mean(parameters.shape, q, p);
+    }
+    if (dist == Dist::Jsu)
+    {
+        return johnson_tail_mean(parameters, p);
+    }
+    return tail_integral(dist::make_density(dist, parameters), q) / p;
+}
+
+}
+
 double tail_mean_by_quadrature(Dist dist, const dist::ShapeParameters<double>& parameters, double p)
 {
-    const dist::Density<double> density = dist::make_density(dist, parameters);
-    const auto integrand = [&density](double z) { return z * std::exp(dist::log_density(density, z)); };
-    const double q = dist::quantile(dist, parameters, p);
-    // ponytail: one split at 0, where ged and the skewed densities have their kink in the usual tails; a kink inside
-    // (q, 0) for a quantile far from the tail would cost accuracy, split at the mode if that case matters.
-    const double edge = std::min(q, 0.0);
-    double integral = boost::math::quadrature::exp_sinh<double>().integrate(
-        integrand, -std::numeric_limits<double>::infinity(), edge, kTolerance);
-    if (q > 0.0)
-    {
-        integral += boost::math::quadrature::tanh_sinh<double>().integrate(integrand, 0.0, q, kTolerance);
-    }
-    return integral / p;
+    return tail_integral(dist::make_density(dist, parameters), dist::quantile(dist, parameters, p)) / p;
 }
 
 double tail_mean(Dist dist, const dist::ShapeParameters<double>& parameters, double p)
 {
-    if (dist == Dist::Norm)
-    {
-        return normal_tail_mean(dist::quantile(dist, parameters, p), p);
-    }
-    if (dist == Dist::Std)
-    {
-        return student_tail_mean(parameters.shape, dist::quantile(dist, parameters, p), p);
-    }
-    return tail_mean_by_quadrature(dist, parameters, p);
+    return tail_mean_at(dist, parameters, p, dist::quantile(dist, parameters, p));
 }
 
 Measure parametric(Dist dist, const dist::ShapeParameters<double>& parameters, Location location, double confidence)
@@ -69,7 +123,7 @@ Measure parametric(Dist dist, const dist::ShapeParameters<double>& parameters, L
     const double p = 1.0 - confidence;
     const double q = dist::quantile(dist, parameters, p);
     return Measure{.var = -(location.mean + location.sigma * q),
-                   .es = -(location.mean + location.sigma * tail_mean(dist, parameters, p))};
+                   .es = -(location.mean + location.sigma * tail_mean_at(dist, parameters, p, q))};
 }
 
 }
