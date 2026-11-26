@@ -2,6 +2,7 @@
 
 #include "forecast/inputs.hpp"
 
+#include <span>
 #include <vector>
 
 namespace ve::forecast::detail
@@ -11,6 +12,8 @@ namespace ve::forecast::detail
 // log sigma2 or sigma^delta, with the shocks of future steps at their expectation, and csGARCH by rugarch's
 // closed form from h = 2 on.
 std::vector<double> variance_forecast(const Inputs& in);
+// The same into sigma2, of size in.horizon: one step of a simulation writes it to the stack.
+void variance_forecast(const Inputs& in, std::span<double> sigma2);
 
 Moments moments_of(const model::Layout& layout, std::span<const double> theta);
 

@@ -99,12 +99,12 @@ std::vector<double> fractional_deviations(const Inputs& in)
     return future;
 }
 
-// d_h = sum_i phi_i d_{h-i} + sum_{j >= h} theta_j e_{n-1+h-j}: the residuals after the sample are 0.
-std::vector<double> arma_deviations(const Inputs& in)
+// d_h = sum_i phi_i d_{h-i} + sum_{j >= h} theta_j e_{n-1+h-j}: the residuals after the sample are 0. deviations
+// has the size of the horizon.
+void arma_deviations(const Inputs& in, std::span<double> deviations)
 {
     std::span<const double> ar = block(in.theta, in.layout.ar_begin(), in.layout.ar);
     std::span<const double> ma = block(in.theta, in.layout.ma_begin(), in.layout.ma);
-    std::vector<double> deviations(in.horizon);
     for (std::size_t h = 1; h <= in.horizon; ++h)
     {
         double d = 0.0;
@@ -118,7 +118,25 @@ std::vector<double> arma_deviations(const Inputs& in)
         }
         deviations[h - 1] = d;
     }
+}
+
+std::vector<double> arma_deviations(const Inputs& in)
+{
+    std::vector<double> deviations(in.horizon);
+    arma_deviations(in, deviations);
     return deviations;
+}
+
+// The deviation of step 1 (in.horizon == 1), on the stack but for the ARFIMA mean.
+double first_deviation(const Inputs& in)
+{
+    if (in.layout.has_arfima())
+    {
+        return fractional_deviations(in)[0];
+    }
+    double deviation = 0.0;
+    arma_deviations(in, std::span<double>(&deviation, 1));
+    return deviation;
 }
 
 void add_cumulative(const model::Layout& layout, std::span<const double> estimate, Forecast& result)
@@ -188,11 +206,12 @@ namespace detail
 Step first_step(const Inputs& in)
 {
     assert(in.horizon == 1);
-    double sigma2 = variance_forecast(in)[0];
+    // A simulation takes this step per draw: everything but the ARFIMA mean stays on the stack.
+    double sigma2 = 0.0;
+    variance_forecast(in, std::span<double>(&sigma2, 1));
     double level_of_step = level(in, std::sqrt(sigma2), 1);
-    std::vector<double> deviation = in.layout.has_arfima() ? fractional_deviations(in) : arma_deviations(in);
     double permanent = in.layout.model == Model::CsGarch ? next_permanent(in) : 0.0;
-    return {sigma2, level_of_step + deviation[0], level_of_step, permanent};
+    return {sigma2, level_of_step + first_deviation(in), level_of_step, permanent};
 }
 
 }

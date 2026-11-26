@@ -41,6 +41,9 @@ break between 0.x releases.
 - nig: the Dual log-likelihood and the fit take about 0.78 of their time, with the same bits: the Bessel K of each
   observation and its slope cost two Boost calls instead of four kernels (K_2 from the K_0 and K_1 of Boost's own
   recurrence, and the value computed once).
+- Simulation: a simulated step no longer allocates (outside an ARFIMA mean), so `ve_simulate_fit` and
+  `ve_simulate_spec` take 0.33 to 0.45 of their time on one thread and 0.43 to 0.58 on all of them (10000 paths of 60
+  steps), and `ve_simulate_dcc` about half. The paths have the same bits for the same seed.
 
 ## [1.3.0] - 2026-11-26
 
