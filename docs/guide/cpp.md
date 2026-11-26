@@ -153,7 +153,8 @@ if (dcc && dcc->status() == ve::FitStatus::converged)
 
 `std_errors`, `t_values` and `p_values` of a `DccFit` made with `DccOptions{.standard_errors = false}` are errors, as for
 a `Fit`; `context.standard_errors(fit, univariate_fits)` returns a fit that has them. The Copula-DCC is
-`DccSpec::copula`. Every function of the C API is called by the wrapper, so nothing in the interface is out of reach.
+`DccSpec::copula`. The wrapper calls every function of the C API but the six deprecated ones, which it replaces by
+their `_with_cancel` variants, so nothing in the interface is out of reach.
 
 ## Cancellation
 
@@ -164,10 +165,18 @@ call that finishes first succeeds. Without a token, or with one that can never b
 each caller that needs a deadline its own `Context`.
 
 ```cpp
+// A 2 s deadline. The thread waits on its own token, which its destructor requests, so a fit that ends first does not
+// wait out the 2 s.
 std::stop_source source;
-std::jthread deadline([&source] {
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-    source.request_stop();
+std::jthread deadline([&source](std::stop_token own) {
+    std::mutex mutex;
+    std::condition_variable_any wake;
+    std::unique_lock lock(mutex);
+    wake.wait_for(lock, own, std::chrono::seconds(2), [] { return false; });
+    if (!own.stop_requested())
+    {
+        source.request_stop();
+    }
 });
 auto fits = context.fit(grid, panel, {}, source.get_token());
 if (!fits && fits.error().status == ve::Status::cancelled)

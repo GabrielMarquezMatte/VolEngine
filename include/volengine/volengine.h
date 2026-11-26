@@ -74,12 +74,12 @@ VE_API void ve_context_free(ve_context* ctx);
    request cancels all of them. Freeing the handle while a call uses it is undefined behavior.
    A cancelled call returns VE_CANCELLED with ve_last_error "cancelled" and its output set to NULL (each of the n
    handles of a batch), and no thread of the pool still works on it. It stops within the work between two checks: an
-   optimizer iteration, a block of the standard errors or a simulated path. On a context that other calls keep busy,
-   the rest of its work waits in the context's queue behind theirs before it stops, so give each caller that needs a
-   deadline its own context. A request that arrives after the last check
-   leaves the call to return VE_OK with the whole result, so a request does not always give VE_CANCELLED. The arguments
-   are checked first: an invalid one gives the same error with or without a requested handle. c NULL never cancels: the
-   call does exactly what the function without _with_cancel does. Since 1.3.0. */
+   optimizer iteration, a block of the standard errors or a step of a simulated path. On a context that other calls
+   keep busy, the rest of its work waits in the context's queue behind theirs before it stops, so give each caller
+   that needs a deadline its own context. A request that arrives after the last check leaves the call to return VE_OK
+   with the whole result, so a request does not always give VE_CANCELLED. The arguments are checked first: an invalid
+   one gives the same error with or without a requested handle. c NULL never cancels: the call does exactly what the
+   function without _with_cancel does. Since 1.3.0. */
 typedef struct ve_cancel ve_cancel;
 /* NULL out is VE_INVALID_ARGUMENT. */
 VE_API ve_status ve_cancel_create(ve_cancel** out);
@@ -486,7 +486,7 @@ VE_API ve_status ve_dcc_spec_set_copula(ve_dcc_spec* s, int32_t transformation);
 VE_API ve_status ve_dcc_spec_set_static_method(ve_dcc_spec* s, int32_t method);
 /* Standard errors are enabled by default; regressors make them VE_UNSUPPORTED. With 0, ve_dcc_fit_std_errors,
    ve_dcc_fit_t_values and ve_dcc_fit_p_values return VE_INVALID_ARGUMENT, as ve_fit_std_errors does; everything else
-   is computed as before, and ve_dcc_standard_errors gives a fit that has them. */
+   is computed as before, and ve_dcc_standard_errors_with_cancel gives a fit that has them. */
 VE_API ve_status ve_dcc_options_create(ve_dcc_options** out);
 VE_API ve_status ve_dcc_options_set_standard_errors(ve_dcc_options* o, int32_t on);
 VE_API void ve_dcc_options_free(ve_dcc_options* o);
@@ -540,8 +540,9 @@ VE_API void ve_dcc_fit_free(ve_dcc_fit* f);
    total persistence (the aDCC g does not enter; the FDCC takes k per element; a static copula keeps its R) and
    Rbar the correlation of Qbar. H_h = D R_h D with D = diag(sigma_h). A DCC fit keeps the final state of each series
    and of its recursion: it forecasts and simulates after the univariate fits are freed, but only a fit made by
-   ve_dcc_fit_batch or ve_dcc_standard_errors has it (VE_INVALID_ARGUMENT otherwise, and for a fit with no finite point, whose message says
-   "no finite point"). A VE_FIT_FAILED fit that has a finite point forecasts from it.
+   ve_dcc_fit_batch_with_cancel or ve_dcc_standard_errors_with_cancel has it (VE_INVALID_ARGUMENT otherwise, and for a
+   fit with no finite point, whose message says "no finite point"). A VE_FIT_FAILED fit that has a finite point
+   forecasts from it.
    ve_dcc_future holds the regressors of the horizon of each series: series from 0, panels of `horizon` rows without
    ranges, NULL for none. They are checked against each series' spec when used (the error names the series from 1).
    A NaN or infinite value in a panel is VE_INVALID_ARGUMENT (ve_dcc_future_set). A NULL ve_dcc_future means no series

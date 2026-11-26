@@ -28,7 +28,7 @@ inline ve_status no_dcc_standard_errors()
 {
     return set_error(VE_INVALID_ARGUMENT,
                      "standard errors were not computed: fit with ve_dcc_options_set_standard_errors(o, 1) or call "
-                     "ve_dcc_standard_errors");
+                     "ve_dcc_standard_errors_with_cancel");
 }
 
 template <typename F>

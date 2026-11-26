@@ -7,7 +7,7 @@ namespace VolEngine.Tests;
 // by the library itself, outside the declarations.
 public sealed partial class CoverageTests
 {
-    // Deprecated in 1.3.0 for their _with_cancel variants, which the library calls instead; they stay declared because
+    // Deprecated in 1.3.0 for their _with_cancel variants, which the binding calls instead; they stay declared because
     // the contract keeps them until ABI 2.
     private static readonly HashSet<string> Deprecated = new(StringComparer.Ordinal)
     {

@@ -163,10 +163,10 @@ print(ve.risk.empirical(paths.cumulative[:, 1, :], [0.5, 0.3, 0.2], confidence=0
 
 `fit`, `fit_dcc`, `standard_errors` and `simulate` take a keyword-only `cancel=`, a `Cancel`. Its `cancel()` can be
 called from any thread, also while the call runs, and the call raises `Cancelled` (a `VolEngineError` with status 6)
-within one optimizer iteration, one block of the standard errors or one simulated path; no result is returned. On a
-`Context` that other calls keep busy, a cancelled call waits for its turn in the context's queue before it stops, so
-give each caller that needs a deadline its own `Context`. The call releases the GIL, so a `threading.Timer` gives a
-deadline:
+within one optimizer iteration, one block of the standard errors or one step of a simulated path; no result is
+returned. On a `Context` that other calls keep busy, a cancelled call waits for its turn in the context's queue before
+it stops, so give each caller that needs a deadline its own `Context`. The call releases the GIL, so a
+`threading.Timer` gives a deadline:
 
 ```python
 import threading

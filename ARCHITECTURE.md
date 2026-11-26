@@ -165,20 +165,24 @@ at run time. The contract froze at 1.0: from then on a release only adds to it, 
 major. `include/volengine/volengine.abi` lists every declaration, CI fails when it differs from the header or loses a
 line of the last release's, and abidiff compares the binary against the dump the release attached.
 
-## Anatomy of a `ve_fit_batch`
+## Anatomy of a `ve_fit_batch_with_cancel`
 
 The Python `Context.fit` builds the handles below and then makes one call; any C client does the same.
 
 1. **Handles.** A `ve_panel` borrows the caller's array (pointer, T, N, strides in elements, optional per-series
    start and length). A `ve_batch` holds the specs, the panel, optional `ve_fit_options` and the job list: pairs
    (spec index, series index). Wrappers build the Cartesian product of specs and series.
-2. **Validation.** `ve_fit_batch` calls `check_batch` (`src/fit/batch.cpp`). Job indices out of range, ranges
-   outside the panel, and a NaN or infinite value inside a series a job uses are argument errors: the whole call
-   fails with `VE_INVALID_ARGUMENT`, a message in `ve_last_error()`, and no `ve_fit` is produced.
+2. **Validation.** `ve_fit_batch_with_cancel` calls `check_batch` (`src/fit/batch.cpp`). Job indices out of range,
+   ranges outside the panel, and a NaN or infinite value inside a series a job uses are argument errors: the whole
+   call fails with `VE_INVALID_ARGUMENT`, a message in `ve_last_error()`, and no `ve_fit` is produced.
 3. **Scheduling.** `run_batch` splits the jobs into contiguous blocks on the context's thread pool. Each job
    writes only its own slot of the result vector, and a job's computation does not depend on the thread count, so
    results are bit-identical for any number of threads on the same machine.
-4. **One fit.** `fit_one` (`src/fit/fit.cpp`) checks the series is long enough (more than parameters + 1 and
+4. **Cancellation.** The `ve_cancel` (NULL for none) becomes a `ve::CancelFlag*` that `throw_if_cancelled`
+   (`src/core/cancel.hpp`) polls after validation, before each job and at each optimizer iteration. A request makes
+   it throw `ve::Cancelled`; `run_in_blocks` lets the call's other blocks finish and rethrows, and `guard` turns it
+   into `VE_CANCELLED` with every output NULL.
+5. **One fit.** `fit_one` (`src/fit/fit.cpp`) checks the series is long enough (more than parameters + 1 and
    than the largest order) and not constant, and minimizes the negative mean log-likelihood of the series
    standardized by its sample mean and standard deviation with L-BFGS in the unconstrained space
    (`src/model/parameter_map.cpp`); the fit therefore does not depend on the units of the data. The gradient comes
@@ -187,9 +191,9 @@ The Python `Context.fit` builds the handles below and then makes one call; any C
    variance path, residuals and per-observation scores; `standard_errors` differentiates the natural gradient by
    central differences, with steps relative to each parameter's scale, and leaves out α and β entries on the
    boundary (below 1e-8) and a std shape with 1/ν below 1e-8, whose standard errors are NaN.
-5. **Status per fit.** A fit that does not converge, is too short or is degenerate carries its own status
+6. **Status per fit.** A fit that does not converge, is too short or is degenerate carries its own status
    (`max_iter`, `failed`, `insufficient_data`); it does not fail the batch or the other fits.
-6. **Publishing.** Results are moved into freshly allocated `ve_fit` handles, all created before any is written to
+7. **Publishing.** Results are moved into freshly allocated `ve_fit` handles, all created before any is written to
    the output array, so an exception leaves it untouched. The Python layer then wraps each pointer in a `Fit` that
    frees it.
 
