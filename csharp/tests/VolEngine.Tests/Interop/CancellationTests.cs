@@ -18,9 +18,42 @@ public sealed class CancellationTests
         ["beta1"] = 0.9,
     };
 
+    private static readonly Spec StudentT = new()
+    {
+        Distribution = Distribution.Std,
+        Fixed = new Dictionary<string, double>(Stationary, StringComparer.Ordinal) { ["shape"] = 6 },
+    };
+
+    // 10 million steps and 160 MB of paths, many times the work that fits in SignalDelay.
+    private static readonly SimulationOptions LongSimulation = new(Horizon: 200, Paths: 50_000, Seed: 1);
+
     private static double[] Series()
     {
         return ReferenceData.Series("sgarch11_norm.csv", "t1500");
+    }
+
+    // The univariate fits of 30 independent Student-t GARCH series of 4000 days: a DCC fit with standard errors, or the
+    // standard errors alone, take seconds on them.
+    private static Fit[] ManySeries(Context context)
+    {
+        var series = context.Simulate(StudentT, new SimulationOptions(Horizon: 4000, Paths: 30, Seed: 3)).Returns;
+        return series.Select(column => context.Fit(new Spec(), column)).ToArray();
+    }
+
+    // The token is cancelled SignalDelay into the call, which the work is sized never to finish before.
+    private static void AssertCancelledMidRun(Func<CancellationToken, object> call)
+    {
+        using var source = new CancellationTokenSource(SignalDelay);
+        var error = Assert.Throws<OperationCanceledException>(() => call(source.Token));
+        Assert.Equal(source.Token, error.CancellationToken);
+    }
+
+    private static void DisposeAll(IEnumerable<Fit> fits)
+    {
+        foreach (var fit in fits)
+        {
+            fit.Dispose();
+        }
     }
 
     [Fact]
@@ -81,6 +114,59 @@ public sealed class CancellationTests
         Assert.Equal(source.Token, error.CancellationToken);
         using var dcc = context.FitDcc(new DccSpec(), univariate.Fits, standardErrors: false);
         Assert.Equal(FitStatus.Converged, dcc.Status);
+    }
+
+    [Fact]
+    public void Cancel_during_a_dcc_fit_with_standard_errors_stops_it()
+    {
+        using var context = new Context();
+        var fits = ManySeries(context);
+        try
+        {
+            DccSpec[] specs = [new DccSpec(), new DccSpec { Model = DccModel.Adcc }, new DccSpec { Distribution = DccDistribution.MvT }];
+            AssertCancelledMidRun(token => context.FitDcc(specs, fits, standardErrors: true, token));
+        }
+        finally
+        {
+            DisposeAll(fits);
+        }
+    }
+
+    [Fact]
+    public void Cancel_during_the_dcc_standard_errors_stops_them()
+    {
+        using var context = new Context();
+        var fits = ManySeries(context);
+        try
+        {
+            using var dcc = context.FitDcc(new DccSpec { Model = DccModel.Adcc, Distribution = DccDistribution.MvT }, fits,
+                                           standardErrors: false);
+            AssertCancelledMidRun(token => context.StandardErrors(dcc, fits, token));
+        }
+        finally
+        {
+            DisposeAll(fits);
+        }
+    }
+
+    [Fact]
+    public void Cancel_during_a_simulation_stops_it()
+    {
+        using var context = new Context();
+        var series = context.Simulate(StudentT, new SimulationOptions(Horizon: 4000, Paths: 1, Seed: 5)).Returns[0];
+        using var fit = context.Fit(new Spec { Distribution = Distribution.Std }, series);
+        AssertCancelledMidRun(token => context.Simulate(fit, LongSimulation, token));
+        AssertCancelledMidRun(token => context.Simulate(StudentT, LongSimulation, token));
+    }
+
+    // 20000 paths of 100 steps over 3 series: 6 million draws of a multivariate t.
+    [Fact]
+    public void Cancel_during_a_dcc_simulation_stops_it()
+    {
+        using var univariate = Univariate.Dcc3();
+        var context = univariate.Context;
+        using var dcc = context.FitDcc(new DccSpec { Distribution = DccDistribution.MvT }, univariate.Fits, standardErrors: false);
+        AssertCancelledMidRun(token => context.Simulate(dcc, new DccSimulationOptions(Horizon: 100, Paths: 20_000, Seed: 1), token));
     }
 
     [Fact]
