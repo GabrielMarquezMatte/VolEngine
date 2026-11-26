@@ -17,6 +17,11 @@ break between 0.x releases.
   `ve_dcc_standard_errors_with_cancel`, `ve_simulate_fit_with_cancel`, `ve_simulate_spec_with_cancel` and
   `ve_simulate_dcc_with_cancel` take it and return the new status `VE_CANCELLED` soon after it is requested, with every
   output set to NULL. A NULL signal does what the call without `_with_cancel` does.
+- Cumulative simulations. `ve_sim_options_set_checkpoints` gives a simulation a list of checkpoints of its horizon;
+  `ve_simulate_fit`, `ve_simulate_spec` and `ve_simulate_dcc` then keep only, per path (and series), the sum of the
+  simulated series up to each checkpoint, read with `ve_sim_cumulative` / `ve_dcc_sim_cumulative` (and the list with
+  `ve_sim_checkpoints` / `ve_dcc_sim_checkpoints`). Memory is paths x checkpoints x series instead of
+  paths x horizon x series, and each sum equals the left-to-right sum of the full output with the same seed.
 - C++: `fit`, `fit_dcc`, `standard_errors` and `simulate` take an optional `std::stop_token` as their last argument;
   a requested stop fails the call with `ve::Status::cancelled`.
 - C#: overloads of `Fit`, `FitDcc`, `StandardErrors` and `Simulate` with a `CancellationToken` as their last parameter;

@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+using ve::capi::checkpoints_problem;
 using ve::capi::flag_of;
 using ve::capi::guard;
 using ve::capi::set_error;
@@ -26,6 +27,10 @@ bool fits_in_memory(const ve_sim_options* o, std::size_t series)
     if (series > kMaxSeries)
     {
         return false;
+    }
+    if (!o->checkpoints.empty())
+    {
+        return o->paths <= kLimit / o->checkpoints.size() / series;
     }
     std::size_t per_step = 2 * series;
     if (o->correlations)
@@ -51,6 +56,14 @@ ve_status check_request(ve_context* ctx, const ve_dcc_fit* f, const ve_sim_optio
         return set_error(VE_INVALID_ARGUMENT,
                          "o must have no regressors of its own: a DCC takes them per series in x");
     }
+    if (const char* problem = checkpoints_problem(o->checkpoints, o->horizon); problem != nullptr)
+    {
+        return set_error(VE_INVALID_ARGUMENT, problem);
+    }
+    if (!o->checkpoints.empty() && o->correlations)
+    {
+        return set_error(VE_INVALID_ARGUMENT, "checkpoints and correlations cannot be on together");
+    }
     if (!fits_in_memory(o, f->result.series))
     {
         return set_error(VE_INVALID_ARGUMENT, "the simulation is too large: paths x horizon x series does not fit in memory");
@@ -75,6 +88,16 @@ ve_status read_view(const ve_dcc_sim* sim, SimMember member, bool needs_correlat
             {
                 return set_error(VE_INVALID_ARGUMENT,
                                  "the simulation kept no correlations: turn them on in its options");
+            }
+            const bool has_checkpoints = !sim->simulation.checkpoints.empty();
+            const bool cumulative = member == &ve::dcc::future::DccSimulation::cumulative;
+            if (cumulative && !has_checkpoints)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "the simulation has no checkpoints: set them in its options");
+            }
+            if (!cumulative && !needs_correlations && has_checkpoints)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "the simulation has checkpoints: read ve_dcc_sim_cumulative");
             }
             const std::vector<double>& values = sim->simulation.*member;
             *data = values.data();
@@ -133,6 +156,7 @@ extern "C" ve_status ve_simulate_dcc_with_cancel(ve_context* ctx, const ve_dcc_f
             }
             ve::dcc::future::DccRequest request{o->horizon, o->paths, o->seed, o->correlations, std::move(future)};
             request.cancel = flag_of(c);
+            request.checkpoints = o->checkpoints;
             auto handle = std::make_unique<ve_dcc_sim>();
             handle->simulation = ve::dcc::future::simulate_dcc(ctx->context, f->result, request);
             handle->correlations = o->correlations;
@@ -179,4 +203,28 @@ extern "C" ve_status ve_dcc_sim_covariance(const ve_dcc_sim* sim, const double**
 extern "C" void ve_dcc_sim_free(ve_dcc_sim* sim)
 {
     std::unique_ptr<ve_dcc_sim> owner(sim);
+}
+
+extern "C" ve_status ve_dcc_sim_cumulative(const ve_dcc_sim* sim, const double** data, size_t* len)
+{
+    return read_view(sim, &ve::dcc::future::DccSimulation::cumulative, false, data, len);
+}
+
+extern "C" ve_status ve_dcc_sim_checkpoints(const ve_dcc_sim* sim, const size_t** data, size_t* len)
+{
+    return guard(
+        [&]
+        {
+            if (sim == nullptr)
+            {
+                return set_error(VE_INVALID_HANDLE, "sim must not be null");
+            }
+            if (data == nullptr || len == nullptr)
+            {
+                return set_error(VE_INVALID_ARGUMENT, "data and len must not be null");
+            }
+            *data = sim->simulation.checkpoints.data();
+            *len = sim->simulation.checkpoints.size();
+            return VE_OK;
+        });
 }

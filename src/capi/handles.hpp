@@ -17,6 +17,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <span>
+#include <vector>
 #include <volengine/volengine.h>
 
 struct ve_context
@@ -78,7 +80,37 @@ struct ve_sim_options
     ve::capi::StoredRows mxreg{};
     ve::capi::StoredRows vxreg{};
     bool correlations = false;
+    // Empty, or strictly increasing from 1 and ending at horizon (see checkpoints_problem).
+    std::vector<std::size_t> checkpoints{};
 };
+
+namespace ve::capi
+{
+
+// Why ks cannot be the checkpoints of a horizon, or null when they can (an empty list always can).
+inline const char* checkpoints_problem(std::span<const std::size_t> ks, std::size_t horizon)
+{
+    if (ks.empty())
+    {
+        return nullptr;
+    }
+    std::size_t previous = 0;
+    for (std::size_t k : ks)
+    {
+        if (k <= previous)
+        {
+            return "checkpoints must be strictly increasing, from 1, and end at the horizon";
+        }
+        previous = k;
+    }
+    if (previous != horizon)
+    {
+        return "checkpoints must be strictly increasing, from 1, and end at the horizon";
+    }
+    return nullptr;
+}
+
+}
 
 struct ve_sim
 {

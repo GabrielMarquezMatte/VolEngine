@@ -1387,3 +1387,68 @@ TEST(CapiDcc, SimulationRejectsSizesThatOverflow)
     EXPECT_TRUE(mentions("too large"));
     EXPECT_EQ(sim, nullptr);
 }
+
+TEST(CapiDccSimCumulative, MatchesTheFullOutput)
+{
+    FittedDcc fitted;
+    ve::testing::ContextPtr context = ve::testing::make_context(2);
+    SimOptionsPtr full_options = make_sim_options(8, 40, 7, false);
+    SimOptionsPtr options = make_sim_options(8, 40, 7, false);
+    const std::vector<size_t> checkpoints{3, 8};
+    ASSERT_EQ(ve_sim_options_set_checkpoints(options.get(), checkpoints.data(), checkpoints.size()), VE_OK);
+    ve_dcc_sim* raw = nullptr;
+    ASSERT_EQ(ve_simulate_dcc_with_cancel(context.get(), fitted.fits[0], full_options.get(), nullptr, nullptr, &raw),
+              VE_OK)
+        << ve_last_error();
+    DccSimPtr full(raw);
+    ASSERT_EQ(ve_simulate_dcc_with_cancel(context.get(), fitted.fits[0], options.get(), nullptr, nullptr, &raw),
+              VE_OK)
+        << ve_last_error();
+    DccSimPtr cumulative(raw);
+    const std::vector<double> returns = sim_view_of(ve_dcc_sim_returns, full.get());
+    const std::vector<double> sums = sim_view_of(ve_dcc_sim_cumulative, cumulative.get());
+    ASSERT_EQ(sums.size(), 40 * 2 * kSeries);
+    for (std::size_t p = 0; p < 40; ++p)
+    {
+        for (std::size_t i = 0; i < kSeries; ++i)
+        {
+            double sum = 0.0;
+            std::size_t h = 0;
+            for (std::size_t j = 0; j < 2; ++j)
+            {
+                for (; h < checkpoints[j]; ++h)
+                {
+                    sum += returns[(p * 8 + h) * kSeries + i];
+                }
+                EXPECT_EQ(std::bit_cast<std::uint64_t>(sums[(p * 2 + j) * kSeries + i]),
+                          std::bit_cast<std::uint64_t>(sum));
+            }
+        }
+    }
+    const size_t* listed = nullptr;
+    size_t count = 0;
+    ASSERT_EQ(ve_dcc_sim_checkpoints(cumulative.get(), &listed, &count), VE_OK);
+    EXPECT_EQ(std::vector<size_t>(listed, listed + count), checkpoints);
+    const double* data = nullptr;
+    size_t len = 0;
+    EXPECT_EQ(ve_dcc_sim_returns(cumulative.get(), &data, &len), VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(mentions("ve_dcc_sim_cumulative")) << ve_last_error();
+    EXPECT_EQ(ve_dcc_sim_sigma(cumulative.get(), &data, &len), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_sim_cumulative(full.get(), &data, &len), VE_INVALID_ARGUMENT);
+    EXPECT_EQ(ve_dcc_sim_checkpoints(full.get(), &listed, &count), VE_OK);
+    EXPECT_EQ(count, 0U);
+}
+
+TEST(CapiDccSimCumulative, RefusesCorrelations)
+{
+    FittedDcc fitted;
+    ve::testing::ContextPtr context = ve::testing::make_context(1);
+    SimOptionsPtr options = make_sim_options(8, 10, 7, true);
+    const size_t checkpoints[] = {8};
+    ASSERT_EQ(ve_sim_options_set_checkpoints(options.get(), checkpoints, 1), VE_OK);
+    ve_dcc_sim* raw = nullptr;
+    EXPECT_EQ(ve_simulate_dcc_with_cancel(context.get(), fitted.fits[0], options.get(), nullptr, nullptr, &raw),
+              VE_INVALID_ARGUMENT);
+    EXPECT_TRUE(mentions("checkpoints and correlations")) << ve_last_error();
+    EXPECT_EQ(raw, nullptr);
+}

@@ -128,6 +128,7 @@ typedef struct ve_sim_options ve_sim_options
 typedef struct ve_sim ve_sim
 function ve_status ve_sim_options_create(size_t, size_t, uint64_t, ve_sim_options**)
 function ve_status ve_sim_options_set_regressors(ve_sim_options*, const ve_panel*, const ve_panel*)
+function ve_status ve_sim_options_set_checkpoints(ve_sim_options*, const size_t*, size_t)
 function void ve_sim_options_free(ve_sim_options*)
 function ve_status ve_simulate_fit(ve_context*, const ve_fit*, const ve_sim_options*, ve_sim**)
 function ve_status ve_simulate_fit_with_cancel(ve_context*, const ve_fit*, const ve_sim_options*, const ve_cancel*, ve_sim**)
@@ -137,6 +138,8 @@ function ve_status ve_sim_paths(const ve_sim*, size_t*)
 function ve_status ve_sim_horizon(const ve_sim*, size_t*)
 function ve_status ve_sim_returns(const ve_sim*, const double**, size_t*)
 function ve_status ve_sim_sigma(const ve_sim*, const double**, size_t*)
+function ve_status ve_sim_cumulative(const ve_sim*, const double**, size_t*)
+function ve_status ve_sim_checkpoints(const ve_sim*, const size_t**, size_t*)
 function void ve_sim_free(ve_sim*)
 typedef struct ve_dcc_spec ve_dcc_spec
 typedef struct ve_dcc_options ve_dcc_options
@@ -215,4 +218,6 @@ function ve_status ve_dcc_sim_returns(const ve_dcc_sim*, const double**, size_t*
 function ve_status ve_dcc_sim_sigma(const ve_dcc_sim*, const double**, size_t*)
 function ve_status ve_dcc_sim_correlation(const ve_dcc_sim*, const double**, size_t*)
 function ve_status ve_dcc_sim_covariance(const ve_dcc_sim*, const double**, size_t*)
+function ve_status ve_dcc_sim_cumulative(const ve_dcc_sim*, const double**, size_t*)
+function ve_status ve_dcc_sim_checkpoints(const ve_dcc_sim*, const size_t**, size_t*)
 function void ve_dcc_sim_free(ve_dcc_sim*)

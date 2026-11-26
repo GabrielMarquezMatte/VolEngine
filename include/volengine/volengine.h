@@ -399,6 +399,12 @@ VE_API ve_status ve_sim_options_create(size_t horizon, size_t paths, uint64_t se
    count, NULL when it has none. A NaN or infinite value is VE_INVALID_ARGUMENT and leaves what an earlier call set.
    Replaces what an earlier call set. */
 VE_API ve_status ve_sim_options_set_regressors(ve_sim_options* o, const ve_panel* mxreg, const ve_panel* vxreg);
+/* Checkpoints of the horizon: the simulation keeps, per path (and per series in a DCC), only the sum of the
+   simulated series over steps 1..k for each k, as the left-to-right sum of the first k steps of the full output with
+   the same seed. ks are strictly increasing, from 1, and the last is the horizon of o; otherwise
+   VE_INVALID_ARGUMENT, with the option unchanged. n = 0 (ks may be NULL) clears it: back to the full output.
+   NULL ks with n > 0 is VE_INVALID_ARGUMENT. Replaces what an earlier call set. Since 1.3.0. */
+VE_API ve_status ve_sim_options_set_checkpoints(ve_sim_options* o, const size_t* ks, size_t n);
 VE_API void ve_sim_options_free(ve_sim_options* o);
 /* VE_INVALID_ARGUMENT for a fit with no finite point (see ve_fit_status) or regressors that do not match its spec;
    a VE_FIT_FAILED fit that has a finite point simulates from it. */
@@ -420,9 +426,14 @@ VE_API ve_status ve_sim_paths(const ve_sim* sim, size_t* out);
 VE_API ve_status ve_sim_horizon(const ve_sim* sim, size_t* out);
 /* paths x horizon values, row-major (row p is path p), valid until sim is freed: the simulated series and its
    conditional standard deviation. The simulation copies what it needs: it stays valid after its context, fit,
-   spec and options are freed. */
+   spec and options are freed. With checkpoints they are VE_INVALID_ARGUMENT: read ve_sim_cumulative. */
 VE_API ve_status ve_sim_returns(const ve_sim* sim, const double** data, size_t* len);
 VE_API ve_status ve_sim_sigma(const ve_sim* sim, const double** data, size_t* len);
+/* With checkpoints: paths x K values, row-major (row p is path p), valid until sim is freed. Without them
+   VE_INVALID_ARGUMENT. Since 1.3.0. */
+VE_API ve_status ve_sim_cumulative(const ve_sim* sim, const double** data, size_t* len);
+/* The checkpoints of the simulation (K values, valid until sim is freed), or len = 0 without them. Since 1.3.0. */
+VE_API ve_status ve_sim_checkpoints(const ve_sim* sim, const size_t** data, size_t* len);
 VE_API void ve_sim_free(ve_sim* sim);
 
 /* ---- DCC ----
@@ -566,11 +577,18 @@ VE_API ve_status ve_dcc_sim_paths(const ve_dcc_sim* sim, size_t* out);
 VE_API ve_status ve_dcc_sim_horizon(const ve_dcc_sim* sim, size_t* out);
 VE_API ve_status ve_dcc_sim_series(const ve_dcc_sim* sim, size_t* out);
 /* paths x horizon x m (returns, sigma) and paths x horizon x m x m (correlation, covariance), row-major, valid until
-   sim is freed. The correlation and covariance views are VE_INVALID_ARGUMENT unless the options had correlations on. */
+   sim is freed. The correlation and covariance views are VE_INVALID_ARGUMENT unless the options had correlations on;
+   returns and sigma are VE_INVALID_ARGUMENT with checkpoints (read ve_dcc_sim_cumulative). Checkpoints with
+   correlations on are VE_INVALID_ARGUMENT in ve_simulate_dcc. */
 VE_API ve_status ve_dcc_sim_returns(const ve_dcc_sim* sim, const double** data, size_t* len);
 VE_API ve_status ve_dcc_sim_sigma(const ve_dcc_sim* sim, const double** data, size_t* len);
 VE_API ve_status ve_dcc_sim_correlation(const ve_dcc_sim* sim, const double** data, size_t* len);
 VE_API ve_status ve_dcc_sim_covariance(const ve_dcc_sim* sim, const double** data, size_t* len);
+/* With checkpoints: paths x K x m, row-major, valid until sim is freed. Without them VE_INVALID_ARGUMENT.
+   Since 1.3.0. */
+VE_API ve_status ve_dcc_sim_cumulative(const ve_dcc_sim* sim, const double** data, size_t* len);
+/* The checkpoints of the simulation (K values), or len = 0 without them. Since 1.3.0. */
+VE_API ve_status ve_dcc_sim_checkpoints(const ve_dcc_sim* sim, const size_t** data, size_t* len);
 VE_API void ve_dcc_sim_free(ve_dcc_sim* sim);
 
 #ifdef __cplusplus
