@@ -148,6 +148,7 @@ src/capi/dcc/dcc_sim_api.cpp
     src/capi/results/forecast_api.cpp
     src/capi/results/regressor_rows.cpp
     src/capi/results/sim_api.cpp
+    src/capi/risk/risk_api.cpp
     src/capi/spec_api.cpp
     src/capi/panel_api.cpp
     src/capi/error.cpp)
@@ -198,6 +199,7 @@ if(VE_BUILD_TESTS)
         tests/unit/capi/results/forecast_test.cpp
         tests/unit/capi/panel_test.cpp
         tests/unit/capi/results/sim_test.cpp
+        tests/unit/capi/risk/risk_test.cpp
         tests/unit/capi/spec_test.cpp
         tests/unit/cov/estimators_test.cpp
         tests/unit/dcc/copula/fit_test.cpp

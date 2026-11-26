@@ -30,6 +30,11 @@ break between 0.x releases.
   a panel (divisor t - 1, as `numpy.cov`) and `ve_cov_ledoit_wolf` its Ledoit-Wolf shrinkage towards mu * I with the
   intensity, as `sklearn.covariance.ledoit_wolf`. Both write an exactly symmetric N x N matrix into the caller's
   buffer and refuse panels with ranges, fewer than 2 rows or a value that is not finite.
+- Risk measures (`ve_risk_*`). `ve_risk_empirical` gives the VaR and ES of a weighted portfolio over a panel of log
+  (`VE_RETURNS_LOG`) or simple (`VE_RETURNS_SIMPLE`) returns, dates or simulated paths in rows, with
+  `numpy.quantile`'s linear interpolation; `ve_risk_parametric` gives them for mean + sigma * z with z any of the eight
+  standardized densities and its skew, shape and ghlambda (closed-form ES for norm and std, quadrature for the others).
+  Both are positive as losses.
 - C++: `ve::cov::sample` and `ve::cov::ledoit_wolf` (`volengine/cov.hpp`), over a `Panel`.
 - C++: `cumulative_mean()` and `cumulative_sigma()` on `Forecast`, `cumulative_mean()` and `cumulative_covariance()` on
   `DccForecast`.

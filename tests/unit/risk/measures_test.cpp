@@ -1,10 +1,13 @@
+#include "dist/cdf.hpp"
 #include "risk/measures.hpp"
 
 #include <boost/math/distributions/normal.hpp>
 #include <boost/math/distributions/students_t.hpp>
+#include <boost/math/quadrature/exp_sinh.hpp>
 #include <cmath>
 #include <cstddef>
 #include <gtest/gtest.h>
+#include <limits>
 #include <vector>
 
 namespace
@@ -175,6 +178,25 @@ TEST(RiskParametric, QuadratureMatchesNormal)
     {
         const double expected = -boost::math::pdf(normal, boost::math::quantile(normal, p)) / p;
         EXPECT_NEAR(ve::risk::tail_mean_by_quadrature(Dist::Norm, {}, p), expected, 1e-10 * std::abs(expected)) << p;
+    }
+}
+
+// E[z] = 0, so p m_p = -(the integral of z f(z) above q_p). With p past one half the lower integral crosses the kink
+// of the ged and the skewed densities; the upper one, integrated here on its own, does not.
+TEST(RiskParametric, QuadratureAcrossTheKink)
+{
+    for (const DistCase& sample : kDists)
+    {
+        const ve::dist::Density<double> density = ve::dist::make_density(sample.dist, sample.parameters);
+        const auto integrand = [&density](double z) { return z * std::exp(ve::dist::log_density(density, z)); };
+        for (double p : {0.55, 0.8})
+        {
+            const double q = ve::dist::quantile(sample.dist, sample.parameters, p);
+            const double upper = boost::math::quadrature::exp_sinh<double>().integrate(
+                integrand, q, std::numeric_limits<double>::infinity(), 1e-13);
+            EXPECT_NEAR(p * ve::risk::tail_mean_by_quadrature(sample.dist, sample.parameters, p), -upper, 1e-10)
+                << static_cast<int>(sample.dist) << " shape " << sample.parameters.shape << " p " << p;
+        }
     }
 }
 

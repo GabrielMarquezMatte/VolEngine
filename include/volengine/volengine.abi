@@ -227,3 +227,7 @@ function ve_status ve_dcc_sim_checkpoints(const ve_dcc_sim*, const size_t**, siz
 function void ve_dcc_sim_free(ve_dcc_sim*)
 function ve_status ve_cov_sample(const ve_panel*, double*)
 function ve_status ve_cov_ledoit_wolf(const ve_panel*, double*, double*)
+define VE_RETURNS_LOG 0
+define VE_RETURNS_SIMPLE 1
+function ve_status ve_risk_empirical(const ve_panel*, const double*, int32_t, double, double*, double*)
+function ve_status ve_risk_parametric(int32_t, double, double, double, double, double, double, double*, double*)

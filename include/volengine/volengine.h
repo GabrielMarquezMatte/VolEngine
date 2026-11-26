@@ -613,6 +613,23 @@ VE_API ve_status ve_cov_sample(const ve_panel* panel, double* out);
    sklearn.covariance.ledoit_wolf(assume_centered=False); *shrinkage receives the intensity, in [0, 1]. */
 VE_API ve_status ve_cov_ledoit_wolf(const ve_panel* panel, double* out, double* shrinkage);
 
+/* ---- Risk measures (ve_risk_*) ----
+   VaR and ES at confidence `confidence` in (0, 1) (0.99: the 1% tail), both positive as losses, in units of the
+   return. On an error *var and *es are left unchanged. Since 1.3.0. */
+#define VE_RETURNS_LOG 0
+#define VE_RETURNS_SIMPLE 1
+/* Empirical, over a T x N panel (dates or paths in rows): row t is the portfolio's simple return
+   sum_j weights[j] * s_tj, s = exp(r) - 1 for VE_RETURNS_LOG and s = r for VE_RETURNS_SIMPLE. VaR is minus its
+   linear-interpolated quantile at 1 - confidence (numpy.quantile's default), ES minus the mean of the returns at or
+   below it. The panel must be rectangular with t >= 1 and finite values; weights holds N finite values. */
+VE_API ve_status ve_risk_empirical(const ve_panel* returns, const double* weights, int32_t kind, double confidence,
+                                   double* var, double* es);
+/* Parametric: the return is mean + sigma * z, z the standardized VE_DIST_* density with the fit's skew, shape and
+   ghlambda (ignored where the density has none). VaR = -(mean + sigma q), ES = -(mean + sigma E[z | z <= q]), q the
+   quantile of z at 1 - confidence. mean finite, sigma >= 0 finite, parameters in the density's domain. */
+VE_API ve_status ve_risk_parametric(int32_t dist, double skew, double shape, double ghlambda, double mean, double sigma,
+                                    double confidence, double* var, double* es);
+
 #ifdef __cplusplus
 }
 #endif
