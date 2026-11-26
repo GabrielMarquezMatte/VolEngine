@@ -1,5 +1,6 @@
 #include "forecast/forecast.hpp"
 
+#include "forecast/cumulative.hpp"
 #include "forecast/inputs.hpp"
 #include "forecast/step.hpp"
 #include "forecast/variance_forecast.hpp"
@@ -120,6 +121,21 @@ std::vector<double> arma_deviations(const Inputs& in)
     return deviations;
 }
 
+void add_cumulative(const model::Layout& layout, std::span<const double> estimate, Forecast& result)
+{
+    const std::size_t horizon = result.mean.size();
+    const std::vector<double> weights = cumulative_weights(layout, estimate, horizon);
+    std::vector<double> variances(horizon);
+    std::ranges::transform(result.sigma, variances.begin(), [](double sigma) { return sigma * sigma; });
+    double mean = 0.0;
+    for (std::size_t h = 1; h <= horizon; ++h)
+    {
+        mean += result.mean[h - 1];
+        result.cumulative_mean.push_back(mean);
+        result.cumulative_sigma.push_back(std::sqrt(cumulative_variance(weights, variances, h)));
+    }
+}
+
 std::vector<double> mean_forecast(const Inputs& in, std::span<const double> sigma)
 {
     std::vector<double> mean = in.layout.has_arfima() ? fractional_deviations(in) : arma_deviations(in);
@@ -152,6 +168,7 @@ Forecast forecast(const Spec& spec, std::span<const double> estimate, const Fore
     result.sigma = detail::variance_forecast(in);
     std::ranges::transform(result.sigma, result.sigma.begin(), [](double variance) { return std::sqrt(variance); });
     result.mean = mean_forecast(in, result.sigma);
+    add_cumulative(layout, estimate, result);
     return result;
 }
 

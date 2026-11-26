@@ -101,6 +101,7 @@ add_library(volengine_core STATIC
     src/fit/criteria.cpp
     src/fit/fit.cpp
     src/fit/standard_errors.cpp
+    src/forecast/cumulative.cpp
     src/forecast/forecast.cpp
     src/forecast/variance_forecast.cpp
     src/linalg/cholesky.cpp
