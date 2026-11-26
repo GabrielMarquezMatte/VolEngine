@@ -125,6 +125,7 @@ ve_status check_distribution(int32_t dist, const ve::dist::ShapeParameters<doubl
 
 }
 
+// NOLINTNEXTLINE(readability-function-size): the C ABI fixes this signature
 extern "C" ve_status ve_risk_empirical(const ve_panel* returns, const double* weights, int32_t kind, double confidence,
                                        double* var, double* es)
 {
@@ -160,6 +161,7 @@ extern "C" ve_status ve_risk_empirical(const ve_panel* returns, const double* we
         });
 }
 
+// NOLINTNEXTLINE(readability-function-size): the C ABI fixes this signature
 extern "C" ve_status ve_risk_parametric(int32_t dist, double skew, double shape, double ghlambda, double mean,
                                         double sigma, double confidence, double* var, double* es)
 {

@@ -24,8 +24,10 @@ public sealed class CancellationTests
         Fixed = new Dictionary<string, double>(Stationary, StringComparer.Ordinal) { ["shape"] = 6 },
     };
 
-    // 10 million steps and 160 MB of paths, many times the work that fits in SignalDelay.
-    private static readonly SimulationOptions LongSimulation = new(Horizon: 200, Paths: 50_000, Seed: 1);
+    // 400 million steps, many times the work that fits in SignalDelay even on a fast runner (10 million finished before
+    // it on one); the single checkpoint keeps only one sum per path, so the memory stays small.
+    private static readonly SimulationOptions LongSimulation =
+        new(Horizon: 2000, Paths: 200_000, Seed: 1) { Checkpoints = [2000] };
 
     private static double[] Series()
     {
