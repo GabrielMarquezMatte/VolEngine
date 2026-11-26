@@ -225,3 +225,5 @@ function ve_status ve_dcc_sim_covariance(const ve_dcc_sim*, const double**, size
 function ve_status ve_dcc_sim_cumulative(const ve_dcc_sim*, const double**, size_t*)
 function ve_status ve_dcc_sim_checkpoints(const ve_dcc_sim*, const size_t**, size_t*)
 function void ve_dcc_sim_free(ve_dcc_sim*)
+function ve_status ve_cov_sample(const ve_panel*, double*)
+function ve_status ve_cov_ledoit_wolf(const ve_panel*, double*, double*)

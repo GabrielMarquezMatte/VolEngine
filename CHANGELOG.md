@@ -26,6 +26,10 @@ break between 0.x releases.
   the mean and standard deviation of the forecast sum of the next h returns; `ve_dcc_forecast_cumulative_mean` and
   `ve_dcc_forecast_cumulative_covariance` give the mean and covariance for a DCC. The variance weights each step by
   the MA(inf) weights of an ARMA/ARFIMA mean, so it is the plain sum of sigma^2 (or of H) only without one.
+- Covariance estimators, the first module outside GARCH (`ve_cov_*`). `ve_cov_sample` gives the sample covariance of
+  a panel (divisor t - 1, as `numpy.cov`) and `ve_cov_ledoit_wolf` its Ledoit-Wolf shrinkage towards mu * I with the
+  intensity, as `sklearn.covariance.ledoit_wolf`. Both write an exactly symmetric N x N matrix into the caller's
+  buffer and refuse panels with ranges, fewer than 2 rows or a value that is not finite.
 - C++: `cumulative_mean()` and `cumulative_sigma()` on `Forecast`, `cumulative_mean()` and `cumulative_covariance()` on
   `DccForecast`.
 - C#: `CumulativeMean` and `CumulativeSigma` on `Forecast`, `CumulativeMean` and `CumulativeCovariance` on

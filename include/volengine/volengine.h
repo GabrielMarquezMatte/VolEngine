@@ -603,6 +603,16 @@ VE_API ve_status ve_dcc_sim_cumulative(const ve_dcc_sim* sim, const double** dat
 VE_API ve_status ve_dcc_sim_checkpoints(const ve_dcc_sim* sim, const size_t** data, size_t* len);
 VE_API void ve_dcc_sim_free(ve_dcc_sim* sim);
 
+/* ---- Covariance estimators (ve_cov_*) ----
+   Over a T x N panel of returns (series in columns), with each series' mean removed. `out` holds N * N doubles and
+   receives the matrix row-major, exactly symmetric. The panel must be rectangular (no ve_panel_set_ranges), with
+   t >= 2, n >= 1 and every value finite; otherwise VE_INVALID_ARGUMENT and `out` is left unchanged. Since 1.3.0. */
+/* The sample covariance Z'Z / (t - 1), as numpy.cov(rowvar=False). */
+VE_API ve_status ve_cov_sample(const ve_panel* panel, double* out);
+/* The Ledoit-Wolf (2004) shrinkage of Z'Z / t towards mu * I, mu the mean variance, as
+   sklearn.covariance.ledoit_wolf(assume_centered=False); *shrinkage receives the intensity, in [0, 1]. */
+VE_API ve_status ve_cov_ledoit_wolf(const ve_panel* panel, double* out, double* shrinkage);
+
 #ifdef __cplusplus
 }
 #endif
