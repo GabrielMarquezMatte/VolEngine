@@ -1,6 +1,8 @@
 """VolEngine: GARCH estimation over the VolEngine C API."""
 
 from .api import (
+    Cancel,
+    Cancelled,
     CoefTable,
     Context,
     DccFit,
@@ -19,6 +21,8 @@ from .api import (
 )
 
 __all__ = [
+    "Cancel",
+    "Cancelled",
     "CoefTable",
     "Context",
     "DccFit",

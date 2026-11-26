@@ -11,11 +11,13 @@ from typing import TYPE_CHECKING, Any, TypedDict, overload
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from ._cancel import Cancel, cancel_pointer
 from ._dcc import DccFit, DccSpec, dcc_standard_errors, fit_dcc, open_future
 from ._diagnostics import DiagnosticResult, Nyblom, SignBias
 from ._fit import CoefTable, Fit, future_panel
 from ._forecast import DccForecast, Forecast
 from ._native import (
+    Cancelled,
     Handle,
     VolEngineError,
     bounded,
@@ -33,6 +35,8 @@ if TYPE_CHECKING:
     from typing import Unpack
 
 __all__ = [
+    "Cancel",
+    "Cancelled",
     "CoefTable",
     "Context",
     "DccFit",
@@ -61,6 +65,7 @@ class FitKeywords(TypedDict, total=False):
     lengths: ArrayLike | None
     mxreg: ArrayLike | None
     vxreg: ArrayLike | None
+    cancel: Cancel | None
 
 
 class FutureKeywords(TypedDict, total=False):
@@ -217,11 +222,14 @@ class Context:
         shape (N,); a list of specs gives (n_specs,) or (n_specs, N).
 
         Keywords (all optional): `options` (FitOptions), `starts` and `lengths` (row ranges, given together),
-        `mxreg` and `vxreg`, the mean and variance regressors of the specs with mxreg > 0 or vxreg > 0:
+        `cancel` (a `Cancel`), `mxreg` and `vxreg`, the mean and variance regressors of the specs with mxreg > 0 or vxreg > 0:
         shape (T, k) for 1D data and (T, N, k) for (T, N) data, k being the count of the spec (a different k, a
         different shape or a missing array is a ValueError). Series j uses X[:, j, :] without a copy, and with
         `starts` and `lengths` its rows starts[j] .. starts[j] + lengths[j] - 1 of the regressors. The specs with a
         count of 0 take no regressors; an array given when every spec has a count of 0 is a ValueError.
+
+        `cancel=Cancel()` stops the call with `Cancelled` when its `cancel()` is called, from any thread; no fit is
+        returned.
         """
         unknown = sorted(keywords.keys() - FitKeywords.__annotations__.keys())
         if unknown:
@@ -246,7 +254,7 @@ class Context:
             regressor_array(keywords.get("mxreg"), "mxreg", [item.mxreg for item in specs], data_shape),
             regressor_array(keywords.get("vxreg"), "vxreg", [item.vxreg for item in specs], data_shape),
         )
-        fits = self._run(specs, array, keywords.get("options"), ranges, regressors)
+        fits = self._run(specs, array, keywords.get("options"), ranges, regressors, keywords.get("cancel"))
         if isinstance(spec, Spec) and one_dimensional:
             return fits[0]
         if isinstance(spec, Spec):
@@ -256,30 +264,46 @@ class Context:
         return shaped(fits, (len(specs), series_count))
 
     @overload
-    def fit_dcc(self, spec: DccSpec, univariate: Sequence[Fit], *, standard_errors: bool = True) -> DccFit: ...
+    def fit_dcc(
+        self, spec: DccSpec, univariate: Sequence[Fit], *, standard_errors: bool = True, cancel: Cancel | None = None
+    ) -> DccFit: ...
 
     @overload
     def fit_dcc(
-        self, spec: Sequence[DccSpec], univariate: Sequence[Fit], *, standard_errors: bool = True
+        self,
+        spec: Sequence[DccSpec],
+        univariate: Sequence[Fit],
+        *,
+        standard_errors: bool = True,
+        cancel: Cancel | None = None,
     ) -> list[DccFit]: ...
 
     def fit_dcc(
-        self, spec: DccSpec | Sequence[DccSpec], univariate: Sequence[Fit], *, standard_errors: bool = True
+        self,
+        spec: DccSpec | Sequence[DccSpec],
+        univariate: Sequence[Fit],
+        *,
+        standard_errors: bool = True,
+        cancel: Cancel | None = None,
     ) -> DccFit | list[DccFit]:
         """Fit one DCC spec or a grid over the chosen ordered univariate fits.
 
         Fits need at least two series with the same T >= 100 and finite points.
         Disable standard errors for grid selection, then call the selected result's
-        standard_errors(univariate). Regressor fits require this option disabled.
+        standard_errors(univariate). Regressor fits require this option disabled. `cancel` stops the call with
+        `Cancelled` (see `Cancel`).
         """
-        results = fit_dcc(self._handle, spec, univariate, standard_errors)
+        results = fit_dcc(self._handle, spec, univariate, standard_errors, cancel)
         if isinstance(spec, DccSpec):
             return results[0]
         return results
 
-    def standard_errors(self, fit: DccFit, univariate: Sequence[Fit]) -> DccFit:
-        """`fit` with its standard errors, on this context's threads; `univariate` are the fits it was made from."""
-        return dcc_standard_errors(self._handle, fit, univariate)
+    def standard_errors(self, fit: DccFit, univariate: Sequence[Fit], *, cancel: Cancel | None = None) -> DccFit:
+        """`fit` with its standard errors, on this context's threads; `univariate` are the fits it was made from.
+
+        `cancel` stops the call with `Cancelled` (see `Cancel`).
+        """
+        return dcc_standard_errors(self._handle, fit, univariate, cancel)
 
     @overload
     def simulate(
@@ -289,6 +313,7 @@ class Context:
         horizon: int,
         paths: int,
         seed: int,
+        cancel: Cancel | None = None,
         **regressors: Unpack[FutureKeywords],
     ) -> Simulation: ...
 
@@ -300,6 +325,7 @@ class Context:
         horizon: int,
         paths: int,
         seed: int,
+        cancel: Cancel | None = None,
         **options: Unpack[DccSimulateKeywords],
     ) -> DccSimulation: ...
 
@@ -310,6 +336,7 @@ class Context:
         horizon: int,
         paths: int,
         seed: int,
+        cancel: Cancel | None = None,
         **regressors: Any,
     ) -> Simulation | DccSimulation:
         """Simulate `paths` paths of `horizon` steps from a fit or from a spec with every parameter fixed.
@@ -319,7 +346,7 @@ class Context:
         fixed, no variance targeting, a stationary model and not iGARCH (VolEngineError otherwise). `mxreg` and
         `vxreg` are the regressors of the horizon, as in `Fit.forecast`, the same for every path. The threads of the
         context share the paths; the same seed gives the same paths for any thread count, within one version of
-        the library. `seed` is an integer in [0, 2**64).
+        the library. `seed` is an integer in [0, 2**64). `cancel` stops the call with `Cancelled` (see `Cancel`).
 
         From a DccFit (a result of `fit_dcc`, which keeps the final state of each series and needs no univariate
         `Fit`) the paths are multivariate and give a DccSimulation: `mxreg` and `vxreg` are sequences with one entry
@@ -330,7 +357,7 @@ class Context:
         paths = bounded(paths, "paths", 1)
         seed = bounded(seed, "seed", 0)
         if isinstance(source, DccFit):
-            return self._simulate_dcc(source, horizon, paths, seed, regressors)
+            return self._simulate_dcc(source, horizon, paths, seed, regressors, cancel)
         if "correlations" in regressors:
             raise TypeError("correlations is only for a DccFit")
         unknown = sorted(regressors.keys() - FutureKeywords.__annotations__.keys())
@@ -348,17 +375,27 @@ class Context:
                 spec = stack.enter_context(source.native_handle())
                 return Simulation(
                     create_handle(
-                        lib.ve_simulate_spec, lib.ve_sim_free, self._handle.pointer, spec.pointer, options.pointer
+                        lib.ve_simulate_spec_with_cancel,
+                        lib.ve_sim_free,
+                        self._handle.pointer,
+                        spec.pointer,
+                        options.pointer,
+                        cancel_pointer(cancel),
                     )
                 )
             return Simulation(
                 create_handle(
-                    lib.ve_simulate_fit, lib.ve_sim_free, self._handle.pointer, source._handle.pointer, options.pointer
+                    lib.ve_simulate_fit_with_cancel,
+                    lib.ve_sim_free,
+                    self._handle.pointer,
+                    source._handle.pointer,
+                    options.pointer,
+                    cancel_pointer(cancel),
                 )
             )
 
     def _simulate_dcc(
-        self, source: DccFit, horizon: int, paths: int, seed: int, options: dict[str, Any]
+        self, source: DccFit, horizon: int, paths: int, seed: int, options: dict[str, Any], cancel: Cancel | None
     ) -> DccSimulation:
         unknown = sorted(options.keys() - DccSimulateKeywords.__annotations__.keys())
         if unknown:
@@ -371,12 +408,13 @@ class Context:
             check(lib.ve_sim_options_set_correlations(handle.pointer, int(bool(options.get("correlations", False)))))
             return DccSimulation(
                 create_handle(
-                    lib.ve_simulate_dcc,
+                    lib.ve_simulate_dcc_with_cancel,
                     lib.ve_dcc_sim_free,
                     self._handle.pointer,
                     source._handle.pointer,
                     handle.pointer,
                     future,
+                    cancel_pointer(cancel),
                 )
             )
 
@@ -387,6 +425,7 @@ class Context:
         options: FitOptions | None,
         ranges: tuple[NDArray[np.uintp], NDArray[np.uintp]] | None,
         regressors: tuple[NDArray[np.float64] | None, NDArray[np.float64] | None],
+        cancel: Cancel | None,
     ) -> list[Fit]:
         array = native_layout(array)
         series_count = array.shape[1]
@@ -399,12 +438,12 @@ class Context:
             mean = open_regressors(stack, regressors[0], [spec.mxreg for spec in specs])
             variance = open_regressors(stack, regressors[1], [spec.vxreg for spec in specs])
             set_regressors(batch, mean, variance)
-            return self._fit_batch(batch)
+            return self._fit_batch(batch, cancel)
 
-    def _fit_batch(self, batch: Handle) -> list[Fit]:
+    def _fit_batch(self, batch: Handle, cancel: Cancel | None) -> list[Fit]:
         count = ctypes.c_size_t()
         check(lib.ve_batch_job_count(batch.pointer, ctypes.byref(count)))
         pointers = (ctypes.c_void_p * count.value)()
-        check(lib.ve_fit_batch(self._handle.pointer, batch.pointer, pointers))
+        check(lib.ve_fit_batch_with_cancel(self._handle.pointer, batch.pointer, cancel_pointer(cancel), pointers))
         handles = [Handle(pointer, lib.ve_fit_free) for pointer in pointers]
         return [Fit(handle) for handle in handles]

@@ -88,5 +88,30 @@ The `mvlaplace` density is singular where every standardized residual of a date 
 fixed at 0): the log-likelihood is then not finite and the fit ends `failed`, with no message besides the status.
 Drop such dates before the univariate fits.
 
+## Cancellation
+
+`fit`, `fit_dcc`, `standard_errors` and `simulate` take a keyword-only `cancel=`, a `Cancel`. Its `cancel()` can be
+called from any thread, also while the call runs, and the call raises `Cancelled` (a `VolEngineError` with status 6)
+within one optimizer iteration, one stage of the standard errors or one simulated path; no result is returned. The
+call releases the GIL, so a `threading.Timer` gives a deadline:
+
+```python
+import threading
+
+models = [ve.Spec(model=model, dist="std") for model in ("sgarch", "egarch", "gjrgarch", "aparch")]
+c = ve.Cancel()
+timer = threading.Timer(0.05, c.cancel)   # the deadline, in seconds
+timer.start()
+try:
+    ctx.fit(models * 10, np.tile(panel, (1, 20)), cancel=c)
+except ve.Cancelled:
+    print("stopped at the deadline")
+finally:
+    timer.cancel()
+```
+
+A `Cancel` stays requested: make a new one for the next call. One `Cancel` can go to several calls and a request stops
+all of them. A request that arrives after the call's last check does not stop it, so the call returns its result.
+
 The README has the long examples: ARMA means, every distribution, fixed parameters, regressors, ARFIMA and variance
 targeting.
