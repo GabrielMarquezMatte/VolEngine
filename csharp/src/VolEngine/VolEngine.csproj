@@ -19,7 +19,7 @@ fits, grids over many series, standard errors, diagnostics, forecasts and simula
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <!-- The last release on nuget.org: a new package must not break its API. -->
     <EnablePackageValidation>true</EnablePackageValidation>
-    <PackageValidationBaselineVersion>1.1.0</PackageValidationBaselineVersion>
+    <PackageValidationBaselineVersion>1.2.0</PackageValidationBaselineVersion>
     <!-- The native libraries: VolEngineNativeAssets is a folder of volengine-native-<rid>.<ext> files (the release
          artifacts); each RID below becomes runtimes/<rid>/native/libvolengine.<ext>. -->
     <VolEngineNativeRids Condition="'$(VolEngineNativeRids)' == ''">linux-x64;linux-arm64;linux-musl-x64;linux-musl-arm64;osx-arm64;osx-x64;win-x64</VolEngineNativeRids>

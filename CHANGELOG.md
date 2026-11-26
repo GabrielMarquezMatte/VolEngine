@@ -8,7 +8,7 @@ From 1.0 the C ABI only grows: a signature or an enum value is never changed or 
 semver major (the Python package and the C++ wrapper refuse a library whose ABI version differs). Before 1.0 it could
 break between 0.x releases.
 
-## [Unreleased]
+## [1.3.0] - 2026-11-26
 
 ### Added
 
@@ -66,6 +66,38 @@ break between 0.x releases.
 - `ve_fit_batch`, `ve_dcc_fit_batch`, `ve_dcc_standard_errors`, `ve_simulate_fit`, `ve_simulate_spec` and
   `ve_simulate_dcc`: call the `_with_cancel` variant with a NULL `ve_cancel`. They warn at compile time (define
   `VE_NO_DEPRECATED_WARNINGS` to silence it) and are removed in ABI 2.
+
+### Fixed
+
+- C++ wrapper: `ve::Panel::create_strided` with a stride so large that `(rows - 1) * stride_rows + (cols - 1) *
+  stride_cols` wrapped around in `size_t` passed the extent check, and the panel then read past the data. Such a stride
+  is now refused with `invalid_argument` ("the data is smaller than the shape of the panel").
+- DCC: a fit with a fixed weight beside default starts failed or did not start when the default start (`dcca1`,
+  `dccb1`, `dccg1`, `fdcca1`, ...) left no room under the persistence ceiling, for example `dcca1 = 0.15` fixed in
+  DCC or aDCC, or `fdcca1 = 0.5` fixed in FDCC. The weights left to their default now shrink to fit beside the fixed
+  and started ones, so the fit converges. A start the caller gave is still taken exactly.
+- DCC: an FDCC fit (30 or more groups) with one weight fixed estimated as many parameters as the widest AD lane but
+  the objective differentiated one more, so the fit failed. It now takes the dual-number objective and runs.
+- DCC: simulation with the empirical copula from a correlation matrix without a Cholesky factor read a quantile from
+  no rank of the sample. Every shock is now NaN, and so is the return.
+- A csGARCH fit with `rho` at `P`, or `phi` at the sum of `beta`, had every standard error NaN, where only the
+  parameters at the edge can have none: a step up in any weight takes `P` above `rho`, a step down in any `beta` takes
+  the sum of `beta` below `phi`. Only `rho`, `phi` and the weights beside them lose their standard errors now.
+- A fit whose `omega` underflowed (very short series, `exp(u)` below 1e-308) had `omega = 0`, which failed the validity
+  check, every standard error NaN and an infinite unconstrained value that broke it as a warm start or as fixed values.
+  `omega` now stops at the smallest normal double, where it has no standard error but the others keep theirs.
+- A shape that makes a shock-moment `kappa` subnormal (`alpha` is read back as `t / kappa`, which overflowed) is
+  refused as invalid instead of giving an infinite `alpha`.
+- Distributions: the standardization moments (the `kappa` of the weights, the probability below zero) of std and sstd
+  with the shape near the power (ν near 2), of ged and sged with a small shape (ν = 0.1), and of nig and ghyp
+  with a small zeta were NaN or off, up to 7e-2 in `E(z - c)^2`, because the quadrature of the tails overflowed or
+  ended before the mass did. They are finite, standardized and differentiable now.
+- Johnson SU: the standardization overflowed for `tau` below about 0.053 or `|nu| / tau` above about 354, giving NaN
+  or infinite density, constant and scale. It is taken in logs there and stays finite; where the scale itself is
+  below the smallest normal double (`tau` below about 0.038) the density, moments and quantiles are NaN, never a scale
+  of 0 that made every quantile the center.
+- The std (Student t) cdf lost its digits near the center (z near 0, or a large shape), because it was computed through
+  a quantity that rounds to 1. It is accurate there, and matches the normal expansion for a large shape.
 
 ## [1.2.0] - 2026-11-19
 
