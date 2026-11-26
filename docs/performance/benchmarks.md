@@ -611,6 +611,17 @@ from commit `ccb2651` (the DCC row: binding at commit `613be8d`, same library bu
 The binding is inside one standard deviation of the direct calls in every case: what it adds (records, enums, copies of
 the results) is noise next to the fit.
 
+## Audit of 2026-11-26: measured and dropped
+
+Two ideas of a read-only performance audit, each measured with the `gcc-bench` build of the code before
+(`71fdd61`) and after, run interleaved, 15 rounds, minimum of the rounds (the medians moved by up to 40% between
+rounds on this machine that day). Neither gained, so neither was kept:
+- The sGARCH(1,1) recursion with sigma2_{t-1} kept in a local instead of read back from the span it was just stored
+  to (the suspicion was store-to-load forwarding on the critical path): `BM_Loglik/s11_norm/double` 0.988.
+- `StoreU` instead of `hn::StoreN` for the full vectors of the density kernel (on AVX2 `StoreN` is a
+  `BlendedStore`, a masked store, even for a full vector): `BM_Loglik/*/adjoint` 0.98 to 1.01 over s11_norm,
+  s21_std, arma11_s11_ged, egarch11_std and gjrgarch11_norm.
+
 ## What the benchmarks fit
 
 - The series are simulated by `tests/benchmarks/simulated_panel.hpp` and `tests/unit/simulated_garch.hpp`. They reuse
