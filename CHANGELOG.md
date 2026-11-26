@@ -22,6 +22,8 @@ break between 0.x releases.
 - fGARCH TGARCH and AVGARCH (power fixed at 1) with variance regressors: a point where omega + zeta v_t drove
   sigma_t negative was accepted, because its square is a positive sigma2, so the fit could settle outside the model.
   A state sigma^power that is not positive is now outside the domain, in the likelihood and in the forecast.
+- jsu innovations in apARCH and fGARCH: at an asymmetry of exactly -1 or 1 (fixed, or reached by the optimizer), the
+  shock moment had a NaN gradient and the fit failed. The gradient is now finite.
 
 ## [1.3.0] - 2026-11-26
 

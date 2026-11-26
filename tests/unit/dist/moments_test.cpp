@@ -501,6 +501,27 @@ TEST(Moments, SgedLargeShapeDerivativesMatchFiniteDifferences)
     expect_skewed_gradients_match(Dist::Sged, {1.2, 300.0, 0.0, 0.3, 0.2, 1.5});
 }
 
+// At |eta1| = 1 the shock is 0 on one side of eta2, where its log is -inf with an infinite slope: the
+// gradient must stay finite, as it does for the other families.
+TEST(Moments, JohnsonGradientIsFiniteAtUnitAsymmetry)
+{
+    using Number = ve::ad::Dual<4>;
+    for (double eta1 : {-1.0, 1.0})
+    {
+        const ve::dist::ShapeParameters<Number> parameters{.skew = ve::ad::variable<4>(0.5, 0),
+                                                           .shape = ve::ad::variable<4>(2.0, 1)};
+        const Number moment = shifted_moment(Dist::Jsu, parameters, ve::ad::variable<4>(eta1, 3),
+                                             ve::ad::variable<4>(0.2, 2), Number{1.5});
+        const ve::dist::ShapeParameters<double> plain{.skew = 0.5, .shape = 2.0};
+        const double value = shifted_moment(Dist::Jsu, plain, eta1, 0.2, 1.5);
+        EXPECT_EQ(moment.value, value);
+        for (double slope : moment.grad)
+        {
+            EXPECT_TRUE(std::isfinite(slope)) << "eta1 " << eta1;
+        }
+    }
+}
+
 // jsu is z = c (sqrt(w) sinh(omega) + sinh((r + nu) / tau)) of a standard normal r, with w = exp(1 / tau^2),
 // omega = -nu / tau and c = [(w - 1) (w cosh(2 omega) + 1) / 2]^(-1/2).
 struct JohnsonTransform
