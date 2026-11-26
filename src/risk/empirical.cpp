@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <vector>
 
 namespace ve::risk
@@ -30,6 +31,11 @@ std::vector<double> portfolio_returns(const PanelView& returns, std::span<const 
 Measure empirical(const PanelView& returns, std::span<const double> weights, ReturnKind kind, double confidence)
 {
     std::vector<double> sorted = portfolio_returns(returns, weights, kind);
+    // Finite inputs can still overflow (exp(710), 1e308 * 10); NaN would break the sort's ordering.
+    if (!std::ranges::all_of(sorted, [](double value) { return std::isfinite(value); }))
+    {
+        return Measure{.var = std::numeric_limits<double>::quiet_NaN(), .es = std::numeric_limits<double>::quiet_NaN()};
+    }
     std::ranges::sort(sorted);
     const double position = static_cast<double>(sorted.size() - 1) * (1.0 - confidence);
     const auto lower = static_cast<std::size_t>(std::floor(position));

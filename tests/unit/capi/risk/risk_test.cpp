@@ -162,6 +162,16 @@ TEST(CapiRisk, EmpiricalPanelRefusals)
     expect_empirical_refused(with_nan.handle, kWeights.data(), VE_RETURNS_LOG, 0.99);
 }
 
+TEST(CapiRisk, NonFinitePortfolioRefused)
+{
+    const std::vector<double> data{710.0, 0.0, 0.0, 0.0};
+    ve_panel* panel = nullptr;
+    ASSERT_EQ(ve_panel_create(data.data(), 2, 2, &panel), VE_OK);
+    const std::vector<double> weights{0.0, 1.0};
+    expect_empirical_refused(panel, weights.data(), VE_RETURNS_LOG, 0.99);
+    ve_panel_free(panel);
+}
+
 TEST(CapiRisk, EmpiricalNoSeries)
 {
     ve_panel* panel = nullptr;

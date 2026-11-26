@@ -114,6 +114,10 @@ extern "C" ve_status ve_risk_empirical(const ve_panel* returns, const double* we
             const auto return_kind = kind == VE_RETURNS_LOG ? ve::risk::ReturnKind::log : ve::risk::ReturnKind::simple;
             const auto measure = ve::risk::empirical(returns->view, std::span(weights, returns->view.n), return_kind,
                                                      confidence);
+            if (!std::isfinite(measure.var))
+            {
+                return set_error(VE_INVALID_ARGUMENT, "a portfolio return is not finite (an input overflows)");
+            }
             *var = measure.var;
             *es = measure.es;
             return VE_OK;
