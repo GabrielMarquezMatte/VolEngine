@@ -19,6 +19,7 @@ extern "C" ve_status ve_dcc_standard_errors(ve_context* ctx, const ve_dcc_fit* f
     return ve_dcc_standard_errors_with_cancel(ctx, f, fits, m, nullptr, out);
 }
 
+// NOLINTNEXTLINE(readability-function-size): the C ABI fixes this signature
 extern "C" ve_status ve_dcc_standard_errors_with_cancel(ve_context* ctx, const ve_dcc_fit* f,
                                                         const ve_fit* const* fits, size_t m, const ve_cancel* c,
                                                         ve_dcc_fit** out)

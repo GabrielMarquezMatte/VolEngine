@@ -132,6 +132,7 @@ extern "C" ve_status ve_simulate_dcc(ve_context* ctx, const ve_dcc_fit* f, const
     return ve_simulate_dcc_with_cancel(ctx, f, o, x, nullptr, out);
 }
 
+// NOLINTNEXTLINE(readability-function-size): the C ABI fixes this signature
 extern "C" ve_status ve_simulate_dcc_with_cancel(ve_context* ctx, const ve_dcc_fit* f, const ve_sim_options* o,
                                                  const ve_dcc_future* x, const ve_cancel* c, ve_dcc_sim** out)
 {
