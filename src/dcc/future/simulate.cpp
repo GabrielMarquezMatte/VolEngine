@@ -128,6 +128,7 @@ public:
     {
         for (std::size_t h = 0; h < setup_.request.horizon; ++h)
         {
+            throw_if_cancelled(setup_.request.cancel);
             step(h, out);
         }
     }
@@ -259,6 +260,7 @@ private:
 
 DccSimulation simulate_dcc(Context& context, const DccFitResult& fit, const DccRequest& request)
 {
+    throw_if_cancelled(request.cancel);
     const std::size_t m = fit.series;
     DccSimulation out{request.paths, request.horizon, m, {}, {}, {}, {}, request.checkpoints, {}};
     out.cumulative.resize(request.paths * request.checkpoints.size() * m);
@@ -277,7 +279,6 @@ DccSimulation simulate_dcc(Context& context, const DccFitResult& fit, const DccR
     {
         for (std::size_t path = first; path < last; ++path)
         {
-            throw_if_cancelled(request.cancel);
             PathRun(setup, path).run(out);
         }
     };

@@ -284,6 +284,7 @@ std::optional<std::string> check_batch(const Batch& batch)
 
 std::vector<FitResult> run_batch(Context& context, const Batch& batch, const CancelFlag* cancel)
 {
+    throw_if_cancelled(cancel);
     FitConfig config = batch.config;
     config.cancel = cancel;
     std::vector<FitResult> results(batch.jobs.size());

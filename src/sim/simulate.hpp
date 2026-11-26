@@ -13,7 +13,8 @@ namespace ve::sim
 {
 
 // horizon steps of paths paths under seed; future holds horizon rows of the spec's regressors, the same for every
-// path (the caller checks them). cancel is borrowed and polled before each path; null never cancels. checkpoints,
+// path (the caller checks them). cancel is borrowed and polled once before any work and then at each step of each
+// path; null never cancels. checkpoints,
 // when not empty, are strictly increasing steps from 1 that end at horizon (the caller checks them).
 struct Request
 {

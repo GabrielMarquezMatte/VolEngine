@@ -28,6 +28,7 @@ void simulate_path(const Start& start, const Request& request, const Sampler& sa
     std::size_t next = 0;
     for (std::size_t h = 0; h < request.horizon; ++h)
     {
+        throw_if_cancelled(request.cancel);
         Path::Draw draw = walker.step(future_row(request.future, h), sampler.draw(stream));
         if (count == 0)
         {
@@ -52,7 +53,6 @@ void run_blocks(BS::light_thread_pool& pool, int threads, const Start& start, co
     {
         for (std::size_t path = first; path < last; ++path)
         {
-            throw_if_cancelled(request.cancel);
             simulate_path(start, request, sampler, path, out);
         }
     };
@@ -63,6 +63,7 @@ void run_blocks(BS::light_thread_pool& pool, int threads, const Start& start, co
 
 Simulation simulate(Context& context, const Start& start, const Request& request)
 {
+    throw_if_cancelled(request.cancel);
     Simulation out{request.paths, request.horizon, {}, {}, request.checkpoints, {}};
     if (request.checkpoints.empty())
     {

@@ -400,6 +400,7 @@ std::vector<DccFitResult> fit_dcc_batch(Context& context, std::span<const FitRes
                                         const CancelFlag* cancel)
 {
     assert(!check_dcc_batch(fits, specs, options));
+    throw_if_cancelled(cancel);
     DccOptions run_options = options;
     run_options.config.cancel = cancel;
     const auto panel = std::make_shared<const StandardizedPanel>(standardize(fits));

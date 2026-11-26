@@ -19,7 +19,7 @@ struct DccRequest
     std::uint64_t seed = 0;
     bool correlations = false;
     SeriesRegressors future{};
-    // Borrowed, polled before each path; null never cancels.
+    // Borrowed, polled once before any work and then at each step of each path; null never cancels.
     const CancelFlag* cancel = nullptr;
     // When not empty: strictly increasing steps from 1 that end at horizon, with correlations off (the caller checks).
     std::vector<std::size_t> checkpoints{};

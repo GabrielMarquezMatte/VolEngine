@@ -59,6 +59,7 @@ extern "C" ve_status ve_dcc_standard_errors_with_cancel(ve_context* ctx, const v
             {
                 return set_error(VE_UNSUPPORTED, *problem);
             }
+            ve::throw_if_cancelled(flag_of(c));
             const std::vector<const ve::dcc::DccFitResult*> one{&f->result};
             const auto errors = ctx->context.with_pool(
                 [&](BS::light_thread_pool& pool, int threads)

@@ -80,8 +80,8 @@ std::optional<std::string> check_dcc_batch(std::span<const FitResult* const> fit
 // specs and do not depend on the thread count. A spec that does not converge is its result's status, not an
 // error; an exception raised by a fit is rethrown after every started fit has finished. Unlike fit_dcc, the
 // results carry univariate_parameters and univariate_estimates. The batch must pass check_dcc_batch. cancel replaces
-// options.config.cancel: it is polled before each spec, inside each fit and in the standard errors; null never
-// cancels.
+// options.config.cancel: it is polled once before any work, before each spec, inside each fit and in the standard
+// errors; null never cancels.
 std::vector<DccFitResult> fit_dcc_batch(Context& context, std::span<const FitResult* const> fits,
                                         std::span<const DccSpec> specs, const DccOptions& options,
                                         const CancelFlag* cancel = nullptr);
