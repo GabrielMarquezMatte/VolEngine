@@ -74,7 +74,9 @@ VE_API void ve_context_free(ve_context* ctx);
    request cancels all of them. Freeing the handle while a call uses it is undefined behavior.
    A cancelled call returns VE_CANCELLED with ve_last_error "cancelled" and its output set to NULL (each of the n
    handles of a batch), and no thread of the pool still works on it. It stops within the work between two checks: an
-   optimizer iteration, a stage of the standard errors or a simulated path. A request that arrives after the last check
+   optimizer iteration, a block of the standard errors or a simulated path. On a context that other calls keep busy,
+   the rest of its work waits in the context's queue behind theirs before it stops, so give each caller that needs a
+   deadline its own context. A request that arrives after the last check
    leaves the call to return VE_OK with the whole result, so a request does not always give VE_CANCELLED. The arguments
    are checked first: an invalid one gives the same error with or without a requested handle. c NULL never cancels: the
    call does exactly what the function without _with_cancel does. Since 1.3.0. */

@@ -83,7 +83,9 @@ a `Fit`; `context.standard_errors(fit, univariate_fits)` returns a fit that has 
 
 `fit`, `fit_dcc`, `standard_errors` and `simulate` take an optional `std::stop_token` as their last argument. A stop
 requested before or during the call makes it fail soon after with `ve::Status::cancelled`, and no result is made; a
-call that finishes first succeeds. Without a token, or with one that can never be stopped, nothing changes.
+call that finishes first succeeds. Without a token, or with one that can never be stopped, nothing changes. On a
+`Context` that other calls keep busy, a stopped call waits for its turn in the context's queue before it fails: give
+each caller that needs a deadline its own `Context`.
 
 ```cpp
 std::stop_source source;

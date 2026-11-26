@@ -1,5 +1,6 @@
 #include "dcc/standard_errors.hpp"
 
+#include "core/cancel.hpp"
 #include "core/context.hpp"
 #include "core/spec.hpp"
 #include "dcc/fit.hpp"
@@ -12,6 +13,7 @@
 
 #include <array>
 #include <bit>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -20,6 +22,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace
@@ -509,6 +512,34 @@ TEST(DccStandardErrors, PoolReportsTheProblemOfEachFit)
     ASSERT_EQ(pooled.size(), 1U);
     ASSERT_FALSE(pooled[0].has_value());
     EXPECT_EQ(pooled[0].error(), serial.error());
+}
+
+// A signal stops the pool within a block (each stage is cut into kBlocksPerThread blocks per thread), even when the
+// signal lands in the cross-column stage, the bulk of the work.
+TEST(DccStandardErrors, PoolStopsSoonAfterTheSignal)
+{
+    using namespace std::chrono_literals;
+    const std::vector<FitResult> fits = default_fits();
+    const Pointers pointers = pointers_of(fits);
+    const std::vector<DccFitResult> fitted =
+        run_batch(pointers, {spec_of(DccModel::ADcc, DccDist::MvT, Convention::Standard)}, DccOptions{FitConfig{}, false}, 1);
+    const std::vector<const DccFitResult*> list(400, &fitted[0]);
+    ve::Context context;
+    context.set_threads(1);
+    ve::CancelFlag flag;
+    // Uncancelled this takes about 5 s, most of it in the columns, so the signal lands inside a block of them.
+    constexpr auto delay = 300ms;
+    const auto start = std::chrono::steady_clock::now();
+    std::jthread signal(
+        [&flag, delay]
+        {
+            std::this_thread::sleep_for(delay);
+            flag.request();
+        });
+    EXPECT_THROW(context.with_pool([&](BS::light_thread_pool& pool, int count)
+                                   { return ve::dcc::dcc_standard_errors(pool, count, list, pointers, &flag); }),
+                 ve::Cancelled);
+    EXPECT_LT(std::chrono::steady_clock::now() - start, delay + 500ms);
 }
 
 }

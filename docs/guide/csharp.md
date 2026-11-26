@@ -117,8 +117,10 @@ Drop such dates before the univariate fits.
 
 `Fit`, `FitDcc`, `StandardErrors` and `Simulate` take an optional `CancellationToken` as their last argument. A token
 cancelled before or during the call makes it throw `OperationCanceledException` soon after (within one optimizer
-iteration, one stage of the standard errors or one simulated path) and no result is made; a call that finishes first
-returns its result. Without a token, or with one that can never be cancelled, nothing changes.
+iteration, one block of the standard errors or one simulated path) and no result is made; a call that finishes first
+returns its result. Without a token, or with one that can never be cancelled, nothing changes. On a `Context` that
+other calls keep busy, a cancelled call waits for its turn in the context's queue before it stops: give each caller
+that needs a deadline its own `Context`.
 
 ```csharp
 // `specs` and `data` as in "Many series and specs": stop the grid if it takes more than two seconds.

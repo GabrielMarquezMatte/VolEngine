@@ -33,6 +33,8 @@ constexpr std::size_t kLongJobs = 1000;
 constexpr std::size_t kLongPaths = 2'000'000;
 constexpr std::size_t kLongHorizon = 2;
 constexpr std::chrono::milliseconds kSignalDelay{50};
+// How soon after the signal a cancelled call returns, the start included.
+constexpr std::chrono::milliseconds kPrompt{500};
 
 struct CancelFree
 {
@@ -84,17 +86,20 @@ T* sentinel()
     return reinterpret_cast<T*>(&byte);
 }
 
-// Runs call() while another thread requests c after kSignalDelay.
+// Runs call() while another thread requests c after kSignalDelay, and expects it to return within kPrompt.
 template <class F>
 ve_status cancelled_during(ve_cancel* c, F&& call)
 {
+    const auto start = std::chrono::steady_clock::now();
     std::jthread signal(
         [c]
         {
             std::this_thread::sleep_for(kSignalDelay);
             ve_cancel_request(c);
         });
-    return call();
+    const ve_status status = call();
+    EXPECT_LT(std::chrono::steady_clock::now() - start, kPrompt);
+    return status;
 }
 
 template <class T>
@@ -274,6 +279,35 @@ TEST(FitBatchWithCancel, OneHandleCancelsTwoConcurrentCalls)
     EXPECT_EQ(second_status, VE_CANCELLED);
     EXPECT_TRUE(all_null(first_out));
     EXPECT_TRUE(all_null(second_out));
+}
+
+// A cancelled call returns without waiting for another call that keeps the same context busy.
+TEST(FitBatchWithCancel, SharedContextDoesNotWaitForTheOtherCall)
+{
+    const FitWork cancelled(kLongJobs);
+    const FitWork other(kLongJobs);
+    ve_context* shared = cancelled.context.get();
+    CancelPtr cancel = make_cancel();
+    std::vector<ve_fit*> out(cancelled.jobs, sentinel<ve_fit>());
+    FitSet other_fits(other.jobs);
+    ve_status status = VE_OK;
+    ve_status other_status = VE_INTERNAL_ERROR;
+    {
+        std::jthread first(
+            [&]
+            {
+                status = cancelled_during(cancel.get(),
+                                          [&] {
+                                              return ve_fit_batch_with_cancel(shared, cancelled.batch.get(),
+                                                                              cancel.get(), out.data());
+                                          });
+            });
+        std::this_thread::sleep_for(kSignalDelay / 5);
+        other_status = ve_fit_batch_with_cancel(shared, other.batch.get(), nullptr, other_fits.out());
+    }
+    EXPECT_EQ(status, VE_CANCELLED);
+    EXPECT_TRUE(all_null(out));
+    EXPECT_EQ(other_status, VE_OK) << ve_last_error();
 }
 
 // Review Focus 2: a requested handle stays requested for the next call.
