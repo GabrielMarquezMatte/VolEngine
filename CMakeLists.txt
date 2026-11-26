@@ -87,6 +87,7 @@ add_library(volengine_core STATIC
     src/dcc/likelihood/gradient.cpp
     src/dcc/likelihood.cpp
     src/dcc/panel.cpp
+    src/cov/estimators.cpp
     src/dcc/parameter_map.cpp
     src/dcc/standard_errors.cpp
     src/diagnostics/portmanteau.cpp
@@ -194,6 +195,7 @@ if(VE_BUILD_TESTS)
         tests/unit/capi/panel_test.cpp
         tests/unit/capi/results/sim_test.cpp
         tests/unit/capi/spec_test.cpp
+        tests/unit/cov/estimators_test.cpp
         tests/unit/dcc/copula/fit_test.cpp
         tests/unit/dcc/copula/margins_test.cpp
         tests/unit/dcc/copula/scores_test.cpp
